@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="head.additional">
+            <block name="checkout-shipping-address-company-search" 
+                ifconfig="payment/two_payment/active" 
+                template="Two_GatewayHyva::component/payment/method/two_shipping_company.phtml" after="-"/>
+        </referenceBlock>
+        <referenceBlock name="checkout.payment.methods">
+            <block name="checkout.payment.method.two-payment-method" as="two_payment" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::component/payment/method/two_gateway_method.phtml">
+                <arguments>
+                    <argument name="magewire" xsi:type="object">
+                        Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod
+                    </argument>
+                    <argument name="method_code" xsi:type="string">two_payment</argument>
+                    <argument name="metadata" xsi:type="array">
+                        <item name="icon" xsi:type="array">
+                            <item name="src" xsi:type="string">Two_GatewayHyva::images/cc/twoLogo.svg</item>
+                            <!-- optional attributes, specify as needed -->
+                            <item name="attributes" xsi:type="array">
+                                <item name="width" xsi:type="number">32</item>
+                                <item name="height" xsi:type="number">32</item>
+                            </item>
+                        </item>
+                        <item name="additional_icon_provider" xsi:type="array">
+                            <item name="template" xsi:type="string">
+                                Two_GatewayHyva::component/tooltip.phtml
+                            </item>
+                        </item>
+                    </argument>
+                </arguments>
+            </block>
+        </referenceBlock>
+    </body>
+</page>

@@ -1,0 +1,251 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+use Two\GatewayHyva\ViewModel\CheckoutConfig;
+use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+use Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod;
+
+/** @var ViewModelRegistry $viewModels */
+/** @var CheckoutConfig $viewModel */
+$configModel = $viewModels->require(CheckoutConfig::class);
+$quoteModel = $viewModels->require(GetQuoteDetails::class);
+
+$paymentTermsMessage = $configModel->getpaymentTermsMessage();
+$termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
+$quoteDetails = $quoteModel->getQuoteDetails();
+$quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+?>
+<div  
+    x-data="" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
+    <div class="redirect_message" data-bind="text: redirectMessage"><?= $configModel->getRedirectMessage() ?>
+    </div>
+    <form
+        x-data="{...searchInputBilling(), ...validatePaymentForm($el, $wire)}"
+        id="two_gateway_form"
+        x-init="initialize(quote = JSON.parse(`<?= htmlspecialchars($quoteDetails, ENT_QUOTES, 'UTF-8'); ?>`));"
+        @keydown.window.prevent.enter
+        class="">
+        <fieldset class="space-y-4">
+            <!-- Company Name -->
+            <div class="min-h-108">
+                <div class="flex flex-col field required gap-2" x-show="showManual">
+                    <div class="field required">
+                        <label for="company_name" class="font-semibold text-gray-700">
+                            <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
+                        </label>
+                        <input 
+                            type="text" 
+                            :id="!showManual ? 'manual_company_name' : 'company_name'" 
+                            :name="!showManual ? 'payment[manual_company_name]' : 'payment[company_name]'" 
+                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text" 
+                            autocomplete="off" 
+                            required
+                            data-manual="true"
+                            data-validate='{"required": true}' 
+                          />
+                    </div>
+                    <div class="search_for_company w-full text-right" @click="showManual = false" title="Search for company">
+                        <span class="text-blue-600 text-sm cursor-pointer">
+                            <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
+                        </span>
+                    </div>
+                </div>
+                <div class="flex flex-col field required w-full relative" x-show="!showManual">
+                    <div class="flex flex-col items-center w-full">
+                        <div class="bg-white w-full gap-2 flex-col flex">
+                            <div class="field required">
+                                <label class="font-semibold text-gray-700">
+                                  <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="w-full" @click.outside="isOpen = false">
+                            <input 
+                                type="text" 
+                                @input="getItems" 
+                                @focus="isOpen = true"
+                                @keydown.arrow-down="nextItem()" 
+                                @keydown.arrow-up="prevItem()" 
+                                @keydown.enter.prevent="selectHighlightedItem()"
+                                @keydown.tab="closeCompanyList"
+                                placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>" 
+                                x-model="search" 
+                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text" 
+                                :id="showManual ? 'manual_company_name' : 'company_name'" 
+                                :name="showManual ? 'payment[manual_company_name]' : 'payment[company_name]'"
+                                autocomplete="off"
+                                data-manual="false"
+                                data-name="company_name"
+                                required
+                                data-validate='{"required": true}'
+                                >
+                            <!-- Search Results Dropdown -->
+                            <div
+                                x-show="isOpen"
+                                x-transition
+                                class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
+                            >
+                                <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
+                                    <template 
+                                        x-for="(item, index) in items" 
+                                        :key="item.companyId"
+                                    >
+                                        <div
+                                            @click="selectItem(item)"
+                                            @mouseover="selectedIndex = index"
+                                            :class="{'bg-gray-100': selectedIndex === index}"
+                                            class="cursor-pointer hover:bg-gray-100 p-2"
+                                        >
+                                            <div class="flex items-center">
+                                                <div>
+                                                    <span x-html="item.companyDisplayName"></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div x-show="search.length < 3" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?>
+                                </div>
+                                <div 
+                                    id="billing_enter_company"
+                                    class="enter_for_company w-full px-2 py-3"
+                                    @click="showManual = true" 
+                                    title="Enter details manually">
+                                    <span class="text-blue-600 text-sm cursor-pointer">
+                                        <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KVK Number -->
+            <div class="flex flex-col field field-reserved required">
+              <label for="company_id" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("KVK number")) ?>
+              </label>
+              <input
+                type="text"
+                x-show="!showManual"
+                :id="showManual ? 'manual_company_id' : 'company_id'"
+                :name="showManual ? 'payment[manual_company_id]' : 'payment[company_id]'" 
+                data-name="company_id"
+                required
+                data-validate='{"required": true}'
+                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
+              />
+              <input
+                type="text"
+                x-show="showManual"
+                :id="showManual ? 'company_id' : 'manual_company_id'"
+                :name="showManual ? 'payment[company_id]' : 'payment[manual_company_id]'" 
+                required
+                data-validate='{"required": true}'
+                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
+              />
+            </div>
+
+            <!-- Invoice Email (Conditional) -->
+            <div class="flex flex-col" x-show="isInvoiceEmailsEnabled">
+              <label for="invoice_emails" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("Invoice Email Address")) ?>
+              </label>
+              <input
+                type="text"
+                id="invoice_emails"
+                name="payment[invoiceEmails]"
+                x-model="invoiceEmails"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <!-- Project Field (Conditional) -->
+            <div class="flex flex-col" x-show="isProjectFieldEnabled">
+              <label for="two_project" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("Project")) ?>
+              </label>
+              <input
+                type="text"
+                id="two_project"
+                name="payment[project]"
+                x-model="project"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <!-- Department Field (Conditional) -->
+            <div class="flex flex-col" x-show="isDepartmentFieldEnabled">
+              <label for="two_department" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("Department")) ?>
+              </label>
+              <input
+                type="text"
+                id="two_department"
+                name="payment[department]"
+                x-model="department"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <!-- Order Note Field (Conditional) -->
+            <div class="flex flex-col" x-show="isOrderNoteFieldEnabled">
+              <label for="two_order_note" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("Order Note")) ?>
+              </label>
+              <input
+                type="text"
+                id="two_order_note"
+                name="payment[orderNote]"
+                x-model="orderNote"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <!-- PO Number Field (Conditional) -->
+            <div class="flex flex-col" x-show="isPONumberFieldEnabled">
+              <label for="two_po_number" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("PO Number")) ?>
+              </label>
+              <input
+                type="text"
+                id="two_po_number"
+                name="payment[poNumber]"
+                x-model="poNumber"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <div x-data="{ isPaymentTermsAccepted: false }" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
+              <div class="field field-reserved required">
+                <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
+                  <input type="checkbox" 
+                      name="terms-checkbox" 
+                      x-model="isPaymentTermsAccepted"
+                      class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring focus:ring-blue-300"
+                      required
+                      data-validate='{"required": true}'
+                      data-msg-required="<?= $termsNotAcceptedMessage ?>"
+                      />
+                  <!-- Terms Text -->
+                  <span class="terms-text text-gray-700"><?= $paymentTermsMessage ?></span>
+                </div>
+              </div>
+            </div>
+        </fieldset>
+    </form>
+</div>
+

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
+	<module name="Two_GatewayHyva" setup_version="1.0.0">
+		<sequence>
+            <module name="Hyva_Checkout"/>
+            <module name="Hyva_CompatModuleFallback"/>
+            <module name="Two_Gateway" />
+        </sequence>
+	</module>
+</config>

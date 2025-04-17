@@ -1,0 +1,19 @@
+<?php 
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+?>
+<div class="two-tooltip-icon">
+    <img width="20px" src="<?= $block->getViewFileUrl('Two_GatewayHyva::images/cc/tooltip-icon.png') ?>">
+    <div class="two-tooltip-box z-40">
+        <span>
+            <?= $escaper->escapeHtml(__("Order on invoice and pay within 30 days after delivery. Enabled by Two.")) ?></span><br>
+        <br>
+        <span><?= $escaper->escapeHtml(__("• Order on invoice")) ?></span><br>
+        <span><?= $escaper->escapeHtml(__("• Pay within 30 days")) ?></span><br>
+        <span><?= $escaper->escapeHtml(__("• No extra costs")) ?></span><br>
+        <br>
+        <span><?= $escaper->escapeHtml(__("You don't need to be a Two customer.")) ?></span>
+    </div>
+</div>

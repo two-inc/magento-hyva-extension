@@ -1,0 +1,224 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+use Two\GatewayHyva\ViewModel\CheckoutConfig;
+use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+use Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod;
+
+/** @var ViewModelRegistry $viewModels */
+/** @var CheckoutConfig $viewModel */
+
+$configModel = $viewModels->require(CheckoutConfig::class);
+$quoteModel = $viewModels->require(GetQuoteDetails::class);
+
+$checkoutApiUrl = $configModel->getCheckoutApiUrl();
+$companySearchLimit = $configModel->getCompanySearchLimit();
+$isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$checkoutPageUrl = $configModel->getCheckoutPageUrl();
+$quoteDetails = $quoteModel->getQuoteDetails();
+$quoteDetails = json_encode($quoteDetails);
+?>
+<input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
+<script>
+document.addEventListener('alpine:init', () => {
+
+    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));
+
+    Alpine.data('searchInput', () => ({
+        isOpen: false,
+        search: document.getElementById('shipping-company').value ?? '',
+        items: [],
+        companyName: '',
+        companyId: '',
+        lookupId: '',
+        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
+        companySearchLimit: '<?= $companySearchLimit ?>',
+        countryCode : "",
+        isAddressSearchEnabled : '<?= $isAddressSearchEnabled ?>',
+        isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
+        quote : '<?= $quoteDetails ?>',
+        countrySelection : "Please select a country!!",
+        self : "",
+        searchTimeout: '',
+        selectedIndex: -1,
+        async getItems() {
+            self = this;
+            this.selectedIndex = -1;
+            if (!self.isCompanySearchEnabled) return;
+            
+            const countryId = document.getElementById("shipping-country_id");
+            if(countryId.value){
+                self.countryCode = countryId.value
+            }
+            else {
+                const quoteData = JSON.parse(self.quote);
+                self.countryCode = quoteData.country_id;    
+            }
+            if(self.countryCode) {
+                clearTimeout(self.searchTimeout);
+                if (this.search.length < 3) {
+                    this.items = [];
+                    return;
+                }
+                
+                self.searchTimeout = setTimeout(async () => {
+                    window.dispatchEvent(new Event('magewire:loader:start'));
+                    try {
+                        // Build query parameters
+                        const queryParams = new URLSearchParams({
+                            country: self.countryCode ? self.countryCode.toUpperCase() : '',
+                            limit: self.companySearchLimit,
+                            offset: 0,
+                            q: unescape(this.search),
+                        });
+
+                        // Fetch company data
+                        const response = await fetch(self.checkoutApiUrl+'/companies/v2/company?' + queryParams);
+                        if (!response.ok) throw new Error("Network response was not ok");
+
+                        const data = await response.json();
+
+                        // Map API response to required format
+                        this.items = data.items.map(item => ({
+                            companyName: item.name,
+                            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+                            companyId: item.national_identifier.id,
+                            lookupId: item.lookup_id,
+                        }));
+
+                    } catch (error) {
+                        console.error("Error fetching companies:", error);
+                        this.items = [];
+                    }
+                    window.dispatchEvent(new Event('magewire:loader:done'));
+                    const filterItems = this.items.filter((item) => {
+                        return item.companyName.startsWith(this.search.toLowerCase());
+                    })
+                    if(this.items.length > 0) {
+                        self.isOpen = true;
+                        return filterItems;
+                    }
+                }, 200);
+            }
+            else {
+                window.dispatchMessages([{
+                    type: 'error',
+                    text: self.countrySelection,
+                }], 3000);
+            }
+        },
+
+        selectItem(item) {
+            this.isOpen = false;
+            self.items= [];
+            this.selectedIndex = -1;
+            this.search = item.companyName;
+
+            document.getElementById('shipping-company').value = item.companyName;
+            document.getElementById('shipping-company_id').value = item.companyId;
+
+            const companyNameInput = document.querySelector('[data-name="company_name"]');
+            const companyIdInput = document.querySelector('[data-name="company_id"]');
+
+            if (companyNameInput) {
+                companyNameInput.value = item.companyName;
+            }
+
+            if (companyIdInput) {
+                companyIdInput.value = item.companyId;
+            }
+            
+            const shippingCompanySelectionData = { 
+                company_name: item.companyName, 
+                company_id: item.companyId 
+            };
+
+            // Store as JSON string
+            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
+
+            // Dispatch event
+            window.dispatchEvent(new Event("shipping-company-selected"));
+
+            const inputField = document.querySelector("#shipping-company");
+            inputField.dispatchEvent(new Event("input"));
+            if (self.isAddressSearchEnabled) {
+                this.addressLookup(item.lookupId);
+            }
+            
+        },
+        nextItem() {
+            if (this.selectedIndex < this.items.length - 1) {
+                this.selectedIndex++;
+                this.adjustScroll();
+            }
+        },
+        prevItem() {
+            if (this.selectedIndex > 0) {
+                this.selectedIndex--;
+                this.adjustScroll();
+            }
+        },
+        adjustScroll() {
+            this.$nextTick(() => {
+                let dropdown = document.querySelector(".max-h-select");
+                let selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
+
+                if (dropdown && selectedItem) {
+                    let dropdownRect = dropdown.getBoundingClientRect();
+                    let itemRect = selectedItem.getBoundingClientRect();
+
+                    if (itemRect.bottom > dropdownRect.bottom) {
+                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
+                    } else if (itemRect.top < dropdownRect.top) {
+                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
+                    }
+                }
+            });
+        },
+        selectHighlightedItem() {
+            if (this.selectedIndex >= 0 && this.items.length > 0) {
+                this.selectItem(this.items[this.selectedIndex]);
+            }
+        },
+        closeCompanyList(event) {
+            if (event.key === 'Tab') {
+                this.isOpen = false;
+                this.items = [];
+            }
+        },
+        async addressLookup(lookupId) {
+            try {
+                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
+                const data = await response.json();
+
+                if (data.addresses && data.addresses.length > 0) {
+                    this.setAddressData(data.addresses[0]);
+                }
+            } catch (error) {
+                console.error("Error fetching address:", error);
+            }
+        },
+        setAddressData(address) {
+            document.querySelector('input[name="city"]').value = address.city || "";
+            document.querySelector('input[name="postcode"]').value = address.postal_code || "";
+            document.querySelector('input[name="street[0]"]').value = address.street_address || "";
+
+            // Trigger 'change' event manually
+            ['city', 'postcode', 'street[0]'].forEach(name => {
+                const input = document.querySelector(`input[name="${name}"]`);
+                if (input) {
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            });
+        },
+    }));
+});
+</script>

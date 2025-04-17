@@ -1,0 +1,109 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+use Hyva\Checkout\Model\Form\EntityFieldInterface;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+use Magewirephp\Magewire\Component\Form as MagewireFormComponent;
+use Two\GatewayHyva\ViewModel\CheckoutConfig;
+/** @var Template $block */
+/** @var EntityFieldInterface $element */
+/** @var ViewModelRegistry $viewModels */
+/** @var Escaper $escaper */
+/** @var MagewireFormComponent $magewire */
+/** @var CheckoutConfig $viewModel */
+
+$configModel = $viewModels->require(CheckoutConfig::class);
+$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+/** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
+$element = $block->getData('element');
+$attributes = $element->getAttributes();
+$renderer = $element->getRenderer();
+$form =  $block->getData('form');
+?>
+<div class="w-full font-medium text-gray-700 min-h-108 relative <?= /* @noEscape */ $element->isRequired() ? 'required' : 'not-required' ?>">
+    <?= /* @noEscape */ $renderer->renderLabel($element) ?>
+    <?= /* @noEscape */ $renderer->renderBefore($element) ?>
+
+    <div class="block font-medium text-gray-700">
+        <div x-data="{ showManual: false }">
+            <div class="flex items-start gap-2 enter-manually flex-col" x-show="showManual">
+                <input type="text" class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>"
+               <?php if ($element->hasAttributes()): ?>
+                    <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
+               <?php endif ?> autocomplete="notcomplete"
+            />
+                <div id="billing_search_for_company" class="search_for_company w-full text-right" @click="showManual = false" title="Search for company">
+                    <span class="text-blue-600 text-sm cursor-pointer">
+                        <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
+                    </span>
+                </div>
+            </div>
+            <div x-data="searchInput" class="w-full relative" x-show="!showManual">
+                <div class="items-center w-full" @click.outside="isOpen = false">
+                    <div class="w-full">
+                        <input type="text" 
+                            @input="getItems" 
+                            @focus="isOpen = true" 
+                            @keydown.arrow-down="nextItem()" 
+                            @keydown.arrow-up="prevItem()" 
+                            @keydown.enter.prevent="selectHighlightedItem()" 
+                            @keydown.tab="closeCompanyList"
+                            placeholder="Enter company name to search" 
+                            x-model="search" 
+                            class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>" 
+                            id="shipping-company-name" 
+                            name="company_search"
+                            value="<?= $element->getValue() ?>"
+                            autocomplete="notcomplete"
+                        />
+                    <!-- Search Results Dropdown -->
+                    <div
+                        x-show="isOpen"
+                        x-transition
+                        class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
+                    >
+                        <div class="flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
+                            <template 
+                                x-for="(item, index) in items" 
+                                :key="item.companyId"
+                            >
+                                <div
+                                    @click="selectItem(item)"
+                                    @mouseover="selectedIndex = index"
+                                    :class="{'bg-gray-100': selectedIndex === index}"
+                                    class="cursor-pointer hover:bg-gray-100 p-2"
+                                >
+                                    <div class="flex items-center">
+                                        <div>
+                                            <span x-html="item.companyDisplayName"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="search.length < 3" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?></div>
+                        <div 
+                            id="billing_enter_company"
+                            class="enter_for_company w-full px-2 py-3"
+                            @click="showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));" 
+                            title="Enter details manually">
+                            <span class="text-blue-600 text-sm cursor-pointer">
+                                <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php if ($element->hasTooltip()): ?>
+            <?= /* @noEscape */ $element->getRenderer()->renderTooltip($element) ?>
+        <?php endif ?>
+    </div>
+    <?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>
+</div>
