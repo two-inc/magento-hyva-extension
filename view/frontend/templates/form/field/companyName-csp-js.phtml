@@ -1,0 +1,55 @@
+<?php
+/**
+ * Hyvä Themes - https://hyva.io
+ * Copyright © Hyvä Themes 2020-present. All rights reserved.
+ * This product is licensed per Magento install
+ * See https://hyva.io/license
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+
+/** Generated with hyva-csp-helper.php */
+?>
+<script>
+<?php /** Generated with hyva-csp-helper.php */ ?>
+function twoGatewayHyvaFormFieldCompanyName() {
+    return Object.assign(
+        { showManual: false }
+        ,{
+            ['!showManual']() {return !this.showManual},
+            ['twoGatewayHyvaFormFieldCompanyNameChange36'](event) {return this.search = this.$el.value},
+            ['twoGatewayHyvaFormFieldCompanyNameClass40']() {return {'bg-gray-100': this.selectedIndex === this.index}},
+            ['twoGatewayHyvaFormFieldCompanyNameClick30'](event) {return this.showManual = false},
+            ['twoGatewayHyvaFormFieldCompanyNameClick38'](event) {return this.selectItem(this.item)},
+            ['twoGatewayHyvaFormFieldCompanyNameClick43'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
+            ['twoGatewayHyvaFormFieldCompanyNameClickOutside31'](event) {return this.isOpen = false},
+            ['twoGatewayHyvaFormFieldCompanyNameFocus32'](event) {return this.isOpen = true},
+            ['twoGatewayHyvaFormFieldCompanyNameHtml41']() {return this.item.companyDisplayName},
+            ['twoGatewayHyvaFormFieldCompanyNameKey37']() {return this.item.companyId},
+            ['twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33'](event) {return this.nextItem()},
+            ['twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34'](event) {return this.prevItem()},
+            ['twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35'](event) {return this.selectHighlightedItem()},
+            ['twoGatewayHyvaFormFieldCompanyNameMouseover39'](event) {return this.selectedIndex = this.index},
+            ['twoGatewayHyvaFormFieldCompanyNameShow42']() {return this.search.length < 3},
+        }
+    )
+}
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName', twoGatewayHyvaFormFieldCompanyName), {once: true});
+function twoGatewayHyvaFormFieldCompanyName1() {
+    return Object.assign(
+        Object.assign(this.searchInput, twoGatewayHyvaFormFieldCompanyName())
+    )
+}
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName1', twoGatewayHyvaFormFieldCompanyName1), {once: true});
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>
