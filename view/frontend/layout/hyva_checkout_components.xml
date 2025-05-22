@@ -10,19 +10,19 @@
     <body>
         <referenceBlock name="head.additional">
             <block name="checkout-shipping-address-company-search" 
-                ifconfig="payment/two_payment/active" 
-                template="Two_GatewayHyva::component/payment/method/two_shipping_company.phtml" after="-"/>
+                ifconfig="payment/abn_payment/active" 
+                template="ABN_GatewayHyva::component/payment/method/abn_shipping_company.phtml" after="-"/>
         </referenceBlock>
         <referenceBlock name="checkout.payment.methods">
-            <block name="checkout.payment.method.two-payment-method" as="two_payment" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::component/payment/method/two_gateway_method.phtml">
+            <block name="checkout.payment.method.two-payment-method" as="abn_payment" ifconfig="payment/abn_payment/active" template="ABN_GatewayHyva::component/payment/method/abn_gateway_method.phtml">
                 <arguments>
                     <argument name="magewire" xsi:type="object">
-                        Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod
+                        ABN\GatewayHyva\Magewire\Checkout\Payment\AbnGateWayMethod
                     </argument>
-                    <argument name="method_code" xsi:type="string">two_payment</argument>
+                    <argument name="method_code" xsi:type="string">abn_payment</argument>
                     <argument name="metadata" xsi:type="array">
                         <item name="icon" xsi:type="array">
-                            <item name="src" xsi:type="string">Two_GatewayHyva::images/cc/twoLogo.svg</item>
+                            <item name="src" xsi:type="string">ABN_GatewayHyva::images/cc/abnLogo.svg</item>
                             <!-- optional attributes, specify as needed -->
                             <item name="attributes" xsi:type="array">
                                 <item name="width" xsi:type="number">32</item>
@@ -31,7 +31,7 @@
                         </item>
                         <item name="additional_icon_provider" xsi:type="array">
                             <item name="template" xsi:type="string">
-                                Two_GatewayHyva::component/tooltip.phtml
+                                ABN_GatewayHyva::component/tooltip.phtml
                             </item>
                         </item>
                     </argument>

@@ -1,13 +1,13 @@
-# Two Gateway Hyva Extension
+# ABN Gateway Hyva Extension
 
 ## Introduction
 
-This document provides instructions for installing the Two Gateway Payment Method module with Hyvä Checkout compatibility for Magento 2. This module ensures a seamless payment experience for stores using the Hyvä frontend.
+This document provides instructions for installing the ABN Gateway Payment Method module with Hyvä Checkout compatibility for Magento 2. This module ensures a seamless payment experience for stores using the Hyvä frontend.
 
 ## Compatibility
 
 - **Magento Version**: 2.4.x
-- **Two Gateway Module Version**: 1.12.2
+- **ABN Gateway Module Version**: 1.12.2
 - **Hyvä Checkout Ready**
 
 ## Prerequisites
@@ -34,11 +34,11 @@ composer require hyva-themes/magento2-hyva-checkout
 Configure basic settings via the Magento Admin:
 `Admin > Stores > Settings > Configuration > Hyvä Themes > Checkout`
 
-### 3. Install Two Gateway Hyva Module
+### 3. Install ABN Gateway Hyva Module
 
 1. Download and extract the module's ZIP package.
 2. Connect to your Magento server.
-3. Upload the module files to `app/code/Two/GatewayHyva`.
+3. Upload the module files to `app/code/ABN/GatewayHyva`.
 
 ### 4. Run Magento Commands
 
@@ -76,13 +76,13 @@ npm --prefix vendor/hyva-themes/magento2-default-theme/web/tailwind run ci
 npm --prefix vendor/hyva-themes/magento2-default-theme/web/tailwind run build-prod
 ```
 
-### 7. Configure Two Gateway
+### 7. Configure ABN Gateway
 
-Set up your Two Gateway credentials and settings in the Magento Admin:
-`Admin > Stores > Configuration > Two Gateway`
+Set up your ABN Gateway credentials and settings in the Magento Admin:
+`Admin > Stores > Configuration > ABN Gateway`
 
 ## Testing
 
 1. Navigate to your store's frontend checkout page.
-2. Verify that the Two Gateway payment method is visible.
+2. Verify that the ABN Gateway payment method is visible.
 3. Place a test order to ensure everything is working correctly.

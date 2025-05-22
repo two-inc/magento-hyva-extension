@@ -31,7 +31,7 @@ summary::marker {
     content: '';
 }
  
-.two-tooltip-box {
+.abn-tooltip-box {
     display: none;
     position: absolute;
     width: 60%;
@@ -45,7 +45,7 @@ summary::marker {
     font-size: 12px;
  }
 
- .tooltip-pay:hover .two-tooltip-box {
+ .tooltip-pay:hover .abn-tooltip-box {
     display: block;
  }
 

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Magewire\Checkout\Payment;
+namespace ABN\GatewayHyva\Magewire\Checkout\Payment;
 
 use Magento\Checkout\Model\Session;
 use Magento\Framework\Exception\LocalizedException;
@@ -14,9 +14,9 @@ use Magento\Quote\Api\CartRepositoryInterface;
 use Magewirephp\Magewire\Component;
 
 /**
- * TwoGateWayMethod - Hyvä Checkout
+ * AbnGateWayMethod - Hyvä Checkout
  */
-class TwoGateWayMethod extends Component
+class AbnGateWayMethod extends Component
 {
     public array $quoteInformations = [];
 

@@ -7,6 +7,6 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
     <event name="hyva_config_generate_before">
-        <observer name="add_two_gateway_hyva_module_base_src" instance="Two\GatewayHyva\Observer\RegisterModuleForHyvaConfig"/>
+        <observer name="add_abn_gateway_hyva_module_base_src" instance="ABN\GatewayHyva\Observer\RegisterModuleForHyvaConfig"/>
     </event>
 </config>

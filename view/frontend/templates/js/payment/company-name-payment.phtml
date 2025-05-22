@@ -5,12 +5,12 @@
  */
 declare(strict_types=1);
 
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
-use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use ABN\GatewayHyva\ViewModel\CheckoutConfig;
+use ABN\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
-use Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod;
+use ABN\GatewayHyva\Magewire\Checkout\Payment\AbnGateWayMethod;
 use Hyva\Theme\ViewModel\HyvaCsp;
 
 /** @var ViewModelRegistry $viewModels */
@@ -43,7 +43,7 @@ $quoteDetails = json_encode($quoteDetails);
          * This is useful when reloading or reinitializing the payment method,
          * preventing stale data from affecting event handling.
          */
-        hyva.getBrowserStorage().setItem('two-payment-method-event-set', '');
+        hyva.getBrowserStorage().setItem('abn-payment-method-event-set', '');
 
         /** 
          * Clear previously saved company details.
@@ -58,8 +58,8 @@ $quoteDetails = json_encode($quoteDetails);
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is "two_payment" */
-        if (paymentMethod === "two_payment") {
+        /** Check if the selected payment method is "abn_payment" */
+        if (paymentMethod === "abn_payment") {
             /** Retrieve selected shipping company details from browser storage */
             const shppingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
             const shippingCompany = shppingCompanySelectionData.company_name || "";
@@ -184,7 +184,7 @@ $quoteDetails = json_encode($quoteDetails);
                         timeout = setTimeout(() => doSave(false), wire.autoSaveTimeout);
                     }
 
-                    hyvaCheckout.navigation.addTask(doSave, {name:'two-payment-method'});
+                    hyvaCheckout.navigation.addTask(doSave, {name:'abn-payment-method'});
 
                     const addEventListeners = (el) => {
                         if (el !== form) return;
@@ -250,7 +250,7 @@ $quoteDetails = json_encode($quoteDetails);
                 });
 
                 /** Retrieve the stored flag to check if the event listener is already set */
-                const paymentEventSet = hyva.getBrowserStorage().getItem('two-payment-method-event-set');
+                const paymentEventSet = hyva.getBrowserStorage().getItem('abn-payment-method-event-set');
 
                 /** 
                  * Ensure the event listener is added only once.
@@ -270,7 +270,7 @@ $quoteDetails = json_encode($quoteDetails);
                          * Mark the event listener as set in browser storage.
                          * This prevents duplicate event listeners on reinitialization.
                          */
-                        hyva.getBrowserStorage().setItem('two-payment-method-event-set', 'true');
+                        hyva.getBrowserStorage().setItem('abn-payment-method-event-set', 'true');
                     });
                 }
             },

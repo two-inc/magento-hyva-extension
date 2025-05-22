@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\ViewModel;
+namespace ABN\GatewayHyva\ViewModel;
 
 use Magento\Checkout\Model\Session as SessionCheckout;
 use Magento\Framework\Exception\LocalizedException;

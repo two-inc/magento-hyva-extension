@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Observer;
+namespace ABN\GatewayHyva\Observer;
 
 use Magento\Framework\Component\ComponentRegistrar;
 use Magento\Framework\Event\Observer;
@@ -38,7 +38,7 @@ class RegisterModuleForHyvaConfig implements ObserverInterface
         $config = $event->getData('config');
         $extensions = $config->hasData('extensions') ? $config->getData('extensions') : [];
 
-        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, 'Two_GatewayHyva');
+        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, 'ABN_GatewayHyva');
 
         $extensions[] = ['src' => substr($path, strlen(BP) + 1)];
 
