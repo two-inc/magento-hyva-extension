@@ -11,9 +11,11 @@ use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
 use Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod;
+use Hyva\Theme\ViewModel\HyvaCsp;
 
 /** @var ViewModelRegistry $viewModels */
 /** @var CheckoutConfig $viewModel */
+/** @var HyvaCsp $hyvaCsp */
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -222,3 +224,4 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 </script>
+<?php $hyvaCsp->registerInlineScript() ?>
