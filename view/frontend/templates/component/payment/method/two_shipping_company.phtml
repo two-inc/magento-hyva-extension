@@ -34,7 +34,7 @@ document.addEventListener('alpine:init', () => {
 
     hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));
 
-    Alpine.data('searchInput', () => ({
+    Alpine.data('searchInput', window['searchInput'] = () => ({
         isOpen: false,
         search: document.getElementById('shipping-company').value ?? '',
         items: [],
