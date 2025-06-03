@@ -24,6 +24,7 @@ use Magento\Framework\View\Element\Template;
 <?php /** Generated with hyva-csp-helper.php */ ?>
 function twoGatewayHyvaFormFieldCompanyName() {
     return Object.assign(
+        searchInput(),
         {
             search: "",
             showManual: false
@@ -48,11 +49,5 @@ function twoGatewayHyvaFormFieldCompanyName() {
     )
 }
 window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName', twoGatewayHyvaFormFieldCompanyName), {once: true});
-function twoGatewayHyvaFormFieldCompanyName1() {
-    return Object.assign(
-        Object.assign(searchInput(), twoGatewayHyvaFormFieldCompanyName())
-    )
-}
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName1', twoGatewayHyvaFormFieldCompanyName1), {once: true});
 </script>
 <?php $hyvaCsp->registerInlineScript() ?>
