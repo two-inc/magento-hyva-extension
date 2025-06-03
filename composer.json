@@ -1,0 +1,14 @@
+{
+  "name": "two-inc/magento2-hyva-checkout",
+  "description": "Two Inc Payment Method in Hyva Checkout",
+  "type": "magento2-module",
+  "require": {},
+  "autoload": {
+    "files": [
+      "registration.php"
+    ],
+    "psr-4": {
+      "Two\\GatewayHyva\\": ""
+    }
+  }
+}
