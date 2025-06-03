@@ -2,7 +2,10 @@
   "name": "two-inc/magento2-hyva-checkout",
   "description": "Two Inc Payment Method in Hyva Checkout",
   "type": "magento2-module",
-  "require": {},
+  "require": {
+    "two-inc/magento2": "^1.12",
+    "hyva-themes/magento2-hyva-checkout": "^1.3"
+  },
   "autoload": {
     "files": [
       "registration.php"
