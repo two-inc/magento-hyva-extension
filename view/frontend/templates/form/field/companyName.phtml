@@ -48,14 +48,14 @@ $form =  $block->getData('form');
                 <div class="items-center w-full" @click.outside="twoGatewayHyvaFormFieldCompanyNameClickOutside31">
                     <div class="w-full">
                         <input type="text" 
-                            @input="getItems" 
+                            @input.debounce="getItems"
                             @focus="twoGatewayHyvaFormFieldCompanyNameFocus32" 
                             @keydown.arrow-down="twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33" 
                             @keydown.arrow-up="twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34" 
                             @keydown.enter.prevent="twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35" 
                             @keydown.tab="closeCompanyList"
                             placeholder="Enter company name to search" 
-                            :value="search" @change="twoGatewayHyvaFormFieldCompanyNameChange36" 
+                            :value="search"
                             class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>" 
                             id="shipping-company-name" 
                             name="company_search"

@@ -52,6 +52,8 @@ document.addEventListener('alpine:init', () => {
         searchTimeout: '',
         selectedIndex: -1,
         async getItems() {
+            this.search = this.$el.value;
+
             self = this;
             this.selectedIndex = -1;
             if (!self.isCompanySearchEnabled) return;
@@ -70,7 +72,7 @@ document.addEventListener('alpine:init', () => {
                     this.items = [];
                     return;
                 }
-                
+
                 self.searchTimeout = setTimeout(async () => {
                     window.dispatchEvent(new Event('magewire:loader:start'));
                     try {
