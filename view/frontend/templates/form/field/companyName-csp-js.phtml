@@ -24,7 +24,10 @@ use Magento\Framework\View\Element\Template;
 <?php /** Generated with hyva-csp-helper.php */ ?>
 function twoGatewayHyvaFormFieldCompanyName() {
     return Object.assign(
-        { showManual: false }
+        {
+            search: "",
+            showManual: false
+        }
         ,{
             ['!showManual']() {return !this.showManual},
             ['twoGatewayHyvaFormFieldCompanyNameChange36'](event) {return this.search = this.$el.value},
@@ -47,7 +50,7 @@ function twoGatewayHyvaFormFieldCompanyName() {
 window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName', twoGatewayHyvaFormFieldCompanyName), {once: true});
 function twoGatewayHyvaFormFieldCompanyName1() {
     return Object.assign(
-        Object.assign(this.searchInput, twoGatewayHyvaFormFieldCompanyName())
+        Object.assign(searchInput(), twoGatewayHyvaFormFieldCompanyName())
     )
 }
 window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName1', twoGatewayHyvaFormFieldCompanyName1), {once: true});
