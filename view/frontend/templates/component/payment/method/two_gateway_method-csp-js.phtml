@@ -24,8 +24,8 @@ use Magento\Framework\View\Element\Template;
 <?php /** Generated with hyva-csp-helper.php */ ?>
 function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod() {
     return Object.assign(
-        {}
-        ,{
+        searchInputBilling(),
+        {
             ['!showManual']() {return !this.showManual},
             ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange10'](event) {return this.search = this.$el.value},
             ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange24'](event) {return this.invoiceEmails = this.$el.value},
@@ -62,7 +62,7 @@ function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod() {
 window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod), {once: true});
 function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1() {
     return Object.assign(
-        Object.assign({...searchInputBilling(), ...validatePaymentForm(this.$el, this.$wire)}, twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
+        Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
     )
 }
 window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1), {once: true});

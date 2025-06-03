@@ -29,6 +29,7 @@ function twoGatewayHyvaFormFieldCompanyName() {
             showManual: false
         }
         ,{
+            ['showManual']() {return this.showManual},
             ['!showManual']() {return !this.showManual},
             ['twoGatewayHyvaFormFieldCompanyNameChange36'](event) {return this.search = this.$el.value},
             ['twoGatewayHyvaFormFieldCompanyNameClass40']() {return {'bg-gray-100': this.selectedIndex === this.index}},

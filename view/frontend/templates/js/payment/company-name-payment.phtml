@@ -276,6 +276,7 @@ $quoteDetails = json_encode($quoteDetails);
             },
             async getItems() {
                 self = this;
+                this.search = this.$el.value;
                 self.selectedIndex = -1;
                 const quoteData = JSON.parse(JSON.stringify(self.quote));
                 const countryId = document.getElementById("shipping-country_id");

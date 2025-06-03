@@ -69,14 +69,14 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                         <div class="w-full" @click.outside="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClickOutside5">
                             <input 
                                 type="text" 
-                                @input="getItems" 
+                                @input.debounce="getItems" 
                                 @focus="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodFocus6"
                                 @keydown.arrow-down="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7" 
                                 @keydown.arrow-up="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8" 
                                 @keydown.enter.prevent="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownEnterPrevent9"
                                 @keydown.tab="closeCompanyList"
                                 placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>" 
-                                :value="search" @change="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange10" 
+                                :value="search"
                                 class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text" 
                                 :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11" 
                                 :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName12"
