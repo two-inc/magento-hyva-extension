@@ -54,7 +54,7 @@ $form =  $block->getData('form');
                             @keydown.arrow-up="twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34" 
                             @keydown.enter.prevent="twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35" 
                             @keydown.tab="closeCompanyList"
-                            placeholder="Enter company name to search" 
+                            placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>"
                             :value="search"
                             class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>" 
                             id="shipping-company-name" 
