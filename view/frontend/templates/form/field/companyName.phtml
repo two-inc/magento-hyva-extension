@@ -32,7 +32,7 @@ $form =  $block->getData('form');
 
     <div class="block font-medium text-gray-700">
         <div x-data="twoGatewayHyvaFormFieldCompanyName">
-            <div class="flex items-start gap-2 enter-manually flex-col" x-show="showManual">
+            <div class="flex items-start gap-2 enter-manually flex-col" x-show="!showManual">
                 <input type="text" class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>"
                <?php if ($element->hasAttributes()): ?>
                     <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
@@ -44,7 +44,7 @@ $form =  $block->getData('form');
                     </span>
                 </div>
             </div>
-            <div class="w-full relative" x-show="!showManual">
+            <div class="w-full relative" x-show="showManual">
                 <div class="items-center w-full" @click.outside="twoGatewayHyvaFormFieldCompanyNameClickOutside31">
                     <div class="w-full">
                         <input type="text" 
