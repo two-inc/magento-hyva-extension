@@ -31,22 +31,31 @@ summary::marker {
     content: '';
 }
  
+.tooltip-pay {
+    position: relative;
+    display: inline-block;
+}
+
 .two-tooltip-box {
-    display: none;
-    position: absolute;
-    width: 60%;
+    visibility: hidden;
+    width: 200px;
     top: 40px;
     right: 0;
-    background: #000000;
+    background-color: black;
     padding: 10px;
     border: solid 1px #ebebeb;
     border-radius: 10px;
     color: #ffffff;
     font-size: 12px;
+    transition: opacity 0.3s;
+    line-height: 1.5;
+    white-space: normal;
+    position: absolute;
+    z-index: 100;
  }
 
  .tooltip-pay:hover .two-tooltip-box {
-    display: block;
+    visibility: visible;
  }
 
  .text-blue-600 {

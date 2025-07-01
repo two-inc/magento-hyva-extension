@@ -1,0 +1,76 @@
+<?php
+/**
+ * Hyvä Themes - https://hyva.io
+ * Copyright © Hyvä Themes 2020-present. All rights reserved.
+ * This product is licensed per Magento install
+ * See https://hyva.io/license
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+
+/** Generated with hyva-csp-helper.php */
+?>
+<script>
+<?php /** Generated with hyva-csp-helper.php */ ?>
+function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod() {
+    return Object.assign(
+        searchInputBilling(),
+        {
+            ['!showManual']() {return !this.showManual},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange10'](event) {return this.search = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange24'](event) {return this.invoiceEmails = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange25'](event) {return this.project = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange26'](event) {return this.department = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange27'](event) {return this.orderNote = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange28'](event) {return this.poNumber = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange29'](event) {return this.isPaymentTermsAccepted = this.$el.value},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClass16']() {return {'bg-gray-100': this.selectedIndex === this.index}},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick14'](event) {return this.selectItem(this.item)},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick19'](event) {return this.showManual = true},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick4'](event) {return this.showManual = false},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClickOutside5'](event) {return this.isOpen = false},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodFocus6'](event) {return this.isOpen = true},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodHtml17']() {return this.item.companyDisplayName},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11']() {return this.showManual ? 'manual_company_name' : 'company_name'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId2']() {return !this.showManual ? 'manual_company_name' : 'company_name'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId20']() {return this.showManual ? 'manual_company_id' : 'company_id'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId22']() {return this.showManual ? 'company_id' : 'manual_company_id'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodInit1']() {this.initialize(this.quote = JSON.parse(`${this.$el.dataset.hyvacsp1}`));},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKey13']() {return this.item.companyId},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7'](event) {return this.nextItem()},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8'](event) {return this.prevItem()},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownEnterPrevent9'](event) {return this.selectHighlightedItem()},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodMouseover15'](event) {return this.selectedIndex = this.index},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName12']() {return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName21']() {return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName23']() {return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName3']() {return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'},
+            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodShow18']() {return this.search.length < 3},
+        }
+    )
+}
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod), {once: true});
+function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1() {
+    return Object.assign(
+        Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
+    )
+}
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1), {once: true});
+function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2() {
+    return Object.assign(
+        Object.assign({ isPaymentTermsAccepted: false }, twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
+    )
+}
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2), {once: true});
+</script>
+<?php $hyvaCsp->registerInlineScript() ?>
