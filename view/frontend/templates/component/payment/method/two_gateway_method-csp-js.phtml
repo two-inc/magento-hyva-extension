@@ -174,7 +174,6 @@ $quoteDetails = json_encode($quoteDetails);
             orderIntentConfig_merchant_shortName: '<?= $merchantName ?>',
             orderIntentConfig_extensionPlatformName: '<?= $orderIntentConfig['extensionPlatformName'] ?>',
             orderIntentConfig_extensionDBVersion: '<?= $orderIntentConfig['extensionDBVersion'] ?>',
-            BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
             placeOrderIntentFlag: true,
@@ -358,7 +357,6 @@ $quoteDetails = json_encode($quoteDetails);
                 try {
                     const quoteData = JSON.parse(JSON.stringify(self.quote));
 
-                    // Do not fire order intent for non-BV companies in NL
                     if (this.shouldSkipOrderIntent(quoteData)) {
                         return null;
                     }
@@ -388,23 +386,7 @@ $quoteDetails = json_encode($quoteDetails);
                     throw error;
                 }
             },
-            // Do not fire order intent for non-BV companies in NL
             shouldSkipOrderIntent(quoteData) {
-                const self = this;
-                const countryId = document.getElementById("shipping-country_id");
-                if (countryId && countryId.value) {
-                    self.countryCode = countryId.value
-                } else {
-                    self.countryCode = quoteData.country_id;
-                }
-                if (self.countryCode?.toLowerCase() === 'nl') {
-                    let companyName = 'payment[company_name]';
-                    let companyElement = document.querySelector("#company_name");
-                    let companyNameValue = companyElement ? companyElement.value : "";
-
-                    const isBVCompany = self.BVCompanyRegex.test(companyNameValue);
-                    return !isBVCompany;
-                }
                 return false;
             },
             buildOrderIntentRequestBody(quoteData) {
