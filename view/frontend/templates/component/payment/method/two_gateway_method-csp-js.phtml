@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Hyvä Themes - https://hyva.io
  * Copyright © Hyvä Themes 2020-present. All rights reserved.
@@ -8,69 +9,661 @@
 
 declare(strict_types=1);
 
+use Two\GatewayHyva\ViewModel\CheckoutConfig;
+use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
-use Hyva\Theme\ViewModel\HyvaCsp;
 use Magento\Framework\Escaper;
-use Magento\Framework\View\Element\Template;
+use Hyva\Theme\ViewModel\HyvaCsp;
 
-/** @var Template $block */
-/** @var Escaper $escaper */
 /** @var ViewModelRegistry $viewModels */
+/** @var CheckoutConfig $viewModel */
+/** @var Escaper $escaper */
 /** @var HyvaCsp $hyvaCsp */
+
+$configModel = $viewModels->require(CheckoutConfig::class);
+$quoteModel = $viewModels->require(GetQuoteDetails::class);
+
+$checkoutApiUrl = $configModel->getCheckoutApiUrl();
+$companySearchLimit = $configModel->getCompanySearchLimit();
+$isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
+$orderIntentApprovedMessage = $configModel->getOrderIntentApprovedMessage();
+$orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
+$generalErrorMessage = $configModel->getGeneralErrorMessage();
+$orderIntentConfig = $configModel->getOrderIntentConfig();
+$checkoutPageUrl = $configModel->getCheckoutPageUrl();
+$merchantDetails = $orderIntentConfig['merchant'] ?? [];
+$merchantId = $merchantDetails['id'] ?? "";
+$merchantName = $merchantDetails['short_name'] ?? "";
+
+$quoteDetails = $quoteModel->getQuoteDetails();
+$quoteDetails = json_encode($quoteDetails);
 
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
-<?php /** Generated with hyva-csp-helper.php */ ?>
-function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod() {
-    return Object.assign(
-        searchInputBilling(),
-        {
-            ['!showManual']() {return !this.showManual},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange10'](event) {return this.search = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange24'](event) {return this.invoiceEmails = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange25'](event) {return this.project = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange26'](event) {return this.department = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange27'](event) {return this.orderNote = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange28'](event) {return this.poNumber = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange29'](event) {return this.isPaymentTermsAccepted = this.$el.value},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClass16']() {return {'bg-gray-100': this.selectedIndex === this.index}},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick14'](event) {return this.selectItem(this.item)},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick19'](event) {return this.showManual = true},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick4'](event) {return this.showManual = false},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClickOutside5'](event) {return this.isOpen = false},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodFocus6'](event) {return this.isOpen = true},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodHtml17']() {return this.item.companyDisplayName},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11']() {return this.showManual ? 'manual_company_name' : 'company_name'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId2']() {return !this.showManual ? 'manual_company_name' : 'company_name'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId20']() {return this.showManual ? 'manual_company_id' : 'company_id'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId22']() {return this.showManual ? 'company_id' : 'manual_company_id'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodInit1']() {this.initialize(this.quote = JSON.parse(`${this.$el.dataset.hyvacsp1}`));},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKey13']() {return this.item.companyId},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7'](event) {return this.nextItem()},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8'](event) {return this.prevItem()},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownEnterPrevent9'](event) {return this.selectHighlightedItem()},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodMouseover15'](event) {return this.selectedIndex = this.index},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName12']() {return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName21']() {return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName23']() {return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName3']() {return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'},
-            ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodShow18']() {return this.search.length < 3},
+    function validatePaymentForm(form, wire) {
+        let timeout = null;
+        let dirty = false;
+
+        return Object.assign({},
+            hyva.formValidation(form), {
+                init() {
+                    const doSave = async (isWithValidation = true) => {
+                        clearTimeout(timeout);
+
+                        if (isWithValidation) {
+                            await this.validate();
+                        }
+
+                        if (this.isOrderIntentEnabled) {
+                            await new Promise(async (resolve, reject) => {
+                                await this.placeOrderIntent()
+                                    .then(response => this.processOrderIntentSuccessResponse(response))
+                                    .catch(error => this.processOrderIntentErrorResponse(error));
+
+                                if (!this.placeOrderIntentFlag) {
+                                    reject("Order intent failed.");
+                                } else {
+
+                                    const formElements = [
+                                        'department',
+                                        'project',
+                                        'poNumber',
+                                        'orderNote',
+                                        'invoiceEmails',
+                                        'company_name',
+                                        'company_id'
+                                    ];
+
+                                    const paymentData = {
+                                        additionalData: Object.fromEntries(
+                                            formElements.map(field => {
+                                                const element = form.querySelector(`[name="payment[${field}]"]`);
+                                                return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
+                                            })
+                                        )
+                                    };
+
+                                    /* Set organization_number to companyId value */
+                                    paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
+
+                                    try {
+                                        await Magewire.find("checkout.payment.method.two-payment-method")
+                                            .call('setPaymentData', paymentData);
+                                    } catch (error) {
+                                        console.error(error);
+                                    }
+
+                                    resolve();
+                                }
+                            });
+                        }
+
+                        try {
+                            if (!dirty) {
+                                return;
+                            }
+
+                            dirty = false;
+                            await wire.store();
+                        } catch (exception) {
+                            // ignore
+                        }
+
+                    }
+
+                    const interactionCallback = () => {
+                        dirty = true;
+
+                        clearTimeout(timeout);
+                        timeout = setTimeout(() => doSave(false), wire.autoSaveTimeout);
+                    }
+
+                    hyvaCheckout.navigation.addTask(doSave, {
+                        name: 'two-payment-method'
+                    });
+
+                    const addEventListeners = (el) => {
+                        if (el !== form) return;
+
+                        this.$nextTick(() => {
+                            Array.from(form.querySelectorAll('[wire\\:auto-save]')).forEach(field => {
+                                ['input', 'change'].map(eventName => {
+                                    field.removeEventListener(eventName, interactionCallback);
+                                    field.addEventListener(eventName, interactionCallback);
+                                })
+                            })
+                        })
+                    }
+
+                    addEventListeners(form);
+                    Magewire.hook('element.updated', addEventListeners);
+                }
+            }
+        )
+    }
+
+    function searchInputBilling() {
+        return {
+            showManual: false,
+            isOpen: false,
+            search: '',
+            items: [], // Store API results
+            companyName: '',
+            companyId: '',
+            invoiceEmails: '',
+            project: '',
+            department: '',
+            orderNote: '',
+            poNumber: '',
+            isProjectFieldEnabled: '<?= $configModel->getIsProjectFieldEnabled() ?>',
+            isDepartmentFieldEnabled: '<?= $configModel->getIsDepartmentFieldEnabled() ?>',
+            isOrderNoteFieldEnabled: '<?= $configModel->getIsOrderNoteFieldEnabled() ?>',
+            isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
+            isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
+            isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
+            checkoutApiUrl: '<?= $checkoutApiUrl ?>',
+            companySearchLimit: '<?= $companySearchLimit ?>',
+            isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
+            orderIntentApprovedMessage: '<?= $escaper->escapeJs(__($orderIntentApprovedMessage)) ?>',
+            orderIntentDeclinedMessage: '<?= $escaper->escapeJs(__($orderIntentDeclinedMessage)) ?>',
+            generalErrorMessage: '<?= $escaper->escapeJs(__($generalErrorMessage)) ?>',
+            countryCode: "",
+            orderIntentConfig_weightUnit: '<?= $orderIntentConfig['weightUnit'] ?>',
+            orderIntentConfig_merchant_id: '<?= $merchantId ?>',
+            orderIntentConfig_merchant_shortName: '<?= $merchantName ?>',
+            orderIntentConfig_extensionPlatformName: '<?= $orderIntentConfig['extensionPlatformName'] ?>',
+            orderIntentConfig_extensionDBVersion: '<?= $orderIntentConfig['extensionDBVersion'] ?>',
+            BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
+            quote: '<?= $quoteDetails ?>',
+            checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+            placeOrderIntentFlag: true,
+            searchTimeout: '',
+            selectedIndex: -1,
+            initialize(quote) {
+                this.quote = quote;
+                this.showManual = false;
+                this.$nextTick(() => {
+                    this.search = document.getElementById('company_name')?.value ?? '';
+                });
+
+                /** Retrieve the stored flag to check if the event listener is already set */
+                const paymentEventSet = hyva.getBrowserStorage().getItem('two-payment-method-event-set');
+
+                /**
+                 * Ensure the event listener is added only once.
+                 * This prevents multiple event listeners from being attached when the payment method is reloaded.
+                 * If the listener is already set, it will not be added again.
+                 */
+                if (!paymentEventSet) {
+                    window.addEventListener("dispatch-order-intent", (event) => {
+
+                        if (this.isOrderIntentEnabled) {
+                            this.placeOrderIntent()
+                                .then(response => this.processOrderIntentSuccessResponse(response))
+                                .catch(error => this.processOrderIntentErrorResponse(error));
+                        }
+
+                        /**
+                         * Mark the event listener as set in browser storage.
+                         * This prevents duplicate event listeners on reinitialization.
+                         */
+                        hyva.getBrowserStorage().setItem('two-payment-method-event-set', 'true');
+                    });
+                }
+            },
+            async getItems() {
+                self = this;
+                this.search = this.$el.value;
+                self.selectedIndex = -1;
+                const quoteData = JSON.parse(JSON.stringify(self.quote));
+                const countryId = document.getElementById("shipping-country_id");
+                if (countryId && countryId.value) {
+                    self.countryCode = countryId.value
+                } else {
+                    self.countryCode = quoteData.country_id;
+                }
+                if (self.countryCode) {
+                    clearTimeout(self.searchTimeout);
+                    if (this.search.length < 3) {
+                        this.items = [];
+                        return;
+                    }
+                    self.searchTimeout = setTimeout(async () => {
+                        window.dispatchEvent(new Event('magewire:loader:start'));
+                        try {
+                            // Build query parameters
+                            const queryParams = new URLSearchParams({
+                                country: self.countryCode ? self.countryCode.toUpperCase() : '',
+                                limit: self.companySearchLimit,
+                                offset: 0,
+                                q: unescape(this.search),
+                            });
+
+                            // Fetch company data
+                            const response = await fetch(self.checkoutApiUrl + '/companies/v2/company?' + queryParams);
+                            if (!response.ok) throw new Error("Network response was not ok");
+
+                            const data = await response.json();
+
+                            // Map API response to required format
+                            this.items = data.items.map(item => ({
+                                companyName: item.name,
+                                companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+                                companyId: item.national_identifier.id,
+                                lookupId: item.lookup_id,
+                                item: item
+                            }));
+
+                        } catch (error) {
+                            console.error("Error fetching companies:", error);
+                            this.items = [];
+                        }
+                        window.dispatchEvent(new Event('magewire:loader:done'));
+                        const filterItems = this.items.filter((item) => {
+                            return item.companyName.startsWith(this.search.toLowerCase());
+                        })
+                        if (this.items.length > 0) {
+                            self.isOpen = true;
+                            return filterItems;
+                        }
+                    }, 200);
+                } else {
+                    window.dispatchMessages([{
+                        type: 'error',
+                        text: self.countrySelection,
+                    }], 3000);
+                }
+            },
+            selectItem(item) {
+                self.isOpen = false;
+                self.items = [];
+                this.selectedIndex = -1;
+                this.search = item.companyName;
+
+                const shippingCompanySelectionData = {
+                    company_name: item.companyName,
+                    company_id: item.companyId
+                };
+
+                // Store as JSON string
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
+
+                this.fillCompanyData(item.companyId, item.companyName);
+
+            },
+            nextItem() {
+                if (this.selectedIndex < this.items.length - 1) {
+                    this.selectedIndex++;
+                    this.adjustScroll();
+                }
+            },
+            prevItem() {
+                if (this.selectedIndex > 0) {
+                    this.selectedIndex--;
+                    this.adjustScroll();
+                }
+            },
+            adjustScroll() {
+                this.$nextTick(() => {
+                    let dropdown = document.querySelector(".company-results");
+                    let selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
+
+                    if (dropdown && selectedItem) {
+                        let dropdownRect = dropdown.getBoundingClientRect();
+                        let itemRect = selectedItem.getBoundingClientRect();
+
+                        if (itemRect.bottom > dropdownRect.bottom) {
+                            dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
+                        } else if (itemRect.top < dropdownRect.top) {
+                            dropdown.scrollTop -= dropdownRect.top - itemRect.top;
+                        }
+                    }
+                });
+            },
+            selectHighlightedItem() {
+                if (this.selectedIndex >= 0 && this.items.length > 0) {
+                    this.selectItem(this.items[this.selectedIndex]);
+                }
+            },
+            closeCompanyList(event) {
+                if (event.key === 'Tab') {
+                    this.isOpen = false;
+                    this.items = [];
+                }
+            },
+            fillCompanyData(companyId = '', companyName = '') {
+                self = this;
+                companyName = typeof companyName == 'string' && companyName ? companyName : '';
+                companyId = typeof companyId == 'string' ? companyId : '';
+                if (!companyId || !companyName) return;
+                self.companyName = companyName;
+                self.companyId = companyId;
+                document.getElementById("company_name").value = companyName;
+                const companyIdInput = document.getElementById("company_id");
+                companyIdInput.disabled = false;
+                companyIdInput.value = companyId;
+                companyIdInput.disabled = true;
+                companyIdInput.style.backgroundColor = "#D3D3D3";
+
+                if (self.isOrderIntentEnabled) {
+                    this.placeOrderIntent()
+                        .then(response => this.processOrderIntentSuccessResponse(response))
+                        .catch(error => this.processOrderIntentErrorResponse(error));
+                }
+            },
+
+            async placeOrderIntent() {
+                self = this;
+                try {
+                    const quoteData = JSON.parse(JSON.stringify(self.quote));
+
+                    // Do not fire order intent for non-BV companies in NL
+                    if (this.shouldSkipOrderIntent(quoteData)) {
+                        return null;
+                    }
+
+                    const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
+
+                    const queryParams = new URLSearchParams({
+                        client: self.orderIntentConfig_extensionPlatformName,
+                        client_v: self.orderIntentConfig_extensionDBVersion
+                    });
+
+                    const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(orderIntentRequestBody)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    console.error('Error in placeOrderIntent:', error);
+                    throw error;
+                }
+            },
+            // Do not fire order intent for non-BV companies in NL
+            shouldSkipOrderIntent(quoteData) {
+                const self = this;
+                const countryId = document.getElementById("shipping-country_id");
+                if (countryId && countryId.value) {
+                    self.countryCode = countryId.value
+                } else {
+                    self.countryCode = quoteData.country_id;
+                }
+                if (self.countryCode?.toLowerCase() === 'nl') {
+                    let companyName = 'payment[company_name]';
+                    let companyElement = document.querySelector("#company_name");
+                    let companyNameValue = companyElement ? companyElement.value : "";
+
+                    const isBVCompany = self.BVCompanyRegex.test(companyNameValue);
+                    return !isBVCompany;
+                }
+                return false;
+            },
+            buildOrderIntentRequestBody(quoteData) {
+                const self = this;
+                let lineItems = [];
+                lineItems = quoteData.items?.map(item => ({
+                    name: item.name,
+                    description: item.description || '',
+                    discount_amount: parseFloat(item.discount_amount || 0).toFixed(2),
+                    gross_amount: parseFloat(item.row_total_incl_tax || 0).toFixed(2),
+                    net_amount: parseFloat(item.row_total || 0).toFixed(2),
+                    quantity: item.qty,
+                    unit_price: parseFloat(item.price || 0).toFixed(2),
+                    tax_amount: parseFloat(item.tax_amount || 0).toFixed(2),
+                    tax_rate: (parseFloat(item.tax_percent || 0) / 100).toFixed(6),
+                    tax_class_name: '',
+                    quantity_unit: this.orderIntentConfig_weightUnit || '',
+                    image_url: item.thumbnail,
+                    type: item.is_virtual === '0' ? 'PHYSICAL' : 'DIGITAL'
+                })) || [];
+
+                lineItems.push({
+                    name: 'Shipping',
+                    description: 'Shipping fee',
+                    gross_amount: parseFloat(quoteData.shipping_incl_tax || 0).toFixed(2),
+                    net_amount: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
+                    quantity: 1,
+                    unit_price: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
+                    tax_amount: parseFloat(quoteData.shipping_tax_amount || 0).toFixed(2),
+                    tax_rate: isNaN(parseFloat(quoteData.shipping_tax_amount)) || isNaN(parseFloat(quoteData.shipping_amount)) || parseFloat(quoteData.shipping_amount) === 0 ?
+                        "0.000000" : (parseFloat(quoteData.shipping_tax_amount) / parseFloat(quoteData.shipping_amount)).toFixed(6),
+                    tax_class_name: '',
+                    quantity_unit: 'unit',
+                    type: 'SHIPPING_FEE'
+                });
+
+                let companyElement = document.querySelector("#company_name");
+                let companyNameValue = companyElement ? companyElement.value : "";
+
+                let companyIdElement = document.querySelector("#company_id");
+                let companyIdValue = companyIdElement ? companyIdElement.value : "";
+
+                const countryInput = document.getElementById("shipping-country_id");
+                if (countryInput) {
+                    self.countryCode = countryInput.value;
+                } else {
+                    self.countryCode = quoteData.country_id;
+                }
+                const gross_amount = parseFloat(quoteData.grand_total || 0);
+                const tax_amount =
+                    parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
+                const net_amount = gross_amount - tax_amount;
+                return {
+                    gross_amount: parseFloat(quoteData.grand_total || 0).toFixed(2),
+                    net_amount: net_amount.toFixed(2),
+                    tax_amount: tax_amount.toFixed(2),
+                    currency: quoteData.quote_currency_code || 'EUR',
+                    line_items: lineItems,
+                    buyer: {
+                        company: {
+                            organization_number: companyIdValue || '',
+                            country_prefix: self.countryCode || '',
+                            company_name: companyNameValue || '',
+                            website: window.BASE_URL
+                        },
+                        representative: {
+                            email: quoteData.email || '',
+                            first_name: quoteData.first_name || '',
+                            last_name: quoteData.last_name || '',
+                            phone_number: quoteData.telephone || ''
+                        }
+                    },
+                    merchant_id: self.orderIntentConfig_merchant_id,
+                    merchant_short_name: self.orderIntentConfig_merchant_shortName
+                };
+            },
+            processOrderIntentSuccessResponse(response) {
+                const self = this;
+                if (response) {
+                    if (response.approved) {
+                        this.placeOrderIntentFlag = true;
+                        window.dispatchMessages([{
+                            type: 'success',
+                            text: self.orderIntentApprovedMessage,
+                        }], 3000);
+                    } else {
+                        this.placeOrderIntentFlag = false;
+                        window.dispatchMessages([{
+                            type: 'error',
+                            text: self.orderIntentDeclinedMessage,
+                        }], 3000);
+                    }
+                }
+            },
+            processOrderIntentErrorResponse(response) {
+                this.placeOrderIntentFlag = false;
+                const self = this;
+                const message = self.generalErrorMessage;
+                if (response && response.responseJSON) {
+                    const errorCode = response.responseJSON.error_code,
+                        errorMessage = response.responseJSON.error_message,
+                        errorDetails = response.responseJSON.error_details;
+                    switch (errorCode) {
+                        case 'SCHEMA_ERROR':
+                            const errors = response.responseJSON.error_json;
+                            if (errors) {
+                                message = '';
+                                errors.forEach(error => {
+                                    window.dispatchMessages([{
+                                        type: 'error',
+                                        text: error.msg,
+                                    }], 3000);
+                                });
+                            }
+                            break;
+                        case 'JSON_MISSING_FIELD':
+                            if (errorDetails) {
+                                message = errorDetails;
+                            }
+                            break;
+                        case 'MERCHANT_NOT_FOUND_ERROR':
+                        case 'ORDER_INVALID':
+                            message = errorMessage;
+                            if (errorDetails) {
+                                message += ' - ' + errorDetails;
+                            }
+                            break;
+                    }
+                }
+                if (message) {
+                    window.dispatchMessages([{
+                        type: 'error',
+                        text: message,
+                    }], 3000);
+                }
+            },
         }
-    )
-}
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod), {once: true});
-function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1() {
-    return Object.assign(
-        Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
-    )
-}
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1), {once: true});
-function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2() {
-    return Object.assign(
-        Object.assign({ isPaymentTermsAccepted: false }, twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
-    )
-}
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2), {once: true});
+    }
+
+    function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod() {
+        return Object.assign(
+            searchInputBilling(), {
+                ['!showManual']() {
+                    return !this.showManual
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange10'](event) {
+                    return this.search = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange24'](event) {
+                    return this.invoiceEmails = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange25'](event) {
+                    return this.project = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange26'](event) {
+                    return this.department = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange27'](event) {
+                    return this.orderNote = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange28'](event) {
+                    return this.poNumber = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange29'](event) {
+                    return this.isPaymentTermsAccepted = this.$el.value
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClass16']() {
+                    return {
+                        'bg-gray-100': this.selectedIndex === this.index
+                    }
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick14'](event) {
+                    return this.selectItem(this.item)
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick19'](event) {
+                    return this.showManual = true
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick4'](event) {
+                    return this.showManual = false
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClickOutside5'](event) {
+                    return this.isOpen = false
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodFocus6'](event) {
+                    return this.isOpen = true
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodHtml17']() {
+                    return this.item.companyDisplayName
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11']() {
+                    return this.showManual ? 'manual_company_name' : 'company_name'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId2']() {
+                    return !this.showManual ? 'manual_company_name' : 'company_name'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId20']() {
+                    return this.showManual ? 'manual_company_id' : 'company_id'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId22']() {
+                    return this.showManual ? 'company_id' : 'manual_company_id'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodInit1']() {
+                    this.initialize(this.quote = JSON.parse(`${this.$el.dataset.hyvacsp1}`));
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKey13']() {
+                    return this.item.companyId
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7'](event) {
+                    return this.nextItem()
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8'](event) {
+                    return this.prevItem()
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownEnterPrevent9'](event) {
+                    return this.selectHighlightedItem()
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodMouseover15'](event) {
+                    return this.selectedIndex = this.index
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName12']() {
+                    return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName21']() {
+                    return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName23']() {
+                    return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName3']() {
+                    return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
+                },
+                ['twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodShow18']() {
+                    return this.search.length < 3
+                },
+            }
+        )
+    }
+    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod), {
+        once: true
+    });
+
+    function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1() {
+        return Object.assign(
+            Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
+        )
+    }
+    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1), {
+        once: true
+    });
+
+    function twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2() {
+        return Object.assign(
+            Object.assign({
+                isPaymentTermsAccepted: false
+            }, twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod())
+        )
+    }
+    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2', twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2), {
+        once: true
+    });
 </script>
 <?php $hyvaCsp->registerInlineScript() ?>
