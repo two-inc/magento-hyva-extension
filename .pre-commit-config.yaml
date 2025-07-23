@@ -4,38 +4,37 @@ minimum_pre_commit_version: 3.2.0
 default_install_hook_types: [pre-commit, commit-msg, prepare-commit-msg]
 default_stages: [pre-commit]
 repos:
-    - repo: https://github.com/pre-commit/pre-commit-hooks
-      rev: v4.5.0
-      hooks:
-          - id: check-ast
-          - id: check-added-large-files
-          - id: check-json
-          - id: check-merge-conflict
-          - id: check-toml
-          - id: check-yaml
-          - id: detect-private-key
-          - id: end-of-file-fixer
-          - id: pretty-format-json
-            args: ['--indent=4', '--no-sort-keys']
-          - id: requirements-txt-fixer
-          - id: trailing-whitespace
-    - repo: https://github.com/pre-commit/mirrors-prettier
-      rev: v3.1.0
-      hooks:
-          - id: prettier
-    - repo: local
-      hooks:
-          - id: php-lint
-            name: php-lint
-            entry: php
-            args:
-                - -l
-            language: system
-            files: '\.(php)$'
-    - repo: https://github.com/two-inc/git-hooks
-      rev: 25.06.20
-      hooks:
-          - id: commit-msg
-            stages: [commit-msg]
-          - id: prepare-commit-msg
-            stages: [prepare-commit-msg]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-ast
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: requirements-txt-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+
+  - repo: local
+    hooks:
+      - id: php-lint
+        name: php-lint
+        entry: php
+        args:
+          - -l
+        language: system
+        files: '\.(php)$'
+  - repo: https://github.com/two-inc/git-hooks
+    rev: 25.06.20
+    hooks:
+      - id: commit-msg
+        stages: [commit-msg]
+      - id: prepare-commit-msg
+        stages: [prepare-commit-msg]

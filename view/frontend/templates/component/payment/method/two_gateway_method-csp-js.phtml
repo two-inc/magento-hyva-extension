@@ -31,9 +31,9 @@ $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
-$merchantDetails = $orderIntentConfig['merchant'] ?? [];
-$merchantId = $merchantDetails['id'] ?? "";
-$merchantName = $merchantDetails['short_name'] ?? "";
+$merchantDetails = $orderIntentConfig["merchant"] ?? [];
+$merchantId = $merchantDetails["id"] ?? "";
+$merchantName = $merchantDetails["short_name"] ?? "";
 
 $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetails = json_encode($quoteDetails);
@@ -165,15 +165,27 @@ $quoteDetails = json_encode($quoteDetails);
             checkoutApiUrl: '<?= $checkoutApiUrl ?>',
             companySearchLimit: '<?= $companySearchLimit ?>',
             isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
-            orderIntentApprovedMessage: '<?= $escaper->escapeJs(__($orderIntentApprovedMessage)) ?>',
-            orderIntentDeclinedMessage: '<?= $escaper->escapeJs(__($orderIntentDeclinedMessage)) ?>',
-            generalErrorMessage: '<?= $escaper->escapeJs(__($generalErrorMessage)) ?>',
+            orderIntentApprovedMessage: '<?= $escaper->escapeJs(
+                __($orderIntentApprovedMessage),
+            ) ?>',
+            orderIntentDeclinedMessage: '<?= $escaper->escapeJs(
+                __($orderIntentDeclinedMessage),
+            ) ?>',
+            generalErrorMessage: '<?= $escaper->escapeJs(
+                __($generalErrorMessage),
+            ) ?>',
             countryCode: "",
-            orderIntentConfig_weightUnit: '<?= $orderIntentConfig['weightUnit'] ?>',
+            orderIntentConfig_weightUnit: '<?= $orderIntentConfig[
+                "weightUnit"
+            ] ?>',
             orderIntentConfig_merchant_id: '<?= $merchantId ?>',
             orderIntentConfig_merchant_shortName: '<?= $merchantName ?>',
-            orderIntentConfig_extensionPlatformName: '<?= $orderIntentConfig['extensionPlatformName'] ?>',
-            orderIntentConfig_extensionDBVersion: '<?= $orderIntentConfig['extensionDBVersion'] ?>',
+            orderIntentConfig_extensionPlatformName: '<?= $orderIntentConfig[
+                "extensionPlatformName"
+            ] ?>',
+            orderIntentConfig_extensionDBVersion: '<?= $orderIntentConfig[
+                "extensionDBVersion"
+            ] ?>',
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
             placeOrderIntentFlag: true,
@@ -648,4 +660,4 @@ $quoteDetails = json_encode($quoteDetails);
         once: true
     });
 </script>
-<?php $hyvaCsp->registerInlineScript() ?>
+<?php $hyvaCsp->registerInlineScript(); ?>

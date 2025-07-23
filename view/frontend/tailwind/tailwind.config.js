@@ -6,7 +6,5 @@
  */
 
 module.exports = {
-    content: [
-        '../templates/**/*.phtml'
-    ]
-}
+  content: ["../templates/**/*.phtml"],
+};

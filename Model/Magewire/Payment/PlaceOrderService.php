@@ -1,8 +1,10 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  */
+
 namespace Two\GatewayHyva\Model\Magewire\Payment;
 
 use Hyva\Checkout\Model\Magewire\Payment\AbstractPlaceOrderService;
@@ -27,6 +29,6 @@ class PlaceOrderService extends AbstractPlaceOrderService
      */
     public function getRedirectUrl(Quote $quote, ?int $orderId = null): string
     {
-        return '/hyva_two/payment/orderredirect';
+        return "/hyva_two/payment/orderredirect";
     }
 }

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
@@ -35,13 +36,18 @@ class RegisterModuleForHyvaConfig implements ObserverInterface
      */
     public function execute(Observer $event)
     {
-        $config = $event->getData('config');
-        $extensions = $config->hasData('extensions') ? $config->getData('extensions') : [];
+        $config = $event->getData("config");
+        $extensions = $config->hasData("extensions")
+            ? $config->getData("extensions")
+            : [];
 
-        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, 'Two_GatewayHyva');
+        $path = $this->componentRegistrar->getPath(
+            ComponentRegistrar::MODULE,
+            "Two_GatewayHyva",
+        );
 
-        $extensions[] = ['src' => substr($path, strlen(BP) + 1)];
+        $extensions[] = ["src" => substr($path, strlen(BP) + 1)];
 
-        $config->setData('extensions', $extensions);
+        $config->setData("extensions", $extensions);
     }
 }

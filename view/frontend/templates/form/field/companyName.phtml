@@ -21,43 +21,57 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 $configModel = $viewModels->require(CheckoutConfig::class);
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 /** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
-$element = $block->getData('element');
+$element = $block->getData("element");
 $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
-$form =  $block->getData('form');
+$form = $block->getData("form");
 ?>
-<div class="w-full font-medium text-gray-700 min-h-108 relative <?= /* @noEscape */ $element->isRequired() ? 'required' : 'not-required' ?>">
+<div class="w-full font-medium text-gray-700 min-h-108 relative <?= /* @noEscape */ $element->isRequired()
+        ? "required"
+        : "not-required" ?>">
     <?= /* @noEscape */ $renderer->renderLabel($element) ?>
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="block font-medium text-gray-700">
         <div x-data="twoGatewayHyvaFormFieldCompanyName">
             <div class="flex items-start gap-2 enter-manually flex-col" x-show="!showManual">
-                <input type="text" class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>"
+                <input type="text" class="<?= $escaper->escapeHtmlAttr(
+                    $element->renderClass([
+                        "block w-full form-input grow renderer-text",
+                    ]),
+                ) ?>"
                <?php if ($element->hasAttributes()): ?>
                     <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
-               <?php endif ?> autocomplete="notcomplete"
+               <?php endif; ?> autocomplete="notcomplete"
             />
                 <div id="billing_search_for_company" class="search_for_company w-full text-right" @click="twoGatewayHyvaFormFieldCompanyNameClick30" title="Search for company">
                     <span class="text-blue-600 text-sm cursor-pointer">
-                        <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
+                        <?= $escaper->escapeHtmlAttr(
+                            __("Search for company"),
+                        ) ?>
                     </span>
                 </div>
             </div>
             <div class="w-full relative" x-show="showManual">
                 <div class="items-center w-full" @click.outside="twoGatewayHyvaFormFieldCompanyNameClickOutside31">
                     <div class="w-full">
-                        <input type="text" 
+                        <input type="text"
                             @input.debounce="getItems"
-                            @focus="twoGatewayHyvaFormFieldCompanyNameFocus32" 
-                            @keydown.arrow-down="twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33" 
-                            @keydown.arrow-up="twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34" 
-                            @keydown.enter.prevent="twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35" 
+                            @focus="twoGatewayHyvaFormFieldCompanyNameFocus32"
+                            @keydown.arrow-down="twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33"
+                            @keydown.arrow-up="twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34"
+                            @keydown.enter.prevent="twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35"
                             @keydown.tab="closeCompanyList"
-                            placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>"
+                            placeholder="<?= $escaper->escapeHtmlAttr(
+                                __("Enter company name to search"),
+                            ) ?>"
                             :value="search"
-                            class="<?= $escaper->escapeHtmlAttr($element->renderClass(['block w-full form-input grow renderer-text'])) ?>" 
-                            id="shipping-company-name" 
+                            class="<?= $escaper->escapeHtmlAttr(
+                                $element->renderClass([
+                                    "block w-full form-input grow renderer-text",
+                                ]),
+                            ) ?>"
+                            id="shipping-company-name"
                             name="company_search"
                             value="<?= $element->getValue() ?>"
                             autocomplete="notcomplete"
@@ -69,8 +83,8 @@ $form =  $block->getData('form');
                         class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
                     >
                         <div class="flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
-                            <template 
-                                x-for="(item, index) in items" 
+                            <template
+                                x-for="(item, index) in items"
                                 :key="twoGatewayHyvaFormFieldCompanyNameKey37"
                             >
                                 <div
@@ -87,14 +101,18 @@ $form =  $block->getData('form');
                                 </div>
                             </template>
                         </div>
-                        <div x-show="twoGatewayHyvaFormFieldCompanyNameShow42" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?></div>
-                        <div 
+                        <div x-show="twoGatewayHyvaFormFieldCompanyNameShow42" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                            __("Please enter 3 or more characters"),
+                        ) ?></div>
+                        <div
                             id="billing_enter_company"
                             class="enter_for_company w-full px-2 py-3"
-                            @click="twoGatewayHyvaFormFieldCompanyNameClick43" 
+                            @click="twoGatewayHyvaFormFieldCompanyNameClick43"
                             title="Enter details manually">
                             <span class="text-blue-600 text-sm cursor-pointer">
-                                <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
+                                <?= $escaper->escapeHtmlAttr(
+                                    __("Enter details manually"),
+                                ) ?>
                             </span>
                         </div>
                     </div>
@@ -102,8 +120,10 @@ $form =  $block->getData('form');
             </div>
         </div>
         <?php if ($element->hasTooltip()): ?>
-            <?= /* @noEscape */ $element->getRenderer()->renderTooltip($element) ?>
-        <?php endif ?>
+            <?= /* @noEscape */ $element
+                    ->getRenderer()
+                    ->renderTooltip($element) ?>
+        <?php endif; ?>
     </div>
     <?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>
 </div>

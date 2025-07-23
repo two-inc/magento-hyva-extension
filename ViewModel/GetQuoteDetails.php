@@ -19,7 +19,7 @@ class GetQuoteDetails implements ArgumentInterface
     public function __construct(
         SessionCheckout $sessionCheckout,
         ShippingMethodManagementInterface $shippingMethodManagement,
-        StoreManagerInterface $storeManager
+        StoreManagerInterface $storeManager,
     ) {
         $this->sessionCheckout = $sessionCheckout;
         $this->shippingMethodManagement = $shippingMethodManagement;
@@ -32,65 +32,79 @@ class GetQuoteDetails implements ArgumentInterface
     public function getQuoteDetails()
     {
         try {
-            $quote = $this->sessionCheckout->getQuote();            
-            
+            $quote = $this->sessionCheckout->getQuote();
+
             $quoteDetails = [];
-            $quoteDetails['email'] = $quote->getCustomerEmail();
-            if (!$quoteDetails['email']) {
-                $quoteDetails['email'] = $quote->getBillingAddress()->getEmail();
+            $quoteDetails["email"] = $quote->getCustomerEmail();
+            if (!$quoteDetails["email"]) {
+                $quoteDetails["email"] = $quote
+                    ->getBillingAddress()
+                    ->getEmail();
             }
 
-            $quoteDetails['telephone'] = $quote->getShippingAddress()->getTelephone();
-            if (!$quoteDetails['telephone']) {
-                $quoteDetails['telephone'] = $quote->getBillingAddress()->getTelephone();
+            $quoteDetails["telephone"] = $quote
+                ->getShippingAddress()
+                ->getTelephone();
+            if (!$quoteDetails["telephone"]) {
+                $quoteDetails["telephone"] = $quote
+                    ->getBillingAddress()
+                    ->getTelephone();
             }
 
             $shippingAddress = $quote->getShippingAddress();
-            $quoteDetails['shipping_incl_tax'] = $shippingAddress->getShippingInclTax();
-            $quoteDetails['shipping_amount'] = $shippingAddress->getShippingAmount();
-            $quoteDetails['shipping_tax_amount'] = $shippingAddress->getShippingTaxAmount();
-            $quoteDetails['tax_amount'] = $shippingAddress->getTaxAmount();
+            $quoteDetails[
+                "shipping_incl_tax"
+            ] = $shippingAddress->getShippingInclTax();
+            $quoteDetails[
+                "shipping_amount"
+            ] = $shippingAddress->getShippingAmount();
+            $quoteDetails[
+                "shipping_tax_amount"
+            ] = $shippingAddress->getShippingTaxAmount();
+            $quoteDetails["tax_amount"] = $shippingAddress->getTaxAmount();
             $totals = $quote->getTotals();
-            if (isset($totals['grand_total'])) {
-                $grandTotal = $totals['grand_total']->getValue();
-                $quoteDetails['grand_total'] = $grandTotal;
+            if (isset($totals["grand_total"])) {
+                $grandTotal = $totals["grand_total"]->getValue();
+                $quoteDetails["grand_total"] = $grandTotal;
             }
             $baseCurrencyCode = $quote->getBaseCurrencyCode();
             $quoteCurrencyCode = $quote->getQuoteCurrencyCode();
-            if($baseCurrencyCode || $quoteCurrencyCode)
-            {
-                $quoteDetails['base_currency_code'] = $baseCurrencyCode;
-                $quoteDetails['quote_currency_code'] = $quoteCurrencyCode;
+            if ($baseCurrencyCode || $quoteCurrencyCode) {
+                $quoteDetails["base_currency_code"] = $baseCurrencyCode;
+                $quoteDetails["quote_currency_code"] = $quoteCurrencyCode;
             }
             $billingAddress = $quote->getBillingAddress();
-            if($billingAddress)
-            {
-                $quoteDetails['country_id'] = $billingAddress->getCountryId();
-                $quoteDetails['first_name'] = $billingAddress->getFirstname();
-                $quoteDetails['last_name'] = $billingAddress->getLastname();
+            if ($billingAddress) {
+                $quoteDetails["country_id"] = $billingAddress->getCountryId();
+                $quoteDetails["first_name"] = $billingAddress->getFirstname();
+                $quoteDetails["last_name"] = $billingAddress->getLastname();
             }
 
             $quoteItems = $quote->getItems();
-            if($quoteItems)
-            {
-                $mediaUrl = $this->_storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_MEDIA);
+            if ($quoteItems) {
+                $mediaUrl = $this->_storeManager
+                    ->getStore()
+                    ->getBaseUrl(
+                        \Magento\Framework\UrlInterface::URL_TYPE_MEDIA,
+                    );
                 $items = [];
                 foreach ($quoteItems as $item) {
                     $items[] = [
-                        'name'             => $item->getName(),
-                        'description'      => $item->getDescription() ?? '',
-                        'discount_amount'  => $item->getDiscountAmount(),
-                        'row_total_incl_tax' => $item->getRowTotalInclTax(),
-                        'row_total'        => $item->getRowTotal(),
-                        'qty'              => $item->getQty(),
-                        'price'            => $item->getPrice(),
-                        'tax_amount'       => $item->getTaxAmount(),
-                        'tax_percent'      => $item->getTaxPercent(),
-                        'thumbnail'        => $mediaUrl.$item->getProduct()->getThumbnail(),
-                        'is_virtual'       => $item->getIsVirtual(),
+                        "name" => $item->getName(),
+                        "description" => $item->getDescription() ?? "",
+                        "discount_amount" => $item->getDiscountAmount(),
+                        "row_total_incl_tax" => $item->getRowTotalInclTax(),
+                        "row_total" => $item->getRowTotal(),
+                        "qty" => $item->getQty(),
+                        "price" => $item->getPrice(),
+                        "tax_amount" => $item->getTaxAmount(),
+                        "tax_percent" => $item->getTaxPercent(),
+                        "thumbnail" =>
+                            $mediaUrl . $item->getProduct()->getThumbnail(),
+                        "is_virtual" => $item->getIsVirtual(),
                     ];
                 }
-                $quoteDetails['items'] = $items;
+                $quoteDetails["items"] = $items;
             }
             return $quoteDetails;
         } catch (LocalizedException $exception) {

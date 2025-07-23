@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
@@ -31,9 +32,9 @@ class MethodMetaDataPlugin
     private $systemConfigPayment;
 
     public function __construct(
-        Layout                   $layout,
-        StoreManagerInterface    $storeManager,
-        SystemConfigPayment      $systemConfigPayment
+        Layout $layout,
+        StoreManagerInterface $storeManager,
+        SystemConfigPayment $systemConfigPayment,
     ) {
         $this->layout = $layout;
         $this->storeManager = $storeManager;
@@ -47,9 +48,14 @@ class MethodMetaDataPlugin
      * @param bool $result
      * @return bool
      */
-    public function afterCanRenderIcon(MethodMetaData $subject, bool $result): bool
-    {
-        if ($subject->getData('additional_icons_provider') || $subject->getData('additional_icon_provider')) {
+    public function afterCanRenderIcon(
+        MethodMetaData $subject,
+        bool $result,
+    ): bool {
+        if (
+            $subject->getData("additional_icons_provider") ||
+            $subject->getData("additional_icon_provider")
+        ) {
             return $this->systemConfigPayment->canDisplayMethodIcons();
         }
         return $result;
@@ -63,15 +69,24 @@ class MethodMetaDataPlugin
      * @return string
      * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
-    public function afterRenderIcon(MethodMetaData $subject, string $result): string
-    {
-        $iconsProvider = $subject->getData('additional_icons_provider');
-        $storeId = (int)$this->storeManager->getStore()->getId();
-        $iconProvider = $subject->getData('additional_icon_provider');
+    public function afterRenderIcon(
+        MethodMetaData $subject,
+        string $result,
+    ): string {
+        $iconsProvider = $subject->getData("additional_icons_provider");
+        $storeId = (int) $this->storeManager->getStore()->getId();
+        $iconProvider = $subject->getData("additional_icon_provider");
         if ($iconProvider) {
-                $block = $this->layout->createBlock(TemplateBlock::class);
-                $blockHtml = $block->setTemplate($iconProvider['template'])->toHtml();
-                $result = "<div class='flex tooltip-icon w-full items-center justify-between'><div class='tooltip-pay inline-block py-2 mr-4'>".$blockHtml."</div><div class='icon-pay inline-block'>".$result."</div></div>";
+            $block = $this->layout->createBlock(TemplateBlock::class);
+            $blockHtml = $block
+                ->setTemplate($iconProvider["template"])
+                ->toHtml();
+            $result =
+                "<div class='flex tooltip-icon w-full items-center justify-between'><div class='tooltip-pay inline-block py-2 mr-4'>" .
+                $blockHtml .
+                "</div><div class='icon-pay inline-block'>" .
+                $result .
+                "</div></div>";
         }
 
         return $result;

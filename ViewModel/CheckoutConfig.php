@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Hyvä Themes - https://hyva.io
  * Copyright © Hyvä Themes 2022-present. All rights reserved.
@@ -52,7 +53,7 @@ class CheckoutConfig implements ArgumentInterface
         ConfigRepository $configRepository,
         Adapter $adapter,
         Two $two,
-        AssetRepository $assetRepository
+        AssetRepository $assetRepository,
     ) {
         $this->configRepository = $configRepository;
         $this->adapter = $adapter;
@@ -88,13 +89,17 @@ class CheckoutConfig implements ArgumentInterface
     {
         $merchant = null;
         if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+            $merchant = $this->adapter->execute(
+                "/v1/merchant/verify_api_key",
+                [],
+                "GET",
+            );
         }
         $orderIntentConfig = [
-            'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
-            'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
-            'weightUnit' => $this->configRepository->getWeightUnit(),
-            'merchant' => $merchant,
+            "extensionPlatformName" => $this->configRepository->getExtensionPlatformName(),
+            "extensionDBVersion" => $this->configRepository->getExtensionDBVersion(),
+            "weightUnit" => $this->configRepository->getWeightUnit(),
+            "merchant" => $merchant,
         ];
         return $orderIntentConfig;
     }
@@ -115,7 +120,7 @@ class CheckoutConfig implements ArgumentInterface
 
     public function getSupportedCountryCodes()
     {
-        $countries = ['no', 'gb', 'se', 'nl'];
+        $countries = ["no", "gb", "se", "nl"];
         return $countries;
     }
 
@@ -147,16 +152,16 @@ class CheckoutConfig implements ArgumentInterface
     public function getRedirectMessage()
     {
         $redirectMessage = __(
-                        'Pay within 30 days of delivery. There are no additional costs for you.'
-                    );
+            "Pay within 30 days of delivery. There are no additional costs for you.",
+        );
         return $redirectMessage;
     }
 
     public function getOrderIntentApprovedMessage()
     {
         $orderIntentApprovedMessage = __(
-            'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-            $this->configRepository::PRODUCT_NAME
+            "Your invoice purchase with %1 is likely to be accepted subject to additional checks.",
+            $this->configRepository::PRODUCT_NAME,
         );
         return $orderIntentApprovedMessage;
     }
@@ -164,63 +169,84 @@ class CheckoutConfig implements ArgumentInterface
     public function getOrderIntentDeclinedMessage()
     {
         $orderIntentDeclinedMessage = __(
-            'Your invoice purchase with %1 has been declined.',
-            $this->configRepository::PRODUCT_NAME
+            "Your invoice purchase with %1 has been declined.",
+            $this->configRepository::PRODUCT_NAME,
         );
         return $orderIntentDeclinedMessage;
     }
 
     public function getGeneralErrorMessage()
     {
-        $tryAgainLater = __('Please try again later.');
+        $tryAgainLater = __("Please try again later.");
         $generalErrorMessage = __(
-            'Something went wrong with your request to %1. %2',
+            "Something went wrong with your request to %1. %2",
             $this->configRepository::PRODUCT_NAME,
-            $tryAgainLater
+            $tryAgainLater,
         );
         return $generalErrorMessage;
     }
 
     public function getInvalidEmailListMessage()
     {
-        $invalidEmailListMessage = __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.');
+        $invalidEmailListMessage = __(
+            "Please ensure that your invoice email address list only contains valid email addresses separated by commas.",
+        );
         return $invalidEmailListMessage;
     }
 
     public function getpaymentTermsMessage()
     {
-        $paymentTerms = __("terms and conditions of %1", $this->configRepository::PRODUCT_NAME);
-        $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms';
+        $paymentTerms = __(
+            "terms and conditions of %1",
+            $this->configRepository::PRODUCT_NAME,
+        );
+        $paymentTermsLink =
+            $this->configRepository->getCheckoutPageUrl() . "/terms";
         $paymentTermsEmail = $this->configRepository::PAYMENT_TERMS_EMAIL;
         $paymentTermsMessage = __(
-            'I have filled in all the details truthfully and accept to pay the invoice in 30 days. '.
-            'I agree to the %1. ' .
-            'You hereby give permission to %2 to decide on the basis ' .
-            'of automated processing of (personal) data whether you can use %3. ' .
-            'You can withdraw this permission by sending an e-mail to %4.',
-            sprintf('<a class="text-blue-600" href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
+            "I have filled in all the details truthfully and accept to pay the invoice in 30 days. " .
+                "I agree to the %1. " .
+                "You hereby give permission to %2 to decide on the basis " .
+                "of automated processing of (personal) data whether you can use %3. " .
+                "You can withdraw this permission by sending an e-mail to %4.",
+            sprintf(
+                '<a class="text-blue-600" href="%s" target="_blank">%s</a>',
+                $paymentTermsLink,
+                $paymentTerms,
+            ),
             $this->configRepository::PROVIDER_FULL_NAME,
             $this->configRepository::PRODUCT_NAME,
-            sprintf('<a class="text-blue-600" href="mailto:%s">%s</a>', $paymentTermsEmail, $paymentTermsEmail)
+            sprintf(
+                '<a class="text-blue-600" href="mailto:%s">%s</a>',
+                $paymentTermsEmail,
+                $paymentTermsEmail,
+            ),
         );
         return $paymentTermsMessage;
     }
 
     public function getTermsNotAcceptedMessage()
     {
-        $paymentTerms = __("terms and conditions of %1", $this->configRepository::PRODUCT_NAME);
-        $termsNotAcceptedMessage = __('You must accept %1 to place order.', $paymentTerms);
+        $paymentTerms = __(
+            "terms and conditions of %1",
+            $this->configRepository::PRODUCT_NAME,
+        );
+        $termsNotAcceptedMessage = __(
+            "You must accept %1 to place order.",
+            $paymentTerms,
+        );
         return $termsNotAcceptedMessage;
-                    
     }
 
     public function getSoleTraderErrorMessage()
     {
-        $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
+        $soleTraderaccountCouldNotBeVerified = __(
+            "Your sole trader account could not be verified.",
+        );
         $soleTraderErrorMessage = __(
-            'Something went wrong with your request to %1. %2',
+            "Something went wrong with your request to %1. %2",
             $this->configRepository::PRODUCT_NAME,
-            $soleTraderaccountCouldNotBeVerified
+            $soleTraderaccountCouldNotBeVerified,
         );
         return $soleTraderErrorMessage;
     }

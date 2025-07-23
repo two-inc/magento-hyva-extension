@@ -1,10 +1,16 @@
 .aider*
 
+# php-cs-fixer
 .php-cs-fixer.cache
 
+# Generated artifacts
 *.zip
 
+# Environments
 .envrc
 .direnv/
 .venv/
 venv/
+
+# Node.js
+node_modules/

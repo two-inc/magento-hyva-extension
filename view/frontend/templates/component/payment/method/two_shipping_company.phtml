@@ -57,14 +57,14 @@ document.addEventListener('alpine:init', () => {
             self = this;
             this.selectedIndex = -1;
             if (!self.isCompanySearchEnabled) return;
-            
+
             const countryId = document.getElementById("shipping-country_id");
             if(countryId.value){
                 self.countryCode = countryId.value
             }
             else {
                 const quoteData = JSON.parse(self.quote);
-                self.countryCode = quoteData.country_id;    
+                self.countryCode = quoteData.country_id;
             }
             if(self.countryCode) {
                 clearTimeout(self.searchTimeout);
@@ -139,10 +139,10 @@ document.addEventListener('alpine:init', () => {
             if (companyIdInput) {
                 companyIdInput.value = item.companyId;
             }
-            
-            const shippingCompanySelectionData = { 
-                company_name: item.companyName, 
-                company_id: item.companyId 
+
+            const shippingCompanySelectionData = {
+                company_name: item.companyName,
+                company_id: item.companyId
             };
 
             // Store as JSON string
@@ -156,7 +156,7 @@ document.addEventListener('alpine:init', () => {
             if (self.isAddressSearchEnabled) {
                 this.addressLookup(item.lookupId);
             }
-            
+
         },
         nextItem() {
             if (this.selectedIndex < this.items.length - 1) {
@@ -226,4 +226,4 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 </script>
-<?php $hyvaCsp->registerInlineScript() ?>
+<?php $hyvaCsp->registerInlineScript(); ?>

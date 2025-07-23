@@ -20,16 +20,23 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
 $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
 $quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$quoteDetails = json_encode(
+    $quoteDetails,
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+);
 ?>
-<div  
+<div
      x-data="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
     <div class="redirect_message" data-bind="text: redirectMessage"><?= $configModel->getRedirectMessage() ?>
     </div>
     <form
         x-data="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod1"
         id="two_gateway_form"
-        x-init="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodInit1" data-hyvacsp1="<?= htmlspecialchars($quoteDetails, ENT_QUOTES, 'UTF-8'); ?>"
+        x-init="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodInit1" data-hyvacsp1="<?= htmlspecialchars(
+            $quoteDetails,
+            ENT_QUOTES,
+            "UTF-8",
+        ) ?>"
         @keydown.window.prevent.enter
         class="">
         <fieldset class="space-y-4">
@@ -40,20 +47,22 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                         <label for="company_name" class="font-semibold text-gray-700">
                             <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
                         </label>
-                        <input 
-                            type="text" 
-                            :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId2" 
-                            :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName3" 
-                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text" 
-                            autocomplete="off" 
+                        <input
+                            type="text"
+                            :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId2"
+                            :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName3"
+                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
+                            autocomplete="off"
                             required
                             data-manual="true"
-                            data-validate='{"required": true}' 
+                            data-validate='{"required": true}'
                           />
                     </div>
                     <div class="search_for_company w-full text-right" @click="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick4" title="Search for company">
                         <span class="text-blue-600 text-sm cursor-pointer">
-                            <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
+                            <?= $escaper->escapeHtmlAttr(
+                                __("Search for company"),
+                            ) ?>
                         </span>
                     </div>
                 </div>
@@ -62,23 +71,27 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                         <div class="bg-white w-full gap-2 flex-col flex">
                             <div class="field required">
                                 <label class="font-semibold text-gray-700">
-                                  <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
+                                  <?= $escaper->escapeHtmlAttr(
+                                      __("Company Name"),
+                                  ) ?>
                                 </label>
                             </div>
                         </div>
                         <div class="w-full" @click.outside="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClickOutside5">
-                            <input 
-                                type="text" 
-                                @input.debounce="getItems" 
+                            <input
+                                type="text"
+                                @input.debounce="getItems"
                                 @focus="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodFocus6"
-                                @keydown.arrow-down="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7" 
-                                @keydown.arrow-up="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8" 
+                                @keydown.arrow-down="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowDown7"
+                                @keydown.arrow-up="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownArrowUp8"
                                 @keydown.enter.prevent="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKeydownEnterPrevent9"
                                 @keydown.tab="closeCompanyList"
-                                placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>" 
+                                placeholder="<?= $escaper->escapeHtmlAttr(
+                                    __("Enter company name to search"),
+                                ) ?>"
                                 :value="search"
-                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text" 
-                                :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11" 
+                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
+                                :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId11"
                                 :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName12"
                                 autocomplete="off"
                                 data-manual="false"
@@ -93,8 +106,8 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                                 class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
                             >
                                 <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
-                                    <template 
-                                        x-for="(item, index) in items" 
+                                    <template
+                                        x-for="(item, index) in items"
                                         :key="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodKey13"
                                     >
                                         <div
@@ -111,15 +124,19 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                                         </div>
                                     </template>
                                 </div>
-                                <div x-show="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodShow18" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?>
+                                <div x-show="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodShow18" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                                    __("Please enter 3 or more characters"),
+                                ) ?>
                                 </div>
-                                <div 
+                                <div
                                     id="billing_enter_company"
                                     class="enter_for_company w-full px-2 py-3"
-                                    @click="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick19" 
+                                    @click="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodClick19"
                                     title="Enter details manually">
                                     <span class="text-blue-600 text-sm cursor-pointer">
-                                        <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
+                                        <?= $escaper->escapeHtmlAttr(
+                                            __("Enter details manually"),
+                                        ) ?>
                                     </span>
                                 </div>
                             </div>
@@ -137,7 +154,7 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                 type="text"
                 x-show="!showManual"
                 :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId20"
-                :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName21" 
+                :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName21"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'
@@ -147,7 +164,7 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
                 type="text"
                 x-show="showManual"
                 :id="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodId22"
-                :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName23" 
+                :name="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodName23"
                 required
                 data-validate='{"required": true}'
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
@@ -232,8 +249,8 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
             <div x-data="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethod2" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
               <div class="field field-reserved required">
                 <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
-                  <input type="checkbox" 
-                      name="terms-checkbox" 
+                  <input type="checkbox"
+                      name="terms-checkbox"
                       :value="isPaymentTermsAccepted" @change="twoGatewayHyvaComponentPaymentMethodTwoGatewayMethodChange29"
                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring focus:ring-blue-300"
                       required
@@ -248,4 +265,3 @@ $quoteDetails = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAP
         </fieldset>
     </form>
 </div>
-

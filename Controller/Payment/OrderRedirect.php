@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
@@ -18,9 +19,8 @@ use Magento\Framework\Controller\Result\Redirect;
  */
 class OrderRedirect extends Action
 {
-
     /**
-    * @var CookieManagerInterface
+     * @var CookieManagerInterface
      */
     protected $cookieManager;
 
@@ -32,7 +32,7 @@ class OrderRedirect extends Action
     public function __construct(
         Context $context,
         CookieManagerInterface $cookieManager,
-        Redirect $resultRedirectFactory
+        Redirect $resultRedirectFactory,
     ) {
         $this->cookieManager = $cookieManager;
         $this->resultRedirectFactory = $resultRedirectFactory;
@@ -46,7 +46,7 @@ class OrderRedirect extends Action
     public function execute()
     {
         // Get the cookie value
-        $redirectUrl = $this->cookieManager->getCookie('two_redirect_url');
+        $redirectUrl = $this->cookieManager->getCookie("two_redirect_url");
         $resultRedirect = $this->resultRedirectFactory->create();
         $resultRedirect->setUrl($redirectUrl);
         return $resultRedirect;

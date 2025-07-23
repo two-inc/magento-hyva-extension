@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
@@ -20,15 +21,14 @@ class TwoGateWayMethod extends Component
 {
     public array $quoteInformations = [];
 
-    public string $countryCode = '';
+    public string $countryCode = "";
 
     protected $loader = true;
 
     public function __construct(
         private Session $checkoutSession,
-        private CartRepositoryInterface $quoteRepository
-    ) {
-    }
+        private CartRepositoryInterface $quoteRepository,
+    ) {}
 
     /**
      * @throws LocalizedException
@@ -39,9 +39,9 @@ class TwoGateWayMethod extends Component
         $quote = $this->checkoutSession->getQuote();
 
         $this->quoteInformations = [
-            'country_id' => $quote->getBillingAddress()->getCountryId(),
-            'currency_code' => $quote->getQuoteCurrencyCode(),
-            'base_grand_total' => $quote->getGrandTotal(),
+            "country_id" => $quote->getBillingAddress()->getCountryId(),
+            "currency_code" => $quote->getQuoteCurrencyCode(),
+            "base_grand_total" => $quote->getGrandTotal(),
         ];
     }
 
@@ -53,7 +53,7 @@ class TwoGateWayMethod extends Component
     {
         $quote = $this->checkoutSession->getQuote();
         $payment = $quote->getPayment();
-        $payment->setAdditionalInformation($value['additionalData']);
+        $payment->setAdditionalInformation($value["additionalData"]);
         $quote->setPayment($payment);
         $this->quoteRepository->save($quote);
     }

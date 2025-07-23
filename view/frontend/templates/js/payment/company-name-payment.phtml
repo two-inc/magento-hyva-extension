@@ -10,8 +10,6 @@ declare(strict_types=1);
 use Hyva\Theme\ViewModel\HyvaCsp;
 
 /** @var HyvaCsp $hyvaCsp */
-
-
 ?>
 <script>
     document.addEventListener("DOMContentLoaded", () => {
@@ -82,4 +80,4 @@ use Hyva\Theme\ViewModel\HyvaCsp;
         }
     });
 </script>
-<?php $hyvaCsp->registerInlineScript() ?>
+<?php $hyvaCsp->registerInlineScript(); ?>
