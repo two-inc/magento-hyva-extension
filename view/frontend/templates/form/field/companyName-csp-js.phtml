@@ -24,7 +24,7 @@ use Magento\Framework\View\Element\Template;
 <?php
 /** Generated with hyva-csp-helper.php */
 ?>
-function twoGatewayHyvaFormFieldCompanyName() {
+function twoGatewayHyvaCompanySearchField() {
     return Object.assign(
         searchInput(),
         {
@@ -33,23 +33,23 @@ function twoGatewayHyvaFormFieldCompanyName() {
         ,{
             ['showManual']() {return this.showManual},
             ['!showManual']() {return !this.showManual},
-            ['twoGatewayHyvaFormFieldCompanyNameChange36'](event) {return this.search = this.$el.value},
-            ['twoGatewayHyvaFormFieldCompanyNameClass40']() {return {'bg-gray-100': this.selectedIndex === this.index}},
-            ['twoGatewayHyvaFormFieldCompanyNameClick30'](event) {return this.showManual = false},
-            ['twoGatewayHyvaFormFieldCompanyNameClick38'](event) {return this.selectItem(this.item)},
-            ['twoGatewayHyvaFormFieldCompanyNameClick43'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
-            ['twoGatewayHyvaFormFieldCompanyNameClickOutside31'](event) {return this.isOpen = false},
-            ['twoGatewayHyvaFormFieldCompanyNameFocus32'](event) {return this.isOpen = true},
-            ['twoGatewayHyvaFormFieldCompanyNameHtml41']() {return this.item.companyDisplayName},
-            ['twoGatewayHyvaFormFieldCompanyNameKey37']() {return this.item.companyId},
-            ['twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33'](event) {return this.nextItem()},
-            ['twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34'](event) {return this.prevItem()},
-            ['twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35'](event) {return this.selectHighlightedItem()},
-            ['twoGatewayHyvaFormFieldCompanyNameMouseover39'](event) {return this.selectedIndex = this.index},
-            ['twoGatewayHyvaFormFieldCompanyNameShow42']() {return this.search.length < 3},
+            ['twoGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
+            ['twoGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
+            ['twoGatewayHyvaOnSearchModeClick'](event) {return this.showManual = false},
+            ['twoGatewayHyvaOnCompanyItemClick'](event) {return this.selectItem(this.item)},
+            ['twoGatewayHyvaOnManualEntryClick'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
+            ['twoGatewayHyvaOnCompanySearchClickOutside'](event) {return this.isOpen = false},
+            ['twoGatewayHyvaOnCompanySearchFocus'](event) {return this.isOpen = true},
+            ['twoGatewayHyvaGetCompanyDisplayName']() {return this.item.companyDisplayName},
+            ['twoGatewayHyvaGetCompanyId']() {return this.item.companyId},
+            ['twoGatewayHyvaOnArrowDown'](event) {return this.nextItem()},
+            ['twoGatewayHyvaOnArrowUp'](event) {return this.prevItem()},
+            ['twoGatewayHyvaOnEnterSelect'](event) {return this.selectHighlightedItem()},
+            ['twoGatewayHyvaOnItemMouseover'](event) {return this.selectedIndex = this.index},
+            ['twoGatewayHyvaShouldShowMinCharsMessage']() {return this.search.length < 3},
         }
     )
 }
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaFormFieldCompanyName', twoGatewayHyvaFormFieldCompanyName), {once: true});
+window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaCompanySearchField', twoGatewayHyvaCompanySearchField), {once: true});
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

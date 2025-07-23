@@ -33,7 +33,7 @@ $form = $block->getData("form");
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="block font-medium text-gray-700">
-        <div x-data="twoGatewayHyvaFormFieldCompanyName">
+        <div x-data="twoGatewayHyvaCompanySearchField">
             <div class="flex items-start gap-2 enter-manually flex-col" x-show="!showManual">
                 <input type="text" class="<?= $escaper->escapeHtmlAttr(
                     $element->renderClass([
@@ -44,7 +44,7 @@ $form = $block->getData("form");
                     <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
                <?php endif; ?> autocomplete="notcomplete"
             />
-                <div id="billing_search_for_company" class="search_for_company w-full text-right" @click="twoGatewayHyvaFormFieldCompanyNameClick30" title="Search for company">
+                <div id="billing_search_for_company" class="search_for_company w-full text-right" @click="twoGatewayHyvaOnSearchModeClick" title="Search for company">
                     <span class="text-blue-600 text-sm cursor-pointer">
                         <?= $escaper->escapeHtmlAttr(
                             __("Search for company"),
@@ -53,14 +53,14 @@ $form = $block->getData("form");
                 </div>
             </div>
             <div class="w-full relative" x-show="showManual">
-                <div class="items-center w-full" @click.outside="twoGatewayHyvaFormFieldCompanyNameClickOutside31">
+                <div class="items-center w-full" @click.outside="twoGatewayHyvaOnCompanySearchClickOutside">
                     <div class="w-full">
                         <input type="text"
                             @input.debounce="getItems"
-                            @focus="twoGatewayHyvaFormFieldCompanyNameFocus32"
-                            @keydown.arrow-down="twoGatewayHyvaFormFieldCompanyNameKeydownArrowDown33"
-                            @keydown.arrow-up="twoGatewayHyvaFormFieldCompanyNameKeydownArrowUp34"
-                            @keydown.enter.prevent="twoGatewayHyvaFormFieldCompanyNameKeydownEnterPrevent35"
+                            @focus="twoGatewayHyvaOnCompanySearchFocus"
+                            @keydown.arrow-down="twoGatewayHyvaOnArrowDown"
+                            @keydown.arrow-up="twoGatewayHyvaOnArrowUp"
+                            @keydown.enter.prevent="twoGatewayHyvaOnEnterSelect"
                             @keydown.tab="closeCompanyList"
                             placeholder="<?= $escaper->escapeHtmlAttr(
                                 __("Enter company name to search"),
@@ -85,29 +85,29 @@ $form = $block->getData("form");
                         <div class="flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
                             <template
                                 x-for="(item, index) in items"
-                                :key="twoGatewayHyvaFormFieldCompanyNameKey37"
+                                :key="twoGatewayHyvaGetCompanyId"
                             >
                                 <div
-                                    @click="twoGatewayHyvaFormFieldCompanyNameClick38"
-                                    @mouseover="twoGatewayHyvaFormFieldCompanyNameMouseover39"
-                                    :class="twoGatewayHyvaFormFieldCompanyNameClass40"
+                                    @click="twoGatewayHyvaOnCompanyItemClick"
+                                    @mouseover="twoGatewayHyvaOnItemMouseover"
+                                    :class="twoGatewayHyvaGetItemClass"
                                     class="cursor-pointer hover:bg-gray-100 p-2"
                                 >
                                     <div class="flex items-center">
                                         <div>
-                                            <span x-html="twoGatewayHyvaFormFieldCompanyNameHtml41"></span>
+                                            <span x-html="twoGatewayHyvaGetCompanyDisplayName"></span>
                                         </div>
                                     </div>
                                 </div>
                             </template>
                         </div>
-                        <div x-show="twoGatewayHyvaFormFieldCompanyNameShow42" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                        <div x-show="twoGatewayHyvaShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
                             __("Please enter 3 or more characters"),
                         ) ?></div>
                         <div
                             id="billing_enter_company"
                             class="enter_for_company w-full px-2 py-3"
-                            @click="twoGatewayHyvaFormFieldCompanyNameClick43"
+                            @click="twoGatewayHyvaOnManualEntryClick"
                             title="Enter details manually">
                             <span class="text-blue-600 text-sm cursor-pointer">
                                 <?= $escaper->escapeHtmlAttr(
