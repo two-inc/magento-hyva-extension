@@ -36,7 +36,7 @@ summary::marker {
   display: inline-block;
 }
 
-.two-tooltip-box {
+.abn-tooltip-box {
   visibility: hidden;
   width: 200px;
   top: 40px;
@@ -54,7 +54,8 @@ summary::marker {
   z-index: 100;
 }
 
-.tooltip-pay:hover .two-tooltip-box {
+.tooltip-pay:hover .abn-tooltip-box {
+  display: block;
   visibility: visible;
 }
 

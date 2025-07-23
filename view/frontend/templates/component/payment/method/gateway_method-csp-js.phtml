@@ -9,8 +9,8 @@
 
 declare(strict_types=1);
 
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
-use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use ABN\GatewayHyva\ViewModel\CheckoutConfig;
+use ABN\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Hyva\Theme\ViewModel\HyvaCsp;
@@ -67,7 +67,7 @@ $quoteDetails = json_encode($quoteDetails);
                                 // No payment method selected, skip order intent
                             } else {
                                 const selectedPaymentValue = activePaymentMethod.value;
-                                const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+                                const isTwoPaymentSelected = selectedPaymentValue === "abn_payment";
 
                                 // Only proceed if Two payment method is selected
                                 if (!isTwoPaymentSelected) {
@@ -114,7 +114,7 @@ $quoteDetails = json_encode($quoteDetails);
                                         paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
                                         // Call Magewire to set payment data
-                                        Magewire.find("checkout.payment.method.two-payment-method")
+                                        Magewire.find("checkout.payment.method.abn-payment-method")
                                             .call('setPaymentData', paymentData)
                                             .then(() => {
                                                 clearTimeout(timeoutId);
@@ -169,7 +169,7 @@ $quoteDetails = json_encode($quoteDetails);
                     }
 
                     hyvaCheckout.navigation.addTask(doSave, {
-                        name: 'two-payment-method'
+                        name: 'abn-payment-method'
                     });
 
                     const addEventListeners = (el) => {
@@ -720,7 +720,7 @@ $quoteDetails = json_encode($quoteDetails);
         }
 
         const selectedPaymentValue = activePaymentMethod.value;
-        const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+        const isTwoPaymentSelected = selectedPaymentValue === "abn_payment";
 
         // Only proceed if Two payment method is selected
         if (!isTwoPaymentSelected) {

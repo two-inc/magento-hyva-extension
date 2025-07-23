@@ -4,6 +4,8 @@
 # Generated artifacts
 index.html
 *.zip
+index.html
+artifacts/
 
 # Environments
 .envrc

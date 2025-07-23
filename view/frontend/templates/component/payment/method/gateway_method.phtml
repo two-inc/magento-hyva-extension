@@ -1,12 +1,14 @@
 <?php
+
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  */
+
 declare(strict_types=1);
 
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
-use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use ABN\GatewayHyva\ViewModel\CheckoutConfig;
+use ABN\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 
@@ -26,13 +28,13 @@ $quoteDetails = json_encode(
 );
 ?>
 <div
-     x-data="twoGatewayHyvaPaymentMethodBase" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
+    x-data="abnGatewayHyvaPaymentMethodBase" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
     <div class="redirect_message" data-bind="text: redirectMessage"><?= $configModel->getRedirectMessage() ?>
     </div>
     <form
-        x-data="twoGatewayHyvaPaymentFormWithValidation"
-        id="two_gateway_form"
-        x-init="twoGatewayHyvaOnInit" data-hyvacsp1="<?= htmlspecialchars(
+        x-data="abnGatewayHyvaPaymentFormWithValidation"
+        id="abn_gateway_form"
+        x-init="abnGatewayHyvaOnInit" data-hyvacsp1="<?= htmlspecialchars(
             $quoteDetails,
             ENT_QUOTES,
             "UTF-8",
@@ -49,8 +51,8 @@ $quoteDetails = json_encode(
                         </label>
                         <input
                             type="text"
-                            :id="twoGatewayHyvaGetManualCompanyNameId"
-                            :name="twoGatewayHyvaGetManualCompanyNameField"
+                            :id="abnGatewayHyvaGetManualCompanyNameId"
+                            :name="abnGatewayHyvaGetManualCompanyNameField"
                             class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
                             autocomplete="off"
                             required
@@ -58,7 +60,7 @@ $quoteDetails = json_encode(
                             data-validate='{"required": true}'
                           />
                     </div>
-                    <div class="search_for_company w-full text-right" @click="twoGatewayHyvaOnSearchModeClick" title="Search for company">
+                    <div class="search_for_company w-full text-right" @click="abnGatewayHyvaOnSearchModeClick" title="Search for company">
                         <span class="text-blue-600 text-sm cursor-pointer">
                             <?= $escaper->escapeHtmlAttr(
                                 __("Search for company"),
@@ -77,22 +79,22 @@ $quoteDetails = json_encode(
                                 </label>
                             </div>
                         </div>
-                        <div class="w-full" @click.outside="twoGatewayHyvaOnCompanySearchClickOutside">
+                        <div class="w-full" @click.outside="abnGatewayHyvaOnCompanySearchClickOutside">
                             <input
                                 type="text"
                                 @input.debounce="getItems"
-                                @focus="twoGatewayHyvaOnCompanySearchFocus"
-                                @keydown.arrow-down="twoGatewayHyvaOnArrowDown"
-                                @keydown.arrow-up="twoGatewayHyvaOnArrowUp"
-                                @keydown.enter.prevent="twoGatewayHyvaOnEnterSelect"
+                                @focus="abnGatewayHyvaOnCompanySearchFocus"
+                                @keydown.arrow-down="abnGatewayHyvaOnArrowDown"
+                                @keydown.arrow-up="abnGatewayHyvaOnArrowUp"
+                                @keydown.enter.prevent="abnGatewayHyvaOnEnterSelect"
                                 @keydown.tab="closeCompanyList"
                                 placeholder="<?= $escaper->escapeHtmlAttr(
                                     __("Enter company name to search"),
                                 ) ?>"
                                 :value="search"
                                 class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                                :id="twoGatewayHyvaGetCompanyNameId"
-                                :name="twoGatewayHyvaGetCompanyNameField"
+                                :id="abnGatewayHyvaGetCompanyNameId"
+                                :name="abnGatewayHyvaGetCompanyNameField"
                                 autocomplete="off"
                                 data-manual="false"
                                 data-name="company_name"
@@ -108,30 +110,30 @@ $quoteDetails = json_encode(
                                 <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
                                     <template
                                         x-for="(item, index) in items"
-                                        :key="twoGatewayHyvaGetCompanyId"
+                                        :key="abnGatewayHyvaGetCompanyId"
                                     >
                                         <div
-                                            @click="twoGatewayHyvaOnCompanyItemClick"
-                                            @mouseover="twoGatewayHyvaOnItemMouseover"
-                                            :class="twoGatewayHyvaGetItemClass"
+                                            @click="abnGatewayHyvaOnCompanyItemClick"
+                                            @mouseover="abnGatewayHyvaOnItemMouseover"
+                                            :class="abnGatewayHyvaGetItemClass"
                                             class="cursor-pointer hover:bg-gray-100 p-2"
                                         >
                                             <div class="flex items-center">
                                                 <div>
-                                                    <span x-html="twoGatewayHyvaGetCompanyDisplayName"></span>
+                                                    <span x-html="abnGatewayHyvaGetCompanyDisplayName"></span>
                                                 </div>
                                             </div>
                                         </div>
                                     </template>
                                 </div>
-                                <div x-show="twoGatewayHyvaShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                                <div x-show="abnGatewayHyvaShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
                                     __("Please enter 3 or more characters"),
                                 ) ?>
                                 </div>
                                 <div
                                     id="billing_enter_company"
                                     class="enter_for_company w-full px-2 py-3"
-                                    @click="twoGatewayHyvaOnManualEntryClick"
+                                    @click="abnGatewayHyvaOnManualEntryClick"
                                     title="Enter details manually">
                                     <span class="text-blue-600 text-sm cursor-pointer">
                                         <?= $escaper->escapeHtmlAttr(
@@ -145,16 +147,16 @@ $quoteDetails = json_encode(
                 </div>
             </div>
 
-            <!-- Company ID -->
+            <!-- KVK number -->
             <div class="flex flex-col field field-reserved required">
               <label for="company_id" class="font-semibold text-gray-700">
-                <?= $escaper->escapeHtmlAttr(__("Company ID")) ?>
+                <?= $escaper->escapeHtmlAttr(__("KVK number")) ?>
               </label>
               <input
                 type="text"
                 x-show="!showManual"
-                :id="twoGatewayHyvaGetCompanyIdFieldId"
-                :name="twoGatewayHyvaGetCompanyIdFieldName"
+                :id="abnGatewayHyvaGetCompanyIdFieldId"
+                :name="abnGatewayHyvaGetCompanyIdFieldName"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'
@@ -163,8 +165,8 @@ $quoteDetails = json_encode(
               <input
                 type="text"
                 x-show="showManual"
-                :id="twoGatewayHyvaGetManualCompanyIdFieldId"
-                :name="twoGatewayHyvaGetManualCompanyIdFieldName"
+                :id="abnGatewayHyvaGetManualCompanyIdFieldId"
+                :name="abnGatewayHyvaGetManualCompanyIdFieldName"
                 required
                 data-validate='{"required": true}'
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
@@ -180,7 +182,7 @@ $quoteDetails = json_encode(
                 type="text"
                 id="invoice_emails"
                 name="payment[invoiceEmails]"
-                :value="invoiceEmails" @change="twoGatewayHyvaOnInvoiceEmailsChange"
+                :value="invoiceEmails" @change="abnGatewayHyvaOnInvoiceEmailsChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
@@ -195,7 +197,7 @@ $quoteDetails = json_encode(
                 type="text"
                 id="two_project"
                 name="payment[project]"
-                :value="project" @change="twoGatewayHyvaOnProjectChange"
+                :value="project" @change="abnGatewayHyvaOnProjectChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
@@ -210,7 +212,7 @@ $quoteDetails = json_encode(
                 type="text"
                 id="two_department"
                 name="payment[department]"
-                :value="department" @change="twoGatewayHyvaOnDepartmentChange"
+                :value="department" @change="abnGatewayHyvaOnDepartmentChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
@@ -225,7 +227,7 @@ $quoteDetails = json_encode(
                 type="text"
                 id="two_order_note"
                 name="payment[orderNote]"
-                :value="orderNote" @change="twoGatewayHyvaOnOrderNoteChange"
+                :value="orderNote" @change="abnGatewayHyvaOnOrderNoteChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
@@ -240,18 +242,18 @@ $quoteDetails = json_encode(
                 type="text"
                 id="two_po_number"
                 name="payment[poNumber]"
-                :value="poNumber" @change="twoGatewayHyvaOnPoNumberChange"
+                :value="poNumber" @change="abnGatewayHyvaOnPoNumberChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
             </div>
 
-            <div x-data="twoGatewayHyvaPaymentTermsComponent" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
+            <div x-data="abnGatewayHyvaPaymentTermsComponent" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
               <div class="field field-reserved required">
                 <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
                   <input type="checkbox"
                       name="payment[terms_accepted]"
-                      :checked="isPaymentTermsAccepted" @change="twoGatewayHyvaOnPaymentTermsChange"
+                      :checked="isPaymentTermsAccepted" @change="abnGatewayHyvaOnPaymentTermsChange"
                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring focus:ring-blue-300"
                       required
                       data-validate='{"required": true}'

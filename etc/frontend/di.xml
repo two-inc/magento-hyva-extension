@@ -10,11 +10,11 @@
         <arguments>
             <argument name="placeOrderServiceList" xsi:type="array">
                 <!-- Gateways -->
-                <item name="two_payment" xsi:type="object">Two\GatewayHyva\Model\Magewire\Payment\PlaceOrderService</item>
+                <item name="abn_payment" xsi:type="object">ABN\GatewayHyva\Model\Magewire\Payment\PlaceOrderService</item>
             </argument>
         </arguments>
     </type>
     <type name="Hyva\Checkout\Model\MethodMetaData">
-        <plugin name="MethodMetaData::renderIcon" type="Two\GatewayHyva\Plugin\MethodMetaDataPlugin" sortOrder="100"/>
+        <plugin name="MethodMetaData::renderIcon" type="ABN\GatewayHyva\Plugin\MethodMetaDataPlugin" sortOrder="100"/>
     </type>
 </config>

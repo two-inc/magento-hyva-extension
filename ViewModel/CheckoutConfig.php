@@ -9,14 +9,14 @@
 
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\ViewModel;
+namespace ABN\GatewayHyva\ViewModel;
 
 use Magento\Framework\View\Asset\Repository as AssetRepository;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\UrlCookie;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Model\Two;
 
 class CheckoutConfig implements ArgumentInterface
 {
