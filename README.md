@@ -86,3 +86,17 @@ Set up your Two Gateway credentials and settings in the Magento Admin:
 1. Navigate to your store's frontend checkout page.
 2. Verify that the Two Gateway payment method is visible.
 3. Place a test order to ensure everything is working correctly.
+
+## Development
+
+For developers looking to extend or customize the Two Gateway Hyva module, follow these steps:
+
+1. Install `direnv` and `uv` and configure `.envrc` file with `layout python`.
+2. Install the required tools and dependencies:
+
+```bash
+direnv allow
+uv tool install bumpver
+uv tool install pre-commit
+pre-commit install
+```

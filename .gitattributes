@@ -1,0 +1,15 @@
+# Folders to ignore
+.git/ export-ignore
+.github/ export-ignore
+scripts/ export-ignore
+
+# Files to ignore
+.distignore export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
+.prettierrc export-ignore
+.pre-commit-config.yaml export-ignore
+*.zip export-ignore
+README.md export-ignore
+Makefile export-ignore
+CODEOWNERS export-ignore
