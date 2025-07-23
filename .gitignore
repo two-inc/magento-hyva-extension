@@ -1,1 +1,10 @@
 .aider*
+
+.php-cs-fixer.cache
+
+*.zip
+
+.envrc
+.direnv/
+.venv/
+venv/
