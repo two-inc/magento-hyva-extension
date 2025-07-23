@@ -13,8 +13,8 @@
     <body>
         <!-- Generated with hyva-csp-helper.php -->
         <referenceContainer name="magewire.plugin.scripts">
-            <block name="component.payment.method.two_gateway_method"
-                   template="Two_GatewayHyva::component/payment/method/two_gateway_method-csp-js.phtml"
+            <block name="component.payment.method.gateway_method"
+                   template="Two_GatewayHyva::component/payment/method/gateway_method-csp-js.phtml"
             />
             <block name="form.field.companyName"
                    template="Two_GatewayHyva::form/field/companyName-csp-js.phtml"

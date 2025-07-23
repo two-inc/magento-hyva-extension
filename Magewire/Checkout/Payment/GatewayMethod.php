@@ -15,9 +15,9 @@ use Magento\Quote\Api\CartRepositoryInterface;
 use Magewirephp\Magewire\Component;
 
 /**
- * TwoGateWayMethod - Hyvä Checkout
+ * GatewayMethod - Hyvä Checkout
  */
-class TwoGateWayMethod extends Component
+class GatewayMethod extends Component
 {
     public array $quoteInformations = [];
 

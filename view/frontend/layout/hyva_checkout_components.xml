@@ -9,20 +9,20 @@
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceBlock name="head.additional">
-            <block name="checkout-shipping-address-company-search" 
-                ifconfig="payment/two_payment/active" 
-                template="Two_GatewayHyva::component/payment/method/two_shipping_company.phtml" after="-"/>
+            <block name="checkout-shipping-address-company-search"
+                ifconfig="payment/two_payment/active"
+                template="Two_GatewayHyva::component/payment/method/shipping_company.phtml" after="-"/>
         </referenceBlock>
         <referenceBlock name="checkout.payment.methods">
-            <block name="checkout.payment.method.two-payment-method" as="two_payment" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::component/payment/method/two_gateway_method.phtml">
+            <block name="checkout.payment.method.two-payment-method" as="two_payment" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::component/payment/method/gateway_method.phtml">
                 <arguments>
                     <argument name="magewire" xsi:type="object">
-                        Two\GatewayHyva\Magewire\Checkout\Payment\TwoGateWayMethod
+                        Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod
                     </argument>
                     <argument name="method_code" xsi:type="string">two_payment</argument>
                     <argument name="metadata" xsi:type="array">
                         <item name="icon" xsi:type="array">
-                            <item name="src" xsi:type="string">Two_GatewayHyva::images/cc/twoLogo.svg</item>
+                            <item name="src" xsi:type="string">Two_GatewayHyva::images/cc/logo.svg</item>
                             <!-- optional attributes, specify as needed -->
                             <item name="attributes" xsi:type="array">
                                 <item name="width" xsi:type="number">32</item>
