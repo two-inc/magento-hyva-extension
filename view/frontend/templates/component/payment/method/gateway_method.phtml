@@ -9,11 +9,11 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
-use Magento\Framework\View\Element\Template;
-use Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod;
 
 /** @var ViewModelRegistry $viewModels */
 /** @var CheckoutConfig $viewModel */
+/** @var Escaper $escaper */
+
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
