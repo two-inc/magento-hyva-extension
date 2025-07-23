@@ -1,5 +1,3 @@
-.aider*
-
 # php-cs-fixer
 .php-cs-fixer.cache
 
@@ -14,3 +12,7 @@ venv/
 
 # Node.js
 node_modules/
+
+# AI assistants
+CLAUDE.local.md
+.aider*
