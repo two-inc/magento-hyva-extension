@@ -194,34 +194,31 @@ $quoteDetails = json_encode($quoteDetails);
             initialize(quote) {
                 this.quote = quote;
                 this.showManual = false;
+
+                // Set global reference for order intent handling
+                twoPaymentComponentInstance = this;
+
+                // Listen for company data updates from shipping section
+                this.$el.addEventListener('update-company-data', (event) => {
+                    this.search = event.detail.companyName;
+                    this.companyName = event.detail.companyName;
+                    this.companyId = event.detail.companyId;
+                });
                 this.$nextTick(() => {
-                    this.search = document.getElementById('company_name')?.value ?? '';
+                    /** Check if shipping has already selected a company to avoid overwriting */
+                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                    const shippingCompany = shippingCompanySelectionData.company_name || "";
+
+                    /** Only set from current field value if no shipping selection exists */
+                    if (!shippingCompany) {
+                        this.search = document.getElementById('company_name')?.value ?? '';
+                    } else {
+                        /** Use shipping selection data to maintain sync */
+                        this.search = shippingCompany;
+                        this.fillCompanyData(shippingCompanySelectionData.company_id || "", shippingCompany, false);
+                    }
                 });
 
-                /** Retrieve the stored flag to check if the event listener is already set */
-                const paymentEventSet = hyva.getBrowserStorage().getItem('two-payment-method-event-set');
-
-                /**
-                 * Ensure the event listener is added only once.
-                 * This prevents multiple event listeners from being attached when the payment method is reloaded.
-                 * If the listener is already set, it will not be added again.
-                 */
-                if (!paymentEventSet) {
-                    window.addEventListener("dispatch-order-intent", (event) => {
-
-                        if (this.isOrderIntentEnabled) {
-                            this.placeOrderIntent()
-                                .then(response => this.processOrderIntentSuccessResponse(response))
-                                .catch(error => this.processOrderIntentErrorResponse(error));
-                        }
-
-                        /**
-                         * Mark the event listener as set in browser storage.
-                         * This prevents duplicate event listeners on reinitialization.
-                         */
-                        hyva.getBrowserStorage().setItem('two-payment-method-event-set', 'true');
-                    });
-                }
             },
             async getItems() {
                 self = this;
@@ -292,12 +289,14 @@ $quoteDetails = json_encode($quoteDetails);
                 this.selectedIndex = -1;
                 this.search = item.companyName;
 
+                /** Update shipping company selection data only if payment selection should propagate to shipping */
+                /** This maintains one-way sync from shipping to payment, not the other way around */
                 const shippingCompanySelectionData = {
                     company_name: item.companyName,
                     company_id: item.companyId
                 };
 
-                // Store as JSON string
+                // Store as JSON string for shipping section reference
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
 
                 this.fillCompanyData(item.companyId, item.companyName);
@@ -343,7 +342,7 @@ $quoteDetails = json_encode($quoteDetails);
                     this.items = [];
                 }
             },
-            fillCompanyData(companyId = '', companyName = '') {
+            fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 self = this;
                 companyName = typeof companyName == 'string' && companyName ? companyName : '';
                 companyId = typeof companyId == 'string' ? companyId : '';
@@ -357,7 +356,7 @@ $quoteDetails = json_encode($quoteDetails);
                 companyIdInput.disabled = true;
                 companyIdInput.style.backgroundColor = "#D3D3D3";
 
-                if (self.isOrderIntentEnabled) {
+                if (self.isOrderIntentEnabled && triggerOrderIntent) {
                     this.placeOrderIntent()
                         .then(response => this.processOrderIntentSuccessResponse(response))
                         .catch(error => this.processOrderIntentErrorResponse(error));
@@ -435,11 +434,9 @@ $quoteDetails = json_encode($quoteDetails);
                     type: 'SHIPPING_FEE'
                 });
 
-                let companyElement = document.querySelector("#company_name");
-                let companyNameValue = companyElement ? companyElement.value : "";
-
-                let companyIdElement = document.querySelector("#company_id");
-                let companyIdValue = companyIdElement ? companyIdElement.value : "";
+                // Use Alpine.js component state instead of DOM elements for company data
+                let companyNameValue = self.companyName || "";
+                let companyIdValue = self.companyId || "";
 
                 const countryInput = document.getElementById("shipping-country_id");
                 if (countryInput) {
@@ -455,20 +452,19 @@ $quoteDetails = json_encode($quoteDetails);
                     gross_amount: parseFloat(quoteData.grand_total || 0).toFixed(2),
                     net_amount: net_amount.toFixed(2),
                     tax_amount: tax_amount.toFixed(2),
-                    currency: quoteData.quote_currency_code || 'EUR',
+                    currency: quoteData.quote_currency_code,
                     line_items: lineItems,
                     buyer: {
                         company: {
-                            organization_number: companyIdValue || '',
-                            country_prefix: self.countryCode || '',
-                            company_name: companyNameValue || '',
-                            website: window.BASE_URL
+                            organization_number: companyIdValue,
+                            country_prefix: self.countryCode,
+                            company_name: companyNameValue
                         },
                         representative: {
-                            email: quoteData.email || '',
-                            first_name: quoteData.first_name || '',
-                            last_name: quoteData.last_name || '',
-                            phone_number: quoteData.telephone || ''
+                            email: quoteData.email,
+                            first_name: quoteData.first_name,
+                            last_name: quoteData.last_name,
+                            phone_number: quoteData.telephone
                         }
                     },
                     merchant_id: self.orderIntentConfig_merchant_id,
@@ -658,6 +654,18 @@ $quoteDetails = json_encode($quoteDetails);
     }
     window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent), {
         once: true
+    });
+
+    // Global reference to the payment component instance
+    let twoPaymentComponentInstance = null;
+
+    // Global order intent event listener - only added once
+    window.addEventListener("dispatch-order-intent", (event) => {
+        if (twoPaymentComponentInstance && twoPaymentComponentInstance.isOrderIntentEnabled) {
+            twoPaymentComponentInstance.placeOrderIntent()
+                .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
+                .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
+        }
     });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

@@ -29,7 +29,11 @@ $quoteDetails = json_encode($quoteDetails);
 <script>
 document.addEventListener('alpine:init', () => {
 
-    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));
+    // Initialize shipping company selection storage only if it doesn't exist
+    // This preserves existing selections across page reloads
+    if (!hyva.getBrowserStorage().getItem('shipping_company_selection')) {
+        hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));
+    }
 
     Alpine.data('searchInput', window['searchInput'] = () => ({
         isOpen: false,
@@ -221,6 +225,8 @@ document.addEventListener('alpine:init', () => {
             });
         },
     }));
+
+
 });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

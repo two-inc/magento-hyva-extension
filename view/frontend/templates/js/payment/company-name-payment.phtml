@@ -12,21 +12,120 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 /** @var HyvaCsp $hyvaCsp */
 ?>
 <script>
+    /**
+     * Track initialization state to prevent duplicate order intents
+     */
+    let paymentFieldsInitialized = false;
+
+    /**
+     * Update payment fields with company data and handle event synchronization
+     */
+    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false) => {
+        const companyNameInput = document.querySelector('[data-name="company_name"]');
+        const companyIdInput = document.querySelector('[data-name="company_id"]');
+
+        if (companyNameInput && companyIdInput) {
+            // Update DOM elements
+            companyNameInput.value = companyName;
+            companyIdInput.disabled = false;
+            companyIdInput.value = companyId;
+            companyIdInput.disabled = true;
+            companyIdInput.style.backgroundColor = "#D3D3D3";
+
+            // Sync with Alpine.js component using event dispatch
+            const alpineComponent = companyNameInput.closest('[x-data]');
+            if (alpineComponent) {
+                alpineComponent.dispatchEvent(new CustomEvent('update-company-data', {
+                    detail: {
+                        companyName,
+                        companyId
+                    }
+                }));
+            }
+
+            // Update saved company details
+            const updatedCompanyDetails = {
+                company_name: companyName,
+                company_id: companyId
+            };
+            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
+
+            // Trigger order intent if requested
+            if (triggerOrderIntent) {
+                window.dispatchEvent(new Event("dispatch-order-intent"));
+            }
+        }
+    };
+
     document.addEventListener("DOMContentLoaded", () => {
-        /**
-         * Reset the stored event flag in browser storage.
-         * This ensures that any previously set event listener flag is cleared.
-         * This is useful when reloading or reinitializing the payment method,
-         * preventing stale data from affecting event handling.
-         */
-        hyva.getBrowserStorage().setItem('two-payment-method-event-set', '');
 
         /**
-         * Clear previously saved company details.
-         * This prevents outdated company information from persisting across sessions or reloads.
-         * An empty object `{}` is stored in JSON format to maintain structure.
+         * Initialize previously saved company details only if it doesn't exist.
+         * This preserves company information across page reloads while allowing clean state for new sessions.
          */
-        hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+        if (!hyva.getBrowserStorage().getItem('already_saved_company_details')) {
+            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+        }
+
+        /**
+         * Initialize payment fields with persisted shipping company data on page load.
+         * This ensures payment section reflects the current shipping selection after page refresh.
+         */
+        const initializePaymentFieldsFromShipping = () => {
+            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const shippingCompany = shippingCompanySelectionData.company_name || "";
+            const shippingCompanyId = shippingCompanySelectionData.company_id || "";
+
+            // Also check if shipping field has persisted data (backend persistence)
+            const shippingField = document.getElementById('shipping-company');
+            const persistedShippingValue = shippingField ? shippingField.value : "";
+
+
+            if (shippingCompany && shippingCompanyId) {
+                // Use stored shipping selection data
+                updatePaymentFields(shippingCompany, shippingCompanyId);
+                paymentFieldsInitialized = true;
+            } else if (persistedShippingValue) {
+                // If shipping field has persisted value but no storage data,
+                // we should restore the storage data for consistency
+                const shippingCompanyIdField = document.getElementById('shipping-company_id');
+                const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
+
+                if (persistedShippingIdValue) {
+                    const restoredData = {
+                        company_name: persistedShippingValue,
+                        company_id: persistedShippingIdValue
+                    };
+                    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(restoredData));
+                    updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
+                    paymentFieldsInitialized = true;
+                }
+            }
+        };
+
+        // Simple initialization check - only run once
+        const initializeOnce = () => {
+            if (paymentFieldsInitialized) return;
+
+            const companyNameInput = document.querySelector('[data-name="company_name"]');
+            const companyIdInput = document.querySelector('[data-name="company_id"]');
+
+            if (companyNameInput && companyIdInput) {
+                initializePaymentFieldsFromShipping();
+            }
+
+            // Check if two_payment is already selected on page load and trigger order intent if needed
+            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
+                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
+                    window.dispatchEvent(new Event("dispatch-order-intent"));
+                }
+            }
+        };
+
+        // Try to initialize immediately, but don't force it
+        initializeOnce();
     });
 
 
@@ -36,46 +135,59 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 
         /** Check if the selected payment method is "two_payment" */
         if (paymentMethod === "two_payment") {
-            /** Retrieve selected shipping company details from browser storage */
+            /** Initialize payment method but don't overwrite existing company data */
+            /** The company data should only be updated by shipping section selections */
+
+            /** Retrieve previously saved company details to check if order intent should be dispatched */
             const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
+
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
+            const savedShippingCompany = alreadySavedCompanyDetails.company_name || "";
+            const savedShippingCompanyId = alreadySavedCompanyDetails.company_id || "";
 
-            /** If valid company details exist, proceed to populate the fields */
-            if (shippingCompany !== "" && shippingCompanyId !== "") {
-                setTimeout(() => {
-                    /** Select the company name and company ID input fields using data attributes */
-                    const companyNameInput = document.querySelector('[data-name="company_name"]');
-                    const companyIdInput = document.querySelector('[data-name="company_id"]');
+            /** If we have shipping company data but payment fields are empty, populate them */
+            if (shippingCompany && shippingCompanyId) {
+                const companyNameInput = document.querySelector('[data-name="company_name"]');
+                const companyIdInput = document.querySelector('[data-name="company_id"]');
 
-                    if (companyNameInput && companyIdInput) {
-                        /** Retrieve previously saved company details from storage */
-                        const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
-                        const savedShippingCompany = alreadySavedCompanyDetails.company_name || "";
-                        const savedShippingCompanyId = alreadySavedCompanyDetails.company_id || "";
+                if (companyNameInput && companyIdInput && !companyNameInput.value) {
+                    // Use the centralized update function for consistency and Alpine.js sync
+                    updatePaymentFields(shippingCompany, shippingCompanyId);
+                    paymentFieldsInitialized = true; // Mark as initialized to prevent duplicates
+                }
+            }
 
-                        /** Set the input field values based on retrieved company details */
-                        companyNameInput.value = shippingCompany;
-                        companyIdInput.disabled = false;
-                        companyIdInput.value = shippingCompanyId;
-                        companyIdInput.disabled = true;
-                        companyIdInput.style.backgroundColor = "#D3D3D3";
+            // Trigger order intent if we have company data
+            if (shippingCompany && shippingCompanyId) {
+                window.dispatchEvent(new Event("dispatch-order-intent"));
+            }
+        }
+    });
 
-                        /** Update the already saved company details in storage */
-                        const updatedCompanyDetails = {
-                            company_name: shippingCompany,
-                            company_id: shippingCompanyId
-                        };
 
-                        /** Store the updated company details in browser storage as a JSON string */
-                        hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
+    /** Listen for shipping company selection events to update payment fields */
+    window.addEventListener("shipping-company-selected", (event) => {
+        /** Retrieve the latest shipping company selection data */
+        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+        const shippingCompany = shippingCompanySelectionData.company_name || "";
+        const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-                        /** Dispatch the "dispatch-order-intent" event if the company details have changed */
-                        if (shippingCompany !== savedShippingCompany || shippingCompanyId !== savedShippingCompanyId) {
-                            window.dispatchEvent(new Event("dispatch-order-intent"));
-                        }
-                    }
-                }, 200);
+
+        if (shippingCompany !== "" && shippingCompanyId !== "") {
+            /** Update payment method fields with shipping selection */
+            const companyNameInput = document.querySelector('[data-name="company_name"]');
+            const companyIdInput = document.querySelector('[data-name="company_id"]');
+
+            if (companyNameInput && companyIdInput) {
+                // Check if two_payment method is active for order intent
+                const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
+
+
+                // Use the centralized update function for consistency and Alpine.js sync
+                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent);
             }
         }
     });

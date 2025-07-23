@@ -19,10 +19,7 @@ function twoGatewayHyvaCompanySearchField() {
     return Object.assign(
         searchInput(),
         {
-            showManual: false
-        }
-        ,{
-            ['showManual']() {return this.showManual},
+            showManual: false,
             ['!showManual']() {return !this.showManual},
             ['twoGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
             ['twoGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
