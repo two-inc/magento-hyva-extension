@@ -151,9 +151,7 @@ class CheckoutConfig implements ArgumentInterface
 
     public function getRedirectMessage()
     {
-        $redirectMessage = __(
-            "Pay within 30 days of delivery. There are no additional costs for you.",
-        );
+        $redirectMessage = __("Buy now, pay later — Instant Credit.");
         return $redirectMessage;
     }
 

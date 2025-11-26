@@ -52,51 +52,92 @@ $quoteDetails = json_encode($quoteDetails);
                         clearTimeout(timeout);
 
                         if (isWithValidation) {
-                            await this.validate();
+                            try {
+                                await this.validate();
+                            } catch (error) {
+                                console.error("Form validation failed:", error);
+                                return;
+                            }
                         }
-
                         if (this.isOrderIntentEnabled) {
-                            await new Promise(async (resolve, reject) => {
-                                await this.placeOrderIntent()
-                                    .then(response => this.processOrderIntentSuccessResponse(response))
-                                    .catch(error => this.processOrderIntentErrorResponse(error));
+                            // Check if Two payment method is currently selected
+                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
-                                if (!this.placeOrderIntentFlag) {
-                                    reject("Order intent failed.");
+                            if (!activePaymentMethod) {
+                                // No payment method selected, skip order intent
+                            } else {
+                                const selectedPaymentValue = activePaymentMethod.value;
+                                const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+
+                                // Only proceed if Two payment method is selected
+                                if (!isTwoPaymentSelected) {
+                                    // Two payment method not selected, skip order intent processing
                                 } else {
+                                    // Capture all necessary context upfront
+                                    const context = this;
+                                    const formRef = form;
 
-                                    const formElements = [
-                                        'department',
-                                        'project',
-                                        'poNumber',
-                                        'orderNote',
-                                        'invoiceEmails',
-                                        'company_name',
-                                        'company_id'
-                                    ];
+                                    // Dispatch the global event instead of calling placeOrderIntent directly
+                                    // This ensures consistent payment method validation
+                                    window.dispatchEvent(new Event("dispatch-order-intent"));
 
-                                    const paymentData = {
-                                        additionalData: Object.fromEntries(
-                                            formElements.map(field => {
-                                                const element = form.querySelector(`[name="payment[${field}]"]`);
-                                                return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
-                                            })
-                                        )
-                                    };
+                                    // Create a promise that resolves after payment data is set
+                                    await new Promise((resolve, reject) => {
+                                // Set a reasonable timeout for the operation
+                                const timeoutId = setTimeout(() => {
+                                    reject("Order intent operation timed out");
+                                }, 5000);
 
-                                    /* Set organization_number to companyId value */
-                                    paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
-
+                                // Check if we can proceed immediately
+                                const checkAndProceed = () => {
                                     try {
-                                        await Magewire.find("checkout.payment.method.two-payment-method")
-                                            .call('setPaymentData', paymentData);
-                                    } catch (error) {
-                                        console.error(error);
-                                    }
+                                        const formElements = [
+                                            'department',
+                                            'project',
+                                            'poNumber',
+                                            'orderNote',
+                                            'invoiceEmails',
+                                            'company_name',
+                                            'company_id'
+                                        ];
 
-                                    resolve();
+                                        const paymentData = {
+                                            additionalData: Object.fromEntries(
+                                                formElements.map(field => {
+                                                    const element = formRef.querySelector(`[name="payment[${field}]"]`);
+                                                    return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
+                                                })
+                                            )
+                                        };
+
+                                        /* Set organization_number to companyId value */
+                                        paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
+
+                                        // Call Magewire to set payment data
+                                        Magewire.find("checkout.payment.method.two-payment-method")
+                                            .call('setPaymentData', paymentData)
+                                            .then(() => {
+                                                clearTimeout(timeoutId);
+                                                resolve();
+                                            })
+                                            .catch((error) => {
+                                                console.error("Error setting payment data:", error);
+                                                clearTimeout(timeoutId);
+                                                resolve(); // Resolve anyway to not block the flow
+                                            });
+
+                                    } catch (error) {
+                                        console.error("Error in payment data processing:", error);
+                                        clearTimeout(timeoutId);
+                                        resolve(); // Resolve anyway to not block the flow
+                                    }
+                                };
+
+                                        // Give a short delay to let order intent process, then proceed
+                                        setTimeout(checkAndProceed, 1000);
+                                    });
                                 }
-                            });
+                            }
                         }
 
                         try {
@@ -107,6 +148,7 @@ $quoteDetails = json_encode($quoteDetails);
                             dirty = false;
                             await wire.store();
                         } catch (exception) {
+                            console.error("Error in wire.store():", exception);
                             // ignore
                         }
 
@@ -116,7 +158,14 @@ $quoteDetails = json_encode($quoteDetails);
                         dirty = true;
 
                         clearTimeout(timeout);
-                        timeout = setTimeout(() => doSave(false), wire.autoSaveTimeout);
+
+                        try {
+                            timeout = setTimeout(() => {
+                                doSave(false);
+                            }, wire.autoSaveTimeout);
+                        } catch (error) {
+                            console.error("Error in interactionCallback setTimeout:", error);
+                        }
                     }
 
                     hyvaCheckout.navigation.addTask(doSave, {
@@ -357,9 +406,9 @@ $quoteDetails = json_encode($quoteDetails);
                 companyIdInput.style.backgroundColor = "#D3D3D3";
 
                 if (self.isOrderIntentEnabled && triggerOrderIntent) {
-                    this.placeOrderIntent()
-                        .then(response => this.processOrderIntentSuccessResponse(response))
-                        .catch(error => this.processOrderIntentErrorResponse(error));
+                    // Dispatch the global event instead of calling placeOrderIntent directly
+                    // This ensures consistent payment method validation
+                    window.dispatchEvent(new Event("dispatch-order-intent"));
                 }
             },
 
@@ -559,7 +608,7 @@ $quoteDetails = json_encode($quoteDetails);
                     return this.poNumber = this.$el.value
                 },
                 ['twoGatewayHyvaOnPaymentTermsChange'](event) {
-                    return this.isPaymentTermsAccepted = this.$el.value
+                    return this.isPaymentTermsAccepted = this.$el.checked
                 },
                 ['twoGatewayHyvaGetItemClass']() {
                     return {
@@ -567,6 +616,7 @@ $quoteDetails = json_encode($quoteDetails);
                     }
                 },
                 ['twoGatewayHyvaOnCompanyItemClick'](event) {
+                    event.stopPropagation();
                     return this.selectItem(this.item)
                 },
                 ['twoGatewayHyvaOnManualEntryClick'](event) {
@@ -661,10 +711,43 @@ $quoteDetails = json_encode($quoteDetails);
 
     // Global order intent event listener - only added once
     window.addEventListener("dispatch-order-intent", (event) => {
-        if (twoPaymentComponentInstance && twoPaymentComponentInstance.isOrderIntentEnabled) {
+        // Check if Two payment method is currently selected
+        const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+
+        if (!activePaymentMethod) {
+            return;
+        }
+
+        const selectedPaymentValue = activePaymentMethod.value;
+        const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+
+        // Only proceed if Two payment method is selected
+        if (!isTwoPaymentSelected) {
+            return;
+        }
+
+        // Function to execute order intent
+        const executeOrderIntent = () => {
+            if (!twoPaymentComponentInstance) {
+                return false;
+            }
+
+            if (!twoPaymentComponentInstance.isOrderIntentEnabled) {
+                return false;
+            }
+
             twoPaymentComponentInstance.placeOrderIntent()
                 .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
                 .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
+            return true;
+        };
+
+        // Try to execute immediately
+        if (!executeOrderIntent()) {
+            // If component not available, try again after a short delay
+            setTimeout(() => {
+                executeOrderIntent();
+            }, 100);
         }
     });
 </script>

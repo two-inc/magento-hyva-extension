@@ -250,8 +250,8 @@ $quoteDetails = json_encode(
               <div class="field field-reserved required">
                 <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
                   <input type="checkbox"
-                      name="terms-checkbox"
-                      :value="isPaymentTermsAccepted" @change="twoGatewayHyvaOnPaymentTermsChange"
+                      name="payment[terms_accepted]"
+                      :checked="isPaymentTermsAccepted" @change="twoGatewayHyvaOnPaymentTermsChange"
                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring focus:ring-blue-300"
                       required
                       data-validate='{"required": true}'

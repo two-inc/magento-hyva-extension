@@ -16,6 +16,7 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
+$hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $companySearchLimit = $configModel->getCompanySearchLimit();
@@ -26,6 +27,7 @@ $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetails = json_encode($quoteDetails);
 ?>
 <input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
+<input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
 <script>
 document.addEventListener('alpine:init', () => {
 
@@ -37,7 +39,7 @@ document.addEventListener('alpine:init', () => {
 
     Alpine.data('searchInput', window['searchInput'] = () => ({
         isOpen: false,
-        search: document.getElementById('shipping-company').value ?? '',
+        search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
         items: [],
         companyName: '',
         companyId: '',
@@ -60,7 +62,7 @@ document.addEventListener('alpine:init', () => {
             if (!self.isCompanySearchEnabled) return;
 
             const countryId = document.getElementById("shipping-country_id");
-            if(countryId.value){
+            if(countryId && countryId.value){
                 self.countryCode = countryId.value
             }
             else {
@@ -127,8 +129,18 @@ document.addEventListener('alpine:init', () => {
             this.selectedIndex = -1;
             this.search = item.companyName;
 
-            document.getElementById('shipping-company').value = item.companyName;
-            document.getElementById('shipping-company_id').value = item.companyId;
+
+            const shippingCompanyInput = document.getElementById('shipping-company');
+            const shippingCompanyIdInput = document.getElementById('shipping-company_id');
+
+            if (shippingCompanyInput) {
+            shippingCompanyInput.value = item.companyName;
+            }
+
+            if (shippingCompanyIdInput) {
+            shippingCompanyIdInput.value = item.companyId;
+            }
+
 
             const companyNameInput = document.querySelector('[data-name="company_name"]');
             const companyIdInput = document.querySelector('[data-name="company_id"]');
@@ -153,7 +165,12 @@ document.addEventListener('alpine:init', () => {
             window.dispatchEvent(new Event("shipping-company-selected"));
 
             const inputField = document.querySelector("#shipping-company");
-            inputField.dispatchEvent(new Event("input"));
+
+            if (inputField) {
+                // Dispatch a non-bubbling input event to prevent modal closure
+                inputField.dispatchEvent(new Event("input", { bubbles: false }));
+            }
+
             if (self.isAddressSearchEnabled) {
                 this.addressLookup(item.lookupId);
             }
@@ -212,15 +229,30 @@ document.addEventListener('alpine:init', () => {
             }
         },
         setAddressData(address) {
-            document.querySelector('input[name="city"]').value = address.city || "";
-            document.querySelector('input[name="postcode"]').value = address.postal_code || "";
-            document.querySelector('input[name="street[0]"]').value = address.street_address || "";
 
-            // Trigger 'change' event manually
+
+            const cityInput = document.querySelector('input[name="city"]');
+            const postcodeInput = document.querySelector('input[name="postcode"]');
+            const streetInput = document.querySelector('input[name="street[0]"]');
+
+            if (cityInput) {
+            cityInput.value = address.city || "";
+            }
+
+            if (postcodeInput) {
+            postcodeInput.value = address.postal_code || "";
+            }
+
+            if (streetInput) {
+            streetInput.value = address.street_address || "";
+            }
+
+            // Trigger 'input' event manually with controlled bubbling
             ['city', 'postcode', 'street[0]'].forEach(name => {
                 const input = document.querySelector(`input[name="${name}"]`);
                 if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    // Dispatch with bubbles: false to prevent modal closure
+                    input.dispatchEvent(new Event('input', { bubbles: false }));
                 }
             });
         },
