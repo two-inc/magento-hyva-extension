@@ -3,7 +3,7 @@
   "description": "Two Inc Payment Method in Hyva Checkout",
   "type": "magento2-module",
   "require": {
-    "two-inc/magento2": "^1.12",
+    "two-inc/magento2": "^1.13",
     "hyva-themes/magento2-hyva-checkout": "^1.3"
   },
   "autoload": {
