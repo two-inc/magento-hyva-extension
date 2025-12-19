@@ -617,7 +617,7 @@ $quoteDetails = json_encode($quoteDetails);
                 },
                 ['twoGatewayHyvaOnCompanyItemClick'](event) {
                     event.stopPropagation();
-                    return this.selectItem(this.item)
+                    return this.selectItem(this.items[this.selectedIndex])
                 },
                 ['twoGatewayHyvaOnManualEntryClick'](event) {
                     return this.showManual = true

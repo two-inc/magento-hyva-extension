@@ -24,7 +24,7 @@ function twoGatewayHyvaCompanySearchField() {
             ['twoGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
             ['twoGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
             ['twoGatewayHyvaOnSearchModeClick'](event) {return this.showManual = false},
-            ['twoGatewayHyvaOnCompanyItemClick'](event) {event.stopPropagation(); return this.selectItem(this.item)},
+            ['twoGatewayHyvaOnCompanyItemClick'](event) {event.stopPropagation(); return this.selectItem(this.items[this.selectedIndex])},
             ['twoGatewayHyvaOnManualEntryClick'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
             ['twoGatewayHyvaOnCompanySearchClickOutside'](event) {return this.isOpen = false},
             ['twoGatewayHyvaOnCompanySearchFocus'](event) {return this.isOpen = true},
