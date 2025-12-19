@@ -7,7 +7,7 @@ This document provides instructions for installing the Two Gateway Payment Metho
 ## Compatibility
 
 - **Magento Version**: 2.4.x
-- **Two Gateway Module Version**: 1.13.0
+- **Two Gateway Module Version**: 1.13.1
 - **Hyvä Checkout Ready**
 
 ## Prerequisites
@@ -83,9 +83,17 @@ Set up your Two Gateway credentials and settings in the Magento Admin:
 
 ## Testing
 
-1. Navigate to your store's frontend checkout page.
-2. Verify that the Two Gateway payment method is visible.
-3. Place a test order to ensure everything is working correctly.
+1. Check the module is enabled: `php bin/magento module:status | grep Two_GatewayHyva`
+2. Navigate to your store's frontend checkout page
+3. Verify that the Two Gateway payment method is visible
+4. Place a test order to ensure everything is working correctly
+
+## Troubleshooting
+
+- Ensure Hyvä theme is properly installed
+- Check Magento logs: `var/log/system.log` and `var/log/exception.log`
+- Verify CSP (Content Security Policy) settings if scripts are blocked
+- Clear all caches after installation
 
 ## Development
 

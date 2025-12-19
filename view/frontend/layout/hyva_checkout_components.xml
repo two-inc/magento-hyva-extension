@@ -10,7 +10,7 @@
     <body>
         <referenceBlock name="head.additional">
             <block name="checkout-shipping-address-company-search"
-                ifconfig="payment/two_payment/active"
+                ifconfig="payment/two_payment/enable_company_search"
                 template="Two_GatewayHyva::component/payment/method/shipping_company.phtml" after="-"/>
         </referenceBlock>
         <referenceBlock name="checkout.payment.methods">
