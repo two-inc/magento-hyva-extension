@@ -1,16 +1,18 @@
 # Two Gateway Hyva Extension
 
+- **Two Gateway Module Version**: 1.13.2
+
 ## Introduction
 
 This document provides instructions for installing the Two Gateway Payment Method module with Hyvä Checkout compatibility for Magento 2. This module ensures a seamless payment experience for stores using the Hyvä frontend.
 
 ## Compatibility
 
-| Component | Version | Link |
-|-----------|---------|------|
-| Magento | 2.4.x | [Release Notes](https://experienceleague.adobe.com/en/docs/commerce-operations/release/notes/magento-open-source/2-4-8) |
-| Two Gateway Module | ^1.13.1 | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin) |
-| Hyvä Checkout | ^1.3 | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html) |
+| Component          | Version | Link                                                                                                                    |
+| ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Magento            | 2.4.x   | [Release Notes](https://experienceleague.adobe.com/en/docs/commerce-operations/release/notes/magento-open-source/2-4-8) |
+| Two Gateway Module | ^1.13.1 | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
+| Hyvä Checkout      | ^1.3    | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html)                                                                 |
 
 ## Prerequisites
 
