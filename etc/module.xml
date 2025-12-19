@@ -7,7 +7,7 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
-	<module name="Two_GatewayHyva" setup_version="1.0.0">
+	<module name="Two_GatewayHyva" setup_version="1.13.0">
 		<sequence>
             <module name="Hyva_Checkout"/>
             <module name="Hyva_CompatModuleFallback"/>
