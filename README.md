@@ -7,7 +7,7 @@ This document provides instructions for installing the Two Gateway Payment Metho
 ## Compatibility
 
 - **Magento Version**: 2.4.x
-- **Two Gateway Module Version**: 1.13.1
+- **Two Gateway Module Version**: 1.13.2
 - **Hyvä Checkout Ready**
 
 ## Prerequisites
