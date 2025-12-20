@@ -270,9 +270,9 @@ $quoteDetails = json_encode($quoteDetails);
 
             },
             async getItems() {
-                self = this;
+                const self = this;
                 this.search = this.$el.value;
-                self.selectedIndex = -1;
+                this.selectedIndex = -1;
                 const quoteData = JSON.parse(JSON.stringify(self.quote));
                 const countryId = document.getElementById("shipping-country_id");
                 if (countryId && countryId.value) {
@@ -333,6 +333,7 @@ $quoteDetails = json_encode($quoteDetails);
                 }
             },
             selectItem(item) {
+                const self = this;
                 self.isOpen = false;
                 self.items = [];
                 this.selectedIndex = -1;
@@ -392,7 +393,7 @@ $quoteDetails = json_encode($quoteDetails);
                 }
             },
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
-                self = this;
+                const self = this;
                 companyName = typeof companyName == 'string' && companyName ? companyName : '';
                 companyId = typeof companyId == 'string' ? companyId : '';
                 if (!companyId || !companyName) return;
@@ -413,7 +414,7 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             async placeOrderIntent() {
-                self = this;
+                const self = this;
                 try {
                     const quoteData = JSON.parse(JSON.stringify(self.quote));
 
