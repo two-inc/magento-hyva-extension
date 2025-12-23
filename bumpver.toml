@@ -8,12 +8,5 @@ tag = true
 push = true
 
 [tool.bumpver.file_patterns]
-"composer.json" = [
-    '"version": "{version}",',
-]
-"README.md" = [
-    '- **Two Gateway Module Version**: {version}',
-]
-"etc/module.xml" = [
-    'setup_version="{version}"',
-]
+"composer.json" = ['"version": "{version}",']
+"README.md" = ['- **Two Gateway Module Version**: {version}']

@@ -103,29 +103,63 @@ use Hyva\Theme\ViewModel\HyvaCsp;
             }
         };
 
-        // Simple initialization check - only run once
-        const initializeOnce = () => {
+        // Use MutationObserver to watch for payment form elements
+        const observeForPaymentForm = () => {
             if (paymentFieldsInitialized) return;
 
             const companyNameInput = document.querySelector('[data-name="company_name"]');
             const companyIdInput = document.querySelector('[data-name="company_id"]');
 
             if (companyNameInput && companyIdInput) {
+                // Payment form is already ready, initialize immediately
                 initializePaymentFieldsFromShipping();
+                paymentFieldsInitialized = true;
+
+                // Check if two_payment is already selected on page load and trigger order intent if needed
+                const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
+                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                    if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
+                        window.dispatchEvent(new Event("dispatch-order-intent"));
+                    }
+                }
+                return;
             }
 
-            // Check if two_payment is already selected on page load and trigger order intent if needed
-            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
-                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
-                    window.dispatchEvent(new Event("dispatch-order-intent"));
-                }
-            }
+            // Set up MutationObserver to watch for payment form elements
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'childList') {
+                        const companyNameInput = document.querySelector('[data-name="company_name"]');
+                        const companyIdInput = document.querySelector('[data-name="company_id"]');
+
+                        if (companyNameInput && companyIdInput) {
+                            initializePaymentFieldsFromShipping();
+                            paymentFieldsInitialized = true;
+
+                            // Check if two_payment is already selected and trigger order intent
+                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
+                                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                                if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
+                                    window.dispatchEvent(new Event("dispatch-order-intent"));
+                                }
+                            }
+                            observer.disconnect(); // Stop observing once we've found the elements
+                        }
+                    }
+                });
+            });
+
+            // Start observing the document for changes
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
         };
 
-        // Try to initialize immediately, but don't force it
-        initializeOnce();
+        // Start observing for payment form
+        observeForPaymentForm();
     });
 
 

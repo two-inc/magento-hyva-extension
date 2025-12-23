@@ -2,6 +2,7 @@
 .php-cs-fixer.cache
 
 # Generated artifacts
+index.html
 *.zip
 
 # Environments
