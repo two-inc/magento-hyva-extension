@@ -197,29 +197,17 @@ class CheckoutConfig implements ArgumentInterface
     public function getpaymentTermsMessage()
     {
         $paymentTerms = __(
-            "terms and conditions of %1",
-            $this->configRepository::PRODUCT_NAME,
+            "%1 terms and conditions",
+            $this->configRepository::PROVIDER,
         );
         $paymentTermsLink =
             $this->configRepository->getCheckoutPageUrl() . "/terms";
-        $paymentTermsEmail = $this->configRepository::PAYMENT_TERMS_EMAIL;
         $paymentTermsMessage = __(
-            "I have filled in all the details truthfully and accept to pay the invoice in 30 days. " .
-                "I agree to the %1. " .
-                "You hereby give permission to %2 to decide on the basis " .
-                "of automated processing of (personal) data whether you can use %3. " .
-                "You can withdraw this permission by sending an e-mail to %4.",
+            "By checking this box, I confirm that I have read and agree to %1.",
             sprintf(
                 '<a class="text-blue-600" href="%s" target="_blank">%s</a>',
                 $paymentTermsLink,
                 $paymentTerms,
-            ),
-            $this->configRepository::PROVIDER_FULL_NAME,
-            $this->configRepository::PRODUCT_NAME,
-            sprintf(
-                '<a class="text-blue-600" href="mailto:%s">%s</a>',
-                $paymentTermsEmail,
-                $paymentTermsEmail,
             ),
         );
         return $paymentTermsMessage;
@@ -228,8 +216,8 @@ class CheckoutConfig implements ArgumentInterface
     public function getTermsNotAcceptedMessage()
     {
         $paymentTerms = __(
-            "terms and conditions of %1",
-            $this->configRepository::PRODUCT_NAME,
+            "%1 terms and conditions",
+            $this->configRepository::PROVIDER,
         );
         $termsNotAcceptedMessage = __(
             "You must accept %1 to place order.",
