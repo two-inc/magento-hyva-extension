@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
+    <system>
+        <section id="two_general">
+            <group id="hyva" translate="label" type="text" sortOrder="15" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Hyva Extension</label>
+                <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Version</label>
+                    <frontend_model>Two\GatewayHyva\Block\Adminhtml\System\Config\Field\Version</frontend_model>
+                </field>
+            </group>
+        </section>
+    </system>
+</config>
