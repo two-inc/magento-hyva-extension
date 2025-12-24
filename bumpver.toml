@@ -1,5 +1,5 @@
 [tool.bumpver]
-current_version = "1.13.4"
+current_version = "1.13.5"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message = "chore: Bump version {old_version} -> {new_version}"
 commit = true
