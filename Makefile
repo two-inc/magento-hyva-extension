@@ -1,10 +1,9 @@
+tag:
+	eval $$(bumpver show --environ) && git tag abn-$${CURRENT_VERSION} -f && git push origin abn-$${CURRENT_VERSION} -f && git push origin abn-main-csp -f
 archive:
-	eval $$(bumpver show --environ) && git archive --format zip HEAD > two-gateway-hyva-extension-$${CURRENT_VERSION}.zip
-bumpver-%:
-	SKIP=commit-msg bumpver update --$*
-patch: bumpver-patch
-minor: bumpver-minor
-major: bumpver-major
+	eval $$(bumpver show --environ) && mkdir -p artifacts/$${CURRENT_VERSION} && git archive --format zip HEAD > artifacts/$${CURRENT_VERSION}/magento-abn-hyva-extension.zip
+publish: archive
+	gsutil cp -r artifacts/* gs://achteraf-betalen/magento-hyva/ && ./scripts/publish-to-bucket.py
 format:
 	prettier -w view/frontend/templates/
 	prettier -w view/frontend/web/css/

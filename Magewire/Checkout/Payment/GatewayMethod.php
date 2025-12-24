@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Magewire\Checkout\Payment;
+namespace ABN\GatewayHyva\Magewire\Checkout\Payment;
 
 use Magento\Checkout\Model\Session;
 use Magento\Framework\Exception\LocalizedException;

@@ -10,6 +10,6 @@ use Magento\Framework\Component\ComponentRegistrar;
 
 ComponentRegistrar::register(
     ComponentRegistrar::MODULE,
-    "Two_GatewayHyva",
+    "ABN_GatewayHyva",
     __DIR__,
 );

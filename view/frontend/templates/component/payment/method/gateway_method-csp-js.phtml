@@ -9,8 +9,8 @@
 
 declare(strict_types=1);
 
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
-use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use ABN\GatewayHyva\ViewModel\CheckoutConfig;
+use ABN\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Hyva\Theme\ViewModel\HyvaCsp;
@@ -67,7 +67,7 @@ $quoteDetails = json_encode($quoteDetails);
                                 // No payment method selected, skip order intent
                             } else {
                                 const selectedPaymentValue = activePaymentMethod.value;
-                                const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+                                const isTwoPaymentSelected = selectedPaymentValue === "abn_payment";
 
                                 // Only proceed if Two payment method is selected
                                 if (!isTwoPaymentSelected) {
@@ -114,7 +114,7 @@ $quoteDetails = json_encode($quoteDetails);
                                         paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
                                         // Call Magewire to set payment data
-                                        Magewire.find("checkout.payment.method.two-payment-method")
+                                        Magewire.find("checkout.payment.method.abn-payment-method")
                                             .call('setPaymentData', paymentData)
                                             .then(() => {
                                                 clearTimeout(timeoutId);
@@ -169,7 +169,7 @@ $quoteDetails = json_encode($quoteDetails);
                     }
 
                     hyvaCheckout.navigation.addTask(doSave, {
-                        name: 'two-payment-method'
+                        name: 'abn-payment-method'
                     });
 
                     const addEventListeners = (el) => {
@@ -245,7 +245,7 @@ $quoteDetails = json_encode($quoteDetails);
                 this.showManual = false;
 
                 // Set global reference for order intent handling
-                twoPaymentComponentInstance = this;
+                abnPaymentComponentInstance = this;
 
                 // Listen for company data updates from shipping section
                 this.$el.addEventListener('update-company-data', (event) => {
@@ -584,131 +584,131 @@ $quoteDetails = json_encode($quoteDetails);
         }
     }
 
-    function twoGatewayHyvaPaymentMethodBase() {
+    function abnGatewayHyvaPaymentMethodBase() {
         return Object.assign(
             searchInputBilling(), {
                 ['!showManual']() {
                     return !this.showManual
                 },
-                ['twoGatewayHyvaOnCompanySearchChange'](event) {
+                ['abnGatewayHyvaOnCompanySearchChange'](event) {
                     return this.search = this.$el.value
                 },
-                ['twoGatewayHyvaOnInvoiceEmailsChange'](event) {
+                ['abnGatewayHyvaOnInvoiceEmailsChange'](event) {
                     return this.invoiceEmails = this.$el.value
                 },
-                ['twoGatewayHyvaOnProjectChange'](event) {
+                ['abnGatewayHyvaOnProjectChange'](event) {
                     return this.project = this.$el.value
                 },
-                ['twoGatewayHyvaOnDepartmentChange'](event) {
+                ['abnGatewayHyvaOnDepartmentChange'](event) {
                     return this.department = this.$el.value
                 },
-                ['twoGatewayHyvaOnOrderNoteChange'](event) {
+                ['abnGatewayHyvaOnOrderNoteChange'](event) {
                     return this.orderNote = this.$el.value
                 },
-                ['twoGatewayHyvaOnPoNumberChange'](event) {
+                ['abnGatewayHyvaOnPoNumberChange'](event) {
                     return this.poNumber = this.$el.value
                 },
-                ['twoGatewayHyvaOnPaymentTermsChange'](event) {
+                ['abnGatewayHyvaOnPaymentTermsChange'](event) {
                     return this.isPaymentTermsAccepted = this.$el.checked
                 },
-                ['twoGatewayHyvaGetItemClass']() {
+                ['abnGatewayHyvaGetItemClass']() {
                     return {
                         'bg-gray-100': this.selectedIndex === this.index
                     }
                 },
-                ['twoGatewayHyvaOnCompanyItemClick'](event) {
+                ['abnGatewayHyvaOnCompanyItemClick'](event) {
                     event.stopPropagation();
                     return this.selectItem(this.items[this.selectedIndex])
                 },
-                ['twoGatewayHyvaOnManualEntryClick'](event) {
+                ['abnGatewayHyvaOnManualEntryClick'](event) {
                     return this.showManual = true
                 },
-                ['twoGatewayHyvaOnSearchModeClick'](event) {
+                ['abnGatewayHyvaOnSearchModeClick'](event) {
                     return this.showManual = false
                 },
-                ['twoGatewayHyvaOnCompanySearchClickOutside'](event) {
+                ['abnGatewayHyvaOnCompanySearchClickOutside'](event) {
                     return this.isOpen = false
                 },
-                ['twoGatewayHyvaOnCompanySearchFocus'](event) {
+                ['abnGatewayHyvaOnCompanySearchFocus'](event) {
                     return this.isOpen = true
                 },
-                ['twoGatewayHyvaGetCompanyDisplayName']() {
+                ['abnGatewayHyvaGetCompanyDisplayName']() {
                     return this.item.companyDisplayName
                 },
-                ['twoGatewayHyvaGetCompanyNameId']() {
+                ['abnGatewayHyvaGetCompanyNameId']() {
                     return this.showManual ? 'manual_company_name' : 'company_name'
                 },
-                ['twoGatewayHyvaGetManualCompanyNameId']() {
+                ['abnGatewayHyvaGetManualCompanyNameId']() {
                     return !this.showManual ? 'manual_company_name' : 'company_name'
                 },
-                ['twoGatewayHyvaGetCompanyIdFieldId']() {
+                ['abnGatewayHyvaGetCompanyIdFieldId']() {
                     return this.showManual ? 'manual_company_id' : 'company_id'
                 },
-                ['twoGatewayHyvaGetManualCompanyIdFieldId']() {
+                ['abnGatewayHyvaGetManualCompanyIdFieldId']() {
                     return this.showManual ? 'company_id' : 'manual_company_id'
                 },
-                ['twoGatewayHyvaOnInit']() {
+                ['abnGatewayHyvaOnInit']() {
                     this.initialize(this.quote = JSON.parse(`${this.$el.dataset.hyvacsp1}`));
                 },
-                ['twoGatewayHyvaGetCompanyId']() {
+                ['abnGatewayHyvaGetCompanyId']() {
                     return this.item.companyId
                 },
-                ['twoGatewayHyvaOnArrowDown'](event) {
+                ['abnGatewayHyvaOnArrowDown'](event) {
                     return this.nextItem()
                 },
-                ['twoGatewayHyvaOnArrowUp'](event) {
+                ['abnGatewayHyvaOnArrowUp'](event) {
                     return this.prevItem()
                 },
-                ['twoGatewayHyvaOnEnterSelect'](event) {
+                ['abnGatewayHyvaOnEnterSelect'](event) {
                     return this.selectHighlightedItem()
                 },
-                ['twoGatewayHyvaOnItemMouseover'](event) {
+                ['abnGatewayHyvaOnItemMouseover'](event) {
                     return this.selectedIndex = this.index
                 },
-                ['twoGatewayHyvaGetCompanyNameField']() {
+                ['abnGatewayHyvaGetCompanyNameField']() {
                     return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
                 },
-                ['twoGatewayHyvaGetCompanyIdFieldName']() {
+                ['abnGatewayHyvaGetCompanyIdFieldName']() {
                     return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]'
                 },
-                ['twoGatewayHyvaGetManualCompanyIdFieldName']() {
+                ['abnGatewayHyvaGetManualCompanyIdFieldName']() {
                     return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]'
                 },
-                ['twoGatewayHyvaGetManualCompanyNameField']() {
+                ['abnGatewayHyvaGetManualCompanyNameField']() {
                     return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
                 },
-                ['twoGatewayHyvaShouldShowMinCharsMessage']() {
+                ['abnGatewayHyvaShouldShowMinCharsMessage']() {
                     return this.search.length < 3
                 },
             }
         )
     }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase), {
+    window.addEventListener('alpine:init', () => Alpine.data('abnGatewayHyvaPaymentMethodBase', abnGatewayHyvaPaymentMethodBase), {
         once: true
     });
 
-    function twoGatewayHyvaPaymentFormWithValidation() {
+    function abnGatewayHyvaPaymentFormWithValidation() {
         return Object.assign(
-            Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaPaymentMethodBase())
+            Object.assign(validatePaymentForm(this.$el, this.$wire), abnGatewayHyvaPaymentMethodBase())
         )
     }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation), {
+    window.addEventListener('alpine:init', () => Alpine.data('abnGatewayHyvaPaymentFormWithValidation', abnGatewayHyvaPaymentFormWithValidation), {
         once: true
     });
 
-    function twoGatewayHyvaPaymentTermsComponent() {
+    function abnGatewayHyvaPaymentTermsComponent() {
         return Object.assign(
             Object.assign({
                 isPaymentTermsAccepted: false
-            }, twoGatewayHyvaPaymentMethodBase())
+            }, abnGatewayHyvaPaymentMethodBase())
         )
     }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent), {
+    window.addEventListener('alpine:init', () => Alpine.data('abnGatewayHyvaPaymentTermsComponent', abnGatewayHyvaPaymentTermsComponent), {
         once: true
     });
 
     // Global reference to the payment component instance
-    let twoPaymentComponentInstance = null;
+    let abnPaymentComponentInstance = null;
 
     // Global order intent event listener - only added once
     window.addEventListener("dispatch-order-intent", (event) => {
@@ -720,7 +720,7 @@ $quoteDetails = json_encode($quoteDetails);
         }
 
         const selectedPaymentValue = activePaymentMethod.value;
-        const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+        const isTwoPaymentSelected = selectedPaymentValue === "abn_payment";
 
         // Only proceed if Two payment method is selected
         if (!isTwoPaymentSelected) {
@@ -729,17 +729,17 @@ $quoteDetails = json_encode($quoteDetails);
 
         // Function to execute order intent
         const executeOrderIntent = () => {
-            if (!twoPaymentComponentInstance) {
+            if (!abnPaymentComponentInstance) {
                 return false;
             }
 
-            if (!twoPaymentComponentInstance.isOrderIntentEnabled) {
+            if (!abnPaymentComponentInstance.isOrderIntentEnabled) {
                 return false;
             }
 
-            twoPaymentComponentInstance.placeOrderIntent()
-                .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
-                .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
+            abnPaymentComponentInstance.placeOrderIntent()
+                .then(response => abnPaymentComponentInstance.processOrderIntentSuccessResponse(response))
+                .catch(error => abnPaymentComponentInstance.processOrderIntentErrorResponse(error));
             return true;
         };
 

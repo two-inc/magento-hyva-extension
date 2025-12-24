@@ -15,29 +15,29 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
-function twoGatewayHyvaCompanySearchField() {
+function abnGatewayHyvaCompanySearchField() {
     return Object.assign(
         searchInput(),
         {
             showManual: false,
             ['!showManual']() {return !this.showManual},
-            ['twoGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
-            ['twoGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
-            ['twoGatewayHyvaOnSearchModeClick'](event) {return this.showManual = false},
-            ['twoGatewayHyvaOnCompanyItemClick'](event) {event.stopPropagation(); return this.selectItem(this.items[this.selectedIndex])},
-            ['twoGatewayHyvaOnManualEntryClick'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
-            ['twoGatewayHyvaOnCompanySearchClickOutside'](event) {return this.isOpen = false},
-            ['twoGatewayHyvaOnCompanySearchFocus'](event) {return this.isOpen = true},
-            ['twoGatewayHyvaGetCompanyDisplayName']() {return this.item.companyDisplayName},
-            ['twoGatewayHyvaGetCompanyId']() {return this.item.companyId},
-            ['twoGatewayHyvaOnArrowDown'](event) {return this.nextItem()},
-            ['twoGatewayHyvaOnArrowUp'](event) {return this.prevItem()},
-            ['twoGatewayHyvaOnEnterSelect'](event) {return this.selectHighlightedItem()},
-            ['twoGatewayHyvaOnItemMouseover'](event) {return this.selectedIndex = this.index},
-            ['twoGatewayHyvaShouldShowMinCharsMessage']() {return this.search.length < 3},
+            ['abnGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
+            ['abnGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
+            ['abnGatewayHyvaOnSearchModeClick'](event) {return this.showManual = false},
+            ['abnGatewayHyvaOnCompanyItemClick'](event) {event.stopPropagation(); return this.selectItem(this.items[this.selectedIndex])},
+            ['abnGatewayHyvaOnManualEntryClick'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
+            ['abnGatewayHyvaOnCompanySearchClickOutside'](event) {return this.isOpen = false},
+            ['abnGatewayHyvaOnCompanySearchFocus'](event) {return this.isOpen = true},
+            ['abnGatewayHyvaGetCompanyDisplayName']() {return this.item.companyDisplayName},
+            ['abnGatewayHyvaGetCompanyId']() {return this.item.companyId},
+            ['abnGatewayHyvaOnArrowDown'](event) {return this.nextItem()},
+            ['abnGatewayHyvaOnArrowUp'](event) {return this.prevItem()},
+            ['abnGatewayHyvaOnEnterSelect'](event) {return this.selectHighlightedItem()},
+            ['abnGatewayHyvaOnItemMouseover'](event) {return this.selectedIndex = this.index},
+            ['abnGatewayHyvaShouldShowMinCharsMessage']() {return this.search.length < 3},
         }
     )
 }
-window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaCompanySearchField', twoGatewayHyvaCompanySearchField), {once: true});
+window.addEventListener('alpine:init', () => Alpine.data('abnGatewayHyvaCompanySearchField', abnGatewayHyvaCompanySearchField), {once: true});
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

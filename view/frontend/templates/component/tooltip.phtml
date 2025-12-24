@@ -10,17 +10,24 @@ use Magento\Framework\Escaper;
  * See COPYING.txt for license details.
  */
 ?>
-<div class="two-tooltip-icon">
+<div class="abn-tooltip-icon">
     <img width="20px" src="<?= $block->getViewFileUrl(
-        "Two_GatewayHyva::images/cc/tooltip-icon.png",
+        "ABN_GatewayHyva::images/cc/tooltip-icon.png",
     ) ?>">
-    <div class="two-tooltip-box z-40">
-        <p><?= $escaper->escapeHtml(
-            __("Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple."),
-        ) ?></p>
+    <div class="abn-tooltip-box z-40">
+        <span>
+            <?= $escaper->escapeHtml(
+                __(
+                    "Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.",
+                ),
+            ) ?></span><br>
         <br>
-        <p><strong><?= $escaper->escapeHtml(__("Buy now, receive your goods, pay your invoice later.")) ?></strong></p>
+        <p><strong><?= $escaper->escapeHtml(
+            __("Buy now, receive your goods, pay your invoice later."),
+        ) ?></strong></p>
         <br>
-        <p><a href="https://www.two.inc/what-is-two" target="_blank"><?= $escaper->escapeHtml(__("Find out more")) ?></a></p>
+        <span><?= $escaper->escapeHtml(
+            __("You don't need to be an ABN AMRO customer."),
+        ) ?></span>
     </div>
 </div>

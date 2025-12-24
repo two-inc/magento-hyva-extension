@@ -115,9 +115,9 @@ use Hyva\Theme\ViewModel\HyvaCsp;
                 initializePaymentFieldsFromShipping();
                 paymentFieldsInitialized = true;
 
-                // Check if two_payment is already selected on page load and trigger order intent if needed
+                // Check if abn_payment is already selected on page load and trigger order intent if needed
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
+                if (activePaymentMethod && activePaymentMethod.value === "abn_payment") {
                     const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                     if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                         window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -137,9 +137,9 @@ use Hyva\Theme\ViewModel\HyvaCsp;
                             initializePaymentFieldsFromShipping();
                             paymentFieldsInitialized = true;
 
-                            // Check if two_payment is already selected and trigger order intent
+                            // Check if abn_payment is already selected and trigger order intent
                             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
+                            if (activePaymentMethod && activePaymentMethod.value === "abn_payment") {
                                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                                 if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                                     window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -167,8 +167,8 @@ use Hyva\Theme\ViewModel\HyvaCsp;
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is "two_payment" */
-        if (paymentMethod === "two_payment") {
+        /** Check if the selected payment method is "abn_payment" */
+        if (paymentMethod === "abn_payment") {
             /** Initialize payment method but don't overwrite existing company data */
             /** The company data should only be updated by shipping section selections */
 
@@ -215,9 +215,9 @@ use Hyva\Theme\ViewModel\HyvaCsp;
             const companyIdInput = document.querySelector('[data-name="company_id"]');
 
             if (companyNameInput && companyIdInput) {
-                // Check if two_payment method is active for order intent
+                // Check if abn_payment method is active for order intent
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
+                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "abn_payment";
 
 
                 // Use the centralized update function for consistency and Alpine.js sync
