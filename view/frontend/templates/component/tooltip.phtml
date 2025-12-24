@@ -22,9 +22,9 @@ use Magento\Framework\Escaper;
                 ),
             ) ?></span><br>
         <br>
-        <p><strong><?= $escaper->escapeHtml(
-            __("Buy now, receive your goods, pay your invoice later."),
-        ) ?></strong></p>
+        <span><?= $escaper->escapeHtml(__("• Order on invoice")) ?></span><br>
+        <span><?= $escaper->escapeHtml(__("• Pay within 30 days")) ?></span><br>
+        <span><?= $escaper->escapeHtml(__("• No extra costs")) ?></span><br>
         <br>
         <span><?= $escaper->escapeHtml(
             __("You don't need to be an ABN AMRO customer."),
