@@ -397,11 +397,7 @@ $quoteDetails = json_encode($quoteDetails);
                 this.isOpen = false;
                 this.items = [];
                 this.saveManualModeToStorage(true);
-                const companyIdInput = document.getElementById("company_id");
-                if (companyIdInput) {
-                    companyIdInput.disabled = false;
-                    companyIdInput.style.backgroundColor = "";
-                }
+                // Alpine's :disabled and :style bindings will update automatically
             },
 
             enableSearch() {
@@ -475,12 +471,8 @@ $quoteDetails = json_encode($quoteDetails);
 
                 const companyIdInput = document.getElementById("company_id");
                 if (companyIdInput) {
-                    companyIdInput.disabled = false;
                     companyIdInput.value = companyId;
-                    if (!this.manualMode) {
-                        companyIdInput.disabled = true;
-                        companyIdInput.style.backgroundColor = "#D3D3D3";
-                    }
+                    // Let Alpine's :disabled and :style bindings handle the visual state
                 }
 
                 if (this.isOrderIntentEnabled && triggerOrderIntent) {
