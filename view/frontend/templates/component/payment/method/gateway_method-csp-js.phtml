@@ -69,8 +69,6 @@ $quoteDetails = json_encode($quoteDetails);
                                 if (isTwoPaymentSelected) {
                                     const formRef = form;
 
-                                    window.dispatchEvent(new Event("dispatch-order-intent"));
-
                                     await new Promise((resolve, reject) => {
                                         const timeoutId = setTimeout(() => {
                                             reject("Order intent operation timed out");
