@@ -506,10 +506,19 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             shouldSkipOrderIntent(quoteData) {
-                return !(this.companyId || '').trim();
+                // Check both component state and DOM for manual entry support
+                const companyIdInput = document.getElementById("company_id");
+                const companyId = this.companyId || companyIdInput?.value || '';
+                return !companyId.trim();
             },
 
             buildOrderIntentRequestBody(quoteData) {
+                // Read from DOM to support manual entry (component state only set for dropdown selection)
+                const companyNameInput = document.getElementById("company_name");
+                const companyIdInput = document.getElementById("company_id");
+                const companyName = this.companyName || companyNameInput?.value || "";
+                const companyId = this.companyId || companyIdInput?.value || "";
+
                 let lineItems = quoteData.items?.map(item => ({
                     name: item.name,
                     description: item.description || '',
@@ -557,9 +566,9 @@ $quoteDetails = json_encode($quoteDetails);
                     line_items: lineItems,
                     buyer: {
                         company: {
-                            organization_number: this.companyId || "",
+                            organization_number: companyId,
                             country_prefix: this.countryCode,
-                            company_name: this.companyName || ""
+                            company_name: companyName
                         },
                         representative: {
                             email: quoteData.email,
