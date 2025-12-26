@@ -290,7 +290,6 @@ $quoteDetails = json_encode($quoteDetails);
             // Initialization
             initialize(quote) {
                 this.quote = quote;
-                this.manualMode = false;
                 twoPaymentComponentInstance = this;
 
                 this.$el.addEventListener('update-company-data', (event) => {
@@ -302,6 +301,9 @@ $quoteDetails = json_encode($quoteDetails);
                 this.$nextTick(() => {
                     const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                     const shippingCompany = shippingCompanySelectionData.company_name || "";
+
+                    // Restore manualMode from storage
+                    this.manualMode = shippingCompanySelectionData.manual_mode || false;
 
                     if (!shippingCompany) {
                         this.search = document.getElementById('company_name')?.value ?? '';
@@ -379,10 +381,12 @@ $quoteDetails = json_encode($quoteDetails);
                 this.items = [];
                 this.selectedIndex = -1;
                 this.search = item.companyName;
+                this.manualMode = false;
 
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
                     company_name: item.companyName,
-                    company_id: item.companyId
+                    company_id: item.companyId,
+                    manual_mode: false
                 }));
 
                 this.fillCompanyData(item.companyId, item.companyName);
@@ -392,6 +396,7 @@ $quoteDetails = json_encode($quoteDetails);
                 this.manualMode = true;
                 this.isOpen = false;
                 this.items = [];
+                this.saveManualModeToStorage(true);
                 const companyIdInput = document.getElementById("company_id");
                 if (companyIdInput) {
                     companyIdInput.disabled = false;
@@ -401,7 +406,14 @@ $quoteDetails = json_encode($quoteDetails);
 
             enableSearch() {
                 this.manualMode = false;
+                this.saveManualModeToStorage(false);
                 document.getElementById('company_name')?.focus();
+            },
+
+            saveManualModeToStorage(manualMode) {
+                const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                data.manual_mode = manualMode;
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
             },
 
             // Keyboard navigation

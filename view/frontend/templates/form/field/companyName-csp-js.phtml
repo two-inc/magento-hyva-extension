@@ -35,6 +35,12 @@ function twoGatewayHyvaCompanySearchField() {
         checkoutApiUrl: '<?= $checkoutApiUrl ?>',
         isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
 
+        init() {
+            // Restore manualMode from storage
+            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            this.manualMode = data.manual_mode || false;
+        },
+
         showDropdown() {
             return this.isOpen && this.items.length > 0;
         },
@@ -85,6 +91,7 @@ function twoGatewayHyvaCompanySearchField() {
             this.isOpen = false;
             this.items = [];
             this.search = item.companyName;
+            this.manualMode = false;
 
             const input = this.$root.querySelector('input[type="text"]');
             if (input) {
@@ -94,7 +101,8 @@ function twoGatewayHyvaCompanySearchField() {
 
             const companyData = {
                 company_name: item.companyName,
-                company_id: item.companyId
+                company_id: item.companyId,
+                manual_mode: false
             };
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
 
@@ -164,14 +172,22 @@ function twoGatewayHyvaCompanySearchField() {
             this.manualMode = true;
             this.isOpen = false;
             this.items = [];
+            this.saveManualModeToStorage(true);
             const input = this.$root.querySelector('input[type="text"]');
             if (input) input.focus();
         },
 
         enableSearch() {
             this.manualMode = false;
+            this.saveManualModeToStorage(false);
             const input = this.$root.querySelector('input[type="text"]');
             if (input) input.focus();
+        },
+
+        saveManualModeToStorage(manualMode) {
+            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            data.manual_mode = manualMode;
+            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
         },
     }
 }
