@@ -287,6 +287,12 @@ $quoteDetails = json_encode($quoteDetails);
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
 
+                // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
+                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                this.manualMode = shippingCompanySelectionData.manual_mode || false;
+                this.companyIdDisabled = !this.manualMode;
+                this.companyIdBgStyle = !this.manualMode ? 'background-color: #D3D3D3' : '';
+
                 // Watch manualMode and update derived state reactively
                 this.$watch('manualMode', (value) => {
                     this.companyIdDisabled = !value;
@@ -300,13 +306,7 @@ $quoteDetails = json_encode($quoteDetails);
                 });
 
                 this.$nextTick(() => {
-                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                     const shippingCompany = shippingCompanySelectionData.company_name || "";
-
-                    // Restore manualMode from storage
-                    this.manualMode = shippingCompanySelectionData.manual_mode || false;
-                    this.companyIdDisabled = !this.manualMode;
-                    this.companyIdBgStyle = !this.manualMode ? 'background-color: #D3D3D3' : '';
 
                     if (!shippingCompany) {
                         this.search = document.getElementById('company_name')?.value ?? '';
