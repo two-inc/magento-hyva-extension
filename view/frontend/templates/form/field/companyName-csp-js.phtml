@@ -189,6 +189,11 @@ function twoGatewayHyvaCompanySearchField() {
             data.manual_mode = manualMode;
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
         },
+
+        closeDropdown() {
+            this.isOpen = false;
+            this.items = [];
+        },
     }
 }
 document.addEventListener('alpine:init', () => {

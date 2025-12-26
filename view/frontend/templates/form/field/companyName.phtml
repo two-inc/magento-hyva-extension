@@ -34,7 +34,7 @@ $form = $block->getData("form");
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="block font-medium text-gray-700">
-        <div x-data="twoGatewayHyvaCompanySearchField" class="relative">
+        <div x-data="twoGatewayHyvaCompanySearchField" class="relative" @click.outside="closeDropdown">
             <input type="text" class="<?= $escaper->escapeHtmlAttr(
                 $element->renderClass([
                     "block w-full form-input grow renderer-text",
