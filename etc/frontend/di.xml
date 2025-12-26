@@ -17,4 +17,19 @@
     <type name="Hyva\Checkout\Model\MethodMetaData">
         <plugin name="MethodMetaData::renderIcon" type="Two\GatewayHyva\Plugin\MethodMetaDataPlugin" sortOrder="100"/>
     </type>
+    <!-- Position Company field after Country selector -->
+    <type name="Hyva\Checkout\Model\Form\EntityForm\EavAttributeShippingAddressForm">
+        <arguments>
+            <argument name="entityFormModifiers" xsi:type="array">
+                <item name="two_company_sort_order" sortOrder="510" xsi:type="object">Two\GatewayHyva\Model\Form\EntityFormModifier\CompanySortOrderModifier</item>
+            </argument>
+        </arguments>
+    </type>
+    <type name="Hyva\Checkout\Model\Form\EntityForm\EavAttributeBillingAddressForm">
+        <arguments>
+            <argument name="entityFormModifiers" xsi:type="array">
+                <item name="two_company_sort_order" sortOrder="510" xsi:type="object">Two\GatewayHyva\Model\Form\EntityFormModifier\CompanySortOrderModifier</item>
+            </argument>
+        </arguments>
+    </type>
 </config>
