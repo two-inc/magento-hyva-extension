@@ -40,85 +40,49 @@ $quoteDetails = json_encode(
         @keydown.window.prevent.enter
         class="">
         <fieldset class="space-y-4">
-            <!-- Company Name -->
+            <!-- Company Name - Single input with mode toggle -->
             <div class="min-h-108">
-                <div class="flex flex-col field required gap-2" x-show="showManual">
+                <div class="flex flex-col field required gap-2">
                     <div class="field required">
                         <label for="company_name" class="font-semibold text-gray-700">
                             <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
                         </label>
-                        <input
-                            type="text"
-                            :id="twoGatewayHyvaGetManualCompanyNameId"
-                            :name="twoGatewayHyvaGetManualCompanyNameField"
-                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                            autocomplete="off"
-                            required
-                            data-manual="true"
-                            data-validate='{"required": true}'
-                          />
-                    </div>
-                    <div class="search_for_company w-full text-right" @click="twoGatewayHyvaOnSearchModeClick" title="Search for company">
-                        <span class="text-blue-600 text-sm cursor-pointer">
-                            <?= $escaper->escapeHtmlAttr(
-                                __("Search for company"),
-                            ) ?>
-                        </span>
-                    </div>
-                </div>
-                <div class="flex flex-col field required w-full relative" x-show="!showManual">
-                    <div class="flex flex-col items-center w-full">
-                        <div class="bg-white w-full gap-2 flex-col flex">
-                            <div class="field required">
-                                <label class="font-semibold text-gray-700">
-                                  <?= $escaper->escapeHtmlAttr(
-                                      __("Company Name"),
-                                  ) ?>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="w-full" @click.outside="twoGatewayHyvaOnCompanySearchClickOutside">
+                        <div class="w-full relative" @click.outside="twoGatewayHyvaOnCompanySearchClickOutside">
                             <input
                                 type="text"
+                                id="company_name"
+                                name="payment[company_name]"
+                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
+                                autocomplete="off"
+                                required
+                                data-validate='{"required": true}'
+                                data-name="company_name"
+                                :value="search"
                                 @input.debounce="getItems"
                                 @focus="twoGatewayHyvaOnCompanySearchFocus"
                                 @keydown.arrow-down="twoGatewayHyvaOnArrowDown"
                                 @keydown.arrow-up="twoGatewayHyvaOnArrowUp"
                                 @keydown.enter.prevent="twoGatewayHyvaOnEnterSelect"
                                 @keydown.tab="closeCompanyList"
-                                placeholder="<?= $escaper->escapeHtmlAttr(
-                                    __("Enter company name to search"),
-                                ) ?>"
-                                :value="search"
-                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                                :id="twoGatewayHyvaGetCompanyNameId"
-                                :name="twoGatewayHyvaGetCompanyNameField"
-                                autocomplete="off"
-                                data-manual="false"
-                                data-name="company_name"
-                                required
-                                data-validate='{"required": true}'
-                                >
+                                :placeholder="getCompanyNamePlaceholder"
+                            />
                             <!-- Search Results Dropdown -->
                             <div
-                                x-show="isOpen"
+                                x-show="showDropdown"
                                 x-transition
                                 class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
                             >
                                 <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
-                                    <template
-                                        x-for="(item, index) in items"
-                                        :key="twoGatewayHyvaGetCompanyId"
-                                    >
+                                    <template x-for="(item, index) in items" :key="item.companyId">
                                         <div
-                                            @click="twoGatewayHyvaOnCompanyItemClick"
+                                            :data-index="index"
+                                            @click="handleItemClick"
                                             @mouseover="twoGatewayHyvaOnItemMouseover"
-                                            :class="twoGatewayHyvaGetItemClass"
                                             class="cursor-pointer hover:bg-gray-100 p-2"
                                         >
                                             <div class="flex items-center">
                                                 <div>
-                                                    <span x-html="twoGatewayHyvaGetCompanyDisplayName"></span>
+                                                    <span x-html="item.companyDisplayName"></span>
                                                 </div>
                                             </div>
                                         </div>
@@ -131,7 +95,7 @@ $quoteDetails = json_encode(
                                 <div
                                     id="billing_enter_company"
                                     class="enter_for_company w-full px-2 py-3"
-                                    @click="twoGatewayHyvaOnManualEntryClick"
+                                    @click="enterManually"
                                     title="Enter details manually">
                                     <span class="text-blue-600 text-sm cursor-pointer">
                                         <?= $escaper->escapeHtmlAttr(
@@ -142,32 +106,32 @@ $quoteDetails = json_encode(
                             </div>
                         </div>
                     </div>
+                    <!-- Toggle link based on mode -->
+                    <div class="w-full text-right" x-show="manualMode">
+                        <span @click="enableSearch" class="text-blue-600 text-sm cursor-pointer">
+                            <?= $escaper->escapeHtmlAttr(
+                                __("Search for company"),
+                            ) ?>
+                        </span>
+                    </div>
                 </div>
             </div>
 
-            <!-- Company ID -->
+            <!-- Company ID - Single input -->
             <div class="flex flex-col field field-reserved required">
               <label for="company_id" class="font-semibold text-gray-700">
                 <?= $escaper->escapeHtmlAttr(__("Company ID")) ?>
               </label>
               <input
                 type="text"
-                x-show="!showManual"
-                :id="twoGatewayHyvaGetCompanyIdFieldId"
-                :name="twoGatewayHyvaGetCompanyIdFieldName"
+                id="company_id"
+                name="payment[company_id]"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
-              />
-              <input
-                type="text"
-                x-show="showManual"
-                :id="twoGatewayHyvaGetManualCompanyIdFieldId"
-                :name="twoGatewayHyvaGetManualCompanyIdFieldName"
-                required
-                data-validate='{"required": true}'
-                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
+                :disabled="isCompanyIdDisabled"
+                :style="getCompanyIdStyle"
               />
             </div>
 

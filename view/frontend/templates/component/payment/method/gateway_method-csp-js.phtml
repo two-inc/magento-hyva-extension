@@ -60,80 +60,64 @@ $quoteDetails = json_encode($quoteDetails);
                             }
                         }
                         if (this.isOrderIntentEnabled) {
-                            // Check if Two payment method is currently selected
                             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
-                            if (!activePaymentMethod) {
-                                // No payment method selected, skip order intent
-                            } else {
+                            if (activePaymentMethod) {
                                 const selectedPaymentValue = activePaymentMethod.value;
                                 const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
 
-                                // Only proceed if Two payment method is selected
-                                if (!isTwoPaymentSelected) {
-                                    // Two payment method not selected, skip order intent processing
-                                } else {
-                                    // Capture all necessary context upfront
-                                    const context = this;
+                                if (isTwoPaymentSelected) {
                                     const formRef = form;
 
-                                    // Dispatch the global event instead of calling placeOrderIntent directly
-                                    // This ensures consistent payment method validation
                                     window.dispatchEvent(new Event("dispatch-order-intent"));
 
-                                    // Create a promise that resolves after payment data is set
                                     await new Promise((resolve, reject) => {
-                                // Set a reasonable timeout for the operation
-                                const timeoutId = setTimeout(() => {
-                                    reject("Order intent operation timed out");
-                                }, 5000);
+                                        const timeoutId = setTimeout(() => {
+                                            reject("Order intent operation timed out");
+                                        }, 5000);
 
-                                // Check if we can proceed immediately
-                                const checkAndProceed = () => {
-                                    try {
-                                        const formElements = [
-                                            'department',
-                                            'project',
-                                            'poNumber',
-                                            'orderNote',
-                                            'invoiceEmails',
-                                            'company_name',
-                                            'company_id'
-                                        ];
+                                        const checkAndProceed = () => {
+                                            try {
+                                                const formElements = [
+                                                    'department',
+                                                    'project',
+                                                    'poNumber',
+                                                    'orderNote',
+                                                    'invoiceEmails',
+                                                    'company_name',
+                                                    'company_id'
+                                                ];
 
-                                        const paymentData = {
-                                            additionalData: Object.fromEntries(
-                                                formElements.map(field => {
-                                                    const element = formRef.querySelector(`[name="payment[${field}]"]`);
-                                                    return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
-                                                })
-                                            )
-                                        };
+                                                const paymentData = {
+                                                    additionalData: Object.fromEntries(
+                                                        formElements.map(field => {
+                                                            const element = formRef.querySelector(`[name="payment[${field}]"]`);
+                                                            return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
+                                                        })
+                                                    )
+                                                };
 
-                                        /* Set organization_number to companyId value */
-                                        paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
+                                                paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
-                                        // Call Magewire to set payment data
-                                        Magewire.find("checkout.payment.method.two-payment-method")
-                                            .call('setPaymentData', paymentData)
-                                            .then(() => {
+                                                Magewire.find("checkout.payment.method.two-payment-method")
+                                                    .call('setPaymentData', paymentData)
+                                                    .then(() => {
+                                                        clearTimeout(timeoutId);
+                                                        resolve();
+                                                    })
+                                                    .catch((error) => {
+                                                        console.error("Error setting payment data:", error);
+                                                        clearTimeout(timeoutId);
+                                                        resolve();
+                                                    });
+
+                                            } catch (error) {
+                                                console.error("Error in payment data processing:", error);
                                                 clearTimeout(timeoutId);
                                                 resolve();
-                                            })
-                                            .catch((error) => {
-                                                console.error("Error setting payment data:", error);
-                                                clearTimeout(timeoutId);
-                                                resolve(); // Resolve anyway to not block the flow
-                                            });
+                                            }
+                                        };
 
-                                    } catch (error) {
-                                        console.error("Error in payment data processing:", error);
-                                        clearTimeout(timeoutId);
-                                        resolve(); // Resolve anyway to not block the flow
-                                    }
-                                };
-
-                                        // Give a short delay to let order intent process, then proceed
                                         setTimeout(checkAndProceed, 1000);
                                     });
                                 }
@@ -149,7 +133,6 @@ $quoteDetails = json_encode($quoteDetails);
                             await wire.store();
                         } catch (exception) {
                             console.error("Error in wire.store():", exception);
-                            // ignore
                         }
 
                     }
@@ -192,12 +175,12 @@ $quoteDetails = json_encode($quoteDetails);
         )
     }
 
-    function searchInputBilling() {
+    function twoGatewayHyvaPaymentMethodBase() {
         return {
-            showManual: false,
+            // State
             isOpen: false,
             search: '',
-            items: [], // Store API results
+            items: [],
             companyName: '',
             companyId: '',
             invoiceEmails: '',
@@ -205,6 +188,15 @@ $quoteDetails = json_encode($quoteDetails);
             department: '',
             orderNote: '',
             poNumber: '',
+            manualMode: false,
+            isSelecting: false,
+            isPaymentTermsAccepted: false,
+            selectedIndex: -1,
+            searchTimeout: '',
+            countryCode: '',
+            placeOrderIntentFlag: true,
+
+            // Config from PHP
             isProjectFieldEnabled: '<?= $configModel->getIsProjectFieldEnabled() ?>',
             isDepartmentFieldEnabled: '<?= $configModel->getIsDepartmentFieldEnabled() ?>',
             isOrderNoteFieldEnabled: '<?= $configModel->getIsOrderNoteFieldEnabled() ?>',
@@ -223,7 +215,6 @@ $quoteDetails = json_encode($quoteDetails);
             generalErrorMessage: '<?= $escaper->escapeJs(
                 __($generalErrorMessage),
             ) ?>',
-            countryCode: "",
             orderIntentConfig_weightUnit: '<?= $orderIntentConfig[
                 "weightUnit"
             ] ?>',
@@ -237,141 +228,207 @@ $quoteDetails = json_encode($quoteDetails);
             ] ?>',
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
-            placeOrderIntentFlag: true,
-            searchTimeout: '',
-            selectedIndex: -1,
+
+            // CSP-friendly event handlers (called from template)
+            twoGatewayHyvaOnInit() {
+                this.initialize(JSON.parse(this.$el.dataset.hyvacsp1));
+            },
+            twoGatewayHyvaOnInvoiceEmailsChange() {
+                this.invoiceEmails = this.$el.value;
+            },
+            twoGatewayHyvaOnProjectChange() {
+                this.project = this.$el.value;
+            },
+            twoGatewayHyvaOnDepartmentChange() {
+                this.department = this.$el.value;
+            },
+            twoGatewayHyvaOnOrderNoteChange() {
+                this.orderNote = this.$el.value;
+            },
+            twoGatewayHyvaOnPoNumberChange() {
+                this.poNumber = this.$el.value;
+            },
+            twoGatewayHyvaOnPaymentTermsChange() {
+                this.isPaymentTermsAccepted = this.$el.checked;
+            },
+            twoGatewayHyvaOnCompanySearchClickOutside() {
+                this.isOpen = false;
+            },
+            twoGatewayHyvaOnCompanySearchFocus() {
+                if (!this.manualMode) this.isOpen = true;
+            },
+            twoGatewayHyvaOnArrowDown() {
+                this.nextItem();
+            },
+            twoGatewayHyvaOnArrowUp() {
+                this.prevItem();
+            },
+            twoGatewayHyvaOnEnterSelect() {
+                this.selectHighlightedItem();
+            },
+            twoGatewayHyvaOnItemMouseover(event) {
+                this.selectedIndex = parseInt(event.currentTarget.dataset.index);
+            },
+            twoGatewayHyvaShouldShowMinCharsMessage() {
+                return this.search.length < 3;
+            },
+
+            // Computed-style methods
+            showDropdown() {
+                return this.isOpen && this.items.length > 0 && !this.manualMode;
+            },
+            getCompanyNamePlaceholder() {
+                return this.manualMode ? '' : '<?= $escaper->escapeJs(
+                    __("Enter company name to search"),
+                ) ?>';
+            },
+            isCompanyIdDisabled() {
+                return !this.manualMode;
+            },
+            getCompanyIdStyle() {
+                return !this.manualMode ? 'background-color: #D3D3D3' : '';
+            },
+
+            // Initialization
             initialize(quote) {
                 this.quote = quote;
-                this.showManual = false;
-
-                // Set global reference for order intent handling
+                this.manualMode = false;
                 twoPaymentComponentInstance = this;
 
-                // Listen for company data updates from shipping section
                 this.$el.addEventListener('update-company-data', (event) => {
                     this.search = event.detail.companyName;
                     this.companyName = event.detail.companyName;
                     this.companyId = event.detail.companyId;
                 });
+
                 this.$nextTick(() => {
-                    /** Check if shipping has already selected a company to avoid overwriting */
                     const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                     const shippingCompany = shippingCompanySelectionData.company_name || "";
 
-                    /** Only set from current field value if no shipping selection exists */
                     if (!shippingCompany) {
                         this.search = document.getElementById('company_name')?.value ?? '';
                     } else {
-                        /** Use shipping selection data to maintain sync */
                         this.search = shippingCompany;
                         this.fillCompanyData(shippingCompanySelectionData.company_id || "", shippingCompany, false);
                     }
                 });
-
             },
+
+            // Company search methods
             async getItems() {
-                const self = this;
+                if (this.isSelecting) { this.isSelecting = false; return; }
+                if (this.manualMode) return;
+
                 this.search = this.$el.value;
                 this.selectedIndex = -1;
-                const quoteData = JSON.parse(JSON.stringify(self.quote));
+                const quoteData = JSON.parse(JSON.stringify(this.quote));
                 const countryId = document.getElementById("shipping-country_id");
-                if (countryId && countryId.value) {
-                    self.countryCode = countryId.value
-                } else {
-                    self.countryCode = quoteData.country_id;
+
+                this.countryCode = countryId?.value || quoteData.country_id;
+
+                if (!this.countryCode) {
+                    window.dispatchMessages([{ type: 'error', text: this.countrySelection }], 3000);
+                    return;
                 }
-                if (self.countryCode) {
-                    clearTimeout(self.searchTimeout);
-                    if (this.search.length < 3) {
+
+                clearTimeout(this.searchTimeout);
+                if (this.search.length < 3) {
+                    this.items = [];
+                    return;
+                }
+
+                this.searchTimeout = setTimeout(async () => {
+                    window.dispatchEvent(new Event('magewire:loader:start'));
+                    try {
+                        const queryParams = new URLSearchParams({
+                            country: this.countryCode.toUpperCase(),
+                            limit: this.companySearchLimit,
+                            offset: 0,
+                            q: unescape(this.search),
+                        });
+
+                        const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
+                        if (!response.ok) throw new Error("Network response was not ok");
+
+                        const data = await response.json();
+                        this.items = data.items.map(item => ({
+                            companyName: item.name,
+                            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+                            companyId: item.national_identifier.id,
+                            lookupId: item.lookup_id,
+                            item: item
+                        }));
+
+                        if (this.items.length > 0) this.isOpen = true;
+                    } catch (error) {
+                        console.error("Error fetching companies:", error);
                         this.items = [];
-                        return;
                     }
-                    self.searchTimeout = setTimeout(async () => {
-                        window.dispatchEvent(new Event('magewire:loader:start'));
-                        try {
-                            // Build query parameters
-                            const queryParams = new URLSearchParams({
-                                country: self.countryCode ? self.countryCode.toUpperCase() : '',
-                                limit: self.companySearchLimit,
-                                offset: 0,
-                                q: unescape(this.search),
-                            });
+                    window.dispatchEvent(new Event('magewire:loader:done'));
+                }, 200);
+            },
 
-                            // Fetch company data
-                            const response = await fetch(self.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                            if (!response.ok) throw new Error("Network response was not ok");
-
-                            const data = await response.json();
-
-                            // Map API response to required format
-                            this.items = data.items.map(item => ({
-                                companyName: item.name,
-                                companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                                companyId: item.national_identifier.id,
-                                lookupId: item.lookup_id,
-                                item: item
-                            }));
-
-                        } catch (error) {
-                            console.error("Error fetching companies:", error);
-                            this.items = [];
-                        }
-                        window.dispatchEvent(new Event('magewire:loader:done'));
-                        const filterItems = this.items.filter((item) => {
-                            return item.companyName.startsWith(this.search.toLowerCase());
-                        })
-                        if (this.items.length > 0) {
-                            self.isOpen = true;
-                            return filterItems;
-                        }
-                    }, 200);
-                } else {
-                    window.dispatchMessages([{
-                        type: 'error',
-                        text: self.countrySelection,
-                    }], 3000);
+            handleItemClick(event) {
+                const index = event.currentTarget.dataset.index;
+                if (index !== undefined && this.items[index]) {
+                    this.selectItem(this.items[index]);
                 }
             },
+
             selectItem(item) {
-                const self = this;
-                self.isOpen = false;
-                self.items = [];
+                this.isSelecting = true;
+                this.isOpen = false;
+                this.items = [];
                 this.selectedIndex = -1;
                 this.search = item.companyName;
 
-                /** Update shipping company selection data only if payment selection should propagate to shipping */
-                /** This maintains one-way sync from shipping to payment, not the other way around */
-                const shippingCompanySelectionData = {
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
                     company_name: item.companyName,
                     company_id: item.companyId
-                };
-
-                // Store as JSON string for shipping section reference
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
+                }));
 
                 this.fillCompanyData(item.companyId, item.companyName);
-
             },
+
+            enterManually() {
+                this.manualMode = true;
+                this.isOpen = false;
+                this.items = [];
+                const companyIdInput = document.getElementById("company_id");
+                if (companyIdInput) {
+                    companyIdInput.disabled = false;
+                    companyIdInput.style.backgroundColor = "";
+                }
+            },
+
+            enableSearch() {
+                this.manualMode = false;
+                document.getElementById('company_name')?.focus();
+            },
+
+            // Keyboard navigation
             nextItem() {
                 if (this.selectedIndex < this.items.length - 1) {
                     this.selectedIndex++;
                     this.adjustScroll();
                 }
             },
+
             prevItem() {
                 if (this.selectedIndex > 0) {
                     this.selectedIndex--;
                     this.adjustScroll();
                 }
             },
+
             adjustScroll() {
                 this.$nextTick(() => {
-                    let dropdown = document.querySelector(".company-results");
-                    let selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
+                    const dropdown = document.querySelector(".company-results");
+                    const selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
 
                     if (dropdown && selectedItem) {
-                        let dropdownRect = dropdown.getBoundingClientRect();
-                        let itemRect = selectedItem.getBoundingClientRect();
+                        const dropdownRect = dropdown.getBoundingClientRect();
+                        const itemRect = selectedItem.getBoundingClientRect();
 
                         if (itemRect.bottom > dropdownRect.bottom) {
                             dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
@@ -381,79 +438,79 @@ $quoteDetails = json_encode($quoteDetails);
                     }
                 });
             },
+
             selectHighlightedItem() {
                 if (this.selectedIndex >= 0 && this.items.length > 0) {
                     this.selectItem(this.items[this.selectedIndex]);
                 }
             },
+
             closeCompanyList(event) {
                 if (event.key === 'Tab') {
                     this.isOpen = false;
                     this.items = [];
                 }
             },
-            fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
-                const self = this;
-                companyName = typeof companyName == 'string' && companyName ? companyName : '';
-                companyId = typeof companyId == 'string' ? companyId : '';
-                if (!companyId || !companyName) return;
-                self.companyName = companyName;
-                self.companyId = companyId;
-                document.getElementById("company_name").value = companyName;
-                const companyIdInput = document.getElementById("company_id");
-                companyIdInput.disabled = false;
-                companyIdInput.value = companyId;
-                companyIdInput.disabled = true;
-                companyIdInput.style.backgroundColor = "#D3D3D3";
 
-                if (self.isOrderIntentEnabled && triggerOrderIntent) {
-                    // Dispatch the global event instead of calling placeOrderIntent directly
-                    // This ensures consistent payment method validation
+            fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
+                companyName = typeof companyName === 'string' && companyName ? companyName : '';
+                companyId = typeof companyId === 'string' ? companyId : '';
+                if (!companyId || !companyName) return;
+
+                this.companyName = companyName;
+                this.companyId = companyId;
+
+                const companyNameInput = document.getElementById("company_name");
+                if (companyNameInput) companyNameInput.value = companyName;
+
+                const companyIdInput = document.getElementById("company_id");
+                if (companyIdInput) {
+                    companyIdInput.disabled = false;
+                    companyIdInput.value = companyId;
+                    if (!this.manualMode) {
+                        companyIdInput.disabled = true;
+                        companyIdInput.style.backgroundColor = "#D3D3D3";
+                    }
+                }
+
+                if (this.isOrderIntentEnabled && triggerOrderIntent) {
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 }
             },
 
+            // Order Intent methods
             async placeOrderIntent() {
-                const self = this;
                 try {
-                    const quoteData = JSON.parse(JSON.stringify(self.quote));
+                    const quoteData = JSON.parse(JSON.stringify(this.quote));
 
-                    if (this.shouldSkipOrderIntent(quoteData)) {
-                        return null;
-                    }
+                    if (this.shouldSkipOrderIntent(quoteData)) return null;
 
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
-
                     const queryParams = new URLSearchParams({
-                        client: self.orderIntentConfig_extensionPlatformName,
-                        client_v: self.orderIntentConfig_extensionDBVersion
+                        client: this.orderIntentConfig_extensionPlatformName,
+                        client_v: this.orderIntentConfig_extensionDBVersion
                     });
 
                     const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(orderIntentRequestBody)
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! Status: ${response.status}`);
-                    }
-
+                    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
                     return await response.json();
                 } catch (error) {
                     console.error('Error in placeOrderIntent:', error);
                     throw error;
                 }
             },
+
             shouldSkipOrderIntent(quoteData) {
-                return false;
+                return !(this.companyId || '').trim();
             },
+
             buildOrderIntentRequestBody(quoteData) {
-                const self = this;
-                let lineItems = [];
-                lineItems = quoteData.items?.map(item => ({
+                let lineItems = quoteData.items?.map(item => ({
                     name: item.name,
                     description: item.description || '',
                     discount_amount: parseFloat(item.discount_amount || 0).toFixed(2),
@@ -477,38 +534,32 @@ $quoteDetails = json_encode($quoteDetails);
                     quantity: 1,
                     unit_price: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
                     tax_amount: parseFloat(quoteData.shipping_tax_amount || 0).toFixed(2),
-                    tax_rate: isNaN(parseFloat(quoteData.shipping_tax_amount)) || isNaN(parseFloat(quoteData.shipping_amount)) || parseFloat(quoteData.shipping_amount) === 0 ?
-                        "0.000000" : (parseFloat(quoteData.shipping_tax_amount) / parseFloat(quoteData.shipping_amount)).toFixed(6),
+                    tax_rate: isNaN(parseFloat(quoteData.shipping_tax_amount)) || isNaN(parseFloat(quoteData.shipping_amount)) || parseFloat(quoteData.shipping_amount) === 0
+                        ? "0.000000"
+                        : (parseFloat(quoteData.shipping_tax_amount) / parseFloat(quoteData.shipping_amount)).toFixed(6),
                     tax_class_name: '',
                     quantity_unit: 'unit',
                     type: 'SHIPPING_FEE'
                 });
 
-                // Use Alpine.js component state instead of DOM elements for company data
-                let companyNameValue = self.companyName || "";
-                let companyIdValue = self.companyId || "";
-
                 const countryInput = document.getElementById("shipping-country_id");
-                if (countryInput) {
-                    self.countryCode = countryInput.value;
-                } else {
-                    self.countryCode = quoteData.country_id;
-                }
+                this.countryCode = countryInput?.value || quoteData.country_id;
+
                 const gross_amount = parseFloat(quoteData.grand_total || 0);
-                const tax_amount =
-                    parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
+                const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
                 const net_amount = gross_amount - tax_amount;
+
                 return {
-                    gross_amount: parseFloat(quoteData.grand_total || 0).toFixed(2),
+                    gross_amount: gross_amount.toFixed(2),
                     net_amount: net_amount.toFixed(2),
                     tax_amount: tax_amount.toFixed(2),
                     currency: quoteData.quote_currency_code,
                     line_items: lineItems,
                     buyer: {
                         company: {
-                            organization_number: companyIdValue,
-                            country_prefix: self.countryCode,
-                            company_name: companyNameValue
+                            organization_number: this.companyId || "",
+                            country_prefix: this.countryCode,
+                            company_name: this.companyName || ""
                         },
                         representative: {
                             email: quoteData.email,
@@ -517,239 +568,121 @@ $quoteDetails = json_encode($quoteDetails);
                             phone_number: quoteData.telephone
                         }
                     },
-                    merchant_id: self.orderIntentConfig_merchant_id,
-                    merchant_short_name: self.orderIntentConfig_merchant_shortName
+                    merchant_id: this.orderIntentConfig_merchant_id,
+                    merchant_short_name: this.orderIntentConfig_merchant_shortName
                 };
             },
+
             processOrderIntentSuccessResponse(response) {
-                const self = this;
-                if (response) {
-                    if (response.approved) {
-                        this.placeOrderIntentFlag = true;
-                        window.dispatchMessages([{
-                            type: 'success',
-                            text: self.orderIntentApprovedMessage,
-                        }], 3000);
-                    } else {
-                        this.placeOrderIntentFlag = false;
-                        window.dispatchMessages([{
-                            type: 'error',
-                            text: self.orderIntentDeclinedMessage,
-                        }], 3000);
-                    }
+                if (!response) return;
+
+                if (response.approved) {
+                    this.placeOrderIntentFlag = true;
+                    window.dispatchMessages([{ type: 'success', text: this.orderIntentApprovedMessage }], 3000);
+                } else {
+                    this.placeOrderIntentFlag = false;
+                    window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 3000);
                 }
             },
+
             processOrderIntentErrorResponse(response) {
                 this.placeOrderIntentFlag = false;
-                const self = this;
-                const message = self.generalErrorMessage;
-                if (response && response.responseJSON) {
-                    const errorCode = response.responseJSON.error_code,
-                        errorMessage = response.responseJSON.error_message,
-                        errorDetails = response.responseJSON.error_details;
-                    switch (errorCode) {
+                let message = this.generalErrorMessage;
+
+                if (response?.responseJSON) {
+                    const { error_code, error_message, error_details, error_json } = response.responseJSON;
+
+                    switch (error_code) {
                         case 'SCHEMA_ERROR':
-                            const errors = response.responseJSON.error_json;
-                            if (errors) {
+                            if (error_json) {
                                 message = '';
-                                errors.forEach(error => {
-                                    window.dispatchMessages([{
-                                        type: 'error',
-                                        text: error.msg,
-                                    }], 3000);
+                                error_json.forEach(error => {
+                                    window.dispatchMessages([{ type: 'error', text: error.msg }], 3000);
                                 });
                             }
                             break;
                         case 'JSON_MISSING_FIELD':
-                            if (errorDetails) {
-                                message = errorDetails;
-                            }
+                            if (error_details) message = error_details;
                             break;
                         case 'MERCHANT_NOT_FOUND_ERROR':
                         case 'ORDER_INVALID':
-                            message = errorMessage;
-                            if (errorDetails) {
-                                message += ' - ' + errorDetails;
-                            }
+                            message = error_message + (error_details ? ' - ' + error_details : '');
                             break;
                     }
                 }
+
                 if (message) {
-                    window.dispatchMessages([{
-                        type: 'error',
-                        text: message,
-                    }], 3000);
+                    window.dispatchMessages([{ type: 'error', text: message }], 3000);
                 }
             },
-        }
+        };
     }
-
-    function twoGatewayHyvaPaymentMethodBase() {
-        return Object.assign(
-            searchInputBilling(), {
-                ['!showManual']() {
-                    return !this.showManual
-                },
-                ['twoGatewayHyvaOnCompanySearchChange'](event) {
-                    return this.search = this.$el.value
-                },
-                ['twoGatewayHyvaOnInvoiceEmailsChange'](event) {
-                    return this.invoiceEmails = this.$el.value
-                },
-                ['twoGatewayHyvaOnProjectChange'](event) {
-                    return this.project = this.$el.value
-                },
-                ['twoGatewayHyvaOnDepartmentChange'](event) {
-                    return this.department = this.$el.value
-                },
-                ['twoGatewayHyvaOnOrderNoteChange'](event) {
-                    return this.orderNote = this.$el.value
-                },
-                ['twoGatewayHyvaOnPoNumberChange'](event) {
-                    return this.poNumber = this.$el.value
-                },
-                ['twoGatewayHyvaOnPaymentTermsChange'](event) {
-                    return this.isPaymentTermsAccepted = this.$el.checked
-                },
-                ['twoGatewayHyvaGetItemClass']() {
-                    return {
-                        'bg-gray-100': this.selectedIndex === this.index
-                    }
-                },
-                ['twoGatewayHyvaOnCompanyItemClick'](event) {
-                    event.stopPropagation();
-                    return this.selectItem(this.items[this.selectedIndex])
-                },
-                ['twoGatewayHyvaOnManualEntryClick'](event) {
-                    return this.showManual = true
-                },
-                ['twoGatewayHyvaOnSearchModeClick'](event) {
-                    return this.showManual = false
-                },
-                ['twoGatewayHyvaOnCompanySearchClickOutside'](event) {
-                    return this.isOpen = false
-                },
-                ['twoGatewayHyvaOnCompanySearchFocus'](event) {
-                    return this.isOpen = true
-                },
-                ['twoGatewayHyvaGetCompanyDisplayName']() {
-                    return this.item.companyDisplayName
-                },
-                ['twoGatewayHyvaGetCompanyNameId']() {
-                    return this.showManual ? 'manual_company_name' : 'company_name'
-                },
-                ['twoGatewayHyvaGetManualCompanyNameId']() {
-                    return !this.showManual ? 'manual_company_name' : 'company_name'
-                },
-                ['twoGatewayHyvaGetCompanyIdFieldId']() {
-                    return this.showManual ? 'manual_company_id' : 'company_id'
-                },
-                ['twoGatewayHyvaGetManualCompanyIdFieldId']() {
-                    return this.showManual ? 'company_id' : 'manual_company_id'
-                },
-                ['twoGatewayHyvaOnInit']() {
-                    this.initialize(this.quote = JSON.parse(`${this.$el.dataset.hyvacsp1}`));
-                },
-                ['twoGatewayHyvaGetCompanyId']() {
-                    return this.item.companyId
-                },
-                ['twoGatewayHyvaOnArrowDown'](event) {
-                    return this.nextItem()
-                },
-                ['twoGatewayHyvaOnArrowUp'](event) {
-                    return this.prevItem()
-                },
-                ['twoGatewayHyvaOnEnterSelect'](event) {
-                    return this.selectHighlightedItem()
-                },
-                ['twoGatewayHyvaOnItemMouseover'](event) {
-                    return this.selectedIndex = this.index
-                },
-                ['twoGatewayHyvaGetCompanyNameField']() {
-                    return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
-                },
-                ['twoGatewayHyvaGetCompanyIdFieldName']() {
-                    return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]'
-                },
-                ['twoGatewayHyvaGetManualCompanyIdFieldName']() {
-                    return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]'
-                },
-                ['twoGatewayHyvaGetManualCompanyNameField']() {
-                    return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]'
-                },
-                ['twoGatewayHyvaShouldShowMinCharsMessage']() {
-                    return this.search.length < 3
-                },
-            }
-        )
-    }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase), {
-        once: true
-    });
 
     function twoGatewayHyvaPaymentFormWithValidation() {
-        return Object.assign(
-            Object.assign(validatePaymentForm(this.$el, this.$wire), twoGatewayHyvaPaymentMethodBase())
-        )
+        return {
+            ...twoGatewayHyvaPaymentMethodBase(),
+            ...validatePaymentForm(this.$el, this.$wire)
+        };
     }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation), {
-        once: true
-    });
 
     function twoGatewayHyvaPaymentTermsComponent() {
-        return Object.assign(
-            Object.assign({
-                isPaymentTermsAccepted: false
-            }, twoGatewayHyvaPaymentMethodBase())
-        )
+        return twoGatewayHyvaPaymentMethodBase();
     }
-    window.addEventListener('alpine:init', () => Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent), {
-        once: true
+
+    document.addEventListener('alpine:init', () => {
+        Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
+        Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
+        Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
     });
 
     // Global reference to the payment component instance
     let twoPaymentComponentInstance = null;
 
+    // Debounce timeout for order intent
+    let orderIntentDebounceTimeout = null;
+
     // Global order intent event listener - only added once
+    // Uses debouncing to prevent multiple rapid calls
     window.addEventListener("dispatch-order-intent", (event) => {
-        // Check if Two payment method is currently selected
-        const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-
-        if (!activePaymentMethod) {
-            return;
+        if (orderIntentDebounceTimeout) {
+            clearTimeout(orderIntentDebounceTimeout);
         }
 
-        const selectedPaymentValue = activePaymentMethod.value;
-        const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+        orderIntentDebounceTimeout = setTimeout(() => {
+            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
-        // Only proceed if Two payment method is selected
-        if (!isTwoPaymentSelected) {
-            return;
-        }
-
-        // Function to execute order intent
-        const executeOrderIntent = () => {
-            if (!twoPaymentComponentInstance) {
-                return false;
+            if (!activePaymentMethod) {
+                return;
             }
 
-            if (!twoPaymentComponentInstance.isOrderIntentEnabled) {
-                return false;
+            const selectedPaymentValue = activePaymentMethod.value;
+            const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+
+            if (!isTwoPaymentSelected) {
+                return;
             }
 
-            twoPaymentComponentInstance.placeOrderIntent()
-                .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
-                .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
-            return true;
-        };
+            const executeOrderIntent = () => {
+                if (!twoPaymentComponentInstance) {
+                    return false;
+                }
 
-        // Try to execute immediately
-        if (!executeOrderIntent()) {
-            // If component not available, try again after a short delay
-            setTimeout(() => {
-                executeOrderIntent();
-            }, 100);
-        }
+                if (!twoPaymentComponentInstance.isOrderIntentEnabled) {
+                    return false;
+                }
+
+                twoPaymentComponentInstance.placeOrderIntent()
+                    .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
+                    .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
+                return true;
+            };
+
+            if (!executeOrderIntent()) {
+                setTimeout(() => {
+                    executeOrderIntent();
+                }, 100);
+            }
+        }, 300);
     });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

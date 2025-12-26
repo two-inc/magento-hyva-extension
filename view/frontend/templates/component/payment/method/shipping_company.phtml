@@ -51,32 +51,36 @@ document.addEventListener('alpine:init', () => {
         isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
         quote : '<?= $quoteDetails ?>',
         countrySelection : "Please select a country!!",
-        self : "",
         searchTimeout: '',
         selectedIndex: -1,
         async getItems() {
-            this.search = this.$el.value;
+            // Guard: Don't run if element is disconnected (being destroyed during DOM morph)
+            if (!this.$el || !this.$el.isConnected) return;
 
-            self = this;
+            this.search = this.$el.value;
             this.selectedIndex = -1;
-            if (!self.isCompanySearchEnabled) return;
+            if (!this.isCompanySearchEnabled) return;
 
             const countryId = document.getElementById("shipping-country_id");
             if(countryId && countryId.value){
-                self.countryCode = countryId.value
+                this.countryCode = countryId.value
             }
             else {
-                const quoteData = JSON.parse(self.quote);
-                self.countryCode = quoteData.country_id;
+                const quoteData = JSON.parse(this.quote);
+                this.countryCode = quoteData.country_id;
             }
-            if(self.countryCode) {
-                clearTimeout(self.searchTimeout);
+            if(this.countryCode) {
+                clearTimeout(this.searchTimeout);
                 if (this.search.length < 3) {
                     this.items = [];
                     return;
                 }
 
-                self.searchTimeout = setTimeout(async () => {
+                const self = this;
+                this.searchTimeout = setTimeout(async () => {
+                    // Guard: Don't run if element is disconnected (component destroyed)
+                    if (!self.$el || !self.$el.isConnected) return;
+
                     window.dispatchEvent(new Event('magewire:loader:start'));
                     try {
                         // Build query parameters
@@ -84,7 +88,7 @@ document.addEventListener('alpine:init', () => {
                             country: self.countryCode ? self.countryCode.toUpperCase() : '',
                             limit: self.companySearchLimit,
                             offset: 0,
-                            q: unescape(this.search),
+                            q: unescape(self.search),
                         });
 
                         // Fetch company data
@@ -94,7 +98,7 @@ document.addEventListener('alpine:init', () => {
                         const data = await response.json();
 
                         // Map API response to required format
-                        this.items = data.items.map(item => ({
+                        self.items = data.items.map(item => ({
                             companyName: item.name,
                             companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
                             companyId: item.national_identifier.id,
@@ -103,13 +107,13 @@ document.addEventListener('alpine:init', () => {
 
                     } catch (error) {
                         console.error("Error fetching companies:", error);
-                        this.items = [];
+                        self.items = [];
                     }
                     window.dispatchEvent(new Event('magewire:loader:done'));
-                    const filterItems = this.items.filter((item) => {
-                        return item.companyName.startsWith(this.search.toLowerCase());
+                    const filterItems = self.items.filter((item) => {
+                        return item.companyName.startsWith(self.search.toLowerCase());
                     })
-                    if(this.items.length > 0) {
+                    if(self.items.length > 0) {
                         self.isOpen = true;
                         return filterItems;
                     }
@@ -118,51 +122,41 @@ document.addEventListener('alpine:init', () => {
             else {
                 window.dispatchMessages([{
                     type: 'error',
-                    text: self.countrySelection,
+                    text: this.countrySelection,
                 }], 3000);
             }
         },
 
         selectItem(item) {
             this.isOpen = false;
-            self.items= [];
+            this.items = [];
             this.selectedIndex = -1;
             this.search = item.companyName;
 
-
+            // Update shipping company hidden fields only
             const shippingCompanyInput = document.getElementById('shipping-company');
             const shippingCompanyIdInput = document.getElementById('shipping-company_id');
 
             if (shippingCompanyInput) {
-            shippingCompanyInput.value = item.companyName;
+                shippingCompanyInput.value = item.companyName;
             }
 
             if (shippingCompanyIdInput) {
-            shippingCompanyIdInput.value = item.companyId;
+                shippingCompanyIdInput.value = item.companyId;
             }
 
-
-            const companyNameInput = document.querySelector('[data-name="company_name"]');
-            const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-            if (companyNameInput) {
-                companyNameInput.value = item.companyName;
-            }
-
-            if (companyIdInput) {
-                companyIdInput.value = item.companyId;
-            }
-
+            // Store shipping company selection data
             const shippingCompanySelectionData = {
                 company_name: item.companyName,
                 company_id: item.companyId
             };
 
-            // Store as JSON string
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
 
-            // Dispatch event
-            window.dispatchEvent(new Event("shipping-company-selected"));
+            // Dispatch event to notify other components (payment fields will handle their own sync)
+            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
+                detail: shippingCompanySelectionData
+            }));
 
             const inputField = document.querySelector("#shipping-company");
 
@@ -171,7 +165,7 @@ document.addEventListener('alpine:init', () => {
                 inputField.dispatchEvent(new Event("input", { bubbles: false }));
             }
 
-            if (self.isAddressSearchEnabled) {
+            if (this.isAddressSearchEnabled) {
                 this.addressLookup(item.lookupId);
             }
 
@@ -229,29 +223,35 @@ document.addEventListener('alpine:init', () => {
             }
         },
         setAddressData(address) {
+            // Find the shipping address form by traversing up from the company search field
+            // This ensures we only update shipping address fields, not billing
+            const shippingForm = this.$el.closest('form');
 
+            if (!shippingForm) {
+                console.warn('Could not find shipping form container');
+                return;
+            }
 
-            const cityInput = document.querySelector('input[name="city"]');
-            const postcodeInput = document.querySelector('input[name="postcode"]');
-            const streetInput = document.querySelector('input[name="street[0]"]');
+            const cityInput = shippingForm.querySelector('input[name="city"]');
+            const postcodeInput = shippingForm.querySelector('input[name="postcode"]');
+            const streetInput = shippingForm.querySelector('input[name="street[0]"]');
 
             if (cityInput) {
-            cityInput.value = address.city || "";
+                cityInput.value = address.city || "";
             }
 
             if (postcodeInput) {
-            postcodeInput.value = address.postal_code || "";
+                postcodeInput.value = address.postal_code || "";
             }
 
             if (streetInput) {
-            streetInput.value = address.street_address || "";
+                streetInput.value = address.street_address || "";
             }
 
             // Trigger 'input' event manually with controlled bubbling
-            ['city', 'postcode', 'street[0]'].forEach(name => {
-                const input = document.querySelector(`input[name="${name}"]`);
+            // Only trigger on fields we actually found and updated
+            [cityInput, postcodeInput, streetInput].forEach(input => {
                 if (input) {
-                    // Dispatch with bubbles: false to prevent modal closure
                     input.dispatchEvent(new Event('input', { bubbles: false }));
                 }
             });

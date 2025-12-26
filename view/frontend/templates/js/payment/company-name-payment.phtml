@@ -18,9 +18,23 @@ use Hyva\Theme\ViewModel\HyvaCsp;
     let paymentFieldsInitialized = false;
 
     /**
-     * Update payment fields with company data and handle event synchronization
+     * Check if billing address is set to be the same as shipping address.
+     * This respects Hyva Checkout's billingAsShipping checkbox state.
      */
-    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false) => {
+    const isBillingAsShipping = () => {
+        const checkbox = document.querySelector('#billing-as-shipping');
+        return checkbox ? checkbox.checked : true; // Default to true if checkbox not found
+    };
+
+    /**
+     * Update payment fields with company data and handle event synchronization.
+     * Only updates if billing is same as shipping OR if forceUpdate is true.
+     */
+    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false) => {
+        // Only sync if billing is same as shipping, unless force update is requested
+        if (!forceUpdate && !isBillingAsShipping()) {
+            return;
+        }
         const companyNameInput = document.querySelector('[data-name="company_name"]');
         const companyIdInput = document.querySelector('[data-name="company_id"]');
 
@@ -203,11 +217,15 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 
     /** Listen for shipping company selection events to update payment fields */
     window.addEventListener("shipping-company-selected", (event) => {
+        // Only sync if billing is same as shipping
+        if (!isBillingAsShipping()) {
+            return;
+        }
+
         /** Retrieve the latest shipping company selection data */
         const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
         const shippingCompany = shippingCompanySelectionData.company_name || "";
         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-
 
         if (shippingCompany !== "" && shippingCompanyId !== "") {
             /** Update payment method fields with shipping selection */
@@ -219,11 +237,43 @@ use Hyva\Theme\ViewModel\HyvaCsp;
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
                 const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
 
-
                 // Use the centralized update function for consistency and Alpine.js sync
-                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent);
+                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
             }
         }
+    });
+
+    /**
+     * Listen for Hyva Checkout's billing_as_shipping_address_updated Magewire event.
+     * When user toggles the "billing same as shipping" checkbox, we need to
+     * sync or clear payment company fields accordingly.
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+        // Wait for Magewire to be available, then register event listener
+        const registerMagewireListener = () => {
+            if (typeof Magewire !== 'undefined' && Magewire.on) {
+                Magewire.on('billing_as_shipping_address_updated', (data) => {
+                    const billingAsShipping = data?.billingAsShipping;
+
+                    if (billingAsShipping) {
+                        // Billing is now same as shipping - sync company data from shipping
+                        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                        const shippingCompany = shippingCompanySelectionData.company_name || "";
+                        const shippingCompanyId = shippingCompanySelectionData.company_id || "";
+
+                        if (shippingCompany && shippingCompanyId) {
+                            updatePaymentFields(shippingCompany, shippingCompanyId, false, true);
+                        }
+                    }
+                    // When billingAsShipping is false, let the user enter their own billing company
+                });
+            } else {
+                // Retry after a short delay if Magewire is not ready
+                setTimeout(registerMagewireListener, 100);
+            }
+        };
+
+        registerMagewireListener();
     });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>
