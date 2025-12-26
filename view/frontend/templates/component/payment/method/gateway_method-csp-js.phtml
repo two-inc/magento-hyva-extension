@@ -187,6 +187,8 @@ $quoteDetails = json_encode($quoteDetails);
             orderNote: '',
             poNumber: '',
             manualMode: false,
+            companyIdDisabled: true,
+            companyIdBgStyle: 'background-color: #D3D3D3',
             isSelecting: false,
             isPaymentTermsAccepted: false,
             selectedIndex: -1,
@@ -280,17 +282,16 @@ $quoteDetails = json_encode($quoteDetails);
                     __("Enter company name to search"),
                 ) ?>';
             },
-            isCompanyIdDisabled() {
-                return !this.manualMode;
-            },
-            getCompanyIdStyle() {
-                return !this.manualMode ? 'background-color: #D3D3D3' : '';
-            },
-
             // Initialization
             initialize(quote) {
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
+
+                // Watch manualMode and update derived state reactively
+                this.$watch('manualMode', (value) => {
+                    this.companyIdDisabled = !value;
+                    this.companyIdBgStyle = !value ? 'background-color: #D3D3D3' : '';
+                });
 
                 this.$el.addEventListener('update-company-data', (event) => {
                     this.search = event.detail.companyName;
@@ -304,6 +305,8 @@ $quoteDetails = json_encode($quoteDetails);
 
                     // Restore manualMode from storage
                     this.manualMode = shippingCompanySelectionData.manual_mode || false;
+                    this.companyIdDisabled = !this.manualMode;
+                    this.companyIdBgStyle = !this.manualMode ? 'background-color: #D3D3D3' : '';
 
                     if (!shippingCompany) {
                         this.search = document.getElementById('company_name')?.value ?? '';
