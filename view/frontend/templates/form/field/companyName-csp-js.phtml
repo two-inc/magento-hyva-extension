@@ -133,7 +133,8 @@ function twoGatewayHyvaCompanySearchField() {
             const input = this.$root.querySelector('input[type="text"]');
             if (input) {
                 input.value = item.companyName;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
+                // Use bubbles: false to prevent address book modal from closing
+                input.dispatchEvent(new Event('input', { bubbles: false }));
             }
 
             // Preserve quote_id for session detection
