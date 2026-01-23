@@ -11,15 +11,21 @@ declare(strict_types=1);
 use Hyva\Theme\Model\ViewModelRegistry;
 use Hyva\Theme\ViewModel\HyvaCsp;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
+use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use Magento\Framework\Escaper;
 
 /** @var ViewModelRegistry $viewModels */
 /** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
 
 $configModel = $viewModels->require(CheckoutConfig::class);
+$quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$quoteDetails = $quoteModel->getQuoteDetails();
+$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
 /** Generated with hyva-csp-helper.php */
 ?>
@@ -34,6 +40,8 @@ function twoGatewayHyvaCompanySearchField() {
         manualMode: false,
         checkoutApiUrl: '<?= $checkoutApiUrl ?>',
         isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
+        quoteData: <?= $quoteDetailsJson ?>,
+        countrySelectionShown: false,
 
         init() {
             // Restore manualMode from storage
@@ -54,8 +62,37 @@ function twoGatewayHyvaCompanySearchField() {
                 this.items = [];
                 return;
             }
-            const countryId = document.getElementById("shipping-country_id");
-            const countryCode = countryId?.value || 'NO';
+
+            // Get country code from multiple sources with fallbacks:
+            // 1. Shipping country dropdown (if visible)
+            // 2. Billing country dropdown (if visible)
+            // 3. Shipping address country from quote
+            // 4. Billing address country from quote
+            // 5. Store's default country (for checkouts without country selector)
+            const shippingCountryField = document.getElementById("shipping-country_id");
+            const billingCountryField = document.getElementById("billing-country_id");
+
+            const countryCode = (shippingCountryField && shippingCountryField.value) ||
+                               (billingCountryField && billingCountryField.value) ||
+                               this.quoteData?.shipping_country_id ||
+                               this.quoteData?.billing_country_id ||
+                               this.quoteData?.country_id ||
+                               this.quoteData?.default_country_id ||
+                               '';
+
+            // If no country available from any source, show a friendly message once
+            if (!countryCode) {
+                if (!this.countrySelectionShown) {
+                    this.countrySelectionShown = true;
+                    window.dispatchMessages([{
+                        type: 'warning',
+                        text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>'
+                    }], 5000);
+                }
+                return;
+            }
+            this.countrySelectionShown = false;
+
             try {
                 const queryParams = new URLSearchParams({
                     country: countryCode.toUpperCase(),
@@ -99,7 +136,10 @@ function twoGatewayHyvaCompanySearchField() {
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             }
 
+            // Preserve quote_id for session detection
+            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
             const companyData = {
+                quote_id: existingData.quote_id || '',
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false

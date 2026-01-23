@@ -42,7 +42,12 @@ $form = $block->getData("form");
             ) ?>"
             <?php if ($element->hasAttributes()): ?>
                 <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
-            <?php endif; ?> autocomplete="off"
+            <?php endif; ?>
+            <?php if ($element->isRequired()): ?>
+                required
+                data-validate='{"required":true}'
+            <?php endif; ?>
+            autocomplete="off"
             @input.debounce.200ms="getItems"
             />
             <!-- Search for company link (shows in manual mode) -->
