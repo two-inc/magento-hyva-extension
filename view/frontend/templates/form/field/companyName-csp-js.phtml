@@ -63,22 +63,8 @@ function twoGatewayHyvaCompanySearchField() {
                 return;
             }
 
-            // Get country code from multiple sources with fallbacks:
-            // 1. Shipping country dropdown (if visible)
-            // 2. Billing country dropdown (if visible)
-            // 3. Shipping address country from quote
-            // 4. Billing address country from quote
-            // 5. Store's default country (for checkouts without country selector)
-            const shippingCountryField = document.getElementById("shipping-country_id");
-            const billingCountryField = document.getElementById("billing-country_id");
-
-            const countryCode = (shippingCountryField && shippingCountryField.value) ||
-                               (billingCountryField && billingCountryField.value) ||
-                               this.quoteData?.shipping_country_id ||
-                               this.quoteData?.billing_country_id ||
-                               this.quoteData?.country_id ||
-                               this.quoteData?.default_country_id ||
-                               '';
+            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
+            const countryCode = window.twoGatewayGetCountryCode(this.quoteData);
 
             // If no country available from any source, show a friendly message once
             if (!countryCode) {
@@ -121,7 +107,7 @@ function twoGatewayHyvaCompanySearchField() {
             event.stopPropagation();
             event.stopImmediatePropagation();
             if (event.preventDefault) event.preventDefault();
-            
+
             const index = event.currentTarget.dataset.index;
             if (index !== undefined && this.items[index]) {
                 this.selectItem(this.items[index]);
@@ -220,7 +206,7 @@ function twoGatewayHyvaCompanySearchField() {
                 event.stopPropagation();
                 event.stopImmediatePropagation();
             }
-            
+
             this.manualMode = true;
             this.isOpen = false;
             this.items = [];
@@ -235,7 +221,7 @@ function twoGatewayHyvaCompanySearchField() {
                 event.stopPropagation();
                 event.stopImmediatePropagation();
             }
-            
+
             this.manualMode = false;
             this.saveManualModeToStorage(false);
             const input = this.$root.querySelector('input[type="text"]');

@@ -41,6 +41,33 @@ $quoteDetails = json_encode($quoteDetails);
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /**
+     * Global helper to get country code from multiple sources with fallbacks.
+     *
+     * Fallback order:
+     * 1. Shipping country dropdown (if visible)
+     * 2. Billing country dropdown (if visible)
+     * 3. Shipping address country from quote
+     * 4. Billing address country from quote
+     * 5. Legacy country_id from quote (backward compatibility)
+     * 6. Store's default country (for checkouts without country selector)
+     *
+     * @param {Object} quoteData - Quote details object from PHP
+     * @returns {string} Country code or empty string
+     */
+    window.twoGatewayGetCountryCode = window.twoGatewayGetCountryCode || function(quoteData) {
+        const shippingCountryField = document.getElementById("shipping-country_id");
+        const billingCountryField = document.getElementById("billing-country_id");
+
+        return (shippingCountryField && shippingCountryField.value) ||
+               (billingCountryField && billingCountryField.value) ||
+               quoteData?.shipping_country_id ||
+               quoteData?.billing_country_id ||
+               quoteData?.country_id ||
+               quoteData?.default_country_id ||
+               '';
+    };
+
     function validatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
@@ -328,22 +355,8 @@ $quoteDetails = json_encode($quoteDetails);
                 this.selectedIndex = -1;
                 const quoteData = JSON.parse(JSON.stringify(this.quote));
 
-                // Get country code from multiple sources with fallbacks:
-                // 1. Shipping country dropdown (if visible)
-                // 2. Billing country dropdown (if visible)
-                // 3. Shipping address country from quote
-                // 4. Billing address country from quote
-                // 5. Store's default country (for checkouts without country selector)
-                const shippingCountryField = document.getElementById("shipping-country_id");
-                const billingCountryField = document.getElementById("billing-country_id");
-
-                this.countryCode = (shippingCountryField && shippingCountryField.value) ||
-                                   (billingCountryField && billingCountryField.value) ||
-                                   quoteData.shipping_country_id ||
-                                   quoteData.billing_country_id ||
-                                   quoteData.country_id ||
-                                   quoteData.default_country_id ||
-                                   '';
+                // Get country code using centralized helper
+                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
 
                 if (this.countryCode) {
                     this.countrySelectionShown = false; // Reset flag when country is available
@@ -584,16 +597,8 @@ $quoteDetails = json_encode($quoteDetails);
                     type: 'SHIPPING_FEE'
                 });
 
-                // Get country code from multiple sources with fallbacks
-                const shippingCountryField = document.getElementById("shipping-country_id");
-                const billingCountryField = document.getElementById("billing-country_id");
-                this.countryCode = (shippingCountryField && shippingCountryField.value) ||
-                                   (billingCountryField && billingCountryField.value) ||
-                                   quoteData.shipping_country_id ||
-                                   quoteData.billing_country_id ||
-                                   quoteData.country_id ||
-                                   quoteData.default_country_id ||
-                                   '';
+                // Get country code using centralized helper
+                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
 
                 const gross_amount = parseFloat(quoteData.grand_total || 0);
                 const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
