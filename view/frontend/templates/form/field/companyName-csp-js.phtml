@@ -117,6 +117,11 @@ function twoGatewayHyvaCompanySearchField() {
         },
 
         handleItemClick(event) {
+            // Stop all event propagation to prevent address book modal from closing
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            
             const index = event.currentTarget.dataset.index;
             if (index !== undefined && this.items[index]) {
                 this.selectItem(this.items[index]);
@@ -209,7 +214,13 @@ function twoGatewayHyvaCompanySearchField() {
             });
         },
 
-        enterManually() {
+        enterManually(event) {
+            // Stop event propagation to prevent address book modal from closing
+            if (event) {
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+            }
+            
             this.manualMode = true;
             this.isOpen = false;
             this.items = [];
@@ -218,7 +229,13 @@ function twoGatewayHyvaCompanySearchField() {
             if (input) input.focus();
         },
 
-        enableSearch() {
+        enableSearch(event) {
+            // Stop event propagation to prevent address book modal from closing
+            if (event) {
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+            }
+            
             this.manualMode = false;
             this.saveManualModeToStorage(false);
             const input = this.$root.querySelector('input[type="text"]');

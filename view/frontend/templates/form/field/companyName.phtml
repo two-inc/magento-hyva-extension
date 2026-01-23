@@ -52,20 +52,23 @@ $form = $block->getData("form");
             />
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualMode" class="mt-1 text-right">
-                <span @click="enableSearch" class="text-blue-600 text-sm cursor-pointer">
+                <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
                     <?= $escaper->escapeHtml(__("Search for company")) ?>
                 </span>
             </div>
             <!-- Search Results Dropdown -->
             <div
                 x-show="showDropdown"
+                @click.stop
+                @mousedown.stop
                 class="w-full z-40 border border-gray-200 rounded-b-lg bg-white absolute mt-1 shadow-lg"
             >
                 <div class="flex flex-col w-full max-h-[250px] overflow-y-auto">
                     <template x-for="(item, index) in items" :key="item.companyId">
                         <div
                             :data-index="index"
-                            @click="handleItemClick"
+                            @click.stop="handleItemClick"
+                            @mousedown.stop
                             class="cursor-pointer hover:bg-gray-100 p-2 border-b border-gray-100"
                         >
                             <span x-html="item.companyDisplayName"></span>
@@ -74,7 +77,7 @@ $form = $block->getData("form");
                 </div>
                 <!-- Enter manually link inside dropdown -->
                 <div class="px-2 py-3 border-t border-gray-200">
-                    <span @click="enterManually" class="text-blue-600 text-sm cursor-pointer">
+                    <span @click.stop="enterManually" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
                         <?= $escaper->escapeHtml(
                             __("Enter details manually"),
                         ) ?>
