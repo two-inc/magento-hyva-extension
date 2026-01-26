@@ -20,7 +20,7 @@ jobs:
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '@claude'))
     steps:
-      - uses: two-inc/claude-code-reviewer@v4
+      - uses: two-inc/claude-code-reviewer@main
         env:
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
         with:
