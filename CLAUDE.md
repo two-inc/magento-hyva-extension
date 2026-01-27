@@ -1,3 +1,5 @@
-See @AGENTS.md for codebase context.
+# Magento Hyvä Extension — Claude Instructions
 
-When you learn something new worth remembering (patterns, gotchas, conventions), update AGENTS.md with a succinct entry. Link to detailed docs in `docs/` folder where appropriate.
+When updating project memory, update AGENTS.md instead of this file.
+
+@AGENTS.md
