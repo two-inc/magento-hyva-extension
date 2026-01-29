@@ -8,14 +8,26 @@
 declare(strict_types=1);
 
 use Hyva\Theme\ViewModel\HyvaCsp;
+use Two\GatewayHyva\ViewModel\GetQuoteDetails;
+use Hyva\Theme\Model\ViewModelRegistry;
 
 /** @var HyvaCsp $hyvaCsp */
+/** @var ViewModelRegistry $viewModels */
+
+$quoteModel = $viewModels->require(GetQuoteDetails::class);
+$quoteDetails = $quoteModel->getQuoteDetails() ?? [];
+$currentQuoteId = $quoteDetails['quote_id'] ?? '';
 ?>
 <script>
     /**
      * Track initialization state to prevent duplicate order intents
      */
     let paymentFieldsInitialized = false;
+
+    /**
+     * Current quote ID from PHP - used to detect new checkout sessions
+     */
+    const currentQuoteId = '<?= $currentQuoteId ?>';
 
     /**
      * Check if billing address is set to be the same as shipping address.
@@ -72,6 +84,27 @@ use Hyva\Theme\ViewModel\HyvaCsp;
     };
 
     document.addEventListener("DOMContentLoaded", () => {
+
+        /**
+         * Clear stale company data when a new checkout session is detected.
+         * This prevents the "Please select a country" error when ordering again in the same browser session.
+         */
+        const clearStaleCompanyDataIfNeeded = () => {
+            const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const storedQuoteId = storedData.quote_id || '';
+
+            // If quote ID changed (new order started), clear company data
+            if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                    quote_id: currentQuoteId,
+                    company_name: '',
+                    company_id: '',
+                    manual_mode: false
+                }));
+                hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+            }
+        };
+        clearStaleCompanyDataIfNeeded();
 
         /**
          * Initialize previously saved company details only if it doesn't exist.

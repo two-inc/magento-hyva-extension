@@ -9,10 +9,12 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
 
 /** @var ViewModelRegistry $viewModels */
 /** @var CheckoutConfig $viewModel */
 /** @var HyvaCsp $hyvaCsp */
+/** @var Escaper $escaper */
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -23,19 +25,36 @@ $companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
-$quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetails = json_encode($quoteDetails);
+$quoteDetails = $quoteModel->getQuoteDetails() ?? [];
+$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 ?>
 <input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
 <input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
 <script>
 document.addEventListener('alpine:init', () => {
 
-    // Initialize shipping company selection storage only if it doesn't exist
-    // This preserves existing selections across page reloads
-    if (!hyva.getBrowserStorage().getItem('shipping_company_selection')) {
-        hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));
-    }
+    /**
+     * Initialize shipping company selection storage for new checkout sessions.
+     * We detect a new session by checking if the current quote ID differs from the stored one.
+     * This ensures stale company data from previous orders is cleared.
+     */
+    const initShippingCompanyStorage = () => {
+        const quoteData = <?= $quoteDetailsJson ?>;
+        const currentQuoteId = quoteData.quote_id || '';
+        const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+        const storedQuoteId = storedData.quote_id || '';
+
+        // Clear storage if quote ID changed (new order) or if storage is empty
+        if (!storedQuoteId || storedQuoteId !== currentQuoteId) {
+            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                quote_id: currentQuoteId,
+                company_name: '',
+                company_id: '',
+                manual_mode: false
+            }));
+        }
+    };
+    initShippingCompanyStorage();
 
     Alpine.data('searchInput', window['searchInput'] = () => ({
         isOpen: false,
@@ -49,8 +68,9 @@ document.addEventListener('alpine:init', () => {
         countryCode : "",
         isAddressSearchEnabled : '<?= $isAddressSearchEnabled ?>',
         isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
-        quote : '<?= $quoteDetails ?>',
-        countrySelection : "Please select a country!!",
+        quote : '<?= $quoteDetailsJson ?>',
+        countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
+        countrySelectionShown: false,
         searchTimeout: '',
         selectedIndex: -1,
         async getItems() {
@@ -61,15 +81,15 @@ document.addEventListener('alpine:init', () => {
             this.selectedIndex = -1;
             if (!this.isCompanySearchEnabled) return;
 
-            const countryId = document.getElementById("shipping-country_id");
-            if(countryId && countryId.value){
-                this.countryCode = countryId.value
+            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
+            const quoteData = JSON.parse(this.quote);
+            this.countryCode = window.twoGatewayGetCountryCode(quoteData);
+
+            if (this.countryCode) {
+                this.countrySelectionShown = false; // Reset flag when country becomes available
             }
-            else {
-                const quoteData = JSON.parse(this.quote);
-                this.countryCode = quoteData.country_id;
-            }
-            if(this.countryCode) {
+
+            if (this.countryCode) {
                 clearTimeout(this.searchTimeout);
                 if (this.search.length < 3) {
                     this.items = [];
@@ -118,12 +138,15 @@ document.addEventListener('alpine:init', () => {
                         return filterItems;
                     }
                 }, 200);
-            }
-            else {
-                window.dispatchMessages([{
-                    type: 'error',
-                    text: this.countrySelection,
-                }], 3000);
+            } else {
+                // Only show the message once per interaction to avoid spamming
+                if (!this.countrySelectionShown && this.search.length >= 3) {
+                    this.countrySelectionShown = true;
+                    window.dispatchMessages([{
+                        type: 'warning',
+                        text: this.countrySelectionMessage,
+                    }], 5000);
+                }
             }
         },
 
@@ -145,10 +168,13 @@ document.addEventListener('alpine:init', () => {
                 shippingCompanyIdInput.value = item.companyId;
             }
 
-            // Store shipping company selection data
+            // Store shipping company selection data (preserve quote_id for session detection)
+            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
             const shippingCompanySelectionData = {
+                quote_id: existingData.quote_id || '',
                 company_name: item.companyName,
-                company_id: item.companyId
+                company_id: item.companyId,
+                manual_mode: false
             };
 
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));

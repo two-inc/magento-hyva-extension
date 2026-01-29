@@ -41,6 +41,33 @@ $quoteDetails = json_encode($quoteDetails);
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /**
+     * Global helper to get country code from multiple sources with fallbacks.
+     *
+     * Fallback order:
+     * 1. Shipping country dropdown (if visible)
+     * 2. Billing country dropdown (if visible)
+     * 3. Shipping address country from quote
+     * 4. Billing address country from quote
+     * 5. Legacy country_id from quote (backward compatibility)
+     * 6. Store's default country (for checkouts without country selector)
+     *
+     * @param {Object} quoteData - Quote details object from PHP
+     * @returns {string} Country code or empty string
+     */
+    window.twoGatewayGetCountryCode = window.twoGatewayGetCountryCode || function(quoteData) {
+        const shippingCountryField = document.getElementById("shipping-country_id");
+        const billingCountryField = document.getElementById("billing-country_id");
+
+        return (shippingCountryField && shippingCountryField.value) ||
+               (billingCountryField && billingCountryField.value) ||
+               quoteData?.shipping_country_id ||
+               quoteData?.billing_country_id ||
+               quoteData?.country_id ||
+               quoteData?.default_country_id ||
+               '';
+    };
+
     function validatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
@@ -194,7 +221,9 @@ $quoteDetails = json_encode($quoteDetails);
             selectedIndex: -1,
             searchTimeout: '',
             countryCode: '',
+            countrySelectionShown: false,
             placeOrderIntentFlag: true,
+            lastOrderIntentCompanyId: '', // Track last company ID for which order intent was triggered
 
             // Config from PHP
             isProjectFieldEnabled: '<?= $configModel->getIsProjectFieldEnabled() ?>',
@@ -325,12 +354,20 @@ $quoteDetails = json_encode($quoteDetails);
                 this.search = this.$el.value;
                 this.selectedIndex = -1;
                 const quoteData = JSON.parse(JSON.stringify(this.quote));
-                const countryId = document.getElementById("shipping-country_id");
 
-                this.countryCode = countryId?.value || quoteData.country_id;
+                // Get country code using centralized helper
+                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
+
+                if (this.countryCode) {
+                    this.countrySelectionShown = false; // Reset flag when country is available
+                }
 
                 if (!this.countryCode) {
-                    window.dispatchMessages([{ type: 'error', text: this.countrySelection }], 3000);
+                    // Only show the message once per interaction when user has typed enough
+                    if (!this.countrySelectionShown && this.search.length >= 3) {
+                        this.countrySelectionShown = true;
+                        window.dispatchMessages([{ type: 'warning', text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>' }], 5000);
+                    }
                     return;
                 }
 
@@ -386,7 +423,10 @@ $quoteDetails = json_encode($quoteDetails);
                 this.search = item.companyName;
                 this.manualMode = false;
 
+                // Preserve quote_id for session detection
+                const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                    quote_id: existingData.quote_id || '',
                     company_name: item.companyName,
                     company_id: item.companyId,
                     manual_mode: false
@@ -478,7 +518,8 @@ $quoteDetails = json_encode($quoteDetails);
                     // Let Alpine's :disabled and :style bindings handle the visual state
                 }
 
-                if (this.isOrderIntentEnabled && triggerOrderIntent) {
+                // Only trigger order intent if company ID changed to prevent duplicate messages
+                if (this.isOrderIntentEnabled && triggerOrderIntent && companyId !== this.lastOrderIntentCompanyId) {
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 }
             },
@@ -556,8 +597,8 @@ $quoteDetails = json_encode($quoteDetails);
                     type: 'SHIPPING_FEE'
                 });
 
-                const countryInput = document.getElementById("shipping-country_id");
-                this.countryCode = countryInput?.value || quoteData.country_id;
+                // Get country code using centralized helper
+                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
 
                 const gross_amount = parseFloat(quoteData.grand_total || 0);
                 const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
@@ -590,12 +631,15 @@ $quoteDetails = json_encode($quoteDetails);
             processOrderIntentSuccessResponse(response) {
                 if (!response) return;
 
+                // Track the company ID for which this order intent was processed
+                this.lastOrderIntentCompanyId = this.companyId;
+
                 if (response.approved) {
                     this.placeOrderIntentFlag = true;
-                    window.dispatchMessages([{ type: 'success', text: this.orderIntentApprovedMessage }], 3000);
+                    window.dispatchMessages([{ type: 'success', text: this.orderIntentApprovedMessage }], 5000);
                 } else {
                     this.placeOrderIntentFlag = false;
-                    window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 3000);
+                    window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 5000);
                 }
             },
 
@@ -655,14 +699,22 @@ $quoteDetails = json_encode($quoteDetails);
     // Debounce timeout for order intent
     let orderIntentDebounceTimeout = null;
 
+    // Track if an order intent request is currently in progress to prevent concurrent calls
+    let orderIntentInProgress = false;
+
     // Global order intent event listener - only added once
-    // Uses debouncing to prevent multiple rapid calls
+    // Uses debouncing and locking to prevent multiple rapid calls and duplicate messages
     window.addEventListener("dispatch-order-intent", (event) => {
         if (orderIntentDebounceTimeout) {
             clearTimeout(orderIntentDebounceTimeout);
         }
 
         orderIntentDebounceTimeout = setTimeout(() => {
+            // Prevent concurrent order intent calls
+            if (orderIntentInProgress) {
+                return;
+            }
+
             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
             if (!activePaymentMethod) {
@@ -685,9 +737,31 @@ $quoteDetails = json_encode($quoteDetails);
                     return false;
                 }
 
+                // Get the current company ID from the component
+                const currentCompanyId = twoPaymentComponentInstance.companyId ||
+                    document.getElementById("company_id")?.value || '';
+
+                // Skip if we already have an order intent result for this company
+                if (currentCompanyId && currentCompanyId === twoPaymentComponentInstance.lastOrderIntentCompanyId) {
+                    return true; // Already processed
+                }
+
+                // Skip if company ID is empty
+                if (!currentCompanyId.trim()) {
+                    return true; // Nothing to process
+                }
+
+                orderIntentInProgress = true;
                 twoPaymentComponentInstance.placeOrderIntent()
-                    .then(response => twoPaymentComponentInstance.processOrderIntentSuccessResponse(response))
-                    .catch(error => twoPaymentComponentInstance.processOrderIntentErrorResponse(error));
+                    .then(response => {
+                        twoPaymentComponentInstance.processOrderIntentSuccessResponse(response);
+                    })
+                    .catch(error => {
+                        twoPaymentComponentInstance.processOrderIntentErrorResponse(error);
+                    })
+                    .finally(() => {
+                        orderIntentInProgress = false;
+                    });
                 return true;
             };
 
@@ -696,7 +770,7 @@ $quoteDetails = json_encode($quoteDetails);
                     executeOrderIntent();
                 }, 100);
             }
-        }, 300);
+        }, 500); // Increased debounce to 500ms for better deduplication
     });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>
