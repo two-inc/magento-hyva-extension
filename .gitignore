@@ -7,9 +7,15 @@ index.html
 
 # Environments
 .envrc
+.env.local
 .direnv/
 .venv/
 venv/
+
+# Local dev
+.frpc.pid
+.phpunit.result.cache
+auth.json
 
 # Node.js
 node_modules/
