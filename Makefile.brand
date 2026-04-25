@@ -1,0 +1,37 @@
+# ==============================================================================
+# Brand overlay — ABN AMRO
+# ==============================================================================
+# This file only exists on `abn-main`. If you see it on `main`, it is stale
+# from a previous checkout — delete it.
+#
+# Loaded via `-include Makefile.brand` at the top of the main Makefile.
+# Uses `:=` so brand defaults win against main's `?=` defaults.
+#
+# Target redefinitions (`archive`, `tag`) emit "overriding recipe for target"
+# warnings under GNU make; that is intentional and documented in AGENTS.md.
+# A future cleanup may extract `ARCHIVE_NAME` / `TAG_PREFIX` variables to make
+# these variable-overrides instead of recipe-overrides.
+#
+# See AGENTS.md → Brand overlay for the design rationale.
+
+BRAND                 := achterafbetalen
+TWO_API_BASE_URL      := https://api.$(TWO_ENV).achterafbetalen.abnamro.nl
+TWO_CHECKOUT_BASE_URL := https://checkout.$(TWO_ENV).achterafbetalen.abnamro.nl
+TWO_STORE_COUNTRY     := NL
+TWO_BRAND             := achterafbetalen
+TWO_BRAND_VERSION     := $(if $(filter staging,$(TWO_ENV)),qa,)
+LOG_DIR               := var/log/abn
+
+.PHONY: publish tag
+
+## Tag the release and push to abn-main-csp (ABN release flow)
+tag:
+	eval $$(bumpver show --environ) && git tag abn-$${CURRENT_VERSION} -f && git push origin abn-$${CURRENT_VERSION} -f && git push origin abn-main-csp -f
+
+## Build the ABN-flavored archive zip under artifacts/<version>/
+archive:
+	eval $$(bumpver show --environ) && mkdir -p artifacts/$${CURRENT_VERSION} && git archive --format zip HEAD > artifacts/$${CURRENT_VERSION}/magento-abn-hyva-extension.zip
+
+## Publish archive to GCS bucket and refresh download index
+publish: archive
+	gsutil cp -r artifacts/* gs://achteraf-betalen/magento-hyva/ && ./scripts/publish-to-bucket.py
