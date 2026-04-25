@@ -26,6 +26,31 @@ Magewire/             # Magewire components (if applicable)
 - Do NOT skip commit-msg hook on feature branches
 - Never use `--no-verify` flag
 
+## Branch Model
+
+This repo is the Hyvä UI layer for the Two BNPL Magento plugin. Two branches in parallel:
+
+- `main` — Two-branded (`Two_GatewayHyva`, namespace `Two\GatewayHyva\`, depends on `two-inc/magento2`)
+- `abn-main` — ABN-branded (`ABN_GatewayHyva`, namespace `ABN\GatewayHyva\`, depends on `two-inc/magento-abn-plugin`)
+
+`abn-main` tracks `main` plus a small set of brand-flavor overrides — namespace, payment method code, logo, and a `Makefile.brand` overlay. Historically described as "main + 1 ABN-layer commit"; in practice (since `abn-main` has GitHub branch protection blocking force-push) it is "main + N commits" where each ABN-flavor change adds another commit on top.
+
+When porting features from `magento-abn-plugin`, build on `main` first. The next `abn-main` rebase carries the change forward. ABN-specific assets (logo, `achterafbetalen` URL defaults, ABN store country, GCS publish target) belong only on `abn-main` — see *Brand overlay* below.
+
+## Brand overlay
+
+`main/Makefile` has `-include Makefile.brand` at the top. The file is gitignored on `main` and absent there; on `abn-main` it is tracked and contains brand-flavor overrides:
+
+- API / checkout URL defaults
+- Default store country (`NO` on main, `NL` on ABN)
+- `TWO_BRAND` / `TWO_BRAND_VERSION` defaults
+- `LOG_DIR` override (`var/log/two` on main, `var/log/abn` on ABN)
+- ABN-only targets: `publish` (GCS bucket), `tag` (with `abn` git remote)
+
+`Makefile.brand` MUST appear before any `?=` defaults it intends to override (the `-include` lives at the top of the Makefile for this reason). Brand-side overrides use `:=` so they win against main's `?=`.
+
+If you see a `Makefile.brand` on `main` it is stale — delete it. The Makefile prints `Loaded Makefile.brand — brand overlay active` when an overlay is in scope.
+
 ## Version Management
 
 Version bumps are done using `bumpver`:
