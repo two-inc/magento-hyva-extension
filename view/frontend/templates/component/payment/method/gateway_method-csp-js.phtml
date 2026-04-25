@@ -38,6 +38,19 @@ $merchantName = $merchantDetails["short_name"] ?? "";
 $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetails = json_encode($quoteDetails);
 
+// Net-terms picker (ABN-363)
+$availableBuyerTerms = json_encode(
+    $configModel->getAvailableBuyerTerms(),
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+);
+$termSurcharges = json_encode(
+    $configModel->getTermSurcharges(),
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+);
+$initialSelectedTerm = $configModel->getSelectedPaymentTerm() ?? $configModel->getDefaultPaymentTerm() ?? 0;
+$currencyCode = $escaper->escapeJs($configModel->getCurrencyCode());
+$localeCode = $escaper->escapeJs($configModel->getLocaleCode());
+
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
@@ -258,6 +271,15 @@ $quoteDetails = json_encode($quoteDetails);
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
 
+            // Net-terms picker (ABN-363) — JSON seeded via ConfigProvider; no $wire round-trip per click.
+            // Persistence runs through the upstream `select-term` webapi via Magewire `selectTerm` action.
+            availableBuyerTerms: <?= $availableBuyerTerms ?>,
+            termSurcharges: <?= $termSurcharges ?>,
+            selectedTermDays: <?= (int)$initialSelectedTerm ?>,
+            currencyCode: '<?= $currencyCode ?>',
+            localeCode: '<?= $localeCode ?>',
+            termRefreshInFlight: false,
+
             // CSP-friendly event handlers (called from template)
             twoGatewayHyvaOnInit() {
                 this.initialize(JSON.parse(this.$el.dataset.hyvacsp1));
@@ -279,6 +301,73 @@ $quoteDetails = json_encode($quoteDetails);
             },
             twoGatewayHyvaOnPaymentTermsChange() {
                 this.isPaymentTermsAccepted = this.$el.checked;
+            },
+            twoGatewayHyvaSelectTerm(days) {
+                // Optimistic UI update with rollback on failure. The webapi
+                // (Two\Gateway\Model\Webapi\TermSelection::selectTerm) writes
+                // session state and recollects totals; if it throws (network,
+                // validation, expired session) we must NOT leave the user
+                // looking at a chip they "selected" while the server holds
+                // the previous term — they'd check out and pay the wrong fee.
+                //
+                // The Magewire action returns { term_surcharges: {...} } from
+                // the recalculated upstream config so chip labels stay aligned
+                // with the order summary. Without this sync, chips held the
+                // page-load fee while the cart summary used the fresh one
+                // (the chip-vs-summary mismatch surfaced in production).
+                const previous = this.selectedTermDays;
+                this.selectedTermDays = days;
+                this.termRefreshInFlight = true;
+                return this.$wire.selectTerm(days)
+                    .then((response) => {
+                        if (response && response.term_surcharges) {
+                            this.termSurcharges = response.term_surcharges;
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('selectTerm failed; rolling back UI', err);
+                        this.selectedTermDays = previous;
+                    })
+                    .finally(() => {
+                        this.termRefreshInFlight = false;
+                    });
+            },
+            // Sync `termSurcharges` from Magewire after every re-render. Cart
+            // changes that don't go through `twoGatewayHyvaSelectTerm` (line
+            // item add/remove, shipping, coupon) still trigger Magewire to
+            // re-render this component; on `magewire:loader:done` we pull the
+            // latest server-computed map so the chips never lag the summary.
+            twoGatewayHyvaSyncTermSurchargesFromWire() {
+                try {
+                    const fresh = this.$wire.get('termSurcharges');
+                    if (fresh && typeof fresh === 'object') {
+                        this.termSurcharges = fresh;
+                    }
+                } catch (e) {
+                    // $wire not available in this lifecycle phase — safe to skip.
+                }
+            },
+            // Global zero-fee suppression — match abn_payment.js:110 (allZero across whole list).
+            get allFeesZero() {
+                return (this.availableBuyerTerms || []).every(t => {
+                    const fee = this.termSurcharges?.[t.days] ?? t.fee ?? 0;
+                    return !fee || fee < 0.005;
+                });
+            },
+            getTermFee(termDays) {
+                return this.termSurcharges?.[termDays] ?? 0;
+            },
+            formatTermFee(termDays) {
+                const fee = this.getTermFee(termDays);
+                if (!fee || fee < 0.005) return '';
+                try {
+                    return new Intl.NumberFormat(this.localeCode, {
+                        style: 'currency',
+                        currency: this.currencyCode,
+                    }).format(fee);
+                } catch (e) {
+                    return this.currencyCode + ' ' + fee.toFixed(2);
+                }
             },
             twoGatewayHyvaOnCompanySearchClickOutside() {
                 this.isOpen = false;

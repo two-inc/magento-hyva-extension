@@ -210,6 +210,55 @@ $quoteDetails = json_encode(
               <div class="field field-error messages"></div>
             </div>
 
+            <!-- Net-terms picker (ABN-363). Listens for Magewire re-render
+                 completions to resync `termSurcharges` after cart changes. -->
+            <fieldset
+                x-show="availableBuyerTerms.length > 1"
+                :class="termRefreshInFlight ? 'opacity-50 pointer-events-none' : ''"
+                class="flex flex-wrap gap-2 payment-terms-picker"
+                x-on:magewire:loader:done.window="twoGatewayHyvaSyncTermSurchargesFromWire"
+            >
+              <legend class="text-sm font-semibold text-gray-700 mb-2 w-full">
+                <?= $escaper->escapeHtml(__("Choose payment term")) ?>
+              </legend>
+              <template x-for="term in availableBuyerTerms" :key="term.days">
+                <label
+                    class="min-w-[8rem] cursor-pointer rounded border px-3 py-2 select-none
+                           peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-400"
+                    :class="selectedTermDays === term.days
+                        ? 'border-blue-600 bg-blue-50 ring-2 ring-blue-600'
+                        : 'border-gray-300 hover:border-blue-400'"
+                >
+                  <input
+                      type="radio"
+                      name="two_term_days_ui"
+                      :value="term.days"
+                      x-model.number="selectedTermDays"
+                      x-on:change="twoGatewayHyvaSelectTerm(term.days)"
+                      class="peer sr-only"
+                  />
+                  <span x-text="term.label || (term.days + ' days')"></span>
+                  <span
+                      x-show="!allFeesZero && getTermFee(term.days) >= 0.005"
+                      class="ml-1 text-sm text-gray-600"
+                      x-text="' + ' + formatTermFee(term.days)"
+                  ></span>
+                </label>
+              </template>
+            </fieldset>
+
+            <div
+                x-show="availableBuyerTerms.length === 1"
+                class="rounded border border-gray-300 px-3 py-2 payment-terms-single"
+            >
+              <span x-text="availableBuyerTerms[0]?.label || (availableBuyerTerms[0]?.days + ' days')"></span>
+              <span
+                  x-show="!allFeesZero && getTermFee(availableBuyerTerms[0]?.days) >= 0.005"
+                  class="ml-1 text-sm text-gray-600"
+                  x-text="' + ' + formatTermFee(availableBuyerTerms[0]?.days)"
+              ></span>
+            </div>
+
             <div x-data="twoGatewayHyvaPaymentTermsComponent" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
               <div class="field field-reserved required">
                 <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
@@ -221,8 +270,8 @@ $quoteDetails = json_encode(
                       data-validate='{"required": true}'
                       data-msg-required="<?= $termsNotAcceptedMessage ?>"
                       />
-                  <!-- Terms Text -->
-                  <span class="terms-text text-gray-700"><?= $paymentTermsMessage ?></span>
+                  <!-- Terms Text — paymentTermsMessage contains an anchor tag, render raw. -->
+                  <span class="terms-text text-gray-700"><?= /* @noEscape */ $paymentTermsMessage ?></span>
                 </div>
               </div>
             </div>
