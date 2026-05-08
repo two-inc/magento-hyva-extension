@@ -72,8 +72,8 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway Two_GatewayHyva
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
-	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
+	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key) TWO_ENV=$(TWO_ENV)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	@./start-proxy.sh --background || true
