@@ -1,4 +1,4 @@
-# Magento Hyva Extension (ABN Gateway)
+# Magento Hyva Extension
 
 ## Project Overview
 
@@ -22,101 +22,43 @@ Magewire/             # Magewire components (if applicable)
 
 ## Git Workflow
 
-- Use `SKIP=commit-msg` when committing on `abn-main` branch (no Linear ticket needed)
+- Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
 - Do NOT skip commit-msg hook on feature branches
 - Never use `--no-verify` flag
 
-## Branch Structure
+## Branch Model
 
-- `main` - Two.inc version (Two_GatewayHyva namespace)
-- `abn-main` - ABN AMRO version (ABN_GatewayHyva namespace) - **THIS BRANCH**
+This repo is the Hyvä UI layer for the Two BNPL Magento plugin. Two branches in parallel:
 
-The `abn-main` branch should always be `main` + a single "ABN layer" commit on top.
+- `main` — Two-branded (`Two_GatewayHyva`, namespace `Two\GatewayHyva\`, depends on `two-inc/magento2`)
+- `abn-main` — ABN-branded (`ABN_GatewayHyva`, namespace `ABN\GatewayHyva\`, depends on `two-inc/magento-abn-plugin`)
 
-## Rebasing abn-main onto main
+`abn-main` tracks `main` plus a small set of brand-flavor overrides — namespace, payment method code, logo, and a `Makefile.brand` overlay. Historically described as "main + 1 ABN-layer commit"; in practice (since `abn-main` has GitHub branch protection blocking force-push) it is "main + N commits" where each ABN-flavor change adds another commit on top.
 
-When main has new changes that need to be incorporated into abn-main:
+When porting features from `magento-abn-plugin`, build on `main` first. The next `abn-main` rebase carries the change forward. ABN-specific assets (logo, `achterafbetalen` URL defaults, ABN store country, GCS publish target) belong only on `abn-main` — see *Brand overlay* below.
 
-```bash
-# 1. Ensure main is up to date
-git checkout main
-git pull origin main
+## Brand overlay
 
-# 2. Reset abn-main to main
-git checkout abn-main
-git fetch origin abn-main
-git reset --hard origin/main
+`main/Makefile` has `-include Makefile.brand` at the top. The file is gitignored on `main` and absent there; on `abn-main` it is tracked and contains brand-flavor overrides:
 
-# 3. Cherry-pick the ABN layer commit (get hash from previous abn-main)
-git cherry-pick <abn-layer-commit-hash> --no-commit
+- API / checkout URL defaults
+- Default store country (`NO` on main, `NL` on ABN)
+- `TWO_BRAND` / `TWO_BRAND_VERSION` defaults
+- `LOG_DIR` override (`var/log/two` on main, `var/log/abn` on ABN)
+- ABN-only targets: `publish` (GCS bucket), `tag` (with `abn` git remote)
 
-# 4. Resolve conflicts if any, keeping ABN namespace changes:
-#   - Namespace: Two -> ABN
-#   - Payment method: two_payment -> abn_payment
-#   - Template paths: Two_GatewayHyva:: -> ABN_GatewayHyva::
+`Makefile.brand` MUST appear before any `?=` defaults it intends to override (the `-include` lives at the top of the Makefile for this reason). Brand-side overrides use `:=` so they win against main's `?=`.
 
-# 5. Remove bumpver.toml (versioning managed on main only)
-rm -f bumpver.toml
-
-# 6. Stage and commit as single ABN layer commit
-git add -A
-SKIP=commit-msg git commit -m "chore: ABN layer"
-
-# 7. Verify no Two references remain (CRITICAL!)
-rg -i "twoGatewayHyva|two_payment|Two_GatewayHyva|Two\\\\Gateway" --glob '!AGENTS.md'
-
-# 8. Force push
-git push origin abn-main --force
-```
-
-### Verifying ABN Namespace Changes
-
-After rebasing, always check for leftover Two references that should be ABN:
-
-```bash
-# Check for any remaining Two references (should return empty except AGENTS.md)
-rg -i "twoGatewayHyva|two_payment|Two_GatewayHyva" --glob '!AGENTS.md'
-
-# Specifically check CSP JS files for Alpine component names
-rg "twoGatewayHyva" view/frontend/templates/
-
-# Check PHP namespace references
-rg "Two\\\\GatewayHyva" --glob '*.php' --glob '*.phtml'
-```
-
-If any matches are found, they need to be renamed to the ABN equivalent:
-
-- `twoGatewayHyva*` → `abnGatewayHyva*`
-- `two_payment` → `abn_payment`
-- `Two_GatewayHyva` → `ABN_GatewayHyva`
-- `Two\GatewayHyva` → `ABN\GatewayHyva`
+If you see a `Makefile.brand` on `main` it is stale — delete it. The Makefile prints `Loaded Makefile.brand — brand overlay active` when an overlay is in scope.
 
 ## Version Management
 
-- Version bumps are done on `main` only using `bumpver`
-- The `abn-main` branch inherits the version from main via rebase
-- `bumpver.toml` is removed from abn-main to avoid confusion
-
-## ABN-specific Differences
-
-- Namespace: `ABN\GatewayHyva` instead of `Two\GatewayHyva`
-- Payment method code: `abn_payment` instead of `two_payment`
-- Config section: `abn_*` instead of `two_*`
-- ABN logo in `view/frontend/web/images/cc/logo.svg`
-
-## Publishing ABN Plugin
-
-The ABN Hyva extension is published to a GCS bucket for distribution:
+Version bumps are done using `bumpver`:
 
 ```bash
-# 1. Tag the release (creates abn-<version> tag)
-make tag
-
-# 2. Create archive and publish to GCS
-make publish
+SKIP=commit-msg bumpver update --patch  # or --minor, --major
+git push origin main --tags
 ```
-
-The published plugin is available at: https://plugins.achterafbetalen.co/magento-hyva/index.html
 
 ## Development Tips
 
@@ -182,5 +124,4 @@ sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface
 2. **Styles not applying**: Rebuild Tailwind CSS
 3. **Alpine.js not working**: Check browser console for JS errors, ensure `x-data` is on parent element
-4. **Payment method not showing**: Verify `abn_payment` is enabled in admin config
-5. **Alpine CSP error "unable to interpret expression"**: This usually means CSP JS files have `twoGatewayHyva*` function names but templates use `abnGatewayHyva*`. Run the verification commands above and rename any leftover Two references.
+4. **Payment method not showing**: Verify `two_payment` is enabled in admin config

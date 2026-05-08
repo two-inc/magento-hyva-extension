@@ -18,6 +18,9 @@ venv/
 .frpc.pid
 .phpunit.result.cache
 auth.json
+# Brand overlay — only tracked on brand branches (e.g. abn-main).
+# If this file appears on `main`, it's stale from a previous checkout — delete it.
+Makefile.brand
 
 # Node.js
 node_modules/
@@ -25,3 +28,6 @@ node_modules/
 # AI assistants
 CLAUDE.local.md
 .aider*
+.agent-notes/
+.serena/
+.claude/
