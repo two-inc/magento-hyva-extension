@@ -8,12 +8,12 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       layout="1column" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
 	<head>
-		<css src="Two_GatewayHyva::css/custom.css"/>
+		<css src="ABN_GatewayHyva::css/custom.css"/>
 	</head>
     <body>
         <referenceBlock name="before.body.end">
-            <block name="two_getway_payment_method"
-                template="Two_GatewayHyva::js/payment/company-name-payment.phtml" after="-"/>
+            <block name="abn_getway_payment_method"
+                template="ABN_GatewayHyva::js/payment/company-name-payment.phtml" after="-"/>
         </referenceBlock>
     </body>
 </page>

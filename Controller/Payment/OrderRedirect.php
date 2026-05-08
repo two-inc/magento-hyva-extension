@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Controller\Payment;
+namespace ABN\GatewayHyva\Controller\Payment;
 
 use Exception;
 use Magento\Framework\App\Action\Action;
@@ -46,7 +46,7 @@ class OrderRedirect extends Action
     public function execute()
     {
         // Get the cookie value
-        $redirectUrl = $this->cookieManager->getCookie("two_redirect_url");
+        $redirectUrl = $this->cookieManager->getCookie("abn_redirect_url");
         $resultRedirect = $this->resultRedirectFactory->create();
         $resultRedirect->setUrl($redirectUrl);
         return $resultRedirect;

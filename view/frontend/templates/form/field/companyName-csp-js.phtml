@@ -8,240 +8,36 @@
 
 declare(strict_types=1);
 
-use Hyva\Theme\Model\ViewModelRegistry;
 use Hyva\Theme\ViewModel\HyvaCsp;
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
-use Two\GatewayHyva\ViewModel\GetQuoteDetails;
-use Magento\Framework\Escaper;
 
-/** @var ViewModelRegistry $viewModels */
 /** @var HyvaCsp $hyvaCsp */
-/** @var Escaper $escaper */
-
-$configModel = $viewModels->require(CheckoutConfig::class);
-$quoteModel = $viewModels->require(GetQuoteDetails::class);
-$hyvaCsp = $viewModels->require(HyvaCsp::class);
-
-$checkoutApiUrl = $configModel->getCheckoutApiUrl();
-$isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
-$quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
-function twoGatewayHyvaCompanySearchField() {
-    return {
-        isOpen: false,
-        search: '',
-        items: [],
-        selectedIndex: -1,
-        isSelecting: false,
-        manualMode: false,
-        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-        isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
-        quoteData: <?= $quoteDetailsJson ?>,
-        countrySelectionShown: false,
-
-        init() {
-            // Restore manualMode from storage
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            this.manualMode = data.manual_mode || false;
-        },
-
-        showDropdown() {
-            return this.isOpen && this.items.length > 0;
-        },
-
-        async getItems() {
-            if (this.isSelecting) { this.isSelecting = false; return; }
-            if (this.manualMode) return;
-            this.search = this.$el.value;
-            this.selectedIndex = -1;
-            if (this.search.length < 3) {
-                this.items = [];
-                return;
-            }
-
-            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const countryCode = window.twoGatewayGetCountryCode(this.quoteData);
-
-            // If no country available from any source, show a friendly message once
-            if (!countryCode) {
-                if (!this.countrySelectionShown) {
-                    this.countrySelectionShown = true;
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>'
-                    }], 5000);
-                }
-                return;
-            }
-            this.countrySelectionShown = false;
-
-            try {
-                const queryParams = new URLSearchParams({
-                    country: countryCode.toUpperCase(),
-                    limit: 10,
-                    offset: 0,
-                    q: unescape(this.search),
-                });
-                const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                this.items = data.items.map(item => ({
-                    companyName: item.name,
-                    companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                    companyId: item.national_identifier.id,
-                    lookupId: item.lookup_id,
-                }));
-                if (this.items.length > 0) this.isOpen = true;
-            } catch (error) {
-                console.error("Error fetching companies:", error);
-                this.items = [];
-            }
-        },
-
-        handleItemClick(event) {
-            // Stop all event propagation to prevent address book modal from closing
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            if (event.preventDefault) event.preventDefault();
-
-            const index = event.currentTarget.dataset.index;
-            if (index !== undefined && this.items[index]) {
-                this.selectItem(this.items[index]);
-            }
-        },
-
-        selectItem(item) {
-            this.isSelecting = true;
-            this.isOpen = false;
-            this.items = [];
-            this.search = item.companyName;
-            this.manualMode = false;
-
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) {
-                input.value = item.companyName;
-                // Use bubbles: false to prevent address book modal from closing
-                input.dispatchEvent(new Event('input', { bubbles: false }));
-            }
-
-            // Preserve quote_id for session detection
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const companyData = {
-                quote_id: existingData.quote_id || '',
-                company_name: item.companyName,
-                company_id: item.companyId,
-                manual_mode: false
-            };
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
-
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: companyData
-            }));
-
-            // Address lookup if enabled
-            if (this.isAddressSearchEnabled && item.lookupId) {
-                this.addressLookup(item.lookupId);
-            }
-        },
-
-        async addressLookup(lookupId) {
-            // Capture root element before async call since $root may not be available in callbacks
-            const rootEl = this.$root;
-            try {
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
-                const data = await response.json();
-
-                if (data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0], rootEl);
-                }
-            } catch (error) {
-                console.error("Error fetching address:", error);
-            }
-        },
-
-        setAddressData(address, rootEl) {
-            // Find the address section containing this company field
-            // Traverse up levels from the component root to find the container with all address inputs
-            let container = rootEl;
-            for (let i = 0; i < 4 && container; i++) {
-                container = container.parentElement;
-            }
-
-            if (!container) {
-                console.warn('Could not find address container');
-                return;
-            }
-
-            const cityInput = container.querySelector('input[name="city"]');
-            const postcodeInput = container.querySelector('input[name="postcode"]');
-            const streetInput = container.querySelector('input[name="street[0]"]');
-
-            if (cityInput) {
-                cityInput.value = address.city || "";
-            }
-
-            if (postcodeInput) {
-                postcodeInput.value = address.postal_code || "";
-            }
-
-            if (streetInput) {
-                streetInput.value = address.street_address || "";
-            }
-
-            // Trigger 'input' event with bubbles: false to prevent modal closure
-            [cityInput, postcodeInput, streetInput].forEach(input => {
-                if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: false }));
-                }
-            });
-        },
-
-        enterManually(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.manualMode = true;
-            this.isOpen = false;
-            this.items = [];
-            this.saveManualModeToStorage(true);
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) input.focus();
-        },
-
-        enableSearch(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.manualMode = false;
-            this.saveManualModeToStorage(false);
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) input.focus();
-        },
-
-        saveManualModeToStorage(manualMode) {
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            data.manual_mode = manualMode;
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
-        },
-
-        closeDropdown() {
-            this.isOpen = false;
-            this.items = [];
-        },
-    }
+function abnGatewayHyvaCompanySearchField() {
+    return Object.assign(
+        searchInput(),
+        {
+            showManual: false,
+            ['!showManual']() {return !this.showManual},
+            ['abnGatewayHyvaOnCompanySearchChange'](event) {return this.search = this.$el.value},
+            ['abnGatewayHyvaGetItemClass']() {return {'bg-gray-100': this.selectedIndex === this.index}},
+            ['abnGatewayHyvaOnSearchModeClick'](event) {return this.showManual = false},
+            ['abnGatewayHyvaOnCompanyItemClick'](event) {event.stopPropagation(); return this.selectItem(this.items[this.selectedIndex])},
+            ['abnGatewayHyvaOnManualEntryClick'](event) {this.showManual = true; hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({}));},
+            ['abnGatewayHyvaOnCompanySearchClickOutside'](event) {return this.isOpen = false},
+            ['abnGatewayHyvaOnCompanySearchFocus'](event) {return this.isOpen = true},
+            ['abnGatewayHyvaGetCompanyDisplayName']() {return this.item.companyDisplayName},
+            ['abnGatewayHyvaGetCompanyId']() {return this.item.companyId},
+            ['abnGatewayHyvaOnArrowDown'](event) {return this.nextItem()},
+            ['abnGatewayHyvaOnArrowUp'](event) {return this.prevItem()},
+            ['abnGatewayHyvaOnEnterSelect'](event) {return this.selectHighlightedItem()},
+            ['abnGatewayHyvaOnItemMouseover'](event) {return this.selectedIndex = this.index},
+            ['abnGatewayHyvaShouldShowMinCharsMessage']() {return this.search.length < 3},
+        }
+    )
 }
-document.addEventListener('alpine:init', () => {
-    Alpine.data('twoGatewayHyvaCompanySearchField', twoGatewayHyvaCompanySearchField);
-});
+window.addEventListener('alpine:init', () => Alpine.data('abnGatewayHyvaCompanySearchField', abnGatewayHyvaCompanySearchField), {once: true});
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

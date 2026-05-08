@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Plugin;
+namespace ABN\GatewayHyva\Plugin;
 
 use Hyva\Checkout\Model\ConfigData\HyvaThemes\SystemConfigPayment;
 use Hyva\Checkout\Model\MethodMetaData;

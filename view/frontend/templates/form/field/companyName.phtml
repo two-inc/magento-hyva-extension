@@ -10,7 +10,7 @@ use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
 use Magewirephp\Magewire\Component\Form as MagewireFormComponent;
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
+use ABN\GatewayHyva\ViewModel\CheckoutConfig;
 
 /** @var Template $block */
 /** @var EntityFieldInterface $element */
@@ -27,61 +27,96 @@ $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
 $form = $block->getData("form");
 ?>
-<div class="w-full font-medium text-gray-700 <?= /* @noEscape */ $element->isRequired()
+<div class="w-full font-medium text-gray-700 min-h-108 relative <?= /* @noEscape */ $element->isRequired()
         ? "required"
         : "not-required" ?>">
     <?= /* @noEscape */ $renderer->renderLabel($element) ?>
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="block font-medium text-gray-700">
-        <div x-data="twoGatewayHyvaCompanySearchField" class="relative" @click.outside="closeDropdown">
-            <input type="text" class="<?= $escaper->escapeHtmlAttr(
-                $element->renderClass([
-                    "block w-full form-input grow renderer-text",
-                ]),
-            ) ?>"
-            <?php if ($element->hasAttributes()): ?>
-                <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
-            <?php endif; ?>
-            <?php if ($element->isRequired()): ?>
-                required
-                data-validate='{"required":true}'
-            <?php endif; ?>
-            autocomplete="off"
-            @input.debounce.200ms="getItems"
+        <div x-data="abnGatewayHyvaCompanySearchField">
+            <div class="flex items-start gap-2 enter-manually flex-col" x-show="showManual">
+                <input type="text" class="<?= $escaper->escapeHtmlAttr(
+                    $element->renderClass([
+                        "block w-full form-input grow renderer-text",
+                    ]),
+                ) ?>"
+               <?php if ($element->hasAttributes()): ?>
+                    <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
+               <?php endif; ?> autocomplete="notcomplete"
             />
-            <!-- Search for company link (shows in manual mode) -->
-            <div x-show="manualMode" class="mt-1 text-right">
-                <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                    <?= $escaper->escapeHtml(__("Search for company")) ?>
-                </span>
-            </div>
-            <!-- Search Results Dropdown -->
-            <div
-                x-show="showDropdown"
-                @click.stop
-                @mousedown.stop
-                class="w-full z-40 border border-gray-200 rounded-b-lg bg-white absolute mt-1 shadow-lg"
-            >
-                <div class="flex flex-col w-full max-h-[250px] overflow-y-auto">
-                    <template x-for="(item, index) in items" :key="item.companyId">
-                        <div
-                            :data-index="index"
-                            @click.stop="handleItemClick"
-                            @mousedown.stop
-                            class="cursor-pointer hover:bg-gray-100 p-2 border-b border-gray-100"
-                        >
-                            <span x-html="item.companyDisplayName"></span>
-                        </div>
-                    </template>
-                </div>
-                <!-- Enter manually link inside dropdown -->
-                <div class="px-2 py-3 border-t border-gray-200">
-                    <span @click.stop="enterManually" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                        <?= $escaper->escapeHtml(
-                            __("Enter details manually"),
+                <div id="billing_search_for_company" class="search_for_company w-full text-right" @click="abnGatewayHyvaOnSearchModeClick" title="Search for company">
+                    <span class="text-blue-600 text-sm cursor-pointer">
+                        <?= $escaper->escapeHtmlAttr(
+                            __("Search for company"),
                         ) ?>
                     </span>
+                </div>
+            </div>
+            <div class="w-full relative" x-show="!showManual">
+                <div class="items-center w-full" @click.outside="abnGatewayHyvaOnCompanySearchClickOutside">
+                    <div class="w-full">
+                        <input type="text"
+                            @input.debounce="getItems"
+                            @focus="abnGatewayHyvaOnCompanySearchFocus"
+                            @keydown.arrow-down="abnGatewayHyvaOnArrowDown"
+                            @keydown.arrow-up="abnGatewayHyvaOnArrowUp"
+                            @keydown.enter.prevent="abnGatewayHyvaOnEnterSelect"
+                            @keydown.tab="closeCompanyList"
+                            placeholder="<?= $escaper->escapeHtmlAttr(
+                                __("Enter company name to search"),
+                            ) ?>"
+                            :value="search"
+                            class="<?= $escaper->escapeHtmlAttr(
+                                $element->renderClass([
+                                    "block w-full form-input grow renderer-text",
+                                ]),
+                            ) ?>"
+                            id="shipping-company-name"
+                            name="company_search"
+                            value="<?= $element->getValue() ?>"
+                            autocomplete="notcomplete"
+                        />
+                    <!-- Search Results Dropdown -->
+                    <div
+                        x-show="isOpen"
+                        x-transition
+                        class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
+                    >
+                        <div class="flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
+                            <template
+                                x-for="(item, index) in items"
+                                :key="abnGatewayHyvaGetCompanyId"
+                            >
+                                <div
+                                    @click="abnGatewayHyvaOnCompanyItemClick"
+                                    @mouseover="abnGatewayHyvaOnItemMouseover"
+                                    :class="abnGatewayHyvaGetItemClass"
+                                    class="cursor-pointer hover:bg-gray-100 p-2"
+                                >
+                                    <div class="flex items-center">
+                                        <div>
+                                            <span x-html="abnGatewayHyvaGetCompanyDisplayName"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                        <div x-show="abnGatewayHyvaShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                            __("Please enter 3 or more characters"),
+                        ) ?></div>
+                        <div
+                            id="billing_enter_company"
+                            class="enter_for_company w-full px-2 py-3"
+                            @click="abnGatewayHyvaOnManualEntryClick"
+                            title="Enter details manually">
+                            <span class="text-blue-600 text-sm cursor-pointer">
+                                <?= $escaper->escapeHtmlAttr(
+                                    __("Enter details manually"),
+                                ) ?>
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\GatewayHyva\Block\Adminhtml\System\Config\Field;
+namespace ABN\GatewayHyva\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
@@ -20,7 +20,7 @@ class Version extends Field
     /**
      * @var string
      */
-    protected $_template = "Two_GatewayHyva::system/config/field/version.phtml";
+    protected $_template = "ABN_GatewayHyva::system/config/field/version.phtml";
 
     /**
      * @var ScopeConfigInterface
@@ -51,7 +51,7 @@ class Version extends Field
     public function getVersion(): string
     {
         return (string) $this->scopeConfig->getValue(
-            "two_hyva/general/version",
+            "abn_hyva/general/version",
         );
     }
 
