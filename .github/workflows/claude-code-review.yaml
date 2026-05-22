@@ -1,0 +1,51 @@
+name: Claude Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  code-review:
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    if: |
+      (
+        github.event_name == 'pull_request' &&
+        vars.CLAUDE_REVIEW_CONFIG != '' &&
+        fromJSON(vars.CLAUDE_REVIEW_CONFIG)[format('{0}:{1}', github.base_ref, github.event.action)] == true
+      ) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    steps:
+      - uses: two-inc/claude-code-reviewer@main
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_app_id: ${{ vars.TWO_INC_APP_ID }}
+          github_app_private_key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          extra_prompt: |
+
+            ## Magento Hyvä Extension Specific Guidelines:
+
+            For this PHP Magento 2 Hyvä theme extension, pay special attention to:
+            - **Hyvä compatibility**: Follow Hyvä theme patterns and component structure
+            - **Alpine.js**: Use Alpine.js for reactivity (Hyvä uses Alpine, not Knockout)
+            - **Tailwind CSS**: Follow Tailwind utility-first patterns for styling
+            - **ViewModels**: Use Hyvä view models instead of traditional Magento blocks
+            - **JavaScript bundling**: Check for proper JS module organization
+            - **Template structure**: Verify .phtml templates follow Hyvä conventions
+            - **Performance**: Ensure changes maintain Hyvä's performance benefits
+            - **Backward compatibility**: Check compatibility with base Magento plugin

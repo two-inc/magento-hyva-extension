@@ -1,0 +1,13 @@
+serverAddr = "frp.beta.two.inc"
+serverPort = 7000
+auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
+
+transport.tls.enable = true
+transport.poolCount = 10
+
+[[proxies]]
+localPort = {{ .Envs.PORT }}
+name = "{{ .Envs.SUBDOMAIN }}"
+type = "http"
+localIP = "{{ .Envs.HOST }}"
+subdomain = "{{ .Envs.SUBDOMAIN }}"

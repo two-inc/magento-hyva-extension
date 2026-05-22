@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Two\GatewayHyva\ViewModel;
 
 use Magento\Framework\View\Asset\Repository as AssetRepository;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
@@ -24,6 +25,11 @@ class CheckoutConfig implements ArgumentInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
 
     /**
      * @var Two
@@ -44,6 +50,7 @@ class CheckoutConfig implements ArgumentInterface
      * CheckoutConfig constructor.
      *
      * @param ConfigRepository $configRepository
+     * @param BrandRegistryInterface $brandRegistry
      * @param Adapter $adapter
      * @param Two $two
      * @param AssetRepository $assetRepository
@@ -51,11 +58,13 @@ class CheckoutConfig implements ArgumentInterface
 
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
@@ -161,7 +170,7 @@ class CheckoutConfig implements ArgumentInterface
     {
         $orderIntentApprovedMessage = __(
             "Your invoice purchase with %1 is likely to be accepted subject to additional checks.",
-            $this->configRepository::PRODUCT_NAME,
+            $this->brandRegistry->getProductName(),
         );
         return $orderIntentApprovedMessage;
     }
@@ -170,7 +179,7 @@ class CheckoutConfig implements ArgumentInterface
     {
         $orderIntentDeclinedMessage = __(
             "Your invoice purchase with %1 has been declined.",
-            $this->configRepository::PRODUCT_NAME,
+            $this->brandRegistry->getProductName(),
         );
         return $orderIntentDeclinedMessage;
     }
@@ -180,7 +189,7 @@ class CheckoutConfig implements ArgumentInterface
         $tryAgainLater = __("Please try again later.");
         $generalErrorMessage = __(
             "Something went wrong with your request to %1. %2",
-            $this->configRepository::PRODUCT_NAME,
+            $this->brandRegistry->getProductName(),
             $tryAgainLater,
         );
         return $generalErrorMessage;
@@ -198,7 +207,7 @@ class CheckoutConfig implements ArgumentInterface
     {
         $paymentTerms = __(
             "%1 terms and conditions",
-            $this->configRepository::PROVIDER,
+            $this->brandRegistry->getProvider(),
         );
         $paymentTermsLink =
             $this->configRepository->getCheckoutPageUrl() . "/terms";
@@ -217,7 +226,7 @@ class CheckoutConfig implements ArgumentInterface
     {
         $paymentTerms = __(
             "%1 terms and conditions",
-            $this->configRepository::PROVIDER,
+            $this->brandRegistry->getProvider(),
         );
         $termsNotAcceptedMessage = __(
             "You must accept %1 to place order.",
@@ -233,7 +242,7 @@ class CheckoutConfig implements ArgumentInterface
         );
         $soleTraderErrorMessage = __(
             "Something went wrong with your request to %1. %2",
-            $this->configRepository::PRODUCT_NAME,
+            $this->brandRegistry->getProductName(),
             $soleTraderaccountCouldNotBeVerified,
         );
         return $soleTraderErrorMessage;

@@ -1,0 +1,119 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Stub the Hyvä/Magewire dependencies so the extension can be installed
+ * and DI-compiled without Hyvä credentials.
+ *
+ * Called by: make install (when auth.json is absent)
+ */
+
+// 1. Stub packages in composer provides
+$file = '/data/composer.json';
+$json = json_decode(file_get_contents($file), true);
+$json['provide']['hyva-themes/magento2-hyva-checkout'] = '1.3.0';
+$json['provide']['magewirephp/magewire'] = '1.0.0';
+file_put_contents($file, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+echo "  Stubbed Hyvä and Magewire packages in composer.json\n";
+
+// 2. Create minimal class stubs so DI compilation can load them
+$stubs = [
+    'Magewirephp/Magewire/Component.php' => <<<'PHP'
+<?php
+namespace Magewirephp\Magewire;
+
+class Component
+{
+    protected $loader;
+    public function mount(): void {}
+}
+PHP,
+
+    'Hyva/Checkout/Model/Magewire/Payment/AbstractPlaceOrderService.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Magewire\Payment;
+
+use Magento\Quote\Model\Quote;
+
+class AbstractPlaceOrderService
+{
+    public function canPlaceOrder(): bool { return false; }
+    public function getRedirectUrl(Quote $quote, ?int $orderId = null): string { return ''; }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/AbstractEntityFormModifier.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form;
+
+class AbstractEntityFormModifier
+{
+    public function apply(AbstractEntityForm $form): AbstractEntityForm { return $form; }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/AbstractEntityForm.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form;
+
+class AbstractEntityForm
+{
+    public function getField(string $name) { return null; }
+    public function modifyField(string $name, callable $callback): self { return $this; }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/EntityField/AbstractEntityField.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form\EntityField;
+
+class AbstractEntityField
+{
+    public function setData(string $key, $value): self { return $this; }
+    public function getSortOrder(): int { return 0; }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/EntityFormElementInterface.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form;
+
+interface EntityFormElementInterface
+{
+    const POSITION = 'position';
+}
+PHP,
+
+    'Hyva/Checkout/Model/MethodMetaData.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model;
+
+use Magento\Framework\DataObject;
+
+class MethodMetaData extends DataObject
+{
+}
+PHP,
+
+    'Hyva/Checkout/Model/ConfigData/HyvaThemes/SystemConfigPayment.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\ConfigData\HyvaThemes;
+
+class SystemConfigPayment
+{
+    public function canDisplayMethodIcons(): bool { return true; }
+}
+PHP,
+];
+
+$baseDir = '/data/app/code';
+$count = 0;
+foreach ($stubs as $path => $code) {
+    $fullPath = "$baseDir/$path";
+    $dir = dirname($fullPath);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($fullPath, $code . "\n");
+    $count++;
+}
+echo "  Created $count class stubs for DI compilation\n";

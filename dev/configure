@@ -1,0 +1,69 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Configure the Two payment plugin for local development.
+ *
+ * Reads config from environment variables, compares with current values,
+ * and reports what changed. Requires a real API key if the current one is
+ * still the dummy value set during install.
+ *
+ * Environment variables:
+ *   TWO_API_KEY        - API key (required on first run after install)
+ *   TWO_STORE_COUNTRY  - Store country code (default: NO)
+ */
+
+require 'app/bootstrap.php';
+
+$bootstrap = \Magento\Framework\App\Bootstrap::create(BP, $_SERVER);
+$obj = $bootstrap->getObjectManager();
+
+$scopeConfig = $obj->get(\Magento\Framework\App\Config\ScopeConfigInterface::class);
+$writer = $obj->get(\Magento\Framework\App\Config\Storage\WriterInterface::class);
+$encryptor = $obj->get(\Magento\Framework\Encryption\EncryptorInterface::class);
+
+$dummyKey = 'dummy-dev-key';
+$currentApiKey = $encryptor->decrypt($scopeConfig->getValue('payment/two_payment/api_key') ?? '');
+$hasDummyKey = $currentApiKey === $dummyKey;
+
+$providedApiKey = getenv('TWO_API_KEY') ?: null;
+
+if ($hasDummyKey && !$providedApiKey) {
+    fwrite(STDERR, "Error: API key is still the dummy value from install.\n");
+    fwrite(STDERR, "Usage: TWO_API_KEY=xxx make configure\n");
+    exit(1);
+}
+
+// Config entries: [path, new value or null to skip, needs encryption]
+$entries = [
+    ['payment/two_payment/active', '1', false],
+    ['payment/two_payment/mode', getenv('TWO_ENV') ?: 'sandbox', false],
+    ['payment/two_payment/api_key', $providedApiKey, true],
+    ['general/country/default', getenv('TWO_STORE_COUNTRY') ?: null, false],
+];
+
+foreach ($entries as [$path, $newValue, $encrypted]) {
+    $currentValue = $scopeConfig->getValue($path) ?? '';
+
+    if ($newValue === null) {
+        $display = $encrypted ? '****' : ($currentValue ?: '(empty)');
+        echo "  \033[90munchanged\033[0m  $path = $display\n";
+        continue;
+    }
+
+    if ($encrypted) {
+        $currentDecrypted = $encryptor->decrypt($currentValue);
+        $changed = $currentDecrypted !== $newValue;
+        $writer->save($path, $encryptor->encrypt($newValue));
+        $display = '****';
+    } else {
+        $changed = $currentValue !== $newValue;
+        $writer->save($path, $newValue);
+        $display = $newValue;
+    }
+
+    if ($changed) {
+        echo "  \033[32mupdated  \033[0m  $path = $display\n";
+    } else {
+        echo "  \033[90munchanged\033[0m  $path = $display\n";
+    }
+}

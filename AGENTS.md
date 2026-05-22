@@ -1,5 +1,25 @@
 # Magento Hyva Extension
 
+## Project Overview
+
+Hyvä theme extension for Two's Magento plugin, providing modern frontend components using Alpine.js and Tailwind CSS.
+
+- **Language**: PHP 7.4+ and JavaScript (Alpine.js)
+- **Framework**: Magento 2 module for Hyvä theme
+- **Purpose**: Frontend components for Two BNPL checkout in Hyvä theme
+
+## Directory Structure
+
+```
+etc/                  # Module configuration
+view/frontend/        # Hyvä frontend templates and layouts
+├── templates/        # .phtml template files
+├── layout/           # XML layout files
+└── web/              # CSS/JS assets
+ViewModel/            # View models for templates
+Magewire/             # Magewire components (if applicable)
+```
+
 ## Git Workflow
 
 - Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
