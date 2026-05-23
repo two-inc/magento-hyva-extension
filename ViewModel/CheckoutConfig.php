@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace Two\GatewayHyva\ViewModel;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -47,14 +48,9 @@ class CheckoutConfig implements ArgumentInterface
     private $assetRepository;
 
     /**
-     * CheckoutConfig constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param BrandRegistryInterface $brandRegistry
-     * @param Adapter $adapter
-     * @param Two $two
-     * @param AssetRepository $assetRepository
+     * @var CheckoutSession
      */
+    private $checkoutSession;
 
     public function __construct(
         ConfigRepository $configRepository,
@@ -62,12 +58,42 @@ class CheckoutConfig implements ArgumentInterface
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
+        CheckoutSession $checkoutSession,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
+        $this->checkoutSession = $checkoutSession;
+    }
+
+    /**
+     * Buyer-selectable payment terms (in days) configured by merchant.
+     * Empty array when surcharge feature is inactive or none configured.
+     */
+    public function getAvailableBuyerTerms(): array
+    {
+        return array_values(array_map('intval', $this->configRepository->getAllBuyerTerms()));
+    }
+
+    public function getDefaultPaymentTerm(): int
+    {
+        return (int) $this->configRepository->getDefaultPaymentTerm();
+    }
+
+    /**
+     * Currently selected term in checkout session, falling back to default.
+     */
+    public function getSelectedPaymentTerm(): int
+    {
+        $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
+        return $sessionTerm > 0 ? $sessionTerm : $this->getDefaultPaymentTerm();
+    }
+
+    public function getSurchargeDescription(): string
+    {
+        return (string) $this->configRepository->getSurchargeLineDescription();
     }
 
     public function getCheckoutApiUrl()

@@ -687,10 +687,94 @@ $quoteDetails = json_encode($quoteDetails);
         return twoGatewayHyvaPaymentMethodBase();
     }
 
+    function twoGatewayHyvaTermChips() {
+        return {
+            // Magewire-bridged reactive props. `$wire` is the GatewayMethod
+            // Magewire component (chip lives inside the payment-method block,
+            // which is its Magewire root). Server is authoritative for both
+            // availableTerms and termSurcharges; we never compute locally.
+            isUpdating: false,
+            // Days currently being awaited from /selectTerm — drives the chip
+            // loader on the specific chip the buyer clicked. Distinct from
+            // `isUpdating` so the dot animation lands on one chip, not all.
+            pendingDays: null,
+
+            get availableTerms() {
+                return Array.isArray(this.$wire.availableTerms) ? this.$wire.availableTerms : [];
+            },
+            get selectedTerm() {
+                return parseInt(this.$wire.selectedTerm, 10) || 0;
+            },
+            get termSurcharges() {
+                return this.$wire.termSurcharges || {};
+            },
+            get currencyCode() {
+                return this.$wire.currencyCode || 'NOK';
+            },
+
+            formatDaysLabel(days) {
+                const d = parseInt(days, 10);
+                return d === 1 ? '1 day' : (d + ' days');
+            },
+
+            isLoading(days) {
+                return this.pendingDays === days || (this.isUpdating && this.pendingDays === null);
+            },
+
+            surchargeLabel(days) {
+                const surcharges = this.termSurcharges;
+                if (!Object.prototype.hasOwnProperty.call(surcharges, days)) {
+                    return '';
+                }
+                const amount = parseFloat(surcharges[days]);
+                if (!isFinite(amount) || amount <= 0) {
+                    return '';
+                }
+                try {
+                    return new Intl.NumberFormat(undefined, {
+                        style: 'currency',
+                        currency: this.currencyCode
+                    }).format(amount);
+                } catch (e) {
+                    return amount.toFixed(2);
+                }
+            },
+
+            async onSelect(days) {
+                if (this.isUpdating) return;
+                if (days === this.selectedTerm) return;
+
+                this.isUpdating = true;
+                this.pendingDays = days;
+                try {
+                    await Promise.race([
+                        this.$wire.selectTerm(parseInt(days, 10)),
+                        new Promise((_, reject) => setTimeout(
+                            () => reject(new Error('selectTerm timeout')),
+                            15000
+                        ))
+                    ]);
+                } catch (e) {
+                    console.warn('Two_GatewayHyva: selectTerm failed', e);
+                    if (typeof window.dispatchMessages === 'function') {
+                        window.dispatchMessages(
+                            [{ type: 'error', text: 'Could not update payment term. Please try again.' }],
+                            5000
+                        );
+                    }
+                } finally {
+                    this.isUpdating = false;
+                    this.pendingDays = null;
+                }
+            }
+        };
+    }
+
     document.addEventListener('alpine:init', () => {
         Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
         Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
         Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
+        Alpine.data('twoGatewayHyvaTermChips', twoGatewayHyvaTermChips);
     });
 
     // Global reference to the payment component instance

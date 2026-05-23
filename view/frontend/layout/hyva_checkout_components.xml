@@ -38,5 +38,10 @@
                 </arguments>
             </block>
         </referenceBlock>
+        <referenceBlock name="price-summary.total-segments">
+            <block name="price-summary.total-segment.two_surcharge"
+                   as="two_surcharge"
+                   template="Two_GatewayHyva::checkout/price-summary/total-segments/two_surcharge.phtml"/>
+        </referenceBlock>
     </body>
 </page>
