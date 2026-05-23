@@ -695,14 +695,22 @@ $quoteDetails = json_encode($quoteDetails);
     function twoGatewayHyvaTermChip() {
         return {
             days: 0,
+            labelSingular: '1 day',
+            labelPlural: '%1 days',
             isUpdating: false,
 
             init() {
                 this.days = parseInt(this.$el.dataset.days, 10) || 0;
+                // Translated labels sourced from PHP via __(); CSV strings
+                // live in the plugin's i18n/<locale>.csv files.
+                if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
+                if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
             },
 
             get label() {
-                return this.days === 1 ? '1 day' : (this.days + ' days');
+                return this.days === 1
+                    ? this.labelSingular
+                    : this.labelPlural.replace('%1', this.days);
             },
 
             get isSelected() {
