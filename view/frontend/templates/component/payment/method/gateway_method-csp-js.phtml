@@ -697,6 +697,7 @@ $quoteDetails = json_encode($quoteDetails);
             days: 0,
             labelSingular: '1 day',
             labelPlural: '%1 days',
+            errorMessage: 'Could not update payment term. Please try again.',
             isUpdating: false,
 
             init() {
@@ -705,6 +706,7 @@ $quoteDetails = json_encode($quoteDetails);
                 // live in the plugin's i18n/<locale>.csv files.
                 if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
                 if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
+                if (this.$el.dataset.errorMessage) this.errorMessage = this.$el.dataset.errorMessage;
             },
 
             get label() {
@@ -773,7 +775,7 @@ $quoteDetails = json_encode($quoteDetails);
                     console.warn('Two_GatewayHyva: selectTerm failed', e);
                     if (typeof window.dispatchMessages === 'function') {
                         window.dispatchMessages(
-                            [{ type: 'error', text: 'Could not update payment term. Please try again.' }],
+                            [{ type: 'error', text: this.errorMessage }],
                             5000
                         );
                     }

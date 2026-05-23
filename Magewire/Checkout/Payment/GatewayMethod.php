@@ -144,7 +144,9 @@ class GatewayMethod extends Component
             $this->checkoutSession->setTwoSelectedTerm($previousTerm);
             $this->logRepository->addErrorLog('Hyva chip: selectTerm save failed', $e->getMessage());
             $this->hydrateChipState();
-            throw new LocalizedException(__('Could not update payment term. Please try again.'));
+            throw new LocalizedException(
+                __('Could not update payment term.') . ' ' . __('Please try again.')
+            );
         }
 
         $this->hydrateChipState();
