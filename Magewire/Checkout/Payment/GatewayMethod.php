@@ -123,7 +123,9 @@ class GatewayMethod extends Component
     public function selectTerm(int $days): void
     {
         $storeId = (int) $this->checkoutSession->getQuote()->getStoreId();
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
+        // Repository may return string values (e.g. ['14', '30']);
+        // normalise to int so strict-mode `in_array` matches `$days`.
+        $allowedTerms = array_map('intval', $this->configRepository->getAllBuyerTerms($storeId));
 
         if (! in_array($days, $allowedTerms, true)) {
             throw new InputException(__('Selected payment term is not available.'));
