@@ -746,7 +746,7 @@ $quoteDetails = json_encode($quoteDetails);
                 if (raw === undefined) return '';
                 const amount = parseFloat(raw);
                 if (!isFinite(amount) || amount <= 0) return '';
-                const currency = this.$wire.currencyCode || 'NOK';
+                const currency = this.$wire.currencyCode || 'EUR';
                 try {
                     return new Intl.NumberFormat(undefined, {
                         style: 'currency',
