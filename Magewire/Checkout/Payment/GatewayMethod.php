@@ -232,6 +232,12 @@ class GatewayMethod extends Component
         return $surcharges;
     }
 
+    /**
+     * Resolve buyer country in precedence order: billing, shipping, store
+     * default (`general/country/default`). Returns empty string if none
+     * are set — caller's try/catch around SurchargeCalculator zeros the
+     * preview fee for that term rather than guessing a region.
+     */
     private function resolveCountry(\Magento\Quote\Model\Quote $quote): string
     {
         $billing = $quote->getBillingAddress();
@@ -242,6 +248,6 @@ class GatewayMethod extends Component
         if ($shipping && $shipping->getCountryId()) {
             return $shipping->getCountryId();
         }
-        return (string) ($quote->getStore()->getConfig('general/country/default') ?: 'NO');
+        return (string) $quote->getStore()->getConfig('general/country/default');
     }
 }
