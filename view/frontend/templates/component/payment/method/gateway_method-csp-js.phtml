@@ -713,6 +713,13 @@ $quoteDetails = json_encode($quoteDetails);
                 return this.isUpdating;
             },
 
+            // Shared busy flag — disables every chip while any one is
+            // mid-round-trip. Prevents the buyer queueing multiple
+            // selectTerm calls before the first resolves.
+            get anyUpdating() {
+                return Alpine.store('twoChip').busy;
+            },
+
             get chipClasses() {
                 return this.isSelected
                     ? 'two-term-chip two-term-chip--selected'
@@ -725,10 +732,7 @@ $quoteDetails = json_encode($quoteDetails);
 
             get surchargeText() {
                 const surcharges = this.$wire.termSurcharges || {};
-                // Magewire may serialise int keys as strings — check both.
-                const raw = Object.prototype.hasOwnProperty.call(surcharges, this.days)
-                    ? surcharges[this.days]
-                    : surcharges[String(this.days)];
+                const raw = surcharges[this.days];
                 if (raw === undefined) return '';
                 const amount = parseFloat(raw);
                 if (!isFinite(amount) || amount <= 0) return '';
@@ -744,10 +748,11 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             async select() {
-                if (this.isUpdating) return;
+                if (Alpine.store('twoChip').busy) return;
                 if (this.isSelected) return;
 
                 this.isUpdating = true;
+                Alpine.store('twoChip').busy = true;
                 try {
                     await Promise.race([
                         this.$wire.selectTerm(this.days),
@@ -766,12 +771,14 @@ $quoteDetails = json_encode($quoteDetails);
                     }
                 } finally {
                     this.isUpdating = false;
+                    Alpine.store('twoChip').busy = false;
                 }
             }
         };
     }
 
     document.addEventListener('alpine:init', () => {
+        Alpine.store('twoChip', { busy: false });
         Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
         Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
         Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);

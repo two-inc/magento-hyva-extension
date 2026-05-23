@@ -49,7 +49,7 @@ $showSingleTerm = $magewire->showChip && count($magewire->availableTerms) === 1;
                                 data-days="<?= (int) $days ?>"
                                 :class="chipClasses"
                                 :aria-pressed="ariaPressed"
-                                :disabled="isUpdating"
+                                :disabled="anyUpdating"
                                 @click="select">
                             <span class="two-term-chip__days" x-text="label"></span>
                             <template x-if="isLoading">
