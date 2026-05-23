@@ -687,68 +687,85 @@ $quoteDetails = json_encode($quoteDetails);
         return twoGatewayHyvaPaymentMethodBase();
     }
 
-    function twoGatewayHyvaTermChips() {
+    // Per-chip component. Hyva loads alpine3-csp.min.js which forbids
+    // function calls, comparisons, object literals, and boolean operators
+    // in attribute expressions — so every chip is its own Alpine.data
+    // component reading `days` from a data-* attribute and exposing
+    // bare-identifier getters for the template to bind to.
+    function twoGatewayHyvaTermChip() {
         return {
-            // Magewire-bridged reactive props. `$wire` is the GatewayMethod
-            // Magewire component (chip lives inside the payment-method block,
-            // which is its Magewire root). Server is authoritative for both
-            // availableTerms and termSurcharges; we never compute locally.
+            days: 0,
+            labelSingular: '1 day',
+            labelPlural: '%1 days',
+            errorMessage: 'Could not update payment term. Please try again.',
             isUpdating: false,
-            // Days currently being awaited from /selectTerm — drives the chip
-            // loader on the specific chip the buyer clicked. Distinct from
-            // `isUpdating` so the dot animation lands on one chip, not all.
-            pendingDays: null,
 
-            get availableTerms() {
-                return Array.isArray(this.$wire.availableTerms) ? this.$wire.availableTerms : [];
-            },
-            get selectedTerm() {
-                return parseInt(this.$wire.selectedTerm, 10) || 0;
-            },
-            get termSurcharges() {
-                return this.$wire.termSurcharges || {};
-            },
-            get currencyCode() {
-                return this.$wire.currencyCode || 'NOK';
+            init() {
+                this.days = parseInt(this.$el.dataset.days, 10) || 0;
+                // Translated labels sourced from PHP via __(); CSV strings
+                // live in the plugin's i18n/<locale>.csv files.
+                if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
+                if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
+                if (this.$el.dataset.errorMessage) this.errorMessage = this.$el.dataset.errorMessage;
             },
 
-            formatDaysLabel(days) {
-                const d = parseInt(days, 10);
-                return d === 1 ? '1 day' : (d + ' days');
+            get label() {
+                return this.days === 1
+                    ? this.labelSingular
+                    : this.labelPlural.replace('%1', this.days);
             },
 
-            isLoading(days) {
-                return this.pendingDays === days || (this.isUpdating && this.pendingDays === null);
+            get isSelected() {
+                return this.days === (parseInt(this.$wire.selectedTerm, 10) || 0);
             },
 
-            surchargeLabel(days) {
-                const surcharges = this.termSurcharges;
-                if (!Object.prototype.hasOwnProperty.call(surcharges, days)) {
-                    return '';
-                }
-                const amount = parseFloat(surcharges[days]);
-                if (!isFinite(amount) || amount <= 0) {
-                    return '';
-                }
+            get isLoading() {
+                return this.isUpdating;
+            },
+
+            // Shared busy flag — disables every chip while any one is
+            // mid-round-trip. Prevents the buyer queueing multiple
+            // selectTerm calls before the first resolves.
+            get anyUpdating() {
+                return Alpine.store('twoChip').busy;
+            },
+
+            get chipClasses() {
+                return this.isSelected
+                    ? 'two-term-chip two-term-chip--selected'
+                    : 'two-term-chip';
+            },
+
+            get ariaPressed() {
+                return this.isSelected ? 'true' : 'false';
+            },
+
+            get surchargeText() {
+                const surcharges = this.$wire.termSurcharges || {};
+                const raw = surcharges[this.days];
+                if (raw === undefined) return '';
+                const amount = parseFloat(raw);
+                if (!isFinite(amount) || amount <= 0) return '';
+                const currency = this.$wire.currencyCode || 'EUR';
                 try {
                     return new Intl.NumberFormat(undefined, {
                         style: 'currency',
-                        currency: this.currencyCode
+                        currency: currency
                     }).format(amount);
                 } catch (e) {
                     return amount.toFixed(2);
                 }
             },
 
-            async onSelect(days) {
-                if (this.isUpdating) return;
-                if (days === this.selectedTerm) return;
+            async select() {
+                if (Alpine.store('twoChip').busy) return;
+                if (this.isSelected) return;
 
                 this.isUpdating = true;
-                this.pendingDays = days;
+                Alpine.store('twoChip').busy = true;
                 try {
                     await Promise.race([
-                        this.$wire.selectTerm(parseInt(days, 10)),
+                        this.$wire.selectTerm(this.days),
                         new Promise((_, reject) => setTimeout(
                             () => reject(new Error('selectTerm timeout')),
                             15000
@@ -758,23 +775,24 @@ $quoteDetails = json_encode($quoteDetails);
                     console.warn('Two_GatewayHyva: selectTerm failed', e);
                     if (typeof window.dispatchMessages === 'function') {
                         window.dispatchMessages(
-                            [{ type: 'error', text: 'Could not update payment term. Please try again.' }],
+                            [{ type: 'error', text: this.errorMessage }],
                             5000
                         );
                     }
                 } finally {
                     this.isUpdating = false;
-                    this.pendingDays = null;
+                    Alpine.store('twoChip').busy = false;
                 }
             }
         };
     }
 
     document.addEventListener('alpine:init', () => {
+        Alpine.store('twoChip', { busy: false });
         Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
         Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
         Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
-        Alpine.data('twoGatewayHyvaTermChips', twoGatewayHyvaTermChips);
+        Alpine.data('twoGatewayHyvaTermChip', twoGatewayHyvaTermChip);
     });
 
     // Global reference to the payment component instance

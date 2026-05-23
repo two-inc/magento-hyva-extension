@@ -36,37 +36,57 @@ $showSingleTerm = $magewire->showChip && count($magewire->availableTerms) === 1;
     <div class="redirect_message" data-bind="text: redirectMessage"><?= $configModel->getRedirectMessage() ?>
     </div>
     <?php if ($showChip || $showSingleTerm): ?>
-        <div x-data="twoGatewayHyvaTermChips" class="two-term-chips field">
+        <div class="two-term-chips field">
             <?php if ($showChip): ?>
                 <label class="label block text-sm font-medium text-gray-700 mb-1">
                     <span><?= $escaper->escapeHtml(__('Selected payment terms')) ?></span>
                 </label>
                 <div class="two-term-chips__container" role="group"
-                     aria-label="<?= $escaper->escapeHtmlAttr(__('Payment terms')) ?>">
-                    <template x-for="days in availableTerms" :key="days">
+                     aria-label="<?= $escaper->escapeHtmlAttr(__('Payment Terms')) ?>">
+                    <?php
+                    // Singular is built by prepending '1' to the translated 'day'
+                    // unit; saves a separate '1 day' CSV key since the numeral is
+                    // language-invariant.
+                    $singularLabel = '1 ' . __('day');
+                    $pluralLabel = __('%1 days');
+                    $errorMessage = __('Could not update payment term.') . ' ' . __('Please try again.');
+                    ?>
+                    <?php foreach ($magewire->availableTerms as $days): ?>
                         <button type="button"
-                                class="two-term-chip"
-                                :class="{ 'two-term-chip--selected': days === selectedTerm }"
-                                :aria-pressed="days === selectedTerm"
-                                :disabled="isUpdating"
-                                @click="onSelect(days)">
-                            <span class="two-term-chip__days"
-                                  x-text="formatDaysLabel(days)"></span>
-                            <template x-if="isLoading(days)">
+                                x-data="twoGatewayHyvaTermChip"
+                                data-days="<?= (int) $days ?>"
+                                data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
+                                data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
+                                data-error-message="<?= $escaper->escapeHtmlAttr($errorMessage) ?>"
+                                :class="chipClasses"
+                                :aria-pressed="ariaPressed"
+                                :disabled="anyUpdating"
+                                @click="select">
+                            <span class="two-term-chip__days" x-text="label"></span>
+                            <template x-if="isLoading">
                                 <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
                             </template>
-                            <template x-if="!isLoading(days) && surchargeLabel(days)">
-                                <span class="two-term-chip__surcharge" x-text="surchargeLabel(days)"></span>
+                            <template x-if="surchargeText">
+                                <span class="two-term-chip__surcharge" x-text="surchargeText"></span>
                             </template>
                         </button>
-                    </template>
+                    <?php endforeach ?>
                 </div>
             <?php else: ?>
+                <?php
+                $singleDays = (int) reset($magewire->availableTerms);
+                $singularLabel = '1 ' . __('day');
+                $pluralLabel = __('%1 days');
+                ?>
                 <div class="two-term-chips__container">
-                    <span class="two-term-chip two-term-chip--single">
-                        <span class="two-term-chip__days" x-text="formatDaysLabel(selectedTerm)"></span>
-                        <template x-if="surchargeLabel(selectedTerm)">
-                            <span class="two-term-chip__surcharge" x-text="surchargeLabel(selectedTerm)"></span>
+                    <span x-data="twoGatewayHyvaTermChip"
+                          data-days="<?= $singleDays ?>"
+                          data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
+                          data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
+                          class="two-term-chip two-term-chip--single">
+                        <span class="two-term-chip__days" x-text="label"></span>
+                        <template x-if="surchargeText">
+                            <span class="two-term-chip__surcharge" x-text="surchargeText"></span>
                         </template>
                     </span>
                 </div>
@@ -164,7 +184,7 @@ $showSingleTerm = $magewire->showChip && count($magewire->availableTerms) === 1;
             <!-- Company ID - Single input -->
             <div class="flex flex-col field field-reserved required">
               <label for="company_id" class="font-semibold text-gray-700">
-                <?= $escaper->escapeHtmlAttr(__("Company number")) ?>
+                <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>
               <input
                 type="text"
