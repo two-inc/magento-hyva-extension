@@ -687,68 +687,70 @@ $quoteDetails = json_encode($quoteDetails);
         return twoGatewayHyvaPaymentMethodBase();
     }
 
-    function twoGatewayHyvaTermChips() {
+    // Per-chip component. Hyva loads alpine3-csp.min.js which forbids
+    // function calls, comparisons, object literals, and boolean operators
+    // in attribute expressions — so every chip is its own Alpine.data
+    // component reading `days` from a data-* attribute and exposing
+    // bare-identifier getters for the template to bind to.
+    function twoGatewayHyvaTermChip() {
         return {
-            // Magewire-bridged reactive props. `$wire` is the GatewayMethod
-            // Magewire component (chip lives inside the payment-method block,
-            // which is its Magewire root). Server is authoritative for both
-            // availableTerms and termSurcharges; we never compute locally.
+            days: 0,
             isUpdating: false,
-            // Days currently being awaited from /selectTerm — drives the chip
-            // loader on the specific chip the buyer clicked. Distinct from
-            // `isUpdating` so the dot animation lands on one chip, not all.
-            pendingDays: null,
 
-            get availableTerms() {
-                return Array.isArray(this.$wire.availableTerms) ? this.$wire.availableTerms : [];
-            },
-            get selectedTerm() {
-                return parseInt(this.$wire.selectedTerm, 10) || 0;
-            },
-            get termSurcharges() {
-                return this.$wire.termSurcharges || {};
-            },
-            get currencyCode() {
-                return this.$wire.currencyCode || 'NOK';
+            init() {
+                this.days = parseInt(this.$el.dataset.days, 10) || 0;
             },
 
-            formatDaysLabel(days) {
-                const d = parseInt(days, 10);
-                return d === 1 ? '1 day' : (d + ' days');
+            get label() {
+                return this.days === 1 ? '1 day' : (this.days + ' days');
             },
 
-            isLoading(days) {
-                return this.pendingDays === days || (this.isUpdating && this.pendingDays === null);
+            get isSelected() {
+                return this.days === (parseInt(this.$wire.selectedTerm, 10) || 0);
             },
 
-            surchargeLabel(days) {
-                const surcharges = this.termSurcharges;
-                if (!Object.prototype.hasOwnProperty.call(surcharges, days)) {
-                    return '';
-                }
-                const amount = parseFloat(surcharges[days]);
-                if (!isFinite(amount) || amount <= 0) {
-                    return '';
-                }
+            get isLoading() {
+                return this.isUpdating;
+            },
+
+            get chipClasses() {
+                return this.isSelected
+                    ? 'two-term-chip two-term-chip--selected'
+                    : 'two-term-chip';
+            },
+
+            get ariaPressed() {
+                return this.isSelected ? 'true' : 'false';
+            },
+
+            get surchargeText() {
+                const surcharges = this.$wire.termSurcharges || {};
+                // Magewire may serialise int keys as strings — check both.
+                const raw = Object.prototype.hasOwnProperty.call(surcharges, this.days)
+                    ? surcharges[this.days]
+                    : surcharges[String(this.days)];
+                if (raw === undefined) return '';
+                const amount = parseFloat(raw);
+                if (!isFinite(amount) || amount <= 0) return '';
+                const currency = this.$wire.currencyCode || 'NOK';
                 try {
                     return new Intl.NumberFormat(undefined, {
                         style: 'currency',
-                        currency: this.currencyCode
+                        currency: currency
                     }).format(amount);
                 } catch (e) {
                     return amount.toFixed(2);
                 }
             },
 
-            async onSelect(days) {
+            async select() {
                 if (this.isUpdating) return;
-                if (days === this.selectedTerm) return;
+                if (this.isSelected) return;
 
                 this.isUpdating = true;
-                this.pendingDays = days;
                 try {
                     await Promise.race([
-                        this.$wire.selectTerm(parseInt(days, 10)),
+                        this.$wire.selectTerm(this.days),
                         new Promise((_, reject) => setTimeout(
                             () => reject(new Error('selectTerm timeout')),
                             15000
@@ -764,7 +766,6 @@ $quoteDetails = json_encode($quoteDetails);
                     }
                 } finally {
                     this.isUpdating = false;
-                    this.pendingDays = null;
                 }
             }
         };
@@ -774,7 +775,7 @@ $quoteDetails = json_encode($quoteDetails);
         Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
         Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
         Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
-        Alpine.data('twoGatewayHyvaTermChips', twoGatewayHyvaTermChips);
+        Alpine.data('twoGatewayHyvaTermChip', twoGatewayHyvaTermChip);
     });
 
     // Global reference to the payment component instance
