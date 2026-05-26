@@ -68,7 +68,7 @@ $quoteDetails = json_encode($quoteDetails);
                '';
     };
 
-    function validatePaymentForm(form, wire) {
+    function twoValidatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
 
@@ -679,7 +679,7 @@ $quoteDetails = json_encode($quoteDetails);
     function twoGatewayHyvaPaymentFormWithValidation() {
         return {
             ...twoGatewayHyvaPaymentMethodBase(),
-            ...validatePaymentForm(this.$el, this.$wire)
+            ...twoValidatePaymentForm(this.$el, this.$wire)
         };
     }
 
