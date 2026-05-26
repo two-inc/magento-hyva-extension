@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Two\GatewayHyva\Magewire\Checkout\Payment;
 
 use Magento\Checkout\Model\Session;
-use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Locale\ResolverInterface as LocaleResolver;
 use Magento\Quote\Api\CartRepositoryInterface;
@@ -141,7 +141,12 @@ class GatewayMethod extends Component
         $allowedTerms = array_map('intval', $this->configRepository->getAllBuyerTerms($storeId));
 
         if (! in_array($days, $allowedTerms, true)) {
-            throw new InputException(__('Selected payment term is not available.'));
+            // HttpException(400) — Magewire's Livewire controller catches
+            // generic exceptions and maps `code === 0` to HTTP 500, which is
+            // wrong for client-supplied invalid input. HttpException is
+            // detected by `instanceof` and yields its declared status code,
+            // so a 400 reaches the buyer unchanged.
+            throw new HttpException(400, (string) __('Selected payment term is not available.'));
         }
 
         $previousTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
