@@ -12,6 +12,7 @@ use Magento\Checkout\Model\Session;
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Locale\ResolverInterface as LocaleResolver;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Magewirephp\Magewire\Component;
@@ -46,6 +47,17 @@ class GatewayMethod extends Component
 
     public string $currencyCode = '';
 
+    /**
+     * Magento store-view locale (e.g. `nl_NL`, `en_GB`), normalised
+     * to BCP-47 (`nl-NL`, `en-GB`) and passed to the chip's
+     * Intl.NumberFormat so the surcharge currency renders in the
+     * same format Magento uses for the order-summary line items
+     * — avoiding the buyer-visible inconsistency where the chip
+     * shows `€16.03` (browser default) while the summary shows
+     * `€ 16,03` (Magento Dutch format).
+     */
+    public string $currencyLocale = '';
+
     public bool $showChip = false;
 
     protected $loader = true;
@@ -72,6 +84,7 @@ class GatewayMethod extends Component
         private ConfigRepository $configRepository,
         private SurchargeCalculator $surchargeCalculator,
         private LogRepository $logRepository,
+        private LocaleResolver $localeResolver,
         private string $methodCode = 'two_payment',
     ) {}
 
@@ -183,6 +196,9 @@ class GatewayMethod extends Component
             $this->availableTerms = $terms;
             $this->surchargeDescription = (string) $this->configRepository->getSurchargeLineDescription($storeId);
             $this->currencyCode = (string) ($quote->getQuoteCurrencyCode() ?: $quote->getStore()->getBaseCurrencyCode());
+            // Magento stores locale as `nl_NL`; Intl.NumberFormat expects
+            // BCP-47 with hyphens. Translate.
+            $this->currencyLocale = (string) str_replace('_', '-', (string) $this->localeResolver->getLocale());
 
             $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
             $defaultTerm = (int) $this->configRepository->getDefaultPaymentTerm($storeId);
@@ -196,6 +212,7 @@ class GatewayMethod extends Component
             $this->availableTerms = [];
             $this->termSurcharges = [];
             $this->currencyCode = '';
+            $this->currencyLocale = '';
         }
     }
 

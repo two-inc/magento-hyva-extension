@@ -66,8 +66,8 @@ $showSingleTerm = $magewire->showChip && count($magewire->availableTerms) === 1;
                             <template x-if="isLoading">
                                 <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
                             </template>
-                            <template x-if="surchargeText">
-                                <span class="two-term-chip__surcharge" x-text="surchargeText"></span>
+                            <template x-if="surchargeTextWhenNotLoading">
+                                <span class="two-term-chip__surcharge" x-text="surchargeTextWhenNotLoading"></span>
                             </template>
                         </button>
                     <?php endforeach ?>

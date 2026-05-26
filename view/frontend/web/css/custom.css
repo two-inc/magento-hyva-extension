@@ -172,3 +172,8 @@ summary::marker {
 
 .two-term-chip--single:hover { border-color: #3043d1; }
 .two-term-chip--single .two-term-chip__surcharge { font-size: 14px; }
+
+/* QA polish: more breathing room between the "Selected payment terms"
+   caption and the chip strip. Tailwind utility `mb-1` on the label is
+   too tight visually. */
+.two-term-chips > label.label { margin-bottom: 20px; }
