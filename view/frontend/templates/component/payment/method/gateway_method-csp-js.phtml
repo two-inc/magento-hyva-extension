@@ -747,14 +747,31 @@ $quoteDetails = json_encode($quoteDetails);
                 const amount = parseFloat(raw);
                 if (!isFinite(amount) || amount <= 0) return '';
                 const currency = this.$wire.currencyCode || 'EUR';
+                // Use the Magento store-view locale piped from PHP
+                // (`nl-NL`, `en-GB`, ...) so the chip's currency format
+                // matches the order summary. Browser default would
+                // produce `€16.03` while Magento formats `€ 16,03`.
+                const locale = this.$wire.currencyLocale || undefined;
                 try {
-                    return new Intl.NumberFormat(undefined, {
+                    return new Intl.NumberFormat(locale, {
                         style: 'currency',
                         currency: currency
                     }).format(amount);
                 } catch (e) {
                     return amount.toFixed(2);
                 }
+            },
+
+            // CSP-friendly Alpine refuses boolean operators in attribute
+            // expressions, so the chip template can't bind to
+            // `x-if="!isLoading && surchargeText"` directly. Without
+            // mutual exclusion the loading-dots span and the surcharge
+            // span both render during a Magewire selectTerm round-trip,
+            // adding a row to the chip and stretching it vertically
+            // until the response lands. Exposed as a getter so the
+            // template can bind via bare property access.
+            get surchargeTextWhenNotLoading() {
+                return this.isLoading ? '' : this.surchargeText;
             },
 
             async select() {
