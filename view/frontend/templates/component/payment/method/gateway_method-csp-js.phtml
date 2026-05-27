@@ -9,16 +9,22 @@
 
 declare(strict_types=1);
 
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Hyva\Theme\ViewModel\HyvaCsp;
 
+/** @var \Magento\Framework\View\Element\Template $block */
 /** @var ViewModelRegistry $viewModels */
 /** @var CheckoutConfig $viewModel */
 /** @var Escaper $escaper */
 /** @var HyvaCsp $hyvaCsp */
+
+/** @var BrandedHyvaViewModelInterface $brandedViewModel */
+$brandedViewModel = $block->getData('branded_view_model');
+$gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -91,7 +97,7 @@ $quoteDetails = json_encode($quoteDetails);
 
                             if (activePaymentMethod) {
                                 const selectedPaymentValue = activePaymentMethod.value;
-                                const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+                                const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
 
                                 if (isTwoPaymentSelected) {
                                     const formRef = form;
@@ -124,7 +130,7 @@ $quoteDetails = json_encode($quoteDetails);
 
                                                 paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
-                                                Magewire.find("checkout.payment.method.two-payment-method")
+                                                Magewire.find("<?= $brandedViewModel->getMagewireBlockName() ?>")
                                                     .call('setPaymentData', paymentData)
                                                     .then(() => {
                                                         clearTimeout(timeoutId);
@@ -177,7 +183,7 @@ $quoteDetails = json_encode($quoteDetails);
                     }
 
                     hyvaCheckout.navigation.addTask(doSave, {
-                        name: 'two-payment-method'
+                        name: '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>'
                     });
 
                     const addEventListeners = (el) => {
@@ -200,7 +206,7 @@ $quoteDetails = json_encode($quoteDetails);
         )
     }
 
-    function twoGatewayHyvaPaymentMethodBase() {
+    function <?= $gwBase ?>PaymentMethodBase() {
         return {
             // State
             isOpen: false,
@@ -259,46 +265,46 @@ $quoteDetails = json_encode($quoteDetails);
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
 
             // CSP-friendly event handlers (called from template)
-            twoGatewayHyvaOnInit() {
+            <?= $gwBase ?>OnInit() {
                 this.initialize(JSON.parse(this.$el.dataset.hyvacsp1));
             },
-            twoGatewayHyvaOnInvoiceEmailsChange() {
+            <?= $gwBase ?>OnInvoiceEmailsChange() {
                 this.invoiceEmails = this.$el.value;
             },
-            twoGatewayHyvaOnProjectChange() {
+            <?= $gwBase ?>OnProjectChange() {
                 this.project = this.$el.value;
             },
-            twoGatewayHyvaOnDepartmentChange() {
+            <?= $gwBase ?>OnDepartmentChange() {
                 this.department = this.$el.value;
             },
-            twoGatewayHyvaOnOrderNoteChange() {
+            <?= $gwBase ?>OnOrderNoteChange() {
                 this.orderNote = this.$el.value;
             },
-            twoGatewayHyvaOnPoNumberChange() {
+            <?= $gwBase ?>OnPoNumberChange() {
                 this.poNumber = this.$el.value;
             },
-            twoGatewayHyvaOnPaymentTermsChange() {
+            <?= $gwBase ?>OnPaymentTermsChange() {
                 this.isPaymentTermsAccepted = this.$el.checked;
             },
-            twoGatewayHyvaOnCompanySearchClickOutside() {
+            <?= $gwBase ?>OnCompanySearchClickOutside() {
                 this.isOpen = false;
             },
-            twoGatewayHyvaOnCompanySearchFocus() {
+            <?= $gwBase ?>OnCompanySearchFocus() {
                 if (!this.manualMode) this.isOpen = true;
             },
-            twoGatewayHyvaOnArrowDown() {
+            <?= $gwBase ?>OnArrowDown() {
                 this.nextItem();
             },
-            twoGatewayHyvaOnArrowUp() {
+            <?= $gwBase ?>OnArrowUp() {
                 this.prevItem();
             },
-            twoGatewayHyvaOnEnterSelect() {
+            <?= $gwBase ?>OnEnterSelect() {
                 this.selectHighlightedItem();
             },
-            twoGatewayHyvaOnItemMouseover(event) {
+            <?= $gwBase ?>OnItemMouseover(event) {
                 this.selectedIndex = parseInt(event.currentTarget.dataset.index);
             },
-            twoGatewayHyvaShouldShowMinCharsMessage() {
+            <?= $gwBase ?>ShouldShowMinCharsMessage() {
                 return this.search.length < 3;
             },
 
@@ -676,15 +682,15 @@ $quoteDetails = json_encode($quoteDetails);
         };
     }
 
-    function twoGatewayHyvaPaymentFormWithValidation() {
+    function <?= $gwBase ?>PaymentFormWithValidation() {
         return {
-            ...twoGatewayHyvaPaymentMethodBase(),
+            ...<?= $gwBase ?>PaymentMethodBase(),
             ...twoValidatePaymentForm(this.$el, this.$wire)
         };
     }
 
-    function twoGatewayHyvaPaymentTermsComponent() {
-        return twoGatewayHyvaPaymentMethodBase();
+    function <?= $gwBase ?>PaymentTermsComponent() {
+        return <?= $gwBase ?>PaymentMethodBase();
     }
 
     // Per-chip component. Hyva loads alpine3-csp.min.js which forbids
@@ -692,7 +698,7 @@ $quoteDetails = json_encode($quoteDetails);
     // in attribute expressions — so every chip is its own Alpine.data
     // component reading `days` from a data-* attribute and exposing
     // bare-identifier getters for the template to bind to.
-    function twoGatewayHyvaTermChip() {
+    function <?= $gwBase ?>TermChip() {
         return {
             days: 0,
             labelSingular: '1 day',
@@ -806,10 +812,10 @@ $quoteDetails = json_encode($quoteDetails);
 
     document.addEventListener('alpine:init', () => {
         Alpine.store('twoChip', { busy: false });
-        Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
-        Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
-        Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
-        Alpine.data('twoGatewayHyvaTermChip', twoGatewayHyvaTermChip);
+        Alpine.data('<?= $gwBase ?>PaymentMethodBase', <?= $gwBase ?>PaymentMethodBase);
+        Alpine.data('<?= $gwBase ?>PaymentFormWithValidation', <?= $gwBase ?>PaymentFormWithValidation);
+        Alpine.data('<?= $gwBase ?>PaymentTermsComponent', <?= $gwBase ?>PaymentTermsComponent);
+        Alpine.data('<?= $gwBase ?>TermChip', <?= $gwBase ?>TermChip);
     });
 
     // Global reference to the payment component instance
@@ -841,7 +847,7 @@ $quoteDetails = json_encode($quoteDetails);
             }
 
             const selectedPaymentValue = activePaymentMethod.value;
-            const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+            const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
 
             if (!isTwoPaymentSelected) {
                 return;

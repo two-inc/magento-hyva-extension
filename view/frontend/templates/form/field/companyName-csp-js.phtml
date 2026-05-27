@@ -10,13 +10,19 @@ declare(strict_types=1);
 
 use Hyva\Theme\Model\ViewModelRegistry;
 use Hyva\Theme\ViewModel\HyvaCsp;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Magento\Framework\Escaper;
 
+/** @var \Magento\Framework\View\Element\Template $block */
 /** @var ViewModelRegistry $viewModels */
 /** @var HyvaCsp $hyvaCsp */
 /** @var Escaper $escaper */
+
+/** @var BrandedHyvaViewModelInterface $brandedViewModel */
+$brandedViewModel = $block->getData('branded_view_model');
+$gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -30,7 +36,7 @@ $quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNE
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
-function twoGatewayHyvaCompanySearchField() {
+function <?= $gwBase ?>CompanySearchField() {
     return {
         isOpen: false,
         search: '',
@@ -241,7 +247,7 @@ function twoGatewayHyvaCompanySearchField() {
     }
 }
 document.addEventListener('alpine:init', () => {
-    Alpine.data('twoGatewayHyvaCompanySearchField', twoGatewayHyvaCompanySearchField);
+    Alpine.data('<?= $gwBase ?>CompanySearchField', <?= $gwBase ?>CompanySearchField);
 });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>
