@@ -29,7 +29,8 @@ interface BrandedHyvaViewModelInterface extends ArgumentInterface
     public function getFormId(): string;
 
     /**
-     * Magento payment-method code (matches etc/config.xml payment/*/code).
+     * Magento payment-method code (matches payment/<code>/code in
+     * etc/config.xml).
      */
     public function getMethodCode(): string;
 
