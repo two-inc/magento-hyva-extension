@@ -52,10 +52,12 @@ interface BrandedHyvaViewModelInterface extends ArgumentInterface
      *
      * @param string $termsLink Absolute URL to the brand's terms page,
      *     supplied by the caller so the interface stays free of
-     *     ConfigRepository dependencies.
-     * @param string $brandTermsName Human-readable phrase used as the
-     *     anchor text in brands that render a link (e.g. "Two terms
-     *     and conditions").
+     *     ConfigRepository dependencies. Used as the `href` of the
+     *     hyperlink that wraps the translated "payment terms" phrase.
+     * @param string $brandFullName Legal/full brand name surfaced in
+     *     the sentence (e.g. "Two" or "ABN AMRO Asset Based Finance
+     *     N.V.") — the entity the buyer is authorising to process
+     *     their data.
      */
-    public function getPaymentTermsMessage(string $termsLink, string $brandTermsName): Phrase;
+    public function getPaymentTermsMessage(string $termsLink, string $brandFullName): Phrase;
 }

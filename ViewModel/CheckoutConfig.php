@@ -238,15 +238,11 @@ class CheckoutConfig implements ArgumentInterface
 
     public function getpaymentTermsMessage()
     {
-        $paymentTerms = __(
-            "%1 terms and conditions",
-            $this->brandRegistry->getProvider(),
-        );
         $paymentTermsLink =
             $this->configRepository->getCheckoutPageUrl() . "/terms";
         return $this->brandedViewModel->getPaymentTermsMessage(
             $paymentTermsLink,
-            (string) $paymentTerms,
+            $this->brandRegistry->getProviderFullName(),
         );
     }
 
