@@ -220,6 +220,12 @@ $quoteDetails = json_encode($quoteDetails);
             orderNote: '',
             poNumber: '',
             manualMode: false,
+            // Manual / search dual-mode toggle for the company-name + company-id pair.
+            // Inputs are duplicated in the template (one per mode, x-show'd); the
+            // visible-mode input always submits as `payment[company_name]` /
+            // `payment[company_id]`, the hidden mirror submits as
+            // `payment[manual_*]` (which Magento ignores).
+            showManual: false,
             companyIdDisabled: true,
             companyIdBgStyle: 'background-color: #D3D3D3',
             isSelecting: false,
@@ -306,6 +312,58 @@ $quoteDetails = json_encode($quoteDetails);
             },
             <?= $gwBase ?>ShouldShowMinCharsMessage() {
                 return this.search.length < 3;
+            },
+
+            // Manual / search mode toggle handlers
+            <?= $gwBase ?>OnSearchModeClick() {
+                this.showManual = false;
+            },
+            <?= $gwBase ?>OnManualEntryClick() {
+                this.showManual = true;
+            },
+            <?= $gwBase ?>OnCompanyItemClick(event) {
+                return this.handleItemClick(event);
+            },
+
+            // Reactive id / name getters for the dual-input pattern.
+            // The visible-mode input gets the canonical id/name; the hidden
+            // mirror gets a `manual_`-prefixed pair Magento ignores.
+            <?= $gwBase ?>GetCompanyNameId() {
+                return this.showManual ? 'manual_company_name' : 'company_name';
+            },
+            <?= $gwBase ?>GetCompanyNameField() {
+                return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+            },
+            <?= $gwBase ?>GetManualCompanyNameId() {
+                return !this.showManual ? 'manual_company_name' : 'company_name';
+            },
+            <?= $gwBase ?>GetManualCompanyNameField() {
+                return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+            },
+            <?= $gwBase ?>GetCompanyIdFieldId() {
+                return this.showManual ? 'manual_company_id' : 'company_id';
+            },
+            <?= $gwBase ?>GetCompanyIdFieldName() {
+                return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]';
+            },
+            <?= $gwBase ?>GetManualCompanyIdFieldId() {
+                return this.showManual ? 'company_id' : 'manual_company_id';
+            },
+            <?= $gwBase ?>GetManualCompanyIdFieldName() {
+                return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]';
+            },
+
+            // Dropdown-iteration reactive getters (bound inside template x-for scope).
+            <?= $gwBase ?>GetCompanyId() {
+                return this.item.companyId;
+            },
+            <?= $gwBase ?>GetCompanyDisplayName() {
+                return this.item.companyDisplayName;
+            },
+            <?= $gwBase ?>GetItemClass() {
+                return this.selectedIndex === this.index
+                    ? 'bg-gray-200'
+                    : '';
             },
 
             // Computed-style methods
