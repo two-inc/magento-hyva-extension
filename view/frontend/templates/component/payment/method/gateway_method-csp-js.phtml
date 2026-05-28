@@ -314,6 +314,15 @@ $quoteDetails = json_encode($quoteDetails);
                 return this.search.length < 3;
             },
 
+            // CSP-friendly Alpine forbids the `!` operator in attribute
+            // expressions. Templates using `x-show="!showManual"` resolve
+            // this magic getter (bare identifier `!showManual`) instead
+            // of evaluating the negation inline. Mirrors the pattern in
+            // magento-abn-plugin/hyva/.../gateway_method-csp-js.phtml.
+            ['!showManual']() {
+                return !this.showManual;
+            },
+
             // Manual / search mode toggle handlers
             <?= $gwBase ?>OnSearchModeClick() {
                 this.showManual = false;
