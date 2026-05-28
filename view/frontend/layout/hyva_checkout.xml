@@ -14,11 +14,21 @@
         <!-- Generated with hyva-csp-helper.php -->
         <referenceContainer name="magewire.plugin.scripts">
             <block name="component.payment.method.gateway_method"
-                   template="Two_GatewayHyva::component/payment/method/gateway_method-csp-js.phtml"
-            />
+                   template="Two_GatewayHyva::component/payment/method/gateway_method-csp-js.phtml">
+                <arguments>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
+                    </argument>
+                </arguments>
+            </block>
             <block name="form.field.companyName"
-                   template="Two_GatewayHyva::form/field/companyName-csp-js.phtml"
-            />
+                   template="Two_GatewayHyva::form/field/companyName-csp-js.phtml">
+                <arguments>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
+                    </argument>
+                </arguments>
+            </block>
         </referenceContainer>
     </body>
 </page>

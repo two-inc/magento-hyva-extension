@@ -19,6 +19,9 @@
                     <argument name="magewire" xsi:type="object">
                         Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod
                     </argument>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
+                    </argument>
                     <argument name="method_code" xsi:type="string">two_payment</argument>
                     <argument name="metadata" xsi:type="array">
                         <item name="icon" xsi:type="array">
