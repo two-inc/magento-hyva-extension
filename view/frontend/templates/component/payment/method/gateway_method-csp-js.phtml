@@ -450,35 +450,38 @@ $quoteDetails = json_encode($quoteDetails);
                     return;
                 }
 
-                this.searchTimeout = setTimeout(async () => {
-                    window.dispatchEvent(new Event('magewire:loader:start'));
-                    try {
-                        const queryParams = new URLSearchParams({
-                            country: this.countryCode.toUpperCase(),
-                            limit: this.companySearchLimit,
-                            offset: 0,
-                            q: unescape(this.search),
-                        });
+                // Inline search — no global magewire:loader dispatch.
+                // The dropdown's existing x-show binding renders results
+                // as they arrive; a full-screen busy overlay on every
+                // keystroke would interrupt the user mid-typing, which is
+                // what triggered ABN-422. The outer @input.debounce.500ms
+                // already throttles input; the prior setTimeout(200) was
+                // a redundant second-stage delay and is gone.
+                try {
+                    const queryParams = new URLSearchParams({
+                        country: this.countryCode.toUpperCase(),
+                        limit: this.companySearchLimit,
+                        offset: 0,
+                        q: unescape(this.search),
+                    });
 
-                        const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                        if (!response.ok) throw new Error("Network response was not ok");
+                    const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
+                    if (!response.ok) throw new Error("Network response was not ok");
 
-                        const data = await response.json();
-                        this.items = data.items.map(item => ({
-                            companyName: item.name,
-                            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                            companyId: item.national_identifier.id,
-                            lookupId: item.lookup_id,
-                            item: item
-                        }));
+                    const data = await response.json();
+                    this.items = data.items.map(item => ({
+                        companyName: item.name,
+                        companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+                        companyId: item.national_identifier.id,
+                        lookupId: item.lookup_id,
+                        item: item
+                    }));
 
-                        if (this.items.length > 0) this.isOpen = true;
-                    } catch (error) {
-                        console.error("Error fetching companies:", error);
-                        this.items = [];
-                    }
-                    window.dispatchEvent(new Event('magewire:loader:done'));
-                }, 200);
+                    if (this.items.length > 0) this.isOpen = true;
+                } catch (error) {
+                    console.error("Error fetching companies:", error);
+                    this.items = [];
+                }
             },
 
             handleItemClick(event) {

@@ -52,6 +52,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $checkoutSession;
 
+    /**
+     * @var BrandedHyvaViewModelInterface
+     */
+    private $brandedViewModel;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -59,6 +64,7 @@ class CheckoutConfig implements ArgumentInterface
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
+        BrandedHyvaViewModelInterface $brandedViewModel,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -66,6 +72,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
+        $this->brandedViewModel = $brandedViewModel;
     }
 
     /**
@@ -237,15 +244,10 @@ class CheckoutConfig implements ArgumentInterface
         );
         $paymentTermsLink =
             $this->configRepository->getCheckoutPageUrl() . "/terms";
-        $paymentTermsMessage = __(
-            "By checking this box, I confirm that I have read and agree to %1.",
-            sprintf(
-                '<a class="text-blue-600" href="%s" target="_blank">%s</a>',
-                $paymentTermsLink,
-                $paymentTerms,
-            ),
+        return $this->brandedViewModel->getPaymentTermsMessage(
+            $paymentTermsLink,
+            (string) $paymentTerms,
         );
-        return $paymentTermsMessage;
     }
 
     public function getTermsNotAcceptedMessage()

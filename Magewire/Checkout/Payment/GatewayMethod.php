@@ -210,8 +210,15 @@ class GatewayMethod extends Component
             $defaultTerm = (int) $this->configRepository->getDefaultPaymentTerm($storeId);
             $this->selectedTerm = $sessionTerm > 0 ? $sessionTerm : $defaultTerm;
 
-            $this->showChip = $type !== SurchargeType::NONE && count($terms) > 0;
-            $this->termSurcharges = $this->showChip ? $this->computeAllTermSurcharges($quote, $terms) : [];
+            // Chips visibility is driven by available payment terms alone.
+            // Surcharge type only gates per-chip surcharge value display —
+            // term selection is a buyer choice independent of fee sharing.
+            // Single-term configs render nothing — with one option there
+            // is nothing for the buyer to select.
+            $this->showChip = count($terms) > 1;
+            $this->termSurcharges = ($this->showChip && $type !== SurchargeType::NONE)
+                ? $this->computeAllTermSurcharges($quote, $terms)
+                : [];
         } catch (\Exception $e) {
             $this->logRepository->addErrorLog('Hyva chip: hydrate failed', $e->getMessage());
             $this->showChip = false;
