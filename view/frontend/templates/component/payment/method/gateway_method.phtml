@@ -179,6 +179,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                         :key="<?= $gwBase ?>GetCompanyId"
                                     >
                                         <div
+                                            :data-index="index"
                                             @click="<?= $gwBase ?>OnCompanyItemClick"
                                             @mouseover="<?= $gwBase ?>OnItemMouseover"
                                             :class="<?= $gwBase ?>GetItemClass"
