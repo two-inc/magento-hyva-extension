@@ -213,7 +213,9 @@ class GatewayMethod extends Component
             // Chips visibility is driven by available payment terms alone.
             // Surcharge type only gates per-chip surcharge value display —
             // term selection is a buyer choice independent of fee sharing.
-            $this->showChip = count($terms) > 0;
+            // Single-term configs render nothing — with one option there
+            // is nothing for the buyer to select.
+            $this->showChip = count($terms) > 1;
             $this->termSurcharges = ($this->showChip && $type !== SurchargeType::NONE)
                 ? $this->computeAllTermSurcharges($quote, $terms)
                 : [];
