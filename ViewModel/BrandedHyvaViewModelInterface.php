@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Two\GatewayHyva\ViewModel;
 
+use Magento\Framework\Phrase;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 
 /**
@@ -40,4 +41,21 @@ interface BrandedHyvaViewModelInterface extends ArgumentInterface
      * in view/frontend/layout/hyva_checkout_components.xml.
      */
     public function getMagewireBlockName(): string;
+
+    /**
+     * Rendered payment-terms acceptance message shown beside the T&C
+     * checkbox in the Hyva checkout. The return may contain HTML (e.g.
+     * an anchor wrapping the terms link). Brand overlays own the full
+     * sentence so the structure can differ across brands (some brands
+     * may omit the link, change wording, or render brand-specific
+     * regulatory language).
+     *
+     * @param string $termsLink Absolute URL to the brand's terms page,
+     *     supplied by the caller so the interface stays free of
+     *     ConfigRepository dependencies.
+     * @param string $brandTermsName Human-readable phrase used as the
+     *     anchor text in brands that render a link (e.g. "Two terms
+     *     and conditions").
+     */
+    public function getPaymentTermsMessage(string $termsLink, string $brandTermsName): Phrase;
 }
