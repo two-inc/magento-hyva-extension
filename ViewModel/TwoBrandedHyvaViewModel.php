@@ -28,15 +28,21 @@ final class TwoBrandedHyvaViewModel implements BrandedHyvaViewModelInterface
         return 'checkout.payment.method.two-payment-method';
     }
 
-    public function getPaymentTermsMessage(string $termsLink, string $brandTermsName): Phrase
+    public function getPaymentTermsMessage(string $termsLink, string $brandFullName): Phrase
     {
+        // Mirror the Luma ConfigProvider's T&C-acceptance pattern so
+        // Two-brand renders the same source phrase on both Luma and
+        // Hyva checkouts — no Luma↔Hyva copy divergence. %1 is the
+        // translated "payment terms" phrase wrapped in an anchor;
+        // %2 is the brand's legal full name from brand.xml.
         return __(
-            "By checking this box, I confirm that I have read and agree to %1.",
+            'I accept the %1 and authorize %2 to process my data automatically.',
             sprintf(
                 '<a class="text-blue-600" href="%s" target="_blank">%s</a>',
                 $termsLink,
-                $brandTermsName,
+                __('payment terms'),
             ),
+            $brandFullName,
         );
     }
 }
