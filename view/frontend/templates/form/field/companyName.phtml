@@ -53,7 +53,7 @@ $form = $block->getData("form");
                 data-validate='{"required":true}'
             <?php endif; ?>
             autocomplete="off"
-            @input.debounce.200ms="getItems"
+            @input.debounce.500ms="getItems"
             />
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualMode" class="mt-1 text-right">
