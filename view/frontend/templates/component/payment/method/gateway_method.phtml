@@ -38,8 +38,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>
 <div
      x-data="<?= $gwBase ?>PaymentMethodBase" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
-    <div class="redirect_message" data-bind="text: redirectMessage"><?= $configModel->getRedirectMessage() ?>
-    </div>
+    <div class="two-payment-subtitle"><?= /* @noEscape */ $configModel->getCheckoutSubtitleHtml() ?></div>
     <?php if ($showChip): ?>
         <div class="two-term-chips field">
             <label class="label block text-sm font-medium text-gray-700 mb-1">
