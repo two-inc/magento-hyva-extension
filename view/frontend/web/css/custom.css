@@ -178,14 +178,14 @@ summary::marker {
    too tight visually. */
 .two-term-chips > label.label { margin-bottom: 20px; }
 
-/* Brand checkout subtitle under the payment-method title. The text is
-   brand-supplied (BrandRegistry::getCheckoutSubtitle) and may contain a
-   link (e.g. ABN's "lees meer"). Hyva's Tailwind base resets <a> to
-   inherit colour with no underline, so the link rendered as plain text.
-   Restore Luma's appearance (style.css `.two-payment-subtitle a`): blue +
-   underlined. Class+element specificity beats Tailwind's element-only
-   reset, so no !important needed. */
-.two-payment-subtitle a {
+/* All links inside the Two/ABN payment-method block render blue +
+   underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
+   Hyva's Tailwind base resets <a> to inherit colour / no underline, so
+   these rendered as plain text. Scope to the payment block container
+   (matches Luma's `.two-payment-method a`); class+element specificity
+   beats Tailwind's element-only `a` reset, so no !important needed. A
+   bare `a` would tie Tailwind's specificity and lose on load order. */
+.payment-method-custom-form a {
     color: #0066cc;
     text-decoration: underline;
 }
