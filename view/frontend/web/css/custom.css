@@ -177,3 +177,15 @@ summary::marker {
    caption and the chip strip. Tailwind utility `mb-1` on the label is
    too tight visually. */
 .two-term-chips > label.label { margin-bottom: 20px; }
+
+/* Brand checkout subtitle under the payment-method title. The text is
+   brand-supplied (BrandRegistry::getCheckoutSubtitle) and may contain a
+   link (e.g. ABN's "lees meer"). Hyva's Tailwind base resets <a> to
+   inherit colour with no underline, so the link rendered as plain text.
+   Restore Luma's appearance (style.css `.two-payment-subtitle a`): blue +
+   underlined. Class+element specificity beats Tailwind's element-only
+   reset, so no !important needed. */
+.two-payment-subtitle a {
+    color: #0066cc;
+    text-decoration: underline;
+}
