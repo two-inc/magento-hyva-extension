@@ -199,6 +199,21 @@ class CheckoutConfig implements ArgumentInterface
         return $redirectMessage;
     }
 
+    /**
+     * Brand-supplied checkout subtitle, rendered under the payment title.
+     *
+     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
+     * from brand.xml). The vanilla Two brand returns '' → no subtitle. Only
+     * a non-empty key is passed to the translator, so an unmapped locale
+     * falls back to the brand-owned source key rather than leaking a
+     * vanilla key. May contain HTML (e.g. a link) — render unescaped.
+     */
+    public function getCheckoutSubtitleHtml(): string
+    {
+        $key = $this->brandRegistry->getCheckoutSubtitle();
+        return $key === '' ? '' : (string)__($key);
+    }
+
     public function getOrderIntentApprovedMessage()
     {
         $orderIntentApprovedMessage = __(
