@@ -818,10 +818,22 @@ $quoteDetails = json_encode($quoteDetails);
 
             get surchargeText() {
                 const surcharges = this.$wire.termSurcharges || {};
+                const terms = Object.keys(surcharges);
+                // Empty map → surcharges not yet loaded; show nothing.
+                if (!terms.length) return '';
                 const raw = surcharges[this.days];
                 if (raw === undefined) return '';
-                const amount = parseFloat(raw);
-                if (!isFinite(amount) || amount <= 0) return '';
+                // Match Luma (gateway_method.js `termOptions`): if EVERY
+                // term is ~zero, show no fee on any chip; if ANY term is
+                // non-zero, show the fee on every chip — zero-fee chips
+                // then render `+€ 0.00`. The `< 0.005` threshold and the
+                // `+` prefix mirror the Luma renderer exactly so the two
+                // checkouts display identically.
+                const allZero = terms.every(function (days) {
+                    return parseFloat(surcharges[days] || 0) < 0.005;
+                });
+                if (allZero) return '';
+                const amount = parseFloat(raw || 0);
                 const currency = this.$wire.currencyCode || 'EUR';
                 // Use the Magento store-view locale piped from PHP
                 // (`nl-NL`, `en-GB`, ...) so the chip's currency format
@@ -829,12 +841,12 @@ $quoteDetails = json_encode($quoteDetails);
                 // produce `€16.03` while Magento formats `€ 16,03`.
                 const locale = this.$wire.currencyLocale || undefined;
                 try {
-                    return new Intl.NumberFormat(locale, {
+                    return '+' + new Intl.NumberFormat(locale, {
                         style: 'currency',
                         currency: currency
                     }).format(amount);
                 } catch (e) {
-                    return amount.toFixed(2);
+                    return '+' + amount.toFixed(2);
                 }
             },
 
