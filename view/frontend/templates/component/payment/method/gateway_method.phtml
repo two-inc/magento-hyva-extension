@@ -76,6 +76,36 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 <?php endforeach ?>
             </div>
         </div>
+    <?php elseif ($magewire->showSingleTerm): ?>
+        <?php
+        // Single available term: one informational, non-clickable chip,
+        // preselected — matching Luma. Reuses the TermChip component (label +
+        // surcharge formatting) in `single` mode (--single styling, no click).
+        $singleDay = (int) ($magewire->availableTerms[0] ?? 0);
+        $singularLabel = '1 ' . __('day');
+        $pluralLabel = __('%1 days');
+        ?>
+        <div class="two-term-chips field">
+            <label class="label block text-sm font-medium text-gray-700 mb-1">
+                <span><?= $escaper->escapeHtml(__('Selected payment terms')) ?></span>
+            </label>
+            <div class="two-term-chips__container">
+                <span x-data="<?= $gwBase ?>TermChip"
+                      data-days="<?= $singleDay ?>"
+                      data-single="1"
+                      data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
+                      data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
+                      :class="chipClasses">
+                    <span class="two-term-chip__days" x-text="label"></span>
+                    <template x-if="isLoading">
+                        <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    </template>
+                    <template x-if="surchargeTextWhenNotLoading">
+                        <span class="two-term-chip__surcharge" x-text="surchargeTextWhenNotLoading"></span>
+                    </template>
+                </span>
+            </div>
+        </div>
     <?php endif ?>
     <?php
     /*

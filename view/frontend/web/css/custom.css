@@ -114,6 +114,24 @@ summary::marker {
   color: #fff;
 }
 
+/* Sole-available-term chip: informational, not interactive. Blue border
+   (like the selected chip) but no fill and no checkmark — matches Luma's
+   two-term-chip--single. */
+.two-term-chip--single,
+.two-term-chip--single:hover {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  border-color: #3043d1;
+  cursor: default;
+}
+
+.two-term-chip--single .two-term-chip__surcharge {
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 1;
+}
+
 .two-term-chip__days {
   font-size: 14px;
   font-weight: 500;
