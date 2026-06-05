@@ -775,9 +775,13 @@ $quoteDetails = json_encode($quoteDetails);
             labelPlural: '%1 days',
             errorMessage: 'Could not update payment term. Please try again.',
             isUpdating: false,
+            single: false,
 
             init() {
                 this.days = parseInt(this.$el.dataset.days, 10) || 0;
+                // `single` marks the sole-available-term chip: informational,
+                // not clickable, distinct --single styling (matches Luma).
+                this.single = this.$el.dataset.single === '1';
                 // Translated labels sourced from PHP via __(); CSV strings
                 // live in the plugin's i18n/<locale>.csv files.
                 if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
@@ -807,6 +811,9 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             get chipClasses() {
+                if (this.single) {
+                    return 'two-term-chip two-term-chip--single';
+                }
                 return this.isSelected
                     ? 'two-term-chip two-term-chip--selected'
                     : 'two-term-chip';
@@ -863,6 +870,7 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             async select() {
+                if (this.single) return; // sole term — nothing to switch to
                 if (Alpine.store('twoChip').busy) return;
                 if (this.isSelected) return;
 
