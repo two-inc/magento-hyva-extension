@@ -32,7 +32,7 @@ repos:
         language: system
         files: '\.(php)$'
   - repo: https://github.com/two-inc/git-hooks
-    rev: 25.06.20
+    rev: 26.03.10
     hooks:
       - id: commit-msg
         stages: [commit-msg]
