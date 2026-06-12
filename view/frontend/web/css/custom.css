@@ -114,16 +114,18 @@ summary::marker {
   color: #fff;
 }
 
-/* Sole-available-term chip: informational, not interactive. Blue border
-   (like the selected chip) but no fill and no checkmark — matches Luma's
+/* Sole-available-term chip: informational, not interactive. Filled blue
+   like the selected chip but no checkmark; days stack above the surcharge
+   like the multi-term chips (ABN-449) — matches Luma's
    two-term-chip--single. */
 .two-term-chip--single,
 .two-term-chip--single:hover {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
   border-color: #3043d1;
+  background: #3043d1;
+  color: #fff;
   cursor: default;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .two-term-chip--single .two-term-chip__surcharge {
@@ -175,21 +177,6 @@ summary::marker {
   0%, 80%, 100% { opacity: 0.2; }
   40%          { opacity: 1; }
 }
-
-.two-term-chip--single {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  border-color: #3043d1;
-  background: #3043d1;
-  color: #fff;
-  cursor: default;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.two-term-chip--single:hover { border-color: #3043d1; }
-.two-term-chip--single .two-term-chip__surcharge { font-size: 14px; }
 
 /* QA polish: more breathing room between the "Selected payment terms"
    caption and the chip strip. Tailwind utility `mb-1` on the label is
