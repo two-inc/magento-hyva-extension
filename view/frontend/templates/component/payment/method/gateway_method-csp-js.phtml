@@ -85,9 +85,18 @@ $quoteDetails = json_encode($quoteDetails);
                         clearTimeout(timeout);
 
                         if (isWithValidation) {
+                            // Clear stale flash messages from a prior attempt so a
+                            // resubmit doesn't render outdated errors (mirrors the
+                            // Luma renderer's messageContainer.clear() — ABN-450).
+                            // Hyva's stepTo() fires the same event when navigating.
+                            window.dispatchEvent(new Event('clear-messages'));
+
                             try {
                                 await this.validate();
                             } catch (error) {
+                                // Swallow so the autosave/navigation task resolves;
+                                // the validator registered in init() is what blocks
+                                // Place Order on an invalid form (ABN-450).
                                 console.error("Form validation failed:", error);
                                 return;
                             }
@@ -185,6 +194,35 @@ $quoteDetails = json_encode($quoteDetails);
                     hyvaCheckout.navigation.addTask(doSave, {
                         name: '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>'
                     });
+
+                    // Block Place Order while the payment form is invalid
+                    // (ABN-450). The doSave task above swallows validation
+                    // failures (a rejected navigation task would abort with
+                    // Hyva's generic "Something went wrong" alert), so without
+                    // this validator order.place() proceeds with
+                    // setPaymentData skipped and the backend rejects the order
+                    // with a raw "Invalid organization number: ''" banner. A
+                    // false return aborts placement silently, leaving
+                    // hyva.formValidation's field-level messages (e.g.
+                    // terms-not-accepted) as the feedback.
+                    hyvaCheckout.validation.register(
+                        '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>_form',
+                        async () => {
+                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+
+                            if (!activePaymentMethod || activePaymentMethod.value !== "<?= $brandedViewModel->getMethodCode() ?>") {
+                                return true;
+                            }
+
+                            try {
+                                await this.validate();
+                                return true;
+                            } catch (error) {
+                                return false;
+                            }
+                        },
+                        form
+                    );
 
                     const addEventListeners = (el) => {
                         if (el !== form) return;
