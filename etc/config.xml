@@ -13,5 +13,20 @@
                 <version>1.14.2</version>
             </general>
         </two_hyva>
+        <!--
+            Position the payment-terms surcharge in the Hyvä PHP cart totals.
+            Hyvä sorts the rendered segments by sales/totals_sort (admin:
+            Sales > Sales > Checkout Totals Sort Order); core defaults are
+            subtotal=10, discount=20, shipping=30, tax=40, grand_total=100.
+            Without an entry, two_surcharge sorts to 0 and renders above the
+            subtotal. 39 places it after shipping and immediately before tax
+            (the surcharge's own tax is folded into the Tax line). Ignored by
+            the Luma theme, which orders totals via jsLayout sortOrder.
+        -->
+        <sales>
+            <totals_sort>
+                <two_surcharge>39</two_surcharge>
+            </totals_sort>
+        </sales>
     </default>
 </config>
