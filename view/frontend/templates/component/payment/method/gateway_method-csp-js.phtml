@@ -9,16 +9,22 @@
 
 declare(strict_types=1);
 
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Hyva\Theme\ViewModel\HyvaCsp;
 
+/** @var \Magento\Framework\View\Element\Template $block */
 /** @var ViewModelRegistry $viewModels */
 /** @var CheckoutConfig $viewModel */
 /** @var Escaper $escaper */
 /** @var HyvaCsp $hyvaCsp */
+
+/** @var BrandedHyvaViewModelInterface $brandedViewModel */
+$brandedViewModel = $block->getData('branded_view_model');
+$gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -68,7 +74,7 @@ $quoteDetails = json_encode($quoteDetails);
                '';
     };
 
-    function validatePaymentForm(form, wire) {
+    function twoValidatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
 
@@ -79,9 +85,18 @@ $quoteDetails = json_encode($quoteDetails);
                         clearTimeout(timeout);
 
                         if (isWithValidation) {
+                            // Clear stale flash messages from a prior attempt so a
+                            // resubmit doesn't render outdated errors (mirrors the
+                            // Luma renderer's messageContainer.clear() — ABN-450).
+                            // Hyva's stepTo() fires the same event when navigating.
+                            window.dispatchEvent(new Event('clear-messages'));
+
                             try {
                                 await this.validate();
                             } catch (error) {
+                                // Swallow so the autosave/navigation task resolves;
+                                // the validator registered in init() is what blocks
+                                // Place Order on an invalid form (ABN-450).
                                 console.error("Form validation failed:", error);
                                 return;
                             }
@@ -91,7 +106,7 @@ $quoteDetails = json_encode($quoteDetails);
 
                             if (activePaymentMethod) {
                                 const selectedPaymentValue = activePaymentMethod.value;
-                                const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+                                const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
 
                                 if (isTwoPaymentSelected) {
                                     const formRef = form;
@@ -124,7 +139,7 @@ $quoteDetails = json_encode($quoteDetails);
 
                                                 paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
-                                                Magewire.find("checkout.payment.method.two-payment-method")
+                                                Magewire.find("<?= $brandedViewModel->getMagewireBlockName() ?>")
                                                     .call('setPaymentData', paymentData)
                                                     .then(() => {
                                                         clearTimeout(timeoutId);
@@ -177,8 +192,37 @@ $quoteDetails = json_encode($quoteDetails);
                     }
 
                     hyvaCheckout.navigation.addTask(doSave, {
-                        name: 'two-payment-method'
+                        name: '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>'
                     });
+
+                    // Block Place Order while the payment form is invalid
+                    // (ABN-450). The doSave task above swallows validation
+                    // failures (a rejected navigation task would abort with
+                    // Hyva's generic "Something went wrong" alert), so without
+                    // this validator order.place() proceeds with
+                    // setPaymentData skipped and the backend rejects the order
+                    // with a raw "Invalid organization number: ''" banner. A
+                    // false return aborts placement silently, leaving
+                    // hyva.formValidation's field-level messages (e.g.
+                    // terms-not-accepted) as the feedback.
+                    hyvaCheckout.validation.register(
+                        '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>_form',
+                        async () => {
+                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+
+                            if (!activePaymentMethod || activePaymentMethod.value !== "<?= $brandedViewModel->getMethodCode() ?>") {
+                                return true;
+                            }
+
+                            try {
+                                await this.validate();
+                                return true;
+                            } catch (error) {
+                                return false;
+                            }
+                        },
+                        form
+                    );
 
                     const addEventListeners = (el) => {
                         if (el !== form) return;
@@ -200,7 +244,7 @@ $quoteDetails = json_encode($quoteDetails);
         )
     }
 
-    function twoGatewayHyvaPaymentMethodBase() {
+    function <?= $gwBase ?>PaymentMethodBase() {
         return {
             // State
             isOpen: false,
@@ -214,6 +258,12 @@ $quoteDetails = json_encode($quoteDetails);
             orderNote: '',
             poNumber: '',
             manualMode: false,
+            // Manual / search dual-mode toggle for the company-name + company-id pair.
+            // Inputs are duplicated in the template (one per mode, x-show'd); the
+            // visible-mode input always submits as `payment[company_name]` /
+            // `payment[company_id]`, the hidden mirror submits as
+            // `payment[manual_*]` (which Magento ignores).
+            showManual: false,
             companyIdDisabled: true,
             companyIdBgStyle: 'background-color: #D3D3D3',
             isSelecting: false,
@@ -259,47 +309,108 @@ $quoteDetails = json_encode($quoteDetails);
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
 
             // CSP-friendly event handlers (called from template)
-            twoGatewayHyvaOnInit() {
+            <?= $gwBase ?>OnInit() {
                 this.initialize(JSON.parse(this.$el.dataset.hyvacsp1));
             },
-            twoGatewayHyvaOnInvoiceEmailsChange() {
+            <?= $gwBase ?>OnInvoiceEmailsChange() {
                 this.invoiceEmails = this.$el.value;
             },
-            twoGatewayHyvaOnProjectChange() {
+            <?= $gwBase ?>OnProjectChange() {
                 this.project = this.$el.value;
             },
-            twoGatewayHyvaOnDepartmentChange() {
+            <?= $gwBase ?>OnDepartmentChange() {
                 this.department = this.$el.value;
             },
-            twoGatewayHyvaOnOrderNoteChange() {
+            <?= $gwBase ?>OnOrderNoteChange() {
                 this.orderNote = this.$el.value;
             },
-            twoGatewayHyvaOnPoNumberChange() {
+            <?= $gwBase ?>OnPoNumberChange() {
                 this.poNumber = this.$el.value;
             },
-            twoGatewayHyvaOnPaymentTermsChange() {
+            <?= $gwBase ?>OnPaymentTermsChange() {
                 this.isPaymentTermsAccepted = this.$el.checked;
             },
-            twoGatewayHyvaOnCompanySearchClickOutside() {
+            <?= $gwBase ?>OnCompanySearchClickOutside() {
                 this.isOpen = false;
             },
-            twoGatewayHyvaOnCompanySearchFocus() {
+            <?= $gwBase ?>OnCompanySearchFocus() {
                 if (!this.manualMode) this.isOpen = true;
             },
-            twoGatewayHyvaOnArrowDown() {
+            <?= $gwBase ?>OnArrowDown() {
                 this.nextItem();
             },
-            twoGatewayHyvaOnArrowUp() {
+            <?= $gwBase ?>OnArrowUp() {
                 this.prevItem();
             },
-            twoGatewayHyvaOnEnterSelect() {
+            <?= $gwBase ?>OnEnterSelect() {
                 this.selectHighlightedItem();
             },
-            twoGatewayHyvaOnItemMouseover(event) {
+            <?= $gwBase ?>OnItemMouseover(event) {
                 this.selectedIndex = parseInt(event.currentTarget.dataset.index);
             },
-            twoGatewayHyvaShouldShowMinCharsMessage() {
+            <?= $gwBase ?>ShouldShowMinCharsMessage() {
                 return this.search.length < 3;
+            },
+
+            // CSP-friendly Alpine forbids the `!` operator in attribute
+            // expressions. Templates using `x-show="!showManual"` resolve
+            // this magic getter (bare identifier `!showManual`) instead
+            // of evaluating the negation inline. Mirrors the pattern in
+            // magento-abn-plugin/hyva/.../gateway_method-csp-js.phtml.
+            ['!showManual']() {
+                return !this.showManual;
+            },
+
+            // Manual / search mode toggle handlers
+            <?= $gwBase ?>OnSearchModeClick() {
+                this.showManual = false;
+            },
+            <?= $gwBase ?>OnManualEntryClick() {
+                this.showManual = true;
+            },
+            <?= $gwBase ?>OnCompanyItemClick(event) {
+                return this.handleItemClick(event);
+            },
+
+            // Reactive id / name getters for the dual-input pattern.
+            // The visible-mode input gets the canonical id/name; the hidden
+            // mirror gets a `manual_`-prefixed pair Magento ignores.
+            <?= $gwBase ?>GetCompanyNameId() {
+                return this.showManual ? 'manual_company_name' : 'company_name';
+            },
+            <?= $gwBase ?>GetCompanyNameField() {
+                return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+            },
+            <?= $gwBase ?>GetManualCompanyNameId() {
+                return !this.showManual ? 'manual_company_name' : 'company_name';
+            },
+            <?= $gwBase ?>GetManualCompanyNameField() {
+                return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+            },
+            <?= $gwBase ?>GetCompanyIdFieldId() {
+                return this.showManual ? 'manual_company_id' : 'company_id';
+            },
+            <?= $gwBase ?>GetCompanyIdFieldName() {
+                return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]';
+            },
+            <?= $gwBase ?>GetManualCompanyIdFieldId() {
+                return this.showManual ? 'company_id' : 'manual_company_id';
+            },
+            <?= $gwBase ?>GetManualCompanyIdFieldName() {
+                return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]';
+            },
+
+            // Dropdown-iteration reactive getters (bound inside template x-for scope).
+            <?= $gwBase ?>GetCompanyId() {
+                return this.item.companyId;
+            },
+            <?= $gwBase ?>GetCompanyDisplayName() {
+                return this.item.companyDisplayName;
+            },
+            <?= $gwBase ?>GetItemClass() {
+                return this.selectedIndex === this.index
+                    ? 'bg-gray-200'
+                    : '';
             },
 
             // Computed-style methods
@@ -377,35 +488,38 @@ $quoteDetails = json_encode($quoteDetails);
                     return;
                 }
 
-                this.searchTimeout = setTimeout(async () => {
-                    window.dispatchEvent(new Event('magewire:loader:start'));
-                    try {
-                        const queryParams = new URLSearchParams({
-                            country: this.countryCode.toUpperCase(),
-                            limit: this.companySearchLimit,
-                            offset: 0,
-                            q: unescape(this.search),
-                        });
+                // Inline search — no global magewire:loader dispatch.
+                // The dropdown's existing x-show binding renders results
+                // as they arrive; a full-screen busy overlay on every
+                // keystroke would interrupt the user mid-typing, which is
+                // what triggered ABN-422. The outer @input.debounce.500ms
+                // already throttles input; the prior setTimeout(200) was
+                // a redundant second-stage delay and is gone.
+                try {
+                    const queryParams = new URLSearchParams({
+                        country: this.countryCode.toUpperCase(),
+                        limit: this.companySearchLimit,
+                        offset: 0,
+                        q: unescape(this.search),
+                    });
 
-                        const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                        if (!response.ok) throw new Error("Network response was not ok");
+                    const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
+                    if (!response.ok) throw new Error("Network response was not ok");
 
-                        const data = await response.json();
-                        this.items = data.items.map(item => ({
-                            companyName: item.name,
-                            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                            companyId: item.national_identifier.id,
-                            lookupId: item.lookup_id,
-                            item: item
-                        }));
+                    const data = await response.json();
+                    this.items = data.items.map(item => ({
+                        companyName: item.name,
+                        companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+                        companyId: item.national_identifier.id,
+                        lookupId: item.lookup_id,
+                        item: item
+                    }));
 
-                        if (this.items.length > 0) this.isOpen = true;
-                    } catch (error) {
-                        console.error("Error fetching companies:", error);
-                        this.items = [];
-                    }
-                    window.dispatchEvent(new Event('magewire:loader:done'));
-                }, 200);
+                    if (this.items.length > 0) this.isOpen = true;
+                } catch (error) {
+                    console.error("Error fetching companies:", error);
+                    this.items = [];
+                }
             },
 
             handleItemClick(event) {
@@ -676,21 +790,160 @@ $quoteDetails = json_encode($quoteDetails);
         };
     }
 
-    function twoGatewayHyvaPaymentFormWithValidation() {
+    function <?= $gwBase ?>PaymentFormWithValidation() {
         return {
-            ...twoGatewayHyvaPaymentMethodBase(),
-            ...validatePaymentForm(this.$el, this.$wire)
+            ...<?= $gwBase ?>PaymentMethodBase(),
+            ...twoValidatePaymentForm(this.$el, this.$wire)
         };
     }
 
-    function twoGatewayHyvaPaymentTermsComponent() {
-        return twoGatewayHyvaPaymentMethodBase();
+    function <?= $gwBase ?>PaymentTermsComponent() {
+        return <?= $gwBase ?>PaymentMethodBase();
+    }
+
+    // Per-chip component. Hyva loads alpine3-csp.min.js which forbids
+    // function calls, comparisons, object literals, and boolean operators
+    // in attribute expressions — so every chip is its own Alpine.data
+    // component reading `days` from a data-* attribute and exposing
+    // bare-identifier getters for the template to bind to.
+    function <?= $gwBase ?>TermChip() {
+        return {
+            days: 0,
+            labelSingular: '1 day',
+            labelPlural: '%1 days',
+            errorMessage: 'Could not update payment term. Please try again.',
+            isUpdating: false,
+            single: false,
+
+            init() {
+                this.days = parseInt(this.$el.dataset.days, 10) || 0;
+                // `single` marks the sole-available-term chip: informational,
+                // not clickable, distinct --single styling (matches Luma).
+                this.single = this.$el.dataset.single === '1';
+                // Translated labels sourced from PHP via __(); CSV strings
+                // live in the plugin's i18n/<locale>.csv files.
+                if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
+                if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
+                if (this.$el.dataset.errorMessage) this.errorMessage = this.$el.dataset.errorMessage;
+            },
+
+            get label() {
+                return this.days === 1
+                    ? this.labelSingular
+                    : this.labelPlural.replace('%1', this.days);
+            },
+
+            get isSelected() {
+                return this.days === (parseInt(this.$wire.selectedTerm, 10) || 0);
+            },
+
+            get isLoading() {
+                return this.isUpdating;
+            },
+
+            // Shared busy flag — disables every chip while any one is
+            // mid-round-trip. Prevents the buyer queueing multiple
+            // selectTerm calls before the first resolves.
+            get anyUpdating() {
+                return Alpine.store('twoChip').busy;
+            },
+
+            get chipClasses() {
+                if (this.single) {
+                    return 'two-term-chip two-term-chip--single';
+                }
+                return this.isSelected
+                    ? 'two-term-chip two-term-chip--selected'
+                    : 'two-term-chip';
+            },
+
+            get ariaPressed() {
+                return this.isSelected ? 'true' : 'false';
+            },
+
+            get surchargeText() {
+                const surcharges = this.$wire.termSurcharges || {};
+                const terms = Object.keys(surcharges);
+                // Empty map → surcharges not yet loaded; show nothing.
+                if (!terms.length) return '';
+                const raw = surcharges[this.days];
+                if (raw === undefined) return '';
+                // Match Luma (gateway_method.js `termOptions`): if EVERY
+                // term is ~zero, show no fee on any chip; if ANY term is
+                // non-zero, show the fee on every chip — zero-fee chips
+                // then render `+€ 0.00`. The `< 0.005` threshold and the
+                // `+` prefix mirror the Luma renderer exactly so the two
+                // checkouts display identically.
+                const allZero = terms.every(function (days) {
+                    return parseFloat(surcharges[days] || 0) < 0.005;
+                });
+                if (allZero) return '';
+                const amount = parseFloat(raw || 0);
+                const currency = this.$wire.currencyCode || 'EUR';
+                // Use the Magento store-view locale piped from PHP
+                // (`nl-NL`, `en-GB`, ...) so the chip's currency format
+                // matches the order summary. Browser default would
+                // produce `€16.03` while Magento formats `€ 16,03`.
+                const locale = this.$wire.currencyLocale || undefined;
+                try {
+                    return '+' + new Intl.NumberFormat(locale, {
+                        style: 'currency',
+                        currency: currency
+                    }).format(amount);
+                } catch (e) {
+                    return '+' + amount.toFixed(2);
+                }
+            },
+
+            // CSP-friendly Alpine refuses boolean operators in attribute
+            // expressions, so the chip template can't bind to
+            // `x-if="!isLoading && surchargeText"` directly. Without
+            // mutual exclusion the loading-dots span and the surcharge
+            // span both render during a Magewire selectTerm round-trip,
+            // adding a row to the chip and stretching it vertically
+            // until the response lands. Exposed as a getter so the
+            // template can bind via bare property access.
+            get surchargeTextWhenNotLoading() {
+                return this.isLoading ? '' : this.surchargeText;
+            },
+
+            async select() {
+                if (this.single) return; // sole term — nothing to switch to
+                if (Alpine.store('twoChip').busy) return;
+                if (this.isSelected) return;
+
+                this.isUpdating = true;
+                Alpine.store('twoChip').busy = true;
+                try {
+                    await Promise.race([
+                        this.$wire.selectTerm(this.days),
+                        new Promise((_, reject) => setTimeout(
+                            () => reject(new Error('selectTerm timeout')),
+                            15000
+                        ))
+                    ]);
+                } catch (e) {
+                    console.warn('Two_GatewayHyva: selectTerm failed', e);
+                    if (typeof window.dispatchMessages === 'function') {
+                        window.dispatchMessages(
+                            [{ type: 'error', text: this.errorMessage }],
+                            5000
+                        );
+                    }
+                } finally {
+                    this.isUpdating = false;
+                    Alpine.store('twoChip').busy = false;
+                }
+            }
+        };
     }
 
     document.addEventListener('alpine:init', () => {
-        Alpine.data('twoGatewayHyvaPaymentMethodBase', twoGatewayHyvaPaymentMethodBase);
-        Alpine.data('twoGatewayHyvaPaymentFormWithValidation', twoGatewayHyvaPaymentFormWithValidation);
-        Alpine.data('twoGatewayHyvaPaymentTermsComponent', twoGatewayHyvaPaymentTermsComponent);
+        Alpine.store('twoChip', { busy: false });
+        Alpine.data('<?= $gwBase ?>PaymentMethodBase', <?= $gwBase ?>PaymentMethodBase);
+        Alpine.data('<?= $gwBase ?>PaymentFormWithValidation', <?= $gwBase ?>PaymentFormWithValidation);
+        Alpine.data('<?= $gwBase ?>PaymentTermsComponent', <?= $gwBase ?>PaymentTermsComponent);
+        Alpine.data('<?= $gwBase ?>TermChip', <?= $gwBase ?>TermChip);
     });
 
     // Global reference to the payment component instance
@@ -722,7 +975,7 @@ $quoteDetails = json_encode($quoteDetails);
             }
 
             const selectedPaymentValue = activePaymentMethod.value;
-            const isTwoPaymentSelected = selectedPaymentValue === "two_payment";
+            const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
 
             if (!isTwoPaymentSelected) {
                 return;

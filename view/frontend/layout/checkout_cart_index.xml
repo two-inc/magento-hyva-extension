@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<!--
+    Render the Two payment-terms surcharge as a line in the Hyvä cart-page
+    totals. Hyvä's PHP cart renders totals server-side (no KnockoutJS), so
+    the jsLayout component Two_Gateway registers for the Luma cart never
+    fires here — the surcharge was folded into the grand total but shown
+    without its own row (ABN-458). Hyvä's php-cart/totals.phtml loops the
+    `total_segments` and renders every child of checkout.cart.totals; each
+    child gates itself on `segment.code`. Registering our segment template
+    as a child is therefore all that's needed.
+
+    This handle also applies under the Luma theme, but Luma's
+    Magento_Checkout::cart/totals.phtml renders only its jsLayout and never
+    calls getChildHtml(), so this block is inert on Luma — no double line.
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="checkout.cart.totals">
+            <block name="two.surcharge.cart.total"
+                   template="Two_GatewayHyva::php-cart/totals/two_surcharge.phtml"/>
+        </referenceBlock>
+    </body>
+</page>

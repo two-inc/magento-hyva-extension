@@ -10,6 +10,7 @@ use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
 use Magewirephp\Magewire\Component\Form as MagewireFormComponent;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /** @var Template $block */
@@ -18,6 +19,10 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 /** @var Escaper $escaper */
 /** @var MagewireFormComponent $magewire */
 /** @var CheckoutConfig $viewModel */
+
+/** @var BrandedHyvaViewModelInterface $brandedViewModel */
+$brandedViewModel = $block->getData('branded_view_model');
+$gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
@@ -34,7 +39,7 @@ $form = $block->getData("form");
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="block font-medium text-gray-700">
-        <div x-data="twoGatewayHyvaCompanySearchField" class="relative" @click.outside="closeDropdown">
+        <div x-data="<?= $gwBase ?>CompanySearchField" class="relative" @click.outside="closeDropdown">
             <input type="text" class="<?= $escaper->escapeHtmlAttr(
                 $element->renderClass([
                     "block w-full form-input grow renderer-text",
@@ -48,7 +53,7 @@ $form = $block->getData("form");
                 data-validate='{"required":true}'
             <?php endif; ?>
             autocomplete="off"
-            @input.debounce.200ms="getItems"
+            @input.debounce.500ms="getItems"
             />
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualMode" class="mt-1 text-right">

@@ -23,3 +23,6 @@ node_modules/
 # AI assistants
 CLAUDE.local.md
 .aider*
+.agent-notes/
+.serena/
+.claude/

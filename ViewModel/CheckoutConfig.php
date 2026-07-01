@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace Two\GatewayHyva\ViewModel;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -47,14 +48,14 @@ class CheckoutConfig implements ArgumentInterface
     private $assetRepository;
 
     /**
-     * CheckoutConfig constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param BrandRegistryInterface $brandRegistry
-     * @param Adapter $adapter
-     * @param Two $two
-     * @param AssetRepository $assetRepository
+     * @var CheckoutSession
      */
+    private $checkoutSession;
+
+    /**
+     * @var BrandedHyvaViewModelInterface
+     */
+    private $brandedViewModel;
 
     public function __construct(
         ConfigRepository $configRepository,
@@ -62,12 +63,44 @@ class CheckoutConfig implements ArgumentInterface
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
+        CheckoutSession $checkoutSession,
+        BrandedHyvaViewModelInterface $brandedViewModel,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
+        $this->checkoutSession = $checkoutSession;
+        $this->brandedViewModel = $brandedViewModel;
+    }
+
+    /**
+     * Buyer-selectable payment terms (in days) configured by merchant.
+     * Empty array when surcharge feature is inactive or none configured.
+     */
+    public function getAvailableBuyerTerms(): array
+    {
+        return array_values(array_map('intval', $this->configRepository->getAllBuyerTerms()));
+    }
+
+    public function getDefaultPaymentTerm(): int
+    {
+        return (int) $this->configRepository->getDefaultPaymentTerm();
+    }
+
+    /**
+     * Currently selected term in checkout session, falling back to default.
+     */
+    public function getSelectedPaymentTerm(): int
+    {
+        $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
+        return $sessionTerm > 0 ? $sessionTerm : $this->getDefaultPaymentTerm();
+    }
+
+    public function getSurchargeDescription(): string
+    {
+        return (string) $this->configRepository->getSurchargeLineDescription();
     }
 
     public function getCheckoutApiUrl()
@@ -166,6 +199,21 @@ class CheckoutConfig implements ArgumentInterface
         return $redirectMessage;
     }
 
+    /**
+     * Brand-supplied checkout subtitle, rendered under the payment title.
+     *
+     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
+     * from brand.xml). The vanilla Two brand returns '' → no subtitle. Only
+     * a non-empty key is passed to the translator, so an unmapped locale
+     * falls back to the brand-owned source key rather than leaking a
+     * vanilla key. May contain HTML (e.g. a link) — render unescaped.
+     */
+    public function getCheckoutSubtitleHtml(): string
+    {
+        $key = $this->brandRegistry->getCheckoutSubtitle();
+        return $key === '' ? '' : (string)__($key);
+    }
+
     public function getOrderIntentApprovedMessage()
     {
         $orderIntentApprovedMessage = __(
@@ -205,21 +253,12 @@ class CheckoutConfig implements ArgumentInterface
 
     public function getpaymentTermsMessage()
     {
-        $paymentTerms = __(
-            "%1 terms and conditions",
-            $this->brandRegistry->getProvider(),
-        );
         $paymentTermsLink =
             $this->configRepository->getCheckoutPageUrl() . "/terms";
-        $paymentTermsMessage = __(
-            "By checking this box, I confirm that I have read and agree to %1.",
-            sprintf(
-                '<a class="text-blue-600" href="%s" target="_blank">%s</a>',
-                $paymentTermsLink,
-                $paymentTerms,
-            ),
+        return $this->brandedViewModel->getPaymentTermsMessage(
+            $paymentTermsLink,
+            $this->brandRegistry->getProviderFullName(),
         );
-        return $paymentTermsMessage;
     }
 
     public function getTermsNotAcceptedMessage()

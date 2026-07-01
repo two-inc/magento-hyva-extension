@@ -1,0 +1,41 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+/**
+ * Two payment-terms surcharge line for the Hyvä PHP cart totals.
+ *
+ * Rendered inside the x-for segment loop in Hyvä's
+ * Magento_Checkout::php-cart/totals.phtml. Each totals child template
+ * gates itself on the loop's `segment.code`, so this row only appears
+ * when the `two_surcharge` segment is present. The server-side Total
+ * Collector (Two\Gateway\Model\Total\Surcharge) only emits that segment
+ * when the Two payment method and a term are active on the quote, so its
+ * presence is itself the signal that the surcharge applies — the cart
+ * page has no payment-method selector to gate on.
+ *
+ * Mirrors the sibling core totals (discount.phtml / shipping.phtml):
+ * `segment.title` carries the surcharge description (or "Payment terms
+ * fee"), `segment.value` the net amount; surcharge tax is folded into the
+ * Tax line by the collector. This is the Hyvä counterpart of the Luma
+ * cart line registered in Two_Gateway's checkout_cart_index.xml.
+ *
+ * Note: the core rows use `x-html` for the title because some Magento
+ * total titles carry intended markup. Our title is plain text (the
+ * pricing-API description, else "Payment terms fee"), so we use `x-text`
+ * — identical output, no HTML-injection surface.
+ */
+?>
+<template x-if="segment.code === 'two_surcharge'">
+    <div class="flex pb-2 my-2 border-b text-md lg:text-sm md:grid md:grid-cols-2 md:w-full border-container two-surcharge-segment">
+        <div class="w-7/12 text-left md:w-auto"
+             x-text="segment.title"
+        ></div>
+        <div class="w-5/12 text-right md:w-auto"
+             x-text="hyva.formatPrice(segment.value)"
+        ></div>
+    </div>
+</template>

@@ -14,10 +14,20 @@
                 template="Two_GatewayHyva::component/payment/method/shipping_company.phtml" after="-"/>
         </referenceBlock>
         <referenceBlock name="checkout.payment.methods">
+            <!-- Swap in our MethodList so the list refreshes when a carrier
+                 is selected (shipping cost feeds the minimum-order gate) -->
+            <arguments>
+                <argument name="magewire" xsi:type="object">
+                    Two\GatewayHyva\Magewire\Checkout\Payment\MethodList
+                </argument>
+            </arguments>
             <block name="checkout.payment.method.two-payment-method" as="two_payment" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::component/payment/method/gateway_method.phtml">
                 <arguments>
                     <argument name="magewire" xsi:type="object">
                         Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod
+                    </argument>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
                     </argument>
                     <argument name="method_code" xsi:type="string">two_payment</argument>
                     <argument name="metadata" xsi:type="array">
@@ -37,6 +47,11 @@
                     </argument>
                 </arguments>
             </block>
+        </referenceBlock>
+        <referenceBlock name="price-summary.total-segments">
+            <block name="price-summary.total-segment.two_surcharge"
+                   as="two_surcharge"
+                   template="Two_GatewayHyva::checkout/price-summary/total-segments/two_surcharge.phtml"/>
         </referenceBlock>
     </body>
 </page>

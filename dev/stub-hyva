@@ -94,6 +94,19 @@ class MethodMetaData extends DataObject
 }
 PHP,
 
+    'Hyva/Checkout/Magewire/Checkout/Payment/MethodList.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Magewire\Checkout\Payment;
+
+use Magewirephp\Magewire\Component;
+
+class MethodList extends Component
+{
+    protected $listeners = [];
+    public function getListeners(): array { return $this->listeners; }
+}
+PHP,
+
     'Hyva/Checkout/Model/ConfigData/HyvaThemes/SystemConfigPayment.php' => <<<'PHP'
 <?php
 namespace Hyva\Checkout\Model\ConfigData\HyvaThemes;
