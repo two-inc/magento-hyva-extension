@@ -1,0 +1,75 @@
+name: Merge back
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: merge-main
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  main-to-staging:
+    name: main → staging
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    if: github.ref_name == 'main'
+    steps:
+      # Use the org GitHub App token — branch protection on `staging`
+      # blocks the default GITHUB_TOKEN from pushing, and a PR opened
+      # with GITHUB_TOKEN wouldn't trigger downstream CI on the new
+      # PR branch.
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Fast-forward staging to main (or fall back to a sync PR)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.noreply.github.com"
+          git fetch origin staging
+          # No-op when staging is already at or ahead of main.
+          behind=$(gh api "repos/${REPO}/compare/staging...main" --jq '.ahead_by')
+          if [ "$behind" = "0" ]; then
+            echo "staging already at or ahead of main — nothing to merge back."
+            exit 0
+          fi
+          git checkout staging
+          if git merge --ff-only origin/main; then
+            git push origin staging
+            echo "Fast-forwarded staging to main ($behind commit(s))."
+            exit 0
+          fi
+          # Diverged — open a sync PR instead. Use a deterministic
+          # branch name so repeated runs update the same PR rather
+          # than spawning new ones.
+          echo "staging diverged from main — opening a sync PR."
+          sync_branch="sync/main-to-staging"
+          git checkout -B "$sync_branch" origin/main
+          git push --force-with-lease origin "$sync_branch"
+          existing=$(gh pr list --base staging --head "$sync_branch" --state open --json number --jq '.[0].number // ""')
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --base staging \
+              --head "$sync_branch" \
+              --reviewer brtkwr \
+              --title "chore: sync main → staging" \
+              --body "Auto-sync PR opened by .github/workflows/merge-back.yml after a push to main that couldn't fast-forward into staging. Resolve any conflicts and merge."
+          else
+            echo "Sync PR #$existing already open — updated branch."
+          fi

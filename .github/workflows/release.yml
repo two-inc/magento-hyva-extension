@@ -1,22 +1,23 @@
 name: Release
 
 # Auto-tag on green CI: this fires only after the `CI` workflow finishes
-# on `staging`. The job-level guard below then requires that CI actually
+# on `main`. The job-level guard below then requires that CI actually
 # succeeded before anything is released. This gates releases behind CI
 # rather than firing blindly on every push (the older magento-plugin
 # shape). `workflow_run` triggers off the workflow file on the default
-# branch — which is `staging` here — so this is reliable.
+# branch — which is `staging` here, where this file lives — so this is
+# reliable; the `branches:` filter then scopes it to CI runs on `main`.
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [staging]
+    branches: [main]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-staging
+  group: release-main
   cancel-in-progress: false
 
 jobs:
@@ -24,14 +25,14 @@ jobs:
     runs-on: ${{ vars.RUNNER_STANDARD }}
     # Three guards, any of which stops a release:
     #   1. CI must have concluded successfully.
-    #   2. The run must be for `staging` (PR-CI runs carry the feature
+    #   2. The run must be for `main` (PR-CI runs carry the feature
     #      branch as head_branch and are ignored — belt-and-braces with
     #      the `branches:` filter above).
     #   3. Skip bumpver's own "chore: Bump version" commit, whose push
     #      re-fires CI and would otherwise loop this workflow forever.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'staging' &&
+      github.event.workflow_run.head_branch == 'main' &&
       !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
     steps:
       - name: Mint GitHub App token
@@ -43,7 +44,7 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: staging
+          ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -52,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           # Match bare numeric tags (1.14.2 etc.) — the Two-branded
-          # convention on staging. Reject the legacy `abn-*` prefix (that
+          # convention on main. Reject the legacy `abn-*` prefix (that
           # belongs to the white-label fork on abn-main) so a stale fork
           # tag pointing at HEAD doesn't suppress a legitimate release.
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
@@ -188,7 +189,7 @@ jobs:
           # checkout@v5 already wrote the App token into the remote URL,
           # so this push fires downstream workflows as the App identity
           # (not GITHUB_TOKEN).
-          git push origin staging
+          git push origin main
           git push origin "${NEW}"
 
       - name: Create GitHub Release
@@ -198,6 +199,6 @@ jobs:
           NEW: ${{ steps.ver.outputs.new }}
         run: |
           gh release create "${NEW}" \
-            --target staging \
+            --target main \
             --title "${NEW}" \
             --notes-file release-notes.md
