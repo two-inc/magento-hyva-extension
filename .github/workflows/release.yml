@@ -93,6 +93,21 @@ jobs:
         id: bump
         run: |
           set -euo pipefail
+          # First-release-of-a-seeded-version. If bumpver.toml's
+          # current_version has never been tagged, release it AS-IS
+          # (mode=seed) — the version files are already at that value, so
+          # bumping would overshoot (e.g. a deliberate 2.0.0 launch would
+          # ship as 2.0.1). Otherwise bump normally (mode=bump). Once the
+          # seeded version is tagged, every later release is a normal bump.
+          seeded=$(grep -E '^current_version' bumpver.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if git rev-parse -q --verify "refs/tags/${seeded}" >/dev/null 2>&1; then
+            mode=bump
+          else
+            mode=seed
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "Release mode: $mode (seeded current_version: $seeded)"
+
           prev=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           if [ -n "$prev" ]; then
             range="${prev}..HEAD"
@@ -156,7 +171,9 @@ jobs:
         # bumpver.toml because we tag and push manually after — the manual
         # step lets us push under the App token (so downstream workflows
         # fire) and writes the tag explicitly.
-        if: steps.gate.outputs.skip == '0'
+        # Skipped in seed mode: the files already carry the seeded version,
+        # so there's nothing to bump — we tag it as-is below.
+        if: steps.gate.outputs.skip == '0' && steps.bump.outputs.mode == 'bump'
         env:
           LEVEL: ${{ steps.bump.outputs.level }}
         run: bumpver update "--${LEVEL}" --no-tag-commit --no-push
