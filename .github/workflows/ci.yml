@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [staging]
+  pull_request:
+    branches: [staging]
+
+# Cancel in-progress runs for the same ref when a new push lands.
+# Each PR / branch gets its own group so concurrent unrelated work is
+# unaffected.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (PHP ${{ matrix.php }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two PHP versions bracketing the Magento 2.4 range this Hyvä
+        # extension targets. Kept deliberately lightweight — this is a
+        # syntax gate, not the full PHPUnit/PHPStan/di-compile matrix.
+        php: ["8.1", "8.2"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: none
+      - name: Lint PHP files
+        run: |
+          find . -name '*.php' \
+            -not -path './vendor/*' \
+            -not -path './node_modules/*' \
+            -print0 | xargs -0 -n1 -P4 php -l > /dev/null
