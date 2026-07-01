@@ -1,0 +1,203 @@
+name: Release
+
+# Auto-tag on green CI: this fires only after the `CI` workflow finishes
+# on `staging`. The job-level guard below then requires that CI actually
+# succeeded before anything is released. This gates releases behind CI
+# rather than firing blindly on every push (the older magento-plugin
+# shape). `workflow_run` triggers off the workflow file on the default
+# branch — which is `staging` here — so this is reliable.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [staging]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-staging
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    # Three guards, any of which stops a release:
+    #   1. CI must have concluded successfully.
+    #   2. The run must be for `staging` (PR-CI runs carry the feature
+    #      branch as head_branch and are ignored — belt-and-braces with
+    #      the `branches:` filter above).
+    #   3. Skip bumpver's own "chore: Bump version" commit, whose push
+    #      re-fires CI and would otherwise loop this workflow forever.
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'staging' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
+    steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v5
+        with:
+          ref: staging
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Skip if HEAD already tagged
+        id: gate
+        run: |
+          set -euo pipefail
+          # Match bare numeric tags (1.14.2 etc.) — the Two-branded
+          # convention on staging. Reject the legacy `abn-*` prefix (that
+          # belongs to the white-label fork on abn-main) so a stale fork
+          # tag pointing at HEAD doesn't suppress a legitimate release.
+          existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          if [ -n "$existing" ]; then
+            echo "HEAD already tagged as $existing — nothing to release."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.skip == '0'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install bumpver
+        if: steps.gate.outputs.skip == '0'
+        run: pip install bumpver
+
+      - name: Configure git identity
+        if: steps.gate.outputs.skip == '0'
+        run: |
+          git config user.name "two-inc-app[bot]"
+          git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
+
+      - name: Decide bump level + build release notes
+        # Single pass over `<previous-numeric-tag>..HEAD`:
+        # - Buckets each non-merge commit into Breaking / Features /
+        #   Fixes / Internals / Other based on its conventional-commit
+        #   type, with optional Linear ticket prefix (e.g. INF-123/feat:).
+        # - Writes the bucketed list to release-notes.md so the GitHub
+        #   Release page reflects exactly what triggered the bump level
+        #   (any Breaking entries → major; any Features → minor; else
+        #   patch).
+        if: steps.gate.outputs.skip == '0'
+        id: bump
+        run: |
+          set -euo pipefail
+          prev=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -n "$prev" ]; then
+            range="${prev}..HEAD"
+          else
+            range="HEAD"
+          fi
+
+          : > release-notes.md
+          : > /tmp/breaking
+          : > /tmp/features
+          : > /tmp/fixes
+          : > /tmp/internals
+          : > /tmp/other
+
+          while IFS=$'\t' read -r sha subject; do
+            line="- ${subject} (${sha})"
+            if echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?[a-z]+(\([^)]+\))?!:|^BREAKING CHANGE:'; then
+              echo "$line" >> /tmp/breaking
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?feat(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/features
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?fix(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/fixes
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?(chore|refactor|ci|docs|test|build|perf|style)(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/internals
+            else
+              echo "$line" >> /tmp/other
+            fi
+          done < <(git log "$range" --no-merges --format='%h%x09%s')
+
+          # Bump level is the highest-severity bucket that's non-empty.
+          if [ -s /tmp/breaking ]; then
+            level=major
+          elif [ -s /tmp/features ]; then
+            level=minor
+          else
+            level=patch
+          fi
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          echo "Selected bump level: $level (range: $range)"
+
+          # Render notes — only print sections that have entries.
+          {
+            [ -s /tmp/breaking ]  && { echo "## ⚠️ Breaking changes";  cat /tmp/breaking;  echo; }
+            [ -s /tmp/features ]  && { echo "## 🚀 Features";          cat /tmp/features;  echo; }
+            [ -s /tmp/fixes ]     && { echo "## 🐛 Fixes";              cat /tmp/fixes;     echo; }
+            [ -s /tmp/internals ] && { echo "## 🧰 Internals";          cat /tmp/internals; echo; }
+            [ -s /tmp/other ]     && { echo "## Other";                 cat /tmp/other;     echo; }
+          } > release-notes.md
+          # Stash the previous tag so the post-bump step can append a
+          # "Full diff" link with the proper <prev>..<new> range —
+          # the new tag isn't known yet at this point.
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
+          echo "--- release-notes.md preview ---"
+          cat release-notes.md
+
+      - name: Bump version (bumpver — files + commit only)
+        # bumpver.toml is the single source of truth for which files
+        # carry the version (composer.json + etc/config.xml + README.md).
+        # --no-tag-commit --no-push override the tag=true/push=true in
+        # bumpver.toml because we tag and push manually after — the manual
+        # step lets us push under the App token (so downstream workflows
+        # fire) and writes the tag explicitly.
+        if: steps.gate.outputs.skip == '0'
+        env:
+          LEVEL: ${{ steps.bump.outputs.level }}
+        run: bumpver update "--${LEVEL}" --no-tag-commit --no-push
+
+      - name: Read new version
+        if: steps.gate.outputs.skip == '0'
+        id: ver
+        run: |
+          new=$(bumpver show --environ | grep '^CURRENT_VERSION=' | cut -d= -f2)
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+          echo "Released $new"
+
+      - name: Append full-diff link to release notes
+        if: steps.gate.outputs.skip == '0'
+        env:
+          PREV: ${{ steps.bump.outputs.prev }}
+          NEW: ${{ steps.ver.outputs.new }}
+        run: |
+          if [ -n "$PREV" ]; then
+            echo "**Full diff:** [\`${PREV}..${NEW}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV}...${NEW})" >> release-notes.md
+          fi
+
+      - name: Tag + push
+        if: steps.gate.outputs.skip == '0'
+        env:
+          NEW: ${{ steps.ver.outputs.new }}
+        run: |
+          set -euo pipefail
+          git tag -a "${NEW}" -m "Release v${NEW}"
+          # checkout@v5 already wrote the App token into the remote URL,
+          # so this push fires downstream workflows as the App identity
+          # (not GITHUB_TOKEN).
+          git push origin staging
+          git push origin "${NEW}"
+
+      - name: Create GitHub Release
+        if: steps.gate.outputs.skip == '0'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW: ${{ steps.ver.outputs.new }}
+        run: |
+          gh release create "${NEW}" \
+            --target staging \
+            --title "${NEW}" \
+            --notes-file release-notes.md
