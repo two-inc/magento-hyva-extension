@@ -47,9 +47,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          matrix=$(./dev/magento-support-matrix.sh --emit-matrix)
-          skips=$(./dev/magento-support-matrix.sh --emit-skips)
-          php_lint_matrix=$(./dev/magento-support-matrix.sh --emit-php-lint-matrix)
+          # One classification, sliced three ways (--emit-all) so run/skip/lint
+          # are mutually consistent and we hit upstream + Docker Hub once, not 3x
+          # (review: brtkwr on #237).
+          all=$(./dev/magento-support-matrix.sh --emit-all)
+          matrix=$(echo "$all" | jq -c '.matrix')
+          skips=$(echo "$all" | jq -c '.skips')
+          php_lint_matrix=$(echo "$all" | jq -c '.php_lint')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "php_lint_matrix=$php_lint_matrix" >> "$GITHUB_OUTPUT"
           echo "Runnable PHPStan / DI-compile matrix:"
@@ -144,10 +148,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Run codesniffer
+        # Pinned by digest (was `:latest`) so a new upstream coding-standard
+        # release can't flip CI red with no repo change (review: brtkwr on #55).
+        # To bump: docker pull …:latest && docker inspect --format
+        # '{{index .RepoDigests 0}}' …, then update the digest here.
         run: |
           docker run \
             --volume "$(pwd)/:/app/workdir" \
-            michielgerritsen/magento-coding-standard:latest \
+            michielgerritsen/magento-coding-standard@sha256:48ad208ebbda2e60be6e6c4f1abfe41e75e6339619f109dbf0581624d79e815e \
             --severity=6
 
   di-compile:

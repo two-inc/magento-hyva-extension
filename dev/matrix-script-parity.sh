@@ -34,11 +34,22 @@ canonical=$(mktemp)
 trap 'rm -f "$canonical"' EXIT
 
 # Fetch the raw file via the GitHub raw media type — avoids the JSON+base64
-# round-trip (and `base64 -d`'s GNU/BSD flag portability quirk).
-if ! gh api -H "Accept: application/vnd.github.raw" \
-       "repos/${canonical_repo}/contents/${canonical_path}?ref=${canonical_ref}" \
-       > "$canonical" 2>/dev/null; then
-    echo "::error::matrix-script-parity: failed to fetch canonical ${canonical_path} from ${canonical_repo}@${canonical_ref}."
+# round-trip (and `base64 -d`'s GNU/BSD flag portability quirk). Retry a few
+# times so a transient API blip reds the check only for genuine drift, not a
+# one-off network hiccup — parity with the classifier's own fetch_json retry
+# (review: brtkwr on #153).
+fetched=0
+for attempt in 1 2 3; do
+    if gh api -H "Accept: application/vnd.github.raw" \
+           "repos/${canonical_repo}/contents/${canonical_path}?ref=${canonical_ref}" \
+           > "$canonical" 2>/dev/null; then
+        fetched=1
+        break
+    fi
+    [ "$attempt" -lt 3 ] && sleep 3
+done
+if [ "$fetched" -ne 1 ]; then
+    echo "::error::matrix-script-parity: failed to fetch canonical ${canonical_path} from ${canonical_repo}@${canonical_ref} after 3 attempts."
     exit 1
 fi
 

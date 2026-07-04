@@ -70,6 +70,13 @@ case "${1:-}" in
     --emit-matrix) mode=matrix ;;
     --emit-skips) mode=skips ;;
     --emit-php-lint-matrix) mode=php_lint ;;
+    # One classification, all three slices in a single object. The CI discover
+    # step uses this so the run-list, skip-list and lint-list come from ONE run
+    # of the classifier — not three independent runs that each re-fetch upstream
+    # and re-probe every image. Prevents a transient `docker manifest inspect`
+    # blip from putting a combo in one slice but not its mirror, and cuts the
+    # anonymous Docker Hub rate-limit exposure 3x (review: brtkwr on #237).
+    --emit-all) mode=all ;;
     "") mode=report ;;
     *) echo "Unknown flag: $1" >&2; exit 2 ;;
 esac
@@ -140,6 +147,13 @@ fetch_json() {
 # a Docker Hub blip must not silently zero the matrix). `docker manifest
 # inspect` returns non-zero for both cases, so we inspect stderr: a clear
 # "not found"-class message → missing; anything else → retry once → error.
+#
+# Trade-off (by design, review: brtkwr on #237): because "error" maps to RUN,
+# under degraded / rate-limited registry conditions a genuinely-missing image
+# is classified `run` and surfaces as a RED matrix leg rather than the intended
+# yellow (::warning::) skip. We prefer a loud red on a Docker Hub blip over a
+# silent green that hides zero coverage. Every such case emits the ::warning::
+# above, so the run/skip mismatch is greppable in the job log.
 # ---------------------------------------------------------------------------
 probe_image() {
     local img="$1" attempt out
@@ -358,6 +372,14 @@ case "$mode" in
         ;;
     php_lint)
         echo "$php_lint_json"
+        ;;
+    all)
+        # Single-classification bundle for the CI discover step (see --emit-all).
+        jq -nc \
+            --argjson matrix "$run_json" \
+            --argjson skips "$skip_json" \
+            --argjson php_lint "$php_lint_json" \
+            '{matrix: $matrix, skips: $skips, php_lint: $php_lint}'
         ;;
     report)
         echo ""
