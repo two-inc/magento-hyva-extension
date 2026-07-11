@@ -17,7 +17,7 @@ TWO_STORE_COUNTRY    ?= NO
 HYVA_PACKAGIST_URL   ?= https://hyva-themes.repo.packagist.com
 export PORT
 
-.PHONY: help install configure compile run debug stop clean logs proxy archive patch minor major format
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test
 
 .DEFAULT_GOAL := help
 
@@ -51,8 +51,12 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway Two_GatewayHyva
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
-	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
+	# di:compile before deploy:mode:set developer — di:compile resets Magento
+	# to production mode as a side effect, so setting developer mode first
+	# gets silently wiped. Ordering bug originally caught on abn-develop
+	# (commit 28a55d8), ported forward here.
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
+	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key) TWO_ENV=$(TWO_ENV)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	@echo ""
@@ -134,6 +138,13 @@ stop:
 	-docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy --reset 2>/dev/null
 	docker stop $(CONTAINER)
 
+## Clear static content and flush caches (frontend + adminhtml JS/CSS/templates)
+flush:
+	docker exec $(CONTAINER) bash -c \
+		"rm -rf pub/static/frontend/* var/view_preprocessed/pub/static/frontend/* \
+		pub/static/adminhtml/* var/view_preprocessed/pub/static/adminhtml/* \
+		&& php bin/magento cache:flush"
+
 ## Remove the Magento container and stop proxy
 clean:
 	-./start-proxy.sh stop 2>/dev/null
@@ -168,3 +179,19 @@ major: bumpver-major
 format:
 	prettier -w view/frontend/templates/
 	prettier -w view/frontend/web/css/
+
+# ==============================================================================
+# Tests
+# ==============================================================================
+
+# Pinned to match phpunit.xml's schema (10.5) and CI's `tools: phpunit:10.5`
+# pin (.github/workflows/ci.yml) — keep these three in lockstep.
+PHPUNIT_VERSION := 10.5.64
+PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
+
+## Run PHPUnit tests (self-contained stub bootstrap, no Magento required)
+test:
+	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
+		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
+		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
+		&& php /tmp/phpunit.phar"
