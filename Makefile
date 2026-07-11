@@ -191,7 +191,7 @@ PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8e
 
 ## Run PHPUnit tests (self-contained stub bootstrap, no Magento required)
 test:
-	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
+	docker run --rm --user "$$(id -u):$$(id -g)" -v $(CURDIR):/app -w /app php:8.2-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
