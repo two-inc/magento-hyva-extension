@@ -12,7 +12,7 @@ This document provides instructions for installing the Two Gateway Payment Metho
 | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Magento            | 2.4.x   | [Release Notes](https://experienceleague.adobe.com/en/docs/commerce-operations/release/notes/magento-open-source/2-4-8) |
 | Two Gateway Module | ^1.13.1 | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
-| Hyvä Checkout      | ^1.3    | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html)                                                                 |
+| Hyvä Checkout      | ^1.2    | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html)                                                                 |
 
 ## Prerequisites
 
