@@ -5,6 +5,14 @@
  * and DI-compiled without Hyvä credentials.
  *
  * Called by: make install (when auth.json is absent)
+ *
+ * DRIFT CAVEAT (review: brtkwr on #55): these class stubs are authored by the
+ * same hand as the consumer, so di:compile against them can't catch SIGNATURE
+ * drift in the real licensed `hyva-themes/magento2-hyva-checkout` package — a
+ * method/const the real Hyvä base class renamed would still "pass" here. There
+ * is deliberately no automated drift guard (the real package isn't fetchable in
+ * CI). Mitigation: review this stub set against the Hyvä changelog whenever the
+ * `hyva-themes/magento2-hyva-checkout` constraint is bumped in composer.json.
  */
 
 // 1. Stub packages in composer provides

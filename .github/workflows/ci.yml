@@ -13,27 +13,202 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Job-name convention: `<Tool> (PHP X.Y[, Magento Z.A.B])`.
+# Tool name first so checks group naturally in the UI.
+
 jobs:
+  # dev/magento-support-matrix.sh is vendored byte-for-byte from the vanilla
+  # two-inc/magento-plugin repo (its `staging` branch is the source of truth —
+  # TWO-24998). This job fails CI red if the local copy has drifted, so the
+  # classifier can't silently rot across the three repos that share it.
+  matrix-script-parity:
+    name: Matrix-script parity
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check classifier matches the canonical copy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./dev/matrix-script-parity.sh
+
+  # Discovers the current Magento support window from upstream so the
+  # PHPStan / DI-compile / lint matrices track Adobe's lifecycle without
+  # hand-maintenance. `dev/magento-support-matrix.sh` is the single
+  # source of truth for which Magento × PHP combinations CI exercises.
+  discover-magento-matrix:
+    name: Discover Magento support matrix
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      php_lint_matrix: ${{ steps.gen.outputs.php_lint_matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: gen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # One classification, sliced three ways (--emit-all) so run/skip/lint
+          # are mutually consistent and we hit upstream + Docker Hub once, not 3x
+          # (review: brtkwr on #237).
+          all=$(./dev/magento-support-matrix.sh --emit-all)
+          matrix=$(echo "$all" | jq -c '.matrix')
+          skips=$(echo "$all" | jq -c '.skips')
+          php_lint_matrix=$(echo "$all" | jq -c '.php_lint')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "php_lint_matrix=$php_lint_matrix" >> "$GITHUB_OUTPUT"
+          echo "Runnable PHPStan / DI-compile matrix:"
+          echo "$matrix" | jq .
+          echo "Skipped (NOT tested) combinations:"
+          echo "$skips" | jq .
+          echo "Generated PHP lint matrix:"
+          echo "$php_lint_matrix" | jq .
+
+          # The run/skip decision is made HERE, at matrix-assembly time — the
+          # test jobs only ever receive runnable combos, so a green test leg
+          # always means "tested" (TWO-24998). Untestable combos never become
+          # green legs; instead they are surfaced two ways that read clearly as
+          # "not run" at a glance:
+          #   1. a coverage table in this job's step summary, and
+          #   2. one ::warning:: annotation per skipped combo (yellow, shown on
+          #      the run summary — distinct from a green pass).
+          {
+            echo "## Magento × PHP version coverage"
+            echo ""
+            echo "| Magento | PHP | Status | Reason |"
+            echo "|---|---|---|---|"
+            echo "$matrix" | jq -r '.[] | "| \(.magento) | \(.php) | ✅ tested | |"'
+            echo "$skips"  | jq -r '.[] | "| \(.magento) | \(.php) | 🚫 NOT run | \(.skip_reason) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$skips" | jq -r '.[]
+            | "::warning title=Combination NOT tested::\(.magento) / PHP \(.php) — \(.skip_reason)"'
+
   lint:
     name: Lint (PHP ${{ matrix.php }})
+    needs: discover-magento-matrix
     runs-on: ${{ vars.RUNNER_STANDARD }}
     strategy:
       fail-fast: false
       matrix:
-        # Two PHP versions bracketing the Magento 2.4 range this Hyvä
-        # extension targets. Kept deliberately lightweight — this is a
-        # syntax gate, not the full PHPUnit/PHPStan/di-compile matrix.
-        php: ["8.1", "8.2"]
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.php_lint_matrix) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           coverage: none
           tools: none
       - name: Lint PHP files
+        # Test/ is excluded — tests are dev-only and use newer syntax
+        # than the merchant runtime. The phpunit matrix already
+        # exercises Test/ on the supported PHP minors.
         run: |
           find . -name '*.php' \
             -not -path './vendor/*' \
             -not -path './node_modules/*' \
+            -not -path './Test/*' \
             -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    needs: discover-magento-matrix
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.php_lint_matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: pcov
+          # PHPUnit 10.5 supports PHP 8.1-8.4. If a future PHP minor
+          # (e.g. 8.5) enters the support window and PHPUnit 10.5 has
+          # not been updated to cover it, bump this pin to 11.x.
+          tools: phpunit:10.5
+
+      # The unit tests use a self-contained stub bootstrap (Test/bootstrap.php
+      # + Test/Stubs/) — no Magento framework or composer install required.
+      - name: Run tests with coverage
+        run: phpunit --coverage-clover coverage.xml --coverage-text
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-php${{ matrix.php }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  codesniffer:
+    name: Codesniffer
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run codesniffer
+        # Pinned by digest (was `:latest`) so a new upstream coding-standard
+        # release can't flip CI red with no repo change (review: brtkwr on #55).
+        # To bump: docker pull …:latest && docker inspect --format
+        # '{{index .RepoDigests 0}}' …, then update the digest here.
+        run: |
+          docker run \
+            --volume "$(pwd)/:/app/workdir" \
+            michielgerritsen/magento-coding-standard@sha256:48ad208ebbda2e60be6e6c4f1abfe41e75e6339619f109dbf0581624d79e815e \
+            --severity=6
+
+  di-compile:
+    name: DI compile (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    needs: discover-magento-matrix
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
+    steps:
+      # The matrix carries only runnable combos (see discover-magento-matrix),
+      # so every leg here is a real test — a green leg means "tested".
+      - uses: actions/checkout@v7
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Upload tracked source into container
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-hyva-extension
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-hyva-extension
+
+      - name: Stub Hyvä / Magewire (no commercial credentials in CI)
+        # The Hyvä checkout package (hyva-themes/magento2-hyva-checkout) is
+        # commercial and can't be pulled in CI without credentials. dev/stub-hyva
+        # satisfies it via composer `provide` + minimal class stubs so
+        # setup:di:compile exercises the module structure credential-free. This
+        # is structural coverage, not a true Hyvä-integration run (TWO-24999).
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-hyva-extension/dev/stub-hyva
+
+      - name: Install extension from uploaded source
+        # The Hyvä module requires the base Two plugin (two-inc/magento2 ^2.0);
+        # composer pulls it from Packagist (public) alongside the local path copy.
+        run: |
+          docker exec magento-project-community-edition \
+            composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
+
+      - name: Run setup:di:compile
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+  # NOTE: no jest job — this module ships no JS tests (package.json is
+  # prettier-only). A `prettier --check` gate was considered (TWO-24999) but
+  # deferred: the tree is not currently prettier-clean (23 files), so the gate
+  # would require a repo-wide `prettier --write` reformat first — a separate
+  # formatting decision, tracked out of this CI-enablement change.
