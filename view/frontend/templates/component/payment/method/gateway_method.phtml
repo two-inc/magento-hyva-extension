@@ -204,9 +204,16 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                             </div>
                         </div>
                         <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
+                            <!--
+                                `two-company-search` wraps ONLY the input, so
+                                it does not become the containing block for
+                                the absolutely-positioned dropdown below and
+                                change how its `w-full` resolves.
+                            -->
+                            <span class="two-company-search block w-full">
                             <input
                                 type="text"
-                                @input.debounce.500ms="getItems"
+                                @input.debounce.300ms="getItems"
                                 @focus="<?= $gwBase ?>OnCompanySearchFocus"
                                 @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
                                 @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
@@ -223,6 +230,23 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 required
                                 data-validate='{"required": true}'
                                 >
+                            <!--
+                                In-field searching indicator. Reuses the
+                                payment-term chips' three-dot loader
+                                (`two-term-chip__loading`, styled and animated
+                                by Two_Gateway) rather than introducing a
+                                second loading idiom; custom.css only supplies
+                                the positioning that puts it inside the field.
+                                Deliberately NOT the global magewire loader —
+                                a full-screen overlay on every keystroke is
+                                the bug that pattern replaced.
+                            -->
+                            <span
+                                x-show="isSearching"
+                                class="two-company-search__spinner two-term-chip__loading"
+                                aria-hidden="true"
+                            ><span>.</span><span>.</span><span>.</span></span>
+                            </span>
                             <!-- Search Results Dropdown -->
                             <div
                                 x-show="isOpen"
@@ -250,6 +274,19 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                     </template>
                                 </div>
                                 <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?>
+                                </div>
+                                <!--
+                                    A timed-out, failed or degraded search must
+                                    not look like "no companies matched" — that
+                                    is how a buyer with a valid company decides
+                                    we won't take them. Points at the manual
+                                    entry that already sits below.
+                                -->
+                                <div
+                                    x-show="isSearchUnavailable"
+                                    role="alert"
+                                    class="two-company-search__unavailable mx-2 mt-3 px-2 py-2 text-sm"
+                                ><?= $escaper->escapeHtmlAttr(__("Company search is unavailable. Try again, or enter details manually.")) ?>
                                 </div>
                                 <div
                                     id="billing_enter_company"
