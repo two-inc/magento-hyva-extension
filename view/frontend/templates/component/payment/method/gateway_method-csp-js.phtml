@@ -32,7 +32,9 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $companySearchLimit = $configModel->getCompanySearchLimit();
 $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
-$orderIntentApprovedMessage = $configModel->getOrderIntentApprovedMessage();
+// null ⇒ the active brand switched the notice off; the component's setter
+// then no-ops and gateway_method.phtml emits no element at all.
+$orderIntentApprovedNotice = $configModel->getOrderIntentApprovedNotice();
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
@@ -285,9 +287,19 @@ $quoteDetails = json_encode($quoteDetails);
             checkoutApiUrl: '<?= $checkoutApiUrl ?>',
             companySearchLimit: '<?= $companySearchLimit ?>',
             isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
-            orderIntentApprovedMessage: '<?= $escaper->escapeJs(
-                __($orderIntentApprovedMessage),
-            ) ?>',
+            // Resolved copy for the persistent inline intent-approved notice,
+            // or null when the brand switched it off. json_encode with the HEX
+            // flags is the safe form inside a <script> block; escapeJs() only
+            // handles scalars.
+            orderIntentApprovedNoticeCopy: <?= /* @noEscape */ json_encode(
+                $orderIntentApprovedNotice,
+                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE,
+            ) ?>,
+            // Live notice text. '' keeps the x-show'd element hidden and, more
+            // importantly, keeps the property defined even for a brand that
+            // suppressed the notice — an undefined property would make Alpine
+            // throw on every x-show evaluation.
+            orderIntentApprovedNotice: '',
             orderIntentDeclinedMessage: '<?= $escaper->escapeJs(
                 __($orderIntentDeclinedMessage),
             ) ?>',
@@ -432,6 +444,23 @@ $quoteDetails = json_encode($quoteDetails);
                 this.manualMode = shippingCompanySelectionData.manual_mode || false;
                 this.companyIdDisabled = !this.manualMode;
                 this.companyIdBgStyle = !this.manualMode ? 'background-color: #D3D3D3' : '';
+
+                // The intent-approved notice is persistent — it survives
+                // checkout re-renders and failed place-order validation, which
+                // is the point of it being an inline element rather than a
+                // 5-second toast. It must NOT survive the buyer's company
+                // changing, because the approval it reports was for the
+                // previous company. fillCompanyData() writes companyName /
+                // companyId before dispatching the intent, so these watchers
+                // clear first and processOrderIntentSuccessResponse re-sets
+                // afterwards; a company edited by hand clears the notice and
+                // leaves it cleared, which is the correct fail-closed outcome.
+                this.$watch('companyName', () => {
+                    this.orderIntentApprovedNotice = '';
+                });
+                this.$watch('companyId', () => {
+                    this.orderIntentApprovedNotice = '';
+                });
 
                 // Watch manualMode and update derived state reactively
                 this.$watch('manualMode', (value) => {
@@ -742,6 +771,26 @@ $quoteDetails = json_encode($quoteDetails);
                 };
             },
 
+            /**
+             * Resolve the intent-approved notice text for the current buyer.
+             * Returns '' when the brand suppressed the notice, so callers can
+             * assign the result unconditionally.
+             *
+             * The company name is substituted here because it is only known
+             * client-side. A replacer *function* is used rather than a plain
+             * string so `$&` / `$1` in a company name are taken literally
+             * instead of as replacement patterns.
+             */
+            resolveOrderIntentApprovedNotice() {
+                const copy = this.orderIntentApprovedNoticeCopy;
+                if (!copy) return '';
+
+                const companyName = (this.companyName || '').trim();
+                if (!companyName) return copy.withoutCompany;
+
+                return copy.withCompany.replace(copy.companyNameToken, () => companyName);
+            },
+
             processOrderIntentSuccessResponse(response) {
                 if (!response) return;
 
@@ -750,15 +799,24 @@ $quoteDetails = json_encode($quoteDetails);
 
                 if (response.approved) {
                     this.placeOrderIntentFlag = true;
-                    window.dispatchMessages([{ type: 'success', text: this.orderIntentApprovedMessage }], 5000);
+                    // Persistent inline notice inside the payment tile, not a
+                    // window.dispatchMessages() toast. The toast was visible
+                    // but self-dismissed after 5 seconds, so a buyer still
+                    // filling in the form never saw the reassurance at the
+                    // moment it was useful.
+                    this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
                 } else {
                     this.placeOrderIntentFlag = false;
+                    this.orderIntentApprovedNotice = '';
                     window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 5000);
                 }
             },
 
             processOrderIntentErrorResponse(response) {
                 this.placeOrderIntentFlag = false;
+                // An intent that errored says nothing about approval; drop any
+                // notice left over from a previous, successful intent.
+                this.orderIntentApprovedNotice = '';
                 let message = this.generalErrorMessage;
 
                 if (response?.responseJSON) {

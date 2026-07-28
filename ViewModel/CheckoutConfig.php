@@ -23,6 +23,17 @@ use Two\Gateway\Model\Two;
 class CheckoutConfig implements ArgumentInterface
 {
     /**
+     * Placeholder the Alpine component substitutes the buyer's company name
+     * into. Deliberately a local constant rather than a reference to the
+     * parent module's Two\Gateway\Model\Ui\ConfigProvider: the token never
+     * crosses the module boundary at runtime (this view model produces it and
+     * this module's own JS consumes it), and referencing the parent's
+     * constant would fatal on a parent release that predates it, defeating
+     * the method_exists() degradation in getOrderIntentApprovedNotice().
+     */
+    public const COMPANY_NAME_TOKEN = "{{companyName}}";
+
+    /**
      * @var ConfigRepository
      */
     private $configRepository;
@@ -214,13 +225,66 @@ class CheckoutConfig implements ArgumentInterface
         return $key === '' ? '' : (string)__($key);
     }
 
-    public function getOrderIntentApprovedMessage()
+    /**
+     * Buyer-facing "order intent approved" notice, or null when the active
+     * brand has switched it off.
+     *
+     * Null means the template must emit no element at all — not an empty
+     * wrapper. Otherwise both resolved copy variants are returned plus the
+     * token the Alpine component substitutes the buyer's company name into
+     * (the company name is only ever known client-side):
+     *
+     *   withCompany    — company known; the normal case, since an order
+     *                    intent is only placed once the buyer's company
+     *                    name and number are both resolved
+     *   withoutCompany — defensive fallback
+     *
+     * Mirrors Two\Gateway\Model\Ui\ConfigProvider on the Luma side; the
+     * three-state brand.xml contract lives on
+     * Two\Gateway\Model\Brand\Descriptor::getIntentApprovedNotice().
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
+     */
+    public function getOrderIntentApprovedNotice(): ?array
     {
-        $orderIntentApprovedMessage = __(
-            "Your invoice purchase with %1 is likely to be accepted subject to additional checks.",
-            $this->brandRegistry->getProductName(),
-        );
-        return $orderIntentApprovedMessage;
+        // Degrade gracefully on an older parent. composer.json requires
+        // two-inc/magento2 ~2.0.0, which cannot express "the patch release
+        // that added getIntentApprovedNotice()" — and tightening the
+        // constraint would block installs on parents that are otherwise
+        // perfectly compatible. A missing method therefore means "no brand
+        // override available", i.e. the platform default copy with the notice
+        // ON, which is correct for every brand that has not opted out. Drop
+        // this guard once the parent constraint moves past the release that
+        // introduced the method.
+        $override = method_exists($this->brandRegistry, "getIntentApprovedNotice")
+            ? $this->brandRegistry->getIntentApprovedNotice()
+            : null;
+
+        if ($override === "") {
+            return null;
+        }
+
+        $productName = $this->brandRegistry->getProductName();
+
+        // The default is spelled as a literal __() argument so
+        // i18n:collect-phrases and the overlay repos' i18n audit can still see
+        // it; the override branch takes a variable by necessity.
+        $withCompany = $override === null
+            ? __(
+                "Your invoice with %1 is likely to be accepted for %2, subject to additional checks.",
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN);
+
+        return [
+            "withCompany" => (string) $withCompany,
+            "withoutCompany" => (string) __(
+                "Your invoice with %1 is likely to be accepted, subject to additional checks.",
+                $productName,
+            ),
+            "companyNameToken" => self::COMPANY_NAME_TOKEN,
+        ];
     }
 
     public function getOrderIntentDeclinedMessage()
