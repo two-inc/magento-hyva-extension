@@ -203,7 +203,14 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 </p>
                             </div>
                         </div>
-                        <div class="w-full two-company-search" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
+                        <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
+                            <!--
+                                `two-company-search` wraps ONLY the input, so
+                                it does not become the containing block for
+                                the absolutely-positioned dropdown below and
+                                change how its `w-full` resolves.
+                            -->
+                            <span class="two-company-search block w-full">
                             <input
                                 type="text"
                                 @input.debounce.300ms="getItems"
@@ -239,6 +246,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 class="two-company-search__spinner two-term-chip__loading"
                                 aria-hidden="true"
                             ><span>.</span><span>.</span><span>.</span></span>
+                            </span>
                             <!-- Search Results Dropdown -->
                             <div
                                 x-show="isOpen"

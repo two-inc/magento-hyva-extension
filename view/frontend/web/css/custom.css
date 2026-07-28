@@ -208,6 +208,15 @@ summary::marker {
   position: relative;
 }
 
+/*
+ * Reserve room for the dots unconditionally rather than only while
+ * searching — toggling padding would shift the caret mid-typing, and
+ * without it the spinner sits on top of a long company name.
+ */
+.two-company-search > input {
+  padding-right: 34px;
+}
+
 .two-company-search__spinner {
   position: absolute;
   top: 50%;

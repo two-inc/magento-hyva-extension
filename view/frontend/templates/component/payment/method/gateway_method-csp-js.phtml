@@ -161,14 +161,18 @@ $quoteDetails = json_encode($quoteDetails);
         }
 
         // Two signals: the caller's (next keystroke / teardown) and our own
-        // timeout. Whichever fires first aborts the fetch, and the catch
-        // below tells them apart — an abort is silent, a timeout is not.
+        // timeout. Whichever fires first aborts the fetch. The catch below
+        // tells them apart by asking the CALLER's signal whether it aborted,
+        // not by inspecting the error — the error is an AbortError either
+        // way, so a reason argument would be decoration. Ordering is safe:
+        // once our timer calls abort(), the fetch rejection drains as a
+        // microtask before any later task can abort the caller's signal.
         const controller = new AbortController();
         const timer = setTimeout(
-            () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+            () => controller.abort(),
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
-        const onCallerAbort = () => controller.abort(new DOMException('aborted', 'AbortError'));
+        const onCallerAbort = () => controller.abort();
         if (options.signal) {
             if (options.signal.aborted) {
                 clearTimeout(timer);
@@ -200,8 +204,9 @@ $quoteDetails = json_encode($quoteDetails);
             return { status: items.length ? 'ok' : 'empty', items: items };
         } catch (error) {
             // A caller-driven abort is the buyer typing on, or the component
-            // being torn down — expected, and silent by design. A timeout
-            // reaches here as a TimeoutError and must NOT be silent.
+            // being torn down — expected, and silent by design. A timeout is
+            // NOT an abort as far as the buyer is concerned and must be
+            // reported as a failure.
             const isCallerAbort = options.signal && options.signal.aborted;
             if (isCallerAbort) return { status: 'aborted', items: [] };
 
@@ -437,7 +442,6 @@ $quoteDetails = json_encode($quoteDetails);
             isSelecting: false,
             isPaymentTermsAccepted: false,
             selectedIndex: -1,
-            searchTimeout: '',
             // Company-search request state. `isSearching` drives the in-field
             // spinner; `isSearchUnavailable` drives the "try again / enter
             // manually" notice, which must be distinguishable from a genuine
@@ -555,6 +559,13 @@ $quoteDetails = json_encode($quoteDetails);
                 this.showManual = false;
             },
             <?= $gwBase ?>OnManualEntryClick() {
+                // This — not enterManually() — is what the visible "Enter
+                // details manually" link binds. A search still on the wire
+                // would otherwise land after the switch, spin the spinner
+                // forever and reopen the dropdown over the manual fields.
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
                 this.showManual = true;
             },
             <?= $gwBase ?>OnCompanyItemClick(event) {
@@ -665,8 +676,18 @@ $quoteDetails = json_encode($quoteDetails);
 
             // Company search methods
             async getItems() {
-                if (this.isSelecting) { this.isSelecting = false; return; }
-                if (this.manualMode) return;
+                // Every early return below must leave the spinner down and no
+                // request on the wire, or `isSearching` latches true and the
+                // dots spin forever.
+                if (this.isSelecting) {
+                    this.isSelecting = false;
+                    this.abortCompanySearch();
+                    return;
+                }
+                if (this.manualMode) {
+                    this.abortCompanySearch();
+                    return;
+                }
 
                 this.search = this.$el.value;
                 this.selectedIndex = -1;
@@ -685,10 +706,10 @@ $quoteDetails = json_encode($quoteDetails);
                         this.countrySelectionShown = true;
                         window.dispatchMessages([{ type: 'warning', text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>' }], 5000);
                     }
+                    this.abortCompanySearch();
                     return;
                 }
 
-                clearTimeout(this.searchTimeout);
                 this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();

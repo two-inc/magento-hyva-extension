@@ -71,7 +71,6 @@ document.addEventListener('alpine:init', () => {
         quote : '<?= $quoteDetailsJson ?>',
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
         countrySelectionShown: false,
-        searchTimeout: '',
         selectedIndex: -1,
         // Company-search request state. `isSearching` is for an in-field
         // spinner and `isSearchUnavailable` for the "try again / enter
@@ -107,7 +106,6 @@ document.addEventListener('alpine:init', () => {
             }
 
             if (this.countryCode) {
-                clearTimeout(this.searchTimeout);
                 this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
@@ -126,6 +124,12 @@ document.addEventListener('alpine:init', () => {
                 this.searchAbortController = controller;
                 this.isSearching = true;
 
+                // This picker has no inline spinner markup of its own (its
+                // template lives outside this module — see the note on
+                // isSearchUnavailable below), so the magewire loader stays as
+                // its only progress signal rather than being removed and
+                // replaced with nothing.
+                window.dispatchEvent(new Event('magewire:loader:start'));
                 const result = await window.twoGatewayCompanySearch({
                     checkoutApiUrl: this.checkoutApiUrl,
                     countryCode: this.countryCode,
@@ -133,21 +137,35 @@ document.addEventListener('alpine:init', () => {
                     limit: this.companySearchLimit,
                     signal: controller.signal,
                 });
+                window.dispatchEvent(new Event('magewire:loader:done'));
 
                 // Superseded by a newer search, or the component was
                 // destroyed by a DOM morph while this was in flight. Writing
                 // to a detached instance is the bug the isConnected guards
-                // above were added for; stay silent.
+                // above were added for; stay silent — but clear our own state
+                // first so the next search doesn't inherit a latched spinner.
                 if (result.status === 'aborted' || this.searchAbortController !== controller) return;
-                if (!this.$el || !this.$el.isConnected) return;
+                if (!this.$el || !this.$el.isConnected) {
+                    this.searchAbortController = null;
+                    this.isSearching = false;
+                    return;
+                }
 
                 this.searchAbortController = null;
                 this.isSearching = false;
                 this.items = result.items;
                 // A timeout, non-2xx, network error or degraded 200 must not
                 // be rendered as "no companies found".
+                //
+                // NOTE: nothing in THIS module binds `isSearchUnavailable` —
+                // `searchInput` is registered into head.additional and its
+                // markup lives elsewhere (and the branded overlay ships its
+                // own fork of this template). So the dropdown is deliberately
+                // NOT forced open on a failure here: doing so would show an
+                // empty box with no explanation. The state is exposed for
+                // whichever template renders it.
                 this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
-                if (this.items.length > 0 || this.isSearchUnavailable) {
+                if (this.items.length > 0) {
                     this.isOpen = true;
                 }
             } else {
@@ -248,6 +266,10 @@ document.addEventListener('alpine:init', () => {
         },
         closeCompanyList(event) {
             if (event.key === 'Tab') {
+                // Without the abort, an in-flight search lands after the
+                // buyer has tabbed away and reopens the dropdown.
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
                 this.isOpen = false;
                 this.items = [];
             }

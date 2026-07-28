@@ -79,8 +79,17 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         async getItems() {
-            if (this.isSelecting) { this.isSelecting = false; return; }
-            if (this.manualMode) return;
+            // Every early return must leave the spinner down and nothing on
+            // the wire, or `isSearching` latches true.
+            if (this.isSelecting) {
+                this.isSelecting = false;
+                this.abortCompanySearch();
+                return;
+            }
+            if (this.manualMode) {
+                this.abortCompanySearch();
+                return;
+            }
             this.search = this.$el.value;
             this.selectedIndex = -1;
             this.isSearchUnavailable = false;
@@ -102,6 +111,7 @@ function <?= $gwBase ?>CompanySearchField() {
                         text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>'
                     }], 5000);
                 }
+                this.abortCompanySearch();
                 return;
             }
             this.countrySelectionShown = false;
@@ -125,6 +135,14 @@ function <?= $gwBase ?>CompanySearchField() {
             // request was in flight. Writing anything now would fight the
             // newer search — stay silent.
             if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+            // enterManually() may have fired while this was in flight.
+            // showDropdown() has no manualMode term, so writing items here
+            // would reopen the dropdown over the manual-entry fields.
+            if (this.manualMode) {
+                this.isSearching = false;
+                this.searchAbortController = null;
+                return;
+            }
 
             this.searchAbortController = null;
             this.isSearching = false;
@@ -241,6 +259,8 @@ function <?= $gwBase ?>CompanySearchField() {
                 event.stopImmediatePropagation();
             }
 
+            this.abortCompanySearch();
+            this.isSearchUnavailable = false;
             this.manualMode = true;
             this.isOpen = false;
             this.items = [];
