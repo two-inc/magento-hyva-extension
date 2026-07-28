@@ -164,8 +164,24 @@ logs:
 # ==============================================================================
 
 ## Create a versioned zip archive
+#
+# The zip is stamped with a `.two-deployed-commit` file at the module root
+# (TWO-25205). A zip-dropped install carries neither a `.git` gitlink nor a
+# Composer registry entry, so the stamp is the ONLY way
+# Two\GatewayHyva\Model\Provenance can report which commit that shop is
+# running. `git archive --add-file` injects it straight into the zip, so the
+# working tree is never touched (the stamp is written to a temp dir and the
+# temp dir is removed whether the archive succeeds or fails).
 archive:
-	eval $$(bumpver show --environ) && git archive --format zip HEAD > two-gateway-hyva-extension-$${CURRENT_VERSION}.zip
+	@set -e; \
+	eval $$(bumpver show --environ); \
+	stampdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$stampdir"' EXIT INT TERM; \
+	git rev-parse --short=7 HEAD > "$$stampdir/.two-deployed-commit"; \
+	git archive --format zip \
+		--add-file="$$stampdir/.two-deployed-commit" \
+		HEAD > two-gateway-hyva-extension-$${CURRENT_VERSION}.zip; \
+	echo "stamped $$(cat "$$stampdir/.two-deployed-commit") into two-gateway-hyva-extension-$${CURRENT_VERSION}.zip"
 bumpver-%:
 	SKIP=commit-msg bumpver update --$*
 ## Bump patch version
