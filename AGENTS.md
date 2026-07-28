@@ -35,6 +35,36 @@ SKIP=commit-msg bumpver update --patch  # or --minor, --major
 git push origin main --tags
 ```
 
+### Deployed-commit provenance
+
+The admin field at `Stores > Configuration > Two > Hyva Extension` renders
+`<version> (<sha7>)` — the version from the `two_hyva/general/version` CCD
+value plus the commit the deployed code was built from. The commit is resolved
+by `Two\GatewayHyva\Model\Provenance`, which tries three signals in
+freshness order:
+
+1. the `.git` gitlink (gitSync dev shops — moves on every deploy),
+2. `Composer\InstalledVersions::getReference()` (Packagist installs — the
+   merchant distribution; the release workflow tags and Packagist resolves,
+   there are no release assets),
+3. the `.two-deployed-commit` build stamp that `make archive` writes into the
+   zip (zip drops, which have neither of the above).
+
+Any signal being absent or malformed falls through to the next, and none
+resolving renders the bare version — the field never throws.
+
+`make archive` writes the stamp via `git archive --add-file` from a temp dir,
+so it never dirties the working tree. `.two-deployed-commit` is gitignored and
+must never be committed: a committed stamp would be frozen at commit time and
+would shadow the two fresher signals.
+
+`Provenance` is deliberately a near-copy of `Two\Gateway\Model\Provenance` in
+the base plugin rather than an injection of it — that class ships in no
+published `two-inc/magento2` release, so depending on it would break DI on
+every base version a merchant can install. Once a base release carries it and
+this repo's constraint has a floor at that release, delete the local copy and
+inject the base one; the public surface is identical for exactly that reason.
+
 ## Development Tips
 
 ### Running Commands

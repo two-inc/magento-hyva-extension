@@ -4,6 +4,12 @@
 # Generated artifacts
 index.html
 *.zip
+# Build-time provenance stamp — written into the release zip by `make
+# archive`, never committed (TWO-25205).
+.two-deployed-commit
+
+# Git worktrees live inside the repo by convention
+.worktrees/
 
 # Environments
 .envrc
