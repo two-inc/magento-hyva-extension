@@ -87,7 +87,7 @@ $quoteDetails = json_encode($quoteDetails);
                         if (isWithValidation) {
                             // Clear stale flash messages from a prior attempt so a
                             // resubmit doesn't render outdated errors (mirrors the
-                            // Luma renderer's messageContainer.clear() — ABN-450).
+                            // Luma renderer's messageContainer.clear()).
                             // Hyva's stepTo() fires the same event when navigating.
                             window.dispatchEvent(new Event('clear-messages'));
 
@@ -96,7 +96,7 @@ $quoteDetails = json_encode($quoteDetails);
                             } catch (error) {
                                 // Swallow so the autosave/navigation task resolves;
                                 // the validator registered in init() is what blocks
-                                // Place Order on an invalid form (ABN-450).
+                                // Place Order on an invalid form.
                                 console.error("Form validation failed:", error);
                                 return;
                             }
@@ -195,8 +195,8 @@ $quoteDetails = json_encode($quoteDetails);
                         name: '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>'
                     });
 
-                    // Block Place Order while the payment form is invalid
-                    // (ABN-450). The doSave task above swallows validation
+                    // Block Place Order while the payment form is invalid.
+                    // The doSave task above swallows validation
                     // failures (a rejected navigation task would abort with
                     // Hyva's generic "Something went wrong" alert), so without
                     // this validator order.place() proceeds with
@@ -356,7 +356,7 @@ $quoteDetails = json_encode($quoteDetails);
             // expressions. Templates using `x-show="!showManual"` resolve
             // this magic getter (bare identifier `!showManual`) instead
             // of evaluating the negation inline. Mirrors the pattern in
-            // magento-abn-plugin/hyva/.../gateway_method-csp-js.phtml.
+            // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
             ['!showManual']() {
                 return !this.showManual;
             },
@@ -492,7 +492,7 @@ $quoteDetails = json_encode($quoteDetails);
                 // The dropdown's existing x-show binding renders results
                 // as they arrive; a full-screen busy overlay on every
                 // keystroke would interrupt the user mid-typing, which is
-                // what triggered ABN-422. The outer @input.debounce.500ms
+                // the bug this replaced. The outer @input.debounce.500ms
                 // already throttles input; the prior setTimeout(200) was
                 // a redundant second-stage delay and is gone.
                 try {

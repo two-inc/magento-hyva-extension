@@ -53,7 +53,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	# di:compile before deploy:mode:set developer — di:compile resets Magento
 	# to production mode as a side effect, so setting developer mode first
-	# gets silently wiped. Ordering bug originally caught on abn-develop
+	# gets silently wiped. Ordering bug originally caught on an overlay branch
 	# (commit 28a55d8), ported forward here.
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer

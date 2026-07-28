@@ -216,7 +216,7 @@ class GatewayMethod extends Component
             // Surcharge type only gates per-chip surcharge value display —
             // term selection is a buyer choice independent of fee sharing.
             // A single available term renders one informational (non-clickable)
-            // chip, preselected — matching Luma (ABN-439).
+            // chip, preselected — matching Luma.
             $this->showChip = count($terms) > 1;
             $this->showSingleTerm = count($terms) === 1;
             $this->termSurcharges = (($this->showChip || $this->showSingleTerm) && $type !== SurchargeType::NONE)
