@@ -53,9 +53,10 @@ jobs:
         run: |
           set -euo pipefail
           # Match bare numeric tags (1.14.2 etc.) — the Two-branded
-          # convention on main. Reject the legacy `abn-*` prefix (that
-          # belongs to the white-label fork on abn-main) so a stale fork
-          # tag pointing at HEAD doesn't suppress a legitimate release.
+          # convention on main. Deliberately does NOT match the legacy
+          # prefixed tags used by the white-label fork's own branch, so a
+          # stale fork tag pointing at HEAD doesn't suppress a legitimate
+          # release.
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."

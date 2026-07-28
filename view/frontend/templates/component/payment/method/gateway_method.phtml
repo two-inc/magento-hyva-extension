@@ -123,9 +123,9 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
      * values via document.querySelector at place-time, not via Magewire
      * state.
      *
-     * Mitigates ABN-431 (chip-switch wipes payment-form fields). Also
+     * Mitigates the chip-switch wiping payment-form fields. Also
      * reduces Magewire DOM churn on the form, contributing to lower
-     * session-lock pressure (ABN-432).
+     * session-lock pressure.
      */
     ?>
     <form

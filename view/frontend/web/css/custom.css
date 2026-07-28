@@ -81,9 +81,8 @@ summary::marker {
  * Chip colour palette mirrors `.mode_item` on the Luma checkout
  * (Registered Organisation / Sole Trader toggle): solid Two-brand blue
  * (#3043d1) for the selected state, white fill with blue text for
- * unselected. Brand overlays that ship a different palette (e.g. ABN's
- * teal/white pairing) override these rules from their own custom.css
- * which loads after this one.
+ * unselected. Brand overlays that ship a different palette override
+ * these rules from their own custom.css which loads after this one.
  */
 .two-term-chip {
   display: flex;
@@ -116,7 +115,7 @@ summary::marker {
 
 /* Sole-available-term chip: informational, not interactive. Filled blue
    like the selected chip but no checkmark; days stack above the surcharge
-   like the multi-term chips (ABN-449) — matches Luma's
+   like the multi-term chips — matches Luma's
    two-term-chip--single. */
 .two-term-chip--single,
 .two-term-chip--single:hover {
@@ -183,7 +182,7 @@ summary::marker {
    too tight visually. */
 .two-term-chips > label.label { margin-bottom: 20px; }
 
-/* All links inside the Two/ABN payment-method block render blue +
+/* All links inside the payment-method block render blue +
    underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
    Hyva's Tailwind base resets <a> to inherit colour / no underline, so
    these rendered as plain text. Scope to the payment block container
