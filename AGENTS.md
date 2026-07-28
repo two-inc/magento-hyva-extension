@@ -28,11 +28,38 @@ Magewire/             # Magewire components (if applicable)
 
 ## Version Management
 
-Version bumps are done using `bumpver`:
+Version bumps are automatic — CI does them. `.github/workflows/release.yml`
+fires after the `CI` workflow completes green on `staging` or `main`, and the
+level is decided by the branch, not by the commits:
+
+| Merge lands on | Bump | Also produces |
+|---|---|---|
+| `staging` | **patch** | nothing else — bump commit only |
+| `main` | **minor** | tag `X.Y.Z` + GitHub Release |
+
+A **major** is an explicit escape hatch and overrides the branch rule. Two
+independent signals, the higher wins:
+
+- **Declared** — a root `.next-major` file whose first whitespace-delimited
+  token is the target major, plus a short reason on the same line
+  (`3  # overlay migration, 3.0.0 release`). Reviewable in the PR that decides
+  it, so a *planned* major with no single breaking commit still lands as a
+  major. CI never clears the file; it disarms itself once the current major
+  reaches the declared one, and a declaration that has fallen *below* the
+  current major is a hard CI failure.
+- **Discovered** — a `!` on a conventional-commit type (`feat!:`,
+  `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer.
+
+The new version for a major is exactly `<target>.0.0`, so a declaration may
+skip more than one major.
+`.github/scripts/decide-bump-level.sh` owns the decision and is shared
+byte-identically across the Magento plugin repos; it logs the full decision —
+inputs included — to the workflow log on every run.
+
+Do not bump or tag by hand. If you must, for a local experiment only:
 
 ```bash
-SKIP=commit-msg bumpver update --patch  # or --minor, --major
-git push origin main --tags
+SKIP=commit-msg bumpver update --patch --no-tag-commit --no-push  # or --minor, --major
 ```
 
 ### Deployed-commit provenance

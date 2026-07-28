@@ -1,39 +1,62 @@
 name: Release
 
-# Auto-tag on green CI: this fires only after the `CI` workflow finishes
-# on `main`. The job-level guard below then requires that CI actually
-# succeeded before anything is released. This gates releases behind CI
-# rather than firing blindly on every push (the older magento-plugin
-# shape). `workflow_run` triggers off the workflow file on the default
-# branch — which is `staging` here, where this file lives — so this is
-# reliable; the `branches:` filter then scopes it to CI runs on `main`.
+# Auto-bump on green CI: this fires only after the `CI` workflow finishes
+# on `main` or `staging`. The job-level guard below then requires that CI
+# actually succeeded before anything is bumped. This gates version bumps
+# behind CI rather than firing blindly on every push (the older
+# magento-plugin shape). `workflow_run` triggers off the workflow file on
+# the default branch — which is `staging` here, where this file lives —
+# so this is reliable; the `branches:` filter then scopes it to CI runs
+# on `main` or `staging`.
+#
+# Two outcomes from one job, keyed on which branch CI ran for:
+#
+#   staging — version-bump commit ONLY. No tag, no GitHub Release.
+#             The bump keeps the in-flight version moving so a staging
+#             install is always distinguishable from the last release.
+#   main    — version-bump commit + tag + GitHub Release, exactly the
+#             mechanics this workflow has always had.
+#
+# The bump LEVEL comes from `.github/scripts/decide-bump-level.sh`
+# (shared byte-identically across the Magento plugin repos): patch on
+# `staging`, minor on `main`, with a major escape hatch via a root
+# `.next-major` file or a `!` / `BREAKING CHANGE:` commit. The script
+# owns that decision — this workflow only consumes it.
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main]
+    branches: [main, staging]
 
 permissions:
   contents: write
 
+# Per-branch concurrency group: a `main` release and a `staging` bump are
+# independent pieces of work and must not serialise behind each other.
 concurrency:
-  group: release-main
+  group: release-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ${{ vars.RUNNER_STANDARD }}
-    # Three guards, any of which stops a release:
+    # Three guards, any of which stops a bump:
     #   1. CI must have concluded successfully.
-    #   2. The run must be for `main` (PR-CI runs carry the feature
-    #      branch as head_branch and are ignored — belt-and-braces with
-    #      the `branches:` filter above).
+    #   2. The run must be for `main` or `staging` (PR-CI runs carry the
+    #      feature branch as head_branch and are ignored — belt-and-braces
+    #      with the `branches:` filter above).
     #   3. Skip bumpver's own "chore: Bump version" commit, whose push
     #      re-fires CI and would otherwise loop this workflow forever.
+    #      The prefix must match bumpver.toml's `commit_message` exactly.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       github.event.workflow_run.head_branch == 'staging') &&
       !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
+    env:
+      # The branch CI ran for — `main` or `staging`. Every step that needs
+      # to know which of the two behaviours applies reads this.
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
       - name: Mint GitHub App token
         id: app-token
@@ -44,7 +67,11 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          ref: main
+          # Check out the branch (not the SHA) so HEAD lands on
+          # `main` / `staging` rather than detached — bumpver's commit then
+          # advances the branch, and the later `git push origin "$BRANCH"`
+          # actually pushes the bump.
+          ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
@@ -57,6 +84,10 @@ jobs:
           # prefixed tags used by the white-label fork's own branch, so a
           # stale fork tag pointing at HEAD doesn't suppress a legitimate
           # release.
+          #
+          # This is also what makes the merge-back safe: when a `main`
+          # release fast-forwards into `staging`, staging's new tip already
+          # carries that release's tag, so this correctly bumps nothing.
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
@@ -81,17 +112,34 @@ jobs:
           git config user.name "two-inc-app[bot]"
           git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
 
-      - name: Decide bump level + build release notes
-        # Single pass over `<previous-numeric-tag>..HEAD`:
-        # - Buckets each non-merge commit into Breaking / Features /
-        #   Fixes / Internals / Other based on its conventional-commit
-        #   type, with optional Linear ticket prefix (e.g. INF-123/feat:).
-        # - Writes the bucketed list to release-notes.md so the GitHub
-        #   Release page reflects exactly what triggered the bump level
-        #   (any Breaking entries → major; any Features → minor; else
-        #   patch).
+      - name: Decide bump level
+        # The branch decides: `staging` -> patch, `main` -> minor, with a
+        # major escape hatch the script owns (root `.next-major` file, or a
+        # `!` / `BREAKING CHANGE:` commit). Outputs `level`, `set_version`
+        # (non-empty only for a major) and `reason`, and logs the whole
+        # decision — inputs included — to the step log.
+        #
+        # The script derives its OWN commit range and is deliberately not
+        # given one. Its range is anchored on the last bump commit rather
+        # than the last tag, because `staging` is only tagged once it
+        # reaches `main`; a tag-anchored range would re-discover the same
+        # breaking commit on every staging bump. That makes it a DIFFERENT
+        # range from the previous-tag range the release notes below use,
+        # and the two must stay separate.
         if: steps.gate.outputs.skip == '0'
         id: bump
+        run: .github/scripts/decide-bump-level.sh "$BRANCH"
+
+      - name: Build release notes
+        # `main` only — `staging` cuts no GitHub Release, so it needs no
+        # notes. Single pass over `<previous-numeric-tag>..HEAD`, bucketing
+        # each non-merge commit into Breaking / Features / Fixes /
+        # Internals / Other by conventional-commit type, with optional
+        # Linear ticket prefix (e.g. INF-123/feat:). This is presentation
+        # only: the bump level no longer comes from which buckets are
+        # non-empty, it comes from the script above.
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
+        id: notes
         run: |
           set -euo pipefail
           prev=$(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
@@ -123,17 +171,6 @@ jobs:
             fi
           done < <(git log "$range" --no-merges --format='%h%x09%s')
 
-          # Bump level is the highest-severity bucket that's non-empty.
-          if [ -s /tmp/breaking ]; then
-            level=major
-          elif [ -s /tmp/features ]; then
-            level=minor
-          else
-            level=patch
-          fi
-          echo "level=$level" >> "$GITHUB_OUTPUT"
-          echo "Selected bump level: $level (range: $range)"
-
           # Render notes — only print sections that have entries.
           {
             [ -s /tmp/breaking ]  && { echo "## ⚠️ Breaking changes";  cat /tmp/breaking;  echo; }
@@ -160,7 +197,17 @@ jobs:
         if: steps.gate.outputs.skip == '0'
         env:
           LEVEL: ${{ steps.bump.outputs.level }}
-        run: bumpver update "--${LEVEL}" --no-tag-commit --no-push
+          SET_VERSION: ${{ steps.bump.outputs.set_version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SET_VERSION" ]; then
+            # `--set-version` rather than `--major`: a declared
+            # `.next-major` may skip more than one major (current 2,
+            # declared 4), which `bumpver --major` cannot express.
+            bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
+          else
+            bumpver update "--${LEVEL}" --no-tag-commit --no-push
+          fi
 
       - name: Read new version
         if: steps.gate.outputs.skip == '0'
@@ -168,33 +215,44 @@ jobs:
         run: |
           new=$(bumpver show --environ | grep '^CURRENT_VERSION=' | cut -d= -f2)
           echo "new=$new" >> "$GITHUB_OUTPUT"
-          echo "Released $new"
+          echo "New version on ${BRANCH}: $new"
 
       - name: Append full-diff link to release notes
-        if: steps.gate.outputs.skip == '0'
+        # `main` only — the notes only exist there.
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
         env:
-          PREV: ${{ steps.bump.outputs.prev }}
+          PREV: ${{ steps.notes.outputs.prev }}
           NEW: ${{ steps.ver.outputs.new }}
         run: |
           if [ -n "$PREV" ]; then
             echo "**Full diff:** [\`${PREV}..${NEW}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV}...${NEW})" >> release-notes.md
           fi
 
-      - name: Tag + push
+      - name: Push version bump
+        # Both branches: the bump commit is the entire deliverable on
+        # `staging`, and the first half of it on `main`.
         if: steps.gate.outputs.skip == '0'
+        run: |
+          set -euo pipefail
+          # checkout@v5 already wrote the App token into the remote URL,
+          # so this push fires downstream workflows as the App identity
+          # (not GITHUB_TOKEN).
+          git push origin "$BRANCH"
+
+      - name: Tag + push tag
+        # `main` only. `staging` gets a version-bump commit and nothing
+        # else — no tag, therefore no GitHub Release either.
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
         env:
           NEW: ${{ steps.ver.outputs.new }}
         run: |
           set -euo pipefail
           git tag -a "${NEW}" -m "Release v${NEW}"
-          # checkout@v5 already wrote the App token into the remote URL,
-          # so this push fires downstream workflows as the App identity
-          # (not GITHUB_TOKEN).
-          git push origin main
           git push origin "${NEW}"
 
       - name: Create GitHub Release
-        if: steps.gate.outputs.skip == '0'
+        # `main` only, for the same reason as the tag above.
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NEW: ${{ steps.ver.outputs.new }}
