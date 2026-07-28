@@ -193,3 +193,32 @@ summary::marker {
     color: #0066cc;
     text-decoration: underline;
 }
+
+/*
+ * Company-search chrome (TWO-25233).
+ *
+ * Only positioning and the notice's colours live here. The spinner's dots
+ * and their animation are the payment-term chips' `two-term-chip__loading`
+ * rules, shipped by Two_Gateway — one loading idiom in the checkout, not
+ * two. Positioning is CSS rather than Tailwind utilities so the module does
+ * not depend on the merchant's Tailwind build having generated a specific
+ * set of inset classes.
+ */
+.two-company-search {
+  position: relative;
+}
+
+.two-company-search__spinner {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.two-company-search__unavailable {
+  border-radius: 3px;
+  background: #fdf0d5;
+  color: #6f4900;
+  line-height: 1.4;
+}

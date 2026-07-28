@@ -76,6 +76,172 @@ $quoteDetails = json_encode($quoteDetails);
                '';
     };
 
+    /**
+     * Client-side ceiling for every company-search / company-detail request.
+     *
+     * 30s deliberately sits OUTSIDE the checkout API's own retry envelope
+     * (`stop_after_delay(10)`), so the client never abandons a request the
+     * server is still legitimately retrying — while still bounding the
+     * browser default of "hang until the socket dies".
+     */
+    window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS = 30000;
+
+    /**
+     * Search-result cache, shared by all three Hyvä company pickers (the
+     * address-form field, the shipping-step component and the payment-step
+     * component). Deliberately hung off `window` rather than held in Alpine
+     * component state: Magewire re-renders destroy and rebuild those
+     * components, and a component-owned cache would be discarded exactly
+     * when re-issuing searches hurts most. Keyed by request URL, so
+     * country / limit / query are all part of the key.
+     */
+    window.twoGatewayCompanySearchCache = window.twoGatewayCompanySearchCache || new Map();
+
+    /**
+     * Is this response the API telling us it could not answer properly?
+     *
+     * The API returns HTTP 200 with near-empty results when its upstream
+     * provider timed out, flagged as `degraded: true`. Read defensively with
+     * a strict identity check: the field may not be deployed yet, and an
+     * absent or truthy-but-not-true value must mean "not degraded" so
+     * today's healthy responses keep working unchanged.
+     *
+     * @param {Object} response - parsed search response
+     * @returns {boolean}
+     */
+    window.twoGatewayIsDegradedResponse = window.twoGatewayIsDegradedResponse || function(response) {
+        return Boolean(response) && response.degraded === true;
+    };
+
+    /**
+     * Run one company search with a timeout, a cache and a failure signal
+     * the buyer can actually see.
+     *
+     * Returns a discriminated result rather than throwing, because the three
+     * outcomes need three different UIs and the previous code collapsed all
+     * of them into `items = []` — pixel-identical to "no companies matched",
+     * which is how a buyer with a valid company concludes the shop won't
+     * take them.
+     *
+     *   { status: 'ok',        items }  render the results
+     *   { status: 'empty',     items }  render "no matches"
+     *   { status: 'degraded',  items }  render results AND the unavailable notice
+     *   { status: 'failed',    items }  render the unavailable notice
+     *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
+     *
+     * @param {Object} options
+     * @param {string} options.checkoutApiUrl
+     * @param {string} options.countryCode
+     * @param {string} options.query
+     * @param {number|string} options.limit
+     * @param {AbortSignal} [options.signal] caller's abort signal
+     * @returns {Promise<{status: string, items: Array}>}
+     */
+    window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
+        const queryParams = new URLSearchParams({
+            country: (options.countryCode || '').toUpperCase(),
+            limit: options.limit,
+            offset: 0,
+            q: unescape(options.query),
+        });
+        const url = options.checkoutApiUrl + '/companies/v2/company?' + queryParams;
+
+        const mapItems = (data) => ((data && data.items) || []).map(item => ({
+            companyName: item.name,
+            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
+            companyId: item.national_identifier.id,
+            lookupId: item.lookup_id,
+            item: item,
+        }));
+
+        const cached = window.twoGatewayCompanySearchCache.get(url);
+        if (cached) {
+            const items = mapItems(cached);
+            return { status: items.length ? 'ok' : 'empty', items: items };
+        }
+
+        // Two signals: the caller's (next keystroke / teardown) and our own
+        // timeout. Whichever fires first aborts the fetch, and the catch
+        // below tells them apart — an abort is silent, a timeout is not.
+        const controller = new AbortController();
+        const timer = setTimeout(
+            () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+            window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
+        );
+        const onCallerAbort = () => controller.abort(new DOMException('aborted', 'AbortError'));
+        if (options.signal) {
+            if (options.signal.aborted) {
+                clearTimeout(timer);
+                return { status: 'aborted', items: [] };
+            }
+            options.signal.addEventListener('abort', onCallerAbort);
+        }
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            if (!response.ok) throw new Error('Company search responded ' + response.status);
+
+            const data = await response.json();
+            const items = mapItems(data);
+
+            if (window.twoGatewayIsDegradedResponse(data)) {
+                // Never cache a degraded answer — it is a transient upstream
+                // failure, and caching it would pin the buyer to an empty
+                // result set for the rest of the session.
+                return { status: 'degraded', items: items };
+            }
+
+            if (window.twoGatewayCompanySearchCache.size >= 50) {
+                const oldest = window.twoGatewayCompanySearchCache.keys().next().value;
+                window.twoGatewayCompanySearchCache.delete(oldest);
+            }
+            window.twoGatewayCompanySearchCache.set(url, data);
+
+            return { status: items.length ? 'ok' : 'empty', items: items };
+        } catch (error) {
+            // A caller-driven abort is the buyer typing on, or the component
+            // being torn down — expected, and silent by design. A timeout
+            // reaches here as a TimeoutError and must NOT be silent.
+            const isCallerAbort = options.signal && options.signal.aborted;
+            if (isCallerAbort) return { status: 'aborted', items: [] };
+
+            console.error('Error fetching companies:', error);
+            return { status: 'failed', items: [] };
+        } finally {
+            clearTimeout(timer);
+            if (options.signal) options.signal.removeEventListener('abort', onCallerAbort);
+        }
+    };
+
+    /**
+     * Fetch one company's detail record, with the same timeout.
+     *
+     * @param {string} checkoutApiUrl
+     * @param {string} lookupId
+     * @returns {Promise<Object|null>} the record, or null on any failure
+     */
+    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId) {
+        const controller = new AbortController();
+        const timer = setTimeout(
+            () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+            window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
+        );
+        try {
+            const response = await fetch(`${checkoutApiUrl}/companies/v2/company/${lookupId}`, {
+                signal: controller.signal,
+            });
+            // Without this check an error body parses as an address payload
+            // and silently produces "no addresses".
+            if (!response.ok) throw new Error('Company detail responded ' + response.status);
+            return await response.json();
+        } catch (error) {
+            console.error('Error fetching address:', error);
+            return null;
+        } finally {
+            clearTimeout(timer);
+        }
+    };
+
     function twoValidatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
@@ -272,6 +438,15 @@ $quoteDetails = json_encode($quoteDetails);
             isPaymentTermsAccepted: false,
             selectedIndex: -1,
             searchTimeout: '',
+            // Company-search request state. `isSearching` drives the in-field
+            // spinner; `isSearchUnavailable` drives the "try again / enter
+            // manually" notice, which must be distinguishable from a genuine
+            // zero-result search. `searchAbortController` supersedes an
+            // in-flight search when the buyer types on or Magewire
+            // re-renders the component.
+            isSearching: false,
+            isSearchUnavailable: false,
+            searchAbortController: null,
             countryCode: '',
             countrySelectionShown: false,
             placeOrderIntentFlag: true,
@@ -343,6 +518,8 @@ $quoteDetails = json_encode($quoteDetails);
                 this.isPaymentTermsAccepted = this.$el.checked;
             },
             <?= $gwBase ?>OnCompanySearchClickOutside() {
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
                 this.isOpen = false;
             },
             <?= $gwBase ?>OnCompanySearchFocus() {
@@ -512,8 +689,11 @@ $quoteDetails = json_encode($quoteDetails);
                 }
 
                 clearTimeout(this.searchTimeout);
+                this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
+                    this.abortCompanySearch();
                     this.items = [];
+                    this.isSearching = false;
                     return;
                 }
 
@@ -521,34 +701,48 @@ $quoteDetails = json_encode($quoteDetails);
                 // The dropdown's existing x-show binding renders results
                 // as they arrive; a full-screen busy overlay on every
                 // keystroke would interrupt the user mid-typing, which is
-                // the bug this replaced. The outer @input.debounce.500ms
-                // already throttles input; the prior setTimeout(200) was
-                // a redundant second-stage delay and is gone.
-                try {
-                    const queryParams = new URLSearchParams({
-                        country: this.countryCode.toUpperCase(),
-                        limit: this.companySearchLimit,
-                        offset: 0,
-                        q: unescape(this.search),
-                    });
+                // the bug this replaced. The outer @input.debounce already
+                // throttles input; the prior setTimeout(200) was a
+                // redundant second-stage delay and is gone.
+                //
+                // Supersede any in-flight search so a slow response for an
+                // earlier query can never repopulate the dropdown.
+                this.abortCompanySearch();
+                const controller = new AbortController();
+                this.searchAbortController = controller;
+                const query = this.search;
+                this.isSearching = true;
 
-                    const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                    if (!response.ok) throw new Error("Network response was not ok");
+                const result = await window.twoGatewayCompanySearch({
+                    checkoutApiUrl: this.checkoutApiUrl,
+                    countryCode: this.countryCode,
+                    query: query,
+                    limit: this.companySearchLimit,
+                    signal: controller.signal,
+                });
 
-                    const data = await response.json();
-                    this.items = data.items.map(item => ({
-                        companyName: item.name,
-                        companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                        companyId: item.national_identifier.id,
-                        lookupId: item.lookup_id,
-                        item: item
-                    }));
+                // The buyer typed on, or Magewire re-rendered us, while this
+                // was in flight. Writing anything now would fight the newer
+                // search — stay silent.
+                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
 
-                    if (this.items.length > 0) this.isOpen = true;
-                } catch (error) {
-                    console.error("Error fetching companies:", error);
-                    this.items = [];
+                this.searchAbortController = null;
+                this.isSearching = false;
+                this.items = result.items;
+                // A timeout, a network error, a non-2xx, or a degraded 200
+                // must not read as "no companies found" — that is how a
+                // buyer with a valid company concludes we won't take them.
+                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+                if (this.items.length > 0 || this.isSearchUnavailable) this.isOpen = true;
+            },
+
+            /** Cancel any in-flight company search. Safe to call repeatedly. */
+            abortCompanySearch() {
+                if (this.searchAbortController) {
+                    this.searchAbortController.abort();
+                    this.searchAbortController = null;
                 }
+                this.isSearching = false;
             },
 
             handleItemClick(event) {
@@ -559,6 +753,10 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             selectItem(item) {
+                // The buyer has chosen; anything still on the wire is stale
+                // and would reopen a dropdown they have just dismissed.
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
                 this.isSelecting = true;
                 this.isOpen = false;
                 this.items = [];
@@ -579,6 +777,8 @@ $quoteDetails = json_encode($quoteDetails);
             },
 
             enterManually() {
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
                 this.manualMode = true;
                 this.isOpen = false;
                 this.items = [];
@@ -639,6 +839,8 @@ $quoteDetails = json_encode($quoteDetails);
 
             closeCompanyList(event) {
                 if (event.key === 'Tab') {
+                    this.abortCompanySearch();
+                    this.isSearchUnavailable = false;
                     this.isOpen = false;
                     this.items = [];
                 }

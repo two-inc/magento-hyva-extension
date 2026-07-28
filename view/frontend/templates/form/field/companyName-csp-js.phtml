@@ -48,6 +48,16 @@ function <?= $gwBase ?>CompanySearchField() {
         isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
+        // Company-search request state. `isSearching` drives an in-field
+        // spinner and `isSearchUnavailable` a "try again / enter manually"
+        // notice, so a failed search is never rendered as a genuine
+        // zero-result one. NOTE: the markup that binds these lives in
+        // companyName.phtml, which is being changed concurrently by the
+        // CSP-Alpine work — the state lands here now and the template chrome
+        // follows in that PR rather than colliding with it.
+        isSearching: false,
+        isSearchUnavailable: false,
+        searchAbortController: null,
 
         init() {
             // Restore manualMode from storage
@@ -59,12 +69,23 @@ function <?= $gwBase ?>CompanySearchField() {
             return this.isOpen && this.items.length > 0;
         },
 
+        /** Cancel any in-flight company search. Safe to call repeatedly. */
+        abortCompanySearch() {
+            if (this.searchAbortController) {
+                this.searchAbortController.abort();
+                this.searchAbortController = null;
+            }
+            this.isSearching = false;
+        },
+
         async getItems() {
             if (this.isSelecting) { this.isSelecting = false; return; }
             if (this.manualMode) return;
             this.search = this.$el.value;
             this.selectedIndex = -1;
+            this.isSearchUnavailable = false;
             if (this.search.length < 3) {
+                this.abortCompanySearch();
                 this.items = [];
                 return;
             }
@@ -85,27 +106,33 @@ function <?= $gwBase ?>CompanySearchField() {
             }
             this.countrySelectionShown = false;
 
-            try {
-                const queryParams = new URLSearchParams({
-                    country: countryCode.toUpperCase(),
-                    limit: 10,
-                    offset: 0,
-                    q: unescape(this.search),
-                });
-                const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                this.items = data.items.map(item => ({
-                    companyName: item.name,
-                    companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                    companyId: item.national_identifier.id,
-                    lookupId: item.lookup_id,
-                }));
-                if (this.items.length > 0) this.isOpen = true;
-            } catch (error) {
-                console.error("Error fetching companies:", error);
-                this.items = [];
-            }
+            // Supersede any in-flight search so a slow response for an
+            // earlier query cannot repopulate the dropdown.
+            this.abortCompanySearch();
+            const controller = new AbortController();
+            this.searchAbortController = controller;
+            this.isSearching = true;
+
+            const result = await window.twoGatewayCompanySearch({
+                checkoutApiUrl: this.checkoutApiUrl,
+                countryCode: countryCode,
+                query: this.search,
+                limit: 10,
+                signal: controller.signal,
+            });
+
+            // The buyer typed on, or this component was torn down, while the
+            // request was in flight. Writing anything now would fight the
+            // newer search — stay silent.
+            if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+
+            this.searchAbortController = null;
+            this.isSearching = false;
+            this.items = result.items;
+            // A timeout, non-2xx, network error or degraded 200 must not be
+            // rendered as "no companies found".
+            this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+            if (this.items.length > 0) this.isOpen = true;
         },
 
         handleItemClick(event) {
@@ -121,6 +148,10 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         selectItem(item) {
+            // The buyer has chosen; anything still on the wire is stale and
+            // would reopen a dropdown they have just dismissed.
+            this.abortCompanySearch();
+            this.isSearchUnavailable = false;
             this.isSelecting = true;
             this.isOpen = false;
             this.items = [];
@@ -157,15 +188,12 @@ function <?= $gwBase ?>CompanySearchField() {
         async addressLookup(lookupId) {
             // Capture root element before async call since $root may not be available in callbacks
             const rootEl = this.$root;
-            try {
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
-                const data = await response.json();
-
-                if (data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0], rootEl);
-                }
-            } catch (error) {
-                console.error("Error fetching address:", error);
+            // Shared helper: carries the same 30s timeout as the search and
+            // checks response.ok. Without that check an error body parsed as
+            // an address payload and silently produced "no addresses".
+            const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId);
+            if (data && data.addresses && data.addresses.length > 0) {
+                this.setAddressData(data.addresses[0], rootEl);
             }
         },
 
@@ -241,6 +269,8 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         closeDropdown() {
+            this.abortCompanySearch();
+            this.isSearchUnavailable = false;
             this.isOpen = false;
             this.items = [];
         },
