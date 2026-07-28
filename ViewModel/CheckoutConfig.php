@@ -239,37 +239,53 @@ class CheckoutConfig implements ArgumentInterface
      *                    name and number are both resolved
      *   withoutCompany — defensive fallback
      *
+     * On/off and wording are two independent brand declarations, resolved by
+     * the parent module (TWO-25218 — they used to be conflated in one key,
+     * where an empty string meant "off"; do not reintroduce that):
+     *
+     *   isIntentApprovedNoticeEnabled() — the switch. Explicit boolean in
+     *       brand.xml; absent means the documented default true. false here
+     *       is the ONLY thing that returns null from this method.
+     *   getIntentApprovedNotice()       — copy override only. null (absent,
+     *       empty or whitespace-only) means the platform default copy. An
+     *       empty override is inert; it no longer switches the notice off.
+     *
      * Mirrors Two\Gateway\Model\Ui\ConfigProvider on the Luma side; the
-     * three-state brand.xml contract lives on
-     * Two\Gateway\Model\Brand\Descriptor::getIntentApprovedNotice().
+     * brand.xml contract lives on Two\Gateway\Model\Brand\Descriptor.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
         // Degrade gracefully on an older parent. composer.json requires
-        // two-inc/magento2 ~2.0.0, which cannot express "the patch release
-        // that added getIntentApprovedNotice()" — and tightening the
-        // constraint would block installs on parents that are otherwise
-        // perfectly compatible. A missing method therefore means "no brand
-        // override available", i.e. the platform default copy with the notice
-        // ON, which is correct for every brand that has not opted out. Drop
-        // this guard once the parent constraint moves past the release that
-        // introduced the method.
+        // two-inc/magento2 ^2.0, which cannot express "the patch release that
+        // added these registry methods" — and tightening the constraint would
+        // block installs on parents that are otherwise perfectly compatible.
+        // A missing method therefore means "no brand opinion": the notice is
+        // ON, with the platform default copy, which is correct for every
+        // brand that has not opted out. Drop these guards once the parent
+        // constraint moves past the release that introduced the methods.
+        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
+            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
+            : true;
+
+        if (!$enabled) {
+            return null;
+        }
+
         $override = method_exists($this->brandRegistry, "getIntentApprovedNotice")
             ? $this->brandRegistry->getIntentApprovedNotice()
             : null;
-
-        if ($override === "") {
-            return null;
-        }
 
         $productName = $this->brandRegistry->getProductName();
 
         // The default is spelled as a literal __() argument so
         // i18n:collect-phrases and the overlay repos' i18n audit can still see
         // it; the override branch takes a variable by necessity.
-        $withCompany = $override === null
+        // '' should never reach here (the parent normalises blank overrides to
+        // null) but is treated as "no override" rather than as an off switch,
+        // so a stale parent cannot resurrect empty-means-off.
+        $withCompany = ($override === null || $override === "")
             ? __(
                 "Your invoice with %1 is likely to be accepted for %2, subject to additional checks.",
                 $productName,
