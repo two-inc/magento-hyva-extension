@@ -140,6 +140,33 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         @keydown.window.prevent.enter
         class="">
         <fieldset class="space-y-4">
+            <?php
+            /*
+             * Persistent inline "order intent approved" notice, inside the
+             * payment tile. Replaces the window.dispatchMessages() toast,
+             * which was visible but self-dismissed after 5 seconds — long
+             * before a buyer still filling in the form had any use for it.
+             *
+             * Emitted only when the brand has not switched the notice off, so
+             * a suppressing brand yields no element at all rather than a
+             * permanently hidden wrapper. Class name matches the Luma,
+             * WooCommerce and PrestaShop surfaces so the four checkout
+             * treatments stay greppable; the Tailwind utilities alongside it
+             * follow the same idiom as the payment-terms box below.
+             *
+             * It sits inside the form's Alpine scope, not the outer tile's,
+             * because the form is the instance that runs initialize() and so
+             * the one holding the order-intent state.
+             */
+            ?>
+            <?php if ($configModel->getOrderIntentApprovedNotice() !== null): ?>
+                <div
+                    class="two-order-intent-message approved bg-green-50 border border-green-200 text-green-800 text-sm p-2 rounded-md"
+                    role="status"
+                    x-show="orderIntentApprovedNotice"
+                    x-text="orderIntentApprovedNotice"
+                ></div>
+            <?php endif ?>
             <!-- Company Name (manual / search dual-mode) -->
             <div class="min-h-108">
                 <div class="flex flex-col field required gap-2" x-show="showManual">
