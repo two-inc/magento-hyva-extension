@@ -32,14 +32,22 @@ $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
 $form = $block->getData("form");
 ?>
-<div class="w-full font-medium text-gray-700 <?= /* @noEscape */ $element->isRequired()
-        ? "required"
-        : "not-required" ?>">
+<div class="<?= $escaper->escapeHtmlAttr(
+    $element->renderClass(
+        [
+            "field",
+            "font-medium",
+            "text-gray-700",
+            $element->isRequired() ? "required" : "not-required",
+        ],
+        "field-wrapper-inner",
+    ),
+) ?>">
     <?= /* @noEscape */ $renderer->renderLabel($element) ?>
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
-    <div class="block font-medium text-gray-700">
-        <div x-data="<?= $gwBase ?>CompanySearchField" class="relative" @click.outside="closeDropdown">
+    <div class="group input-group flex gap-4">
+        <div x-data="<?= $gwBase ?>CompanySearchField" class="relative w-full" @click.outside="closeDropdown">
             <input type="text" class="<?= $escaper->escapeHtmlAttr(
                 $element->renderClass([
                     "block w-full form-input grow renderer-text",
