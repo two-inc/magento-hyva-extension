@@ -44,7 +44,28 @@ $merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
 
 $quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetails = json_encode($quoteDetails);
+// The HEX flags are load-bearing, not decoration. This lands inside a
+// single-quoted JS string literal in an inline script and carries
+// buyer-supplied values (email, telephone, address, product names). Without
+// JSON_HEX_APOS a buyer's apostrophe closes the literal, and without
+// JSON_HEX_TAG a buyer who types a script end tag terminates the whole block
+// early — script injection on the checkout, and a second way to hijack the
+// tag search that HyvaCsp uses to place the nonce.
+//
+// What this is NOT is a JSON payload anything reads. The value below is the
+// `quote` default, and initialize() replaces it with the object parsed from
+// gateway_method.phtml's data-hyvacsp1 attribute before anything consumes it.
+// It could not be parsed anyway: JSON_HEX_QUOT survives only as far as the JS
+// string layer, which un-escapes it back to a bare double quote, so a product
+// name containing one would break JSON.parse. That attribute is the live path
+// and is protected by htmlspecialchars(ENT_QUOTES) instead, which is why the
+// two templates pass different flag sets for the same data.
+// Test/Unit/View/QuoteDetailsEncodingTest covers both.
+$quoteDetails = json_encode(
+    $quoteDetails,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 /** Generated with hyva-csp-helper.php */
 ?>
@@ -472,17 +493,33 @@ $quoteDetails = json_encode($quoteDetails);
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-            companySearchLimit: '<?= $companySearchLimit ?>',
-            isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
+            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            isOrderIntentEnabled: '<?= $escaper->escapeJs((string) $isOrderIntentEnabled) ?>',
             // Resolved copy for the persistent inline intent-approved notice,
             // or null when the brand switched it off. json_encode with the HEX
-            // flags is the safe form inside a <script> block; escapeJs() only
-            // handles scalars.
+            // flags is the safe form inside an inline script block; escapeJs()
+            // only handles scalars.
+            //
+            // Never emit a literal script start tag after the opening tag of
+            // this block, not even inside a comment, and not in any
+            // interpolated value: Hyva's HtmlPageContent locates the element it
+            // has to nonce with a *last* occurrence, *case-insensitive* search
+            // for "<" + "script", so a second one hijacks the match. The nonce
+            // then lands in the middle of the JS (nonce path) or the hash is
+            // taken over the wrong substring (hash path, used when full page
+            // cache is on and the layout is cacheable), and either way the real
+            // tag goes out without a valid source. Under the checkout's
+            // enforced CSP (hyva-checkout ships
+            // csp/policies/storefront_hyva_checkout_index_index/scripts/inline
+            // = 0) the browser then silently refuses the whole block and every
+            // Alpine.data registration below is lost. Two\GatewayHyva\Test\Unit
+            // \View\CspInlineScriptTemplateTest guards the static cases.
             orderIntentApprovedNoticeCopy: <?= /* @noEscape */ json_encode(
                 $orderIntentApprovedNotice,
-                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE,
-            ) ?>,
+                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+            ) ?: 'null' ?>,
             // Live notice text. '' keeps the x-show'd element hidden and, more
             // importantly, keeps the property defined even for a brand that
             // suppressed the notice — an undefined property would make Alpine
@@ -494,17 +531,19 @@ $quoteDetails = json_encode($quoteDetails);
             generalErrorMessage: '<?= $escaper->escapeJs(
                 __($generalErrorMessage),
             ) ?>',
-            orderIntentConfig_weightUnit: '<?= $orderIntentConfig[
-                "weightUnit"
-            ] ?>',
-            orderIntentConfig_merchant_id: '<?= $merchantId ?>',
-            orderIntentConfig_merchant_shortName: '<?= $merchantName ?>',
-            orderIntentConfig_extensionPlatformName: '<?= $orderIntentConfig[
-                "extensionPlatformName"
-            ] ?>',
-            orderIntentConfig_extensionDBVersion: '<?= $orderIntentConfig[
-                "extensionDBVersion"
-            ] ?>',
+            orderIntentConfig_weightUnit: '<?= $escaper->escapeJs(
+                $orderIntentConfig["weightUnit"],
+            ) ?>',
+            orderIntentConfig_merchant_id: '<?= $escaper->escapeJs($merchantId) ?>',
+            orderIntentConfig_merchant_shortName: '<?= $escaper->escapeJs(
+                $merchantName,
+            ) ?>',
+            orderIntentConfig_extensionPlatformName: '<?= $escaper->escapeJs(
+                $orderIntentConfig["extensionPlatformName"],
+            ) ?>',
+            orderIntentConfig_extensionDBVersion: '<?= $escaper->escapeJs(
+                $orderIntentConfig["extensionDBVersion"],
+            ) ?>',
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
 

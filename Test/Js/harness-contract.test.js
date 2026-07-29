@@ -45,10 +45,61 @@ describe("template renderer contract", () => {
     ).toThrow(/no <script> block found/);
   });
 
+  describe("escapeJs() is unwrapped, not swallowed by a catch-all", () => {
+    // TWO-25238 wrapped a set of config values in escapeJs(). A catch-all rule
+    // degraded every one of them to the fallback string, which made an API base
+    // URL something new URL() rejects and left four other values meaningless
+    // while their tests still passed. The value's own rule has to win however
+    // the template escapes it.
+    const rendered = () =>
+      H.renderTemplateJs(FIXTURES + "escaped-config.phtml.fixture");
+
+    test("a wrapped config value keeps its own test value", () => {
+      expect(rendered()).toContain(
+        "const apiUrl = 'https://checkout-api.test.invalid';",
+      );
+    });
+
+    test("a (string) cast inside the wrapper does not hide the value", () => {
+      expect(rendered()).toContain("const limit = '10';");
+    });
+
+    test("only an expression with no rule of its own falls back", () => {
+      expect(rendered()).toContain(
+        "const message = '" + H.ESCAPED_STRING + "';",
+      );
+    });
+
+    test("no template renders a config value as the fallback string", () => {
+      const templates = [
+        H.GATEWAY_METHOD_TEMPLATE,
+        H.COMPANY_NAME_TEMPLATE,
+        H.SHIPPING_COMPANY_TEMPLATE,
+        H.PAYMENT_FIELDS_TEMPLATE,
+      ];
+      templates.forEach(function (template) {
+        const js = H.renderTemplateJs(template);
+        [
+          "checkoutApiUrl",
+          "companySearchLimit",
+          "isAddressSearchEnabled",
+          "isCompanySearchEnabled",
+          "isOrderIntentEnabled",
+          "currentQuoteId",
+        ].forEach(function (key) {
+          expect(js).not.toContain(key + ": '" + H.ESCAPED_STRING + "'");
+          expect(js).not.toContain(key + " : '" + H.ESCAPED_STRING + "'");
+          expect(js).not.toContain(key + " = '" + H.ESCAPED_STRING + "'");
+        });
+      });
+    });
+  });
+
   describe.each([
     ["gateway_method-csp-js", H.GATEWAY_METHOD_TEMPLATE],
     ["companyName-csp-js", H.COMPANY_NAME_TEMPLATE],
     ["shipping_company", H.SHIPPING_COMPANY_TEMPLATE],
+    ["company-name-payment", H.PAYMENT_FIELDS_TEMPLATE],
   ])("%s renders", (_label, template) => {
     test("with no PHP left in it, and parses as JavaScript", () => {
       const js = H.renderTemplateJs(template);

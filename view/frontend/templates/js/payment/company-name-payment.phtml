@@ -27,7 +27,7 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     /**
      * Current quote ID from PHP - used to detect new checkout sessions
      */
-    const currentQuoteId = '<?= $currentQuoteId ?>';
+    const currentQuoteId = '<?= $escaper->escapeJs((string) $currentQuoteId) ?>';
 
     /**
      * Check if billing address is set to be the same as shipping address.

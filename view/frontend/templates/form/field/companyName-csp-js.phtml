@@ -31,7 +31,26 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+// Same flag set as gateway_method-csp-js.phtml, for the same reason: this
+// lands in an inline script and carries buyer-supplied values (email,
+// telephone, name, product names and descriptions). JSON_HEX_TAG is the
+// load-bearing one — without it a product named with a script end tag closes
+// the block early, which is both script injection and a second way to move
+// where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
+// is deliberately absent: it strips the incidental protection plain
+// json_encode() gives by escaping the slash in an end tag.
+// JSON_INVALID_UTF8_SUBSTITUTE and the `?: '{}'` are not belt-and-braces. A
+// single malformed byte in a product name makes json_encode() return false, and
+// this value is interpolated bare, so the template would emit `quote : ,` — a
+// syntax error that kills every Alpine.data() registration in the block. That is
+// this very outage arriving through data. Substitute the bad byte, and if the
+// encode still fails fall back to an empty object: the country lookup then falls
+// through to reading the DOM, which degrades instead of dying.
+$quoteDetailsJson = json_encode(
+    $quoteDetails,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 /** Generated with hyva-csp-helper.php */
 ?>
@@ -44,8 +63,8 @@ function <?= $gwBase ?>CompanySearchField() {
         selectedIndex: -1,
         isSelecting: false,
         manualMode: false,
-        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-        isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
+        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+        isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
         // Company-search request state. `isSearching` drives an in-field
