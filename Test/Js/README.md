@@ -49,11 +49,7 @@ apart — a defect this suite shipped once (see the TWO-25253 note below). `read
 throws when the element is missing, when the attribute is absent, and when the expression is
 not a bare identifier; the last one is a CSP check, since Hyvä ships the CSP Alpine build
 which evaluates nothing else in an attribute (the reason `gateway_method-csp-js.phtml`
-carries a `['!manualMode']` method rather than writing `!manualMode` inline). It has to be a
-method rather than a `get` accessor, and that is load-bearing rather than stylistic:
-`PaymentFormWithValidation()` builds itself by spreading `PaymentMethodBase()`, and object
-spread reads an accessor and copies its VALUE — so an accessor freezes on the component the
-template actually binds. TWO-25259 shipped that mistake and caught it in review.
+carries a `['!showManual']` getter rather than writing `!showManual` inline).
 
 **No production code has been changed to make this testable.** Later PRs do change these
 templates — that is what they are for — but the harness reads whatever the template happens
@@ -209,11 +205,11 @@ attribute, which is where the element's `x-show` writes `display: none`.
 That bare-property-name check is the **harness's** contract, not a statement about CSP.
 `readAlpineBinding()` resolves a binding as `component[name]`, so that is all it accepts —
 narrower on purpose than the CSP Alpine build, which looks the whole expression up as a key
-and therefore evaluates the sibling `x-show="!manualMode"` perfectly happily against the
-`['!manualMode']` method in `gateway_method-csp-js.phtml`. Dotted paths are the other thing
+and therefore evaluates the sibling `x-show="!showManual"` perfectly happily against the
+`['!showManual']` getter in `gateway_method-csp-js.phtml`. Dotted paths are the other thing
 CSP Alpine accepts and this helper rejects. An earlier revision of this file and of
 `harness-contract.test.js` described the guard as a CSP-legality check and cited
-`!manualMode` as CSP-illegal; that was backwards, and the module's own getter is the
+`!showManual` as CSP-illegal; that was backwards, and the module's own getter is the
 counter-example.
 
 `company-name-field.test.js` — the address-form picker, which has no overlay and drives an

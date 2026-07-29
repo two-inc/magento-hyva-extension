@@ -158,7 +158,7 @@ describe("template renderer contract", () => {
       // The harness resolves a binding as `component[name]`, so that is all it
       // accepts — narrower ON PURPOSE than CSP-friendly Alpine, which looks the
       // whole expression up as a key and so happily evaluates the sibling
-      // `x-show="!manualMode"` against the `['!manualMode']` method in
+      // `x-show="!showManual"` against the `['!showManual']` getter in
       // gateway_method-csp-js.phtml. That binding is CSP-legal; it is just not
       // resolvable this way, which is why the guard rejects it here.
       expect(() =>
