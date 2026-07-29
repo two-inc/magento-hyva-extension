@@ -76,7 +76,11 @@ document.addEventListener('alpine:init', () => {
         countryCode : "",
         isAddressSearchEnabled : '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled : '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
-        quote : '<?= $quoteDetailsJson ?>',
+        // Bare object literal, not a quoted JSON string. It is parsed below, and
+        // JSON_HEX_QUOT only survives as far as the JS string layer — it
+        // un-escapes back to a bare double quote, so a product named `24" Monitor`
+        // made JSON.parse() throw and killed company search on the shipping step.
+        quote : <?= $quoteDetailsJson ?>,
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
         searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
         countrySelectionShown: false,
@@ -131,7 +135,7 @@ document.addEventListener('alpine:init', () => {
             }
 
             // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const quoteData = JSON.parse(this.quote);
+            const quoteData = this.quote;
             this.countryCode = window.twoGatewayGetCountryCode(quoteData);
 
             if (this.countryCode) {
