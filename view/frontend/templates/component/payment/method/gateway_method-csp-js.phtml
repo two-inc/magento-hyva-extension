@@ -44,7 +44,7 @@ $merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
 
 $quoteDetails = $quoteModel->getQuoteDetails();
-$currentStoreId = $quoteDetails["store_id"] ?? '';
+$currentStoreId = $quoteModel->getCurrentStoreId();
 // The HEX flags are load-bearing, not decoration. This lands inside a
 // single-quoted JS string literal in an inline script and carries
 // buyer-supplied values (email, telephone, address, product names). Without
@@ -91,8 +91,20 @@ $quoteDetails = json_encode(
      * `twoGateway*` helpers live, and because every consumer calls them after
      * load rather than at script-eval time.
      */
+    window.TWO_GATEWAY_COMPANY_SELECTION_STORE = window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+        || '<?= $escaper->escapeJs((string) $currentStoreId) ?>';
+
+    /*
+     * '' when the store view could not be resolved at all. That must NOT become
+     * `shipping_company_selection:` — a store-less bucket every store view would
+     * share is the exact leak this keying removes. An empty key means "no
+     * storage": reads answer {} and writes are dropped, so a degraded page
+     * carries nothing over instead of carrying it everywhere.
+     */
     window.TWO_GATEWAY_COMPANY_SELECTION_KEY = window.TWO_GATEWAY_COMPANY_SELECTION_KEY
-        || 'shipping_company_selection:<?= $escaper->escapeJs((string) $currentStoreId) ?>';
+        || (window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            ? 'shipping_company_selection:' + window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            : '');
 
     /**
      * Read the current store view's company selection.
@@ -106,16 +118,41 @@ $quoteDetails = json_encode(
      * @returns {Object} the stored blob, or {} when absent or unparseable
      */
     window.twoGatewayReadCompanySelection = window.twoGatewayReadCompanySelection || function() {
-        const storage = hyva.getBrowserStorage();
-        if (storage.getItem('shipping_company_selection') !== null) {
-            storage.removeItem('shipping_company_selection');
-        }
-        // try/catch, not a bare JSON.parse: this runs inside the `alpine:init`
-        // and `DOMContentLoaded` handlers that also register the pickers, so a
-        // malformed value would throw before those registrations and take the
-        // whole company-search UI down with it.
+        /*
+         * The ENTIRE body is guarded, not just the JSON.parse.
+         *
+         * This runs inside the `alpine:init` and `DOMContentLoaded` handlers that
+         * go on to call Alpine.data() and to start the payment-form
+         * MutationObserver, so anything that throws here takes those
+         * registrations with it and leaves a dead checkout step — the same outage
+         * class as an inline block the CSP refuses. `hyva` or getBrowserStorage()
+         * absent, a storage implementation with no removeItem, and getItem or
+         * removeItem throwing (storage disabled, private browsing, quota) are all
+         * reachable and all used to escape: an earlier revision guarded only the
+         * parse, and a throwing storage stub left `searchInput` unregistered.
+         */
         try {
-            return JSON.parse(storage.getItem(window.TWO_GATEWAY_COMPANY_SELECTION_KEY) || '{}') || {};
+            const key = window.TWO_GATEWAY_COMPANY_SELECTION_KEY;
+            const storage = hyva.getBrowserStorage();
+
+            // Retire the pre-scoping global key. Dropped, never adopted into the
+            // current store: adopting would reproduce the cross-store leak once,
+            // for every buyer mid-checkout at deploy.
+            if (storage.getItem('shipping_company_selection') !== null) {
+                storage.removeItem('shipping_company_selection');
+            }
+
+            if (!key) {
+                return {};
+            }
+
+            // A stored primitive or array is not a selection. `|| {}` alone only
+            // rescues a falsy parse, so `42` or `"x"` would flow out of here and
+            // contradict the contract above.
+            const parsed = JSON.parse(storage.getItem(key) || '{}');
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                ? parsed
+                : {};
         } catch (error) {
             return {};
         }
@@ -129,10 +166,17 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayWriteCompanySelection = window.twoGatewayWriteCompanySelection || function(patch) {
         const merged = Object.assign({}, window.twoGatewayReadCompanySelection(), patch || {});
-        hyva.getBrowserStorage().setItem(
-            window.TWO_GATEWAY_COMPANY_SELECTION_KEY,
-            JSON.stringify(merged),
-        );
+        // Guarded for the same reason as the read, and dropped entirely when
+        // there is no key to write to.
+        try {
+            const key = window.TWO_GATEWAY_COMPANY_SELECTION_KEY;
+            if (key) {
+                hyva.getBrowserStorage().setItem(key, JSON.stringify(merged));
+            }
+        } catch (error) {
+            // Nothing to do: the caller's own state is already updated, and the
+            // only loss is carry-over to the next checkout step.
+        }
         return merged;
     };
 

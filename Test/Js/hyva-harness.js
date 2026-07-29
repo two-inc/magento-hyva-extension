@@ -414,6 +414,7 @@ const SHARED_HELPER_GLOBALS = [
   // correct in production (four templates each define the key and only the
   // first assignment should win) but would otherwise carry the FIRST test
   // file's copy — and the store id baked into its key — into every later one.
+  "TWO_GATEWAY_COMPANY_SELECTION_STORE",
   "TWO_GATEWAY_COMPANY_SELECTION_KEY",
   "twoGatewayReadCompanySelection",
   "twoGatewayWriteCompanySelection",
@@ -428,8 +429,8 @@ const SHARED_HELPER_GLOBALS = [
  *
  * @returns {void}
  */
-function loadSharedHelpers() {
-  loadTemplate(GATEWAY_METHOD_TEMPLATE);
+function loadSharedHelpers(extraRules) {
+  loadTemplate(GATEWAY_METHOD_TEMPLATE, extraRules);
   SHARED_HELPER_GLOBALS.forEach(function (name) {
     if (window[name] === undefined) {
       throw new Error("harness: " + name + " was not exported onto window");

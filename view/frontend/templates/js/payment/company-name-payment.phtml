@@ -31,23 +31,25 @@ $methodCode = $brandedViewModel->getMethodCode();
 ?>
 <script>
     /*
-     * Resolved once, with a fallback, and NEVER called as
-     * `window.twoGatewayReadCompanySelection(...)` directly.
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
      *
-     * The accessor is published by gateway_method-csp-js.phtml, which the
-     * checkout always renders — the same assumption the existing
-     * `twoGatewayGetCountryCode` consumers already make. But these call sites sit
-     * inside the `alpine:init` / `DOMContentLoaded` handlers that also register
-     * the pickers and start the payment-form observer, so a bare call on a page
-     * where the publisher was somehow absent would throw BEFORE those
-     * registrations and take the whole company-search UI down with it. Degrading
-     * to "no carry-over between steps" is survivable; a dead checkout step is
-     * not.
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
      *
-     * Uniquely named per template on purpose: these are top-level `const`
-     * declarations in separate inline script blocks, which share one global
-     * lexical scope, so a name reused across two templates is a redeclaration
-     * SyntaxError that kills whichever block loads second.
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
      *
      * (Deliberately not writing the script start tag in that sentence: Hyva
      * picks the element to sign with a LAST-occurrence, case-insensitive search
@@ -55,10 +57,14 @@ $methodCode = $brandedViewModel->getMethodCode();
      * leaves the real tag unsigned and the enforced checkout CSP refuses the
      * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
      */
-    const twoPaymentReadSelection = window.twoGatewayReadCompanySelection
-        || function() { return {}; };
-    const twoPaymentWriteSelection = window.twoGatewayWriteCompanySelection
-        || function() { return {}; };
+    const twoPaymentReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoPaymentWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
 
     /**
      * Track initialization state to prevent duplicate order intents

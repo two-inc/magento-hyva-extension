@@ -386,6 +386,20 @@ into — so neither can quietly stop being covered. Covered on both entry points
 `checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
 rendered JS contains no default literal at all.
 
+`storage-unavailable.test.js` — that unusable browser storage cannot kill a checkout step. The
+company-selection accessors run inside the `alpine:init` and `DOMContentLoaded` handlers that
+go on to call `Alpine.data()` and to start the payment-form MutationObserver, so anything that
+throws in them takes those registrations with it and the buyer gets a step that renders and
+does nothing. Not hypothetical: an earlier revision guarded only the `JSON.parse`, leaving
+`getBrowserStorage()`, `getItem` and `removeItem` outside the try, and a throwing storage stub
+left `searchInput` unregistered. Covered: a throwing `getBrowserStorage()`, a throwing
+`getItem()`, a storage shim with no `removeItem` (the narrowest way to reach the legacy-key
+purge), a stored primitive not being handed back as a selection, and — when the store view
+cannot be resolved at all — the key staying empty rather than collapsing to
+`shipping_company_selection:`, a store-less bucket every store view would share.
+
+Its own file, like the quote-id one, because of the unremovable `alpine:init` listener.
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
