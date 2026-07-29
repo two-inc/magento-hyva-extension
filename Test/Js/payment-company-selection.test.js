@@ -37,10 +37,20 @@ const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
  * The property `gateway_method.phtml` binds to the company-number input's
  * `:disabled`, read from the shipped template.
  *
- * Resolved once, at require time, and deliberately NOT wrapped in a try: if the
- * binding is missing or is not a bare property name the component defines, every
- * test in the file fails to load. That is the intended blast radius — without
- * the binding there is no locked state to assert on in the first place.
+ * Resolved once, at require time, and deliberately NOT wrapped in a try. Two
+ * blast radii, both total, and they differ in WHEN they land:
+ *
+ * - the binding **missing** (or not a bare property name) throws out of
+ *   `readAlpineBinding()` at require time, so the file never loads and no test
+ *   in it runs at all;
+ * - the binding **present but naming a property the component does not have** —
+ *   a rename on one side only — loads fine, then fails every test that touches
+ *   the field, because `syncCompanyIdField()` checks membership at runtime and
+ *   throws.
+ *
+ * Either way there is no locked state to assert on, which is the point: this
+ * file must not be able to pass while the wire between markup and component is
+ * broken at either end.
  */
 const COMPANY_ID_DISABLED_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
@@ -207,8 +217,14 @@ describe("payment component company selection", () => {
       expect(fresh[COMPANY_ID_DISABLED_BINDING]).toBe(true);
     });
 
-    test("is locked once the component has initialized with nothing stored", () => {
-      expect(companyIdInput().disabled).toBe(true);
+    test("is open once the component has initialized with nothing stored", () => {
+      // Was pinned the other way until the re-render defect below was found.
+      // `initialize()` derives the flag from the same invariant getItems()
+      // uses, and with nothing stored there is no registry-supplied identifier
+      // for whatever is in the name field — so the number field is fillable.
+      // Nothing is at risk: locking exists to stop a registry number being
+      // typed over, and empty storage has no registry number to protect.
+      expect(companyIdInput().disabled).toBe(false);
     });
   });
 
@@ -532,9 +548,90 @@ describe("payment component company selection", () => {
       expect(companyIdInput().disabled).toBe(true);
     });
 
-    test("nothing stored leaves the field locked", () => {
-      expect(component.companyIdEntryRequired).toBe(false);
+    test("nothing stored leaves the field open", () => {
+      // Companion to the assertion above, on the flag rather than the field.
+      // Pinned as `false` / locked before the re-render defect was found; only
+      // `selectItem()` writes storage, so "nothing stored" is also the state a
+      // buyer who typed a name and never picked one is in.
+      expect(component.companyIdEntryRequired).toBe(true);
+      expect(companyIdInput().disabled).toBe(false);
+    });
+  });
+
+  /**
+   * Magewire re-renders destroy and rebuild this component, so `initialize()`
+   * runs again on state the buyer has already produced — it is a re-entry
+   * point, not just first paint. `mountPaymentComponent()` is exactly that
+   * rebuild: a fresh instance over the same DOM and the same browser storage.
+   *
+   * The recompute in `getItems()` writes component state only. Storage is
+   * written by `selectItem()` alone, so a typed-but-unpicked name survives a
+   * re-render as nothing at all — which is precisely why `initialize()` has to
+   * derive the flag from the same invariant rather than from
+   * `Boolean(company_name) && !company_id`.
+   */
+  describe("re-initialized by a Magewire re-render", () => {
+    test("keeps the field open after a name typed without picking", () => {
+      typeCompanyName("Example Trading");
+      expect(companyIdInput().disabled).toBe(false);
+      expect(storedSelection().company_name).toBeUndefined();
+
+      const rebuilt = mountPaymentComponent().component;
+
+      expect(rebuilt.companyIdEntryRequired).toBe(true);
+      expect(companyIdInput().disabled).toBe(false);
+    });
+
+    test("re-locks after editing a picked company's name, and restores that company", () => {
+      // The one case where the re-render does NOT preserve what the recompute
+      // produced, pinned deliberately rather than left to be rediscovered.
+      //
+      // Editing the name after a pick leaves storage holding the PICKED
+      // company, name and identifier together — `getItems()` writes component
+      // state only. So the rebuild restores that company wholesale: the
+      // `$nextTick` in `initialize()` puts `company_name` back in the name
+      // field and `company_id` back in the number field, and the number is once
+      // again registry-supplied FOR THE NAME BESIDE IT. Locked is then correct,
+      // and unlocking here would reopen exactly the hole the binding exists to
+      // close — a registry organisation number typeable over by hand.
+      //
+      // What the buyer loses is the half-typed name, which is the pre-existing
+      // "storage wins over a transient edit" behaviour of the restore, not this
+      // binding's doing. The name/number pair never disagrees, which is the
+      // property that costs money.
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      typeCompanyName("Other Example");
+      expect(companyIdInput().disabled).toBe(false);
+      expect(storedSelection().company_id).toBe("12345678");
+
+      const rebuilt = mountPaymentComponent().component;
+
+      expect(rebuilt.companyIdEntryRequired).toBe(false);
       expect(companyIdInput().disabled).toBe(true);
+    });
+
+    test("keeps the field locked after a pick that had an identifier", () => {
+      // The other half of the invariant, and the reason this is not a blanket
+      // unlock: the registry answered, so the number stays untypeable.
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      expect(companyIdInput().disabled).toBe(true);
+
+      const rebuilt = mountPaymentComponent().component;
+
+      expect(rebuilt.companyIdEntryRequired).toBe(false);
+      expect(companyIdInput().disabled).toBe(true);
+    });
+
+    test("keeps the field open after a pick that had no identifier", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+      syncCompanyIdField(component);
+      expect(companyIdInput().disabled).toBe(false);
+
+      const rebuilt = mountPaymentComponent().component;
+
+      expect(rebuilt.companyIdEntryRequired).toBe(true);
+      expect(companyIdInput().disabled).toBe(false);
     });
   });
 

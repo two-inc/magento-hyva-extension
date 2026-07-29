@@ -282,8 +282,10 @@ function renderTemplateMarkup(relPath, extraRules) {
  *
  * This helper is deliberately NARROWER than CSP Alpine, and the check is the
  * harness's own contract rather than a statement about CSP. It requires **a
- * bare property name the component defines** — so a test can resolve the
- * binding off a mounted component and assert on the value the page would get.
+ * bare property name** — so a test can resolve the binding off a mounted
+ * component and assert on the value the page would get. Whether the component
+ * actually HAS that property is a separate check, made at runtime by each
+ * suite's own binding-application helper.
  * It therefore also rejects two things CSP Alpine itself accepts: a dotted path
  * (`foo.bar`), and a getter key that is not a valid identifier
  * (`!showManual`). Both would need a different resolution strategy than
@@ -324,7 +326,7 @@ function readAlpineBinding(relPath, selector, attribute, extraRules) {
         attribute +
         '="' +
         expression +
-        '"` is not a bare property name the component defines. This harness ' +
+        '"` is not a bare property name. This harness ' +
         "resolves a binding as `component[name]`, so it accepts only that — " +
         "narrower on purpose than CSP-friendly Alpine, which also looks up " +
         "dotted paths and non-identifier getter keys such as `!showManual`.",

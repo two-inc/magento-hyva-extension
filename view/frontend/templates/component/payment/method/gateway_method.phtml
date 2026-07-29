@@ -320,9 +320,12 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 
                   The greyed-out look is `input.company_id:disabled` in
                   custom.css, NOT a `:style` binding. Two reasons: CSP-friendly
-                  Alpine allows only a bare identifier in an attribute
-                  expression (no object literal, no operators — the same
-                  restriction the `['!showManual']` getter exists for), and a
+                  Alpine does not EVALUATE an attribute expression at all — it
+                  looks the whole string up as a key on the component, so an
+                  object literal `:style="{ backgroundColor: … }"` is not
+                  something it can compute (that lookup is also why the sibling
+                  `x-show="!showManual"` resolves — against the `['!showManual']`
+                  getter, not by negating anything). And a
                   STRING `:style` sets the whole style attribute, which is
                   where `x-show` writes `display: none`. Since the two
                   bindings re-run on their own dependencies, a state change

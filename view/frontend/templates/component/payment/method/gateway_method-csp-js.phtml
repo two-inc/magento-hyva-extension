@@ -746,11 +746,37 @@ $quoteDetails = json_encode(
                 // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                 this.manualMode = shippingCompanySelectionData.manual_mode || false;
-                // A restored selection with a name but no id is the same
-                // unfillable-required-field situation as a fresh one, so derive
-                // the flag from storage before computing the field state.
-                this.companyIdEntryRequired = Boolean(shippingCompanySelectionData.company_name)
-                    && !shippingCompanySelectionData.company_id;
+                /*
+                 * The SAME invariant getItems() recomputes and
+                 * applyCompanyIdEditability() consumes:
+                 * `!(company_id && company_name === search)` — enabled whenever
+                 * there is no registry-supplied identifier for the name the
+                 * field is about to hold, locked exactly when one has been
+                 * written for it.
+                 *
+                 * initialize() is not only first paint. Magewire re-renders
+                 * destroy and rebuild this component (see the search-cache
+                 * comment at the top of this file), so every state the
+                 * getItems() recompute produced re-enters here — and only
+                 * selectItem() ever writes storage. A name the buyer typed and
+                 * never picked therefore leaves NOTHING stored, so deriving the
+                 * flag from `Boolean(company_name) && !company_id` made the
+                 * re-render re-lock a field the recompute had just opened:
+                 * empty AND disabled AND required, the very dead end this
+                 * binding exists to avoid.
+                 *
+                 * The `$nextTick` below restores the name from storage too, so
+                 * the name the field ends up holding IS `company_name` — which
+                 * collapses the comparison and leaves `!company_id`. Empty
+                 * storage therefore yields ENABLED (nothing has vouched for a
+                 * number for whatever is in the field), while a restored pick
+                 * that DID carry a registry identifier stays LOCKED.
+                 *
+                 * The declared default is deliberately still `companyIdDisabled: true`:
+                 * that is what Alpine binds before this method runs, and the
+                 * field must not flash open.
+                 */
+                this.companyIdEntryRequired = !shippingCompanySelectionData.company_id;
                 this.applyCompanyIdEditability();
 
                 // The intent-approved notice is persistent — it survives

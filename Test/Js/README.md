@@ -154,20 +154,24 @@ caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inv
 `this.searchAbortController === controller` fails four tests, and weakening it to an
 unconditional `done` fails the supersession test.
 
-The TWO-25253 identifier guard was mutation-checked the same way, **twenty-one** separate
-reverts, each red:
+The TWO-25253 identifier guard was mutation-checked the same way, **twenty-three** separate
+reverts, each red. Re-verified in full after the re-render fix below, against the shipped
+templates rather than carried forward — three counts in the previous revision of this table
+were wrong when written (`updatePaymentFields()` said 6, the shipping-sync gate said 3, and
+`applyCompanyIdEditability()` said 7), and several others legitimately moved because the
+fix changes what the field's state is at mount:
 
-| Mutation                                                                        | Effect                                                                           |
+| Mutation                                                                        | Tests failing                                                                    |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Delete `:disabled="companyIdDisabled"` from `gateway_method.phtml`              | `payment-company-selection.test.js` fails to run at all — 24 tests never execute |
-| Drop the editability recompute from `getItems()`                                | 3                                                                                |
+| Delete `:disabled="companyIdDisabled"` from `gateway_method.phtml`              | `payment-company-selection.test.js` fails to run at all — 28 tests never execute |
+| Drop the editability recompute from `getItems()`                                | 2                                                                                |
 | `getItems()` recompute always `true` (blanket unlock)                           | 1                                                                                |
-| `getItems()` recompute always `false` (blanket lock)                            | 4                                                                                |
+| `getItems()` recompute always `false` (blanket lock)                            | 6                                                                                |
 | Hoist the `getItems()` recompute above its `isSelecting` early return           | 1                                                                                |
 | Require the identifier in the `billing_as_shipping_address_updated` gate        | 2                                                                                |
-| Drop `companyIdInput.value = companyId` from `updatePaymentFields()`            | 6                                                                                |
+| Drop `companyIdInput.value = companyId` from `updatePaymentFields()`            | 8                                                                                |
 | Restore the imperative `disabled = true` + grey in `company-name-payment.phtml` | 2                                                                                |
-| Require the identifier before syncing shipping → payment                        | 3                                                                                |
+| Require the identifier before syncing shipping → payment                        | 4                                                                                |
 | Drop the editability recompute from the `update-company-data` listener          | 2                                                                                |
 | `identifierOf` back to a truthiness test (so `id: 0` reads as absent)           | 1                                                                                |
 | Drop the empty-identifier term from the sync's order-intent gate                | 1                                                                                |
@@ -175,23 +179,26 @@ reverts, each red:
 | `companyIdDisabled` declared `false` instead of `true`                          | 1                                                                                |
 | Sync a selection with an empty company NAME too                                 | 1                                                                                |
 | `fillCompanyData()` bails on an empty id again                                  | 4                                                                                |
-| `selectItem()` stops deriving `companyIdEntryRequired`                          | 4                                                                                |
-| `initialize()` stops deriving it from storage                                   | 1                                                                                |
+| `selectItem()` stops deriving `companyIdEntryRequired`                          | 6                                                                                |
+| `initialize()` stops deriving it at all (forced `false`)                        | 5                                                                                |
+| `initialize()` back to `Boolean(company_name) && !company_id`                   | 3                                                                                |
+| `initialize()` derivation forced `true` (blanket unlock)                        | 3                                                                                |
 | Drop the `x-for :key` fallback                                                  | 1                                                                                |
 | Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
-| `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 7                                                                                |
+| `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
 
-One of these **started green**, and it is worth recording why. Flipping the declared
-`companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls
+One of these **started green** in an earlier round, and it is worth recording why. Flipping
+the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls
 `applyCompanyIdEditability()` unconditionally and overwrites the literal — so every
 assertion made after mounting held either way. The literal is nonetheless the state Alpine
 binds on FIRST PAINT, before `initialize()` has run, and a wrong one flashes the field open.
-It is now pinned by mounting the factory without calling `initialize()`.
+It is now pinned by mounting the factory without calling `initialize()`. Nothing in the
+re-verified table above starts green.
 
 Two things here have **no automated coverage** and are called out rather than implied: the
 `input.company_id:disabled` rule in `custom.css` (Jest asserts no styles), and Alpine's own
 evaluation of the binding. What the suite does assert is that the attribute exists on the
-right element and holds a bare property name the component defines, and that no second
+right element and holds a bare property name, and that no second
 `:style` binding carries the same fact — a string `:style` would set the whole style
 attribute, which is where the element's `x-show` writes `display: none`.
 
@@ -248,6 +255,26 @@ has been written for it**. Six tests pin it, including the two that stop an over
 recompute must stay BELOW the `isSelecting` early return or it undoes the lock the
 selection just applied. Note the declared default is deliberately still `true`: it is the
 state Alpine binds before `initialize()` runs, and the field must not flash open.
+
+And the reason it needed a THIRD round: that recompute writes **component state only**, and
+Magewire re-renders destroy and rebuild the component. Only `selectItem()` writes browser
+storage, so a name the buyer typed and never picked survives a re-render as _nothing at
+all_ — and `initialize()`, deriving the flag as `Boolean(company_name) && !company_id`,
+read empty storage as "locked" and re-shut a field the recompute had just opened. Same dead
+end, one Magewire round-trip later, and invisible to every test in the suite because nothing
+re-mounted after typing. `initialize()` now derives from the same invariant. With the
+`$nextTick` restore putting `company_name` back in the field, the comparison collapses to
+`!company_id`: empty storage yields **enabled** (nothing has vouched for a number for
+whatever is in the field), a restored pick that carried a registry identifier stays
+**locked**. Four tests re-mount over live storage to pin it.
+
+One case is pinned as deliberately NOT preserving what the recompute produced: editing the
+name after a pick. Storage still holds the picked company, name and identifier together, so
+the rebuild restores that company wholesale and the number is registry-supplied for the name
+beside it again — locked is then correct, and unlocking would reopen the very hole the
+binding closes. What is lost is the half-typed name, which is the restore's pre-existing
+"storage wins over a transient edit" behaviour. The pair never disagrees, which is the
+property that costs money.
 
 Every editability assertion in that file lands on `document.getElementById('company_id')
 .disabled`, applied through the **real** `:disabled` expression read out of

@@ -174,7 +174,7 @@ describe("template renderer contract", () => {
           'input[data-name="company_id"]',
           "x-show",
         ),
-      ).toThrow(/is not a bare property name the component defines/);
+      ).toThrow(/is not a bare property name/);
     });
   });
 
