@@ -423,4 +423,43 @@ describe("company-name field picker", () => {
       expect(event.stopImmediatePropagation).toHaveBeenCalled();
     });
   });
+
+  describe("the dropdown's x-for key", () => {
+    /**
+     * A row's scope, the way Alpine's `x-for` supplies it: `item` and `index`
+     * layered over the component, which is what the `:key` getter reads.
+     *
+     * @param {string} name
+     * @param {string} id the mapped identifier — '' when the hit had none
+     * @param {number} index
+     * @returns {Object}
+     */
+    function row(name, id, index) {
+      return Object.assign(Object.create(component), {
+        item: { companyName: name, companyDisplayName: name, companyId: id },
+        index: index,
+      });
+    }
+
+    test("stays unique when two hits in one response have no identifier", () => {
+      // Bound to `companyId`, this collided on '' — and Alpine renders one row
+      // per distinct key, so the whole list went down and the buyer lost
+      // companies that matched. Term-dependent, not order-dependent.
+      const first = row("Example Trading Ltd", "", 0);
+      const second = row("Example Holdings Ltd", "", 1);
+
+      expect(first.twoGatewayHyvaGetCompanyId()).toBeTruthy();
+      expect(second.twoGatewayHyvaGetCompanyId()).toBeTruthy();
+      expect(first.twoGatewayHyvaGetCompanyId()).not.toBe(
+        second.twoGatewayHyvaGetCompanyId(),
+      );
+    });
+
+    test("is the identifier itself when there is one", () => {
+      expect(
+        row("Example Trading Ltd", "12345678", 0).twoGatewayHyvaGetCompanyId(),
+      ).toBe("12345678");
+    });
+  });
+
 });

@@ -88,6 +88,20 @@ function <?= $gwBase ?>CompanySearchField() {
             return this.isOpen && this.items.length > 0;
         },
 
+        // Bound as the dropdown's `x-for :key`, so it must be UNIQUE per row.
+        // `companyId` is '' for every hit whose national identifier the search
+        // response omitted — which it is allowed to do — so two such hits in
+        // one response collided on '', and Alpine renders one row per distinct
+        // key: the buyer lost a company that matched, term-dependently. Fall
+        // back to the list position, unique by construction, prefixed so it can
+        // never collide with a real identifier either.
+        //
+        // Mirrors <?= $gwBase ?>GetCompanyId() on the payment tile. That surface
+        // was fixed on its own; this one is the same bug in the same shape.
+        <?= $gwBase ?>GetCompanyId() {
+            return this.item.companyId || `two-idx-${this.index}`;
+        },
+
         /** Cancel any in-flight company search. Safe to call repeatedly. */
         abortCompanySearch() {
             if (this.searchAbortController) {
