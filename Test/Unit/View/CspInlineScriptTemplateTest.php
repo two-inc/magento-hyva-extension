@@ -7,33 +7,40 @@ namespace Two\GatewayHyva\Test\Unit\View;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Guards the shapes of inline-script template that Hyva's CSP nonce injection
+ * Guards the shapes of inline-script template that Hyva's CSP registration
  * cannot handle.
  *
  * Hyva Checkout enforces CSP with inline scripts disallowed
  * (csp/policies/storefront_hyva_checkout_index_index/scripts/inline = 0,
  * report_only = 0, shipped by hyva-themes/magento2-hyva-checkout itself), so
- * every inline script needs the nonce (or hash) that
+ * every inline script needs the nonce or hash that
  * Hyva\Theme\ViewModel\HyvaCsp::registerInlineScript() registers. That helper
- * finds the element to rewrite with
+ * finds the element to act on with
  * Hyva\Theme\Model\HtmlPageContent::extractLastElement(), which has two
  * preconditions:
  *
- *  1. the block's rendered output must END with the closing tag, and
+ *  1. the block's output, as it stands when the helper is called, must END with
+ *     the closing tag, and
  *  2. the opening tag is resolved by a LAST-occurrence, CASE-INSENSITIVE
  *     (mb_strripos) search for the tag-open string.
  *
- * Break (2) with a second literal tag-open anywhere after the real one —
- * including inside a JS comment or string — and the nonce is written into the
- * middle of the JavaScript while the real tag goes out bare. Break (1) and the
- * helper returns early and registers nothing at all. Both fail silently:
- * nothing throws server-side and the script is present in the DOM, it just
- * never executes.
+ * Break (2) with a second literal tag-open and the nonce is written into the
+ * middle of the JavaScript, or the hash is taken over the wrong substring,
+ * while the real tag goes out without a valid source. Break (1) and the helper
+ * registers nothing at all. Both fail silently: nothing throws server-side and
+ * the script is present in the DOM, it just never executes.
  *
  * That is what killed the entire Hyva payment tile — a single tag-open string
  * inside a comment meant no Alpine.data() registration in the block ever ran,
  * so every x-data name in the tile failed to resolve under the CSP-friendly
  * Alpine build.
+ *
+ * The rules below are deliberately blunt rather than clever. Text alone cannot
+ * distinguish a real tag from a mention of one — and neither can mb_strripos,
+ * which is the whole problem — so the guard forbids the second occurrence
+ * outright instead of trying to classify it. Same for the trailer: rather than
+ * hunting for constructs that emit, it requires the only thing after the
+ * closing tag to be the registration call.
  *
  * Static analysis only. A tag-open string that appears for the first time at
  * render time (an interpolated config value, a translated string) is out of
@@ -43,7 +50,11 @@ class CspInlineScriptTemplateTest extends TestCase
 {
     private const TEMPLATE_ROOT = __DIR__ . '/../../../view';
 
-    private const REGISTER_CALL = 'registerInlineScript()';
+    /**
+     * The only thing allowed after the closing tag: the registration call, with
+     * or without a closing PHP tag (Magento style often omits it at EOF).
+     */
+    private const TRAILER_PATTERN = '/\A\s*<\?php\s+\$hyvaCsp->registerInlineScript\(\)\s*;?\s*(?:\?>)?\s*\z/';
 
     /**
      * Assembled at runtime so this test file never contains the literal string
@@ -60,15 +71,17 @@ class CspInlineScriptTemplateTest extends TestCase
     }
 
     /**
-     * Every .phtml that renders an inline script: a tag-open that is not an
-     * external `src=` include. Matched case-insensitively, exactly as
-     * mb_strripos does.
+     * Every .phtml that mentions the tag-open string at all. Deliberately not
+     * narrowed to "renders an inline script": a template that only mentions the
+     * string is exactly the case that broke, and one that renders an external
+     * `src=` include has no business mentioning it either.
      *
      * @return array<string, array{0: string}>
      */
-    public static function inlineScriptTemplateProvider(): array
+    public static function scriptTagTemplateProvider(): array
     {
         $cases = [];
+        $needle = strtolower(self::tagOpen());
 
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator(self::TEMPLATE_ROOT, \FilesystemIterator::SKIP_DOTS)
@@ -79,165 +92,92 @@ class CspInlineScriptTemplateTest extends TestCase
             if ($file->getExtension() !== 'phtml') {
                 continue;
             }
-            $contents = (string) file_get_contents($file->getPathname());
-            if (!preg_match(self::inlineOpenTagPattern(), $contents)) {
+            $contents = strtolower((string) file_get_contents($file->getPathname()));
+            if (strpos($contents, $needle) === false) {
                 continue;
             }
             $relative = str_replace(self::TEMPLATE_ROOT . '/', '', $file->getPathname());
             $cases[$relative] = [$file->getPathname()];
         }
 
-        self::assertNotEmpty($cases, 'Expected to find inline-script templates under view/');
+        self::assertNotEmpty($cases, 'Expected to find script-tag templates under view/');
 
         return $cases;
     }
 
     /**
-     * An opening tag with no src attribute, i.e. one carrying inline code.
+     * @dataProvider scriptTagTemplateProvider
      */
-    private static function inlineOpenTagPattern(): string
+    public function testExactlyOneTagOpen(string $path): void
     {
-        return '/' . preg_quote(self::tagOpen(), '/') . '(?![^>]*\ssrc\s*=)[^>]*>/i';
-    }
-
-    /**
-     * The mb_strripos hazard: only occurrences AFTER the real opening tag can
-     * hijack the search, so that is exactly what is asserted. A mention in the
-     * PHP header above the tag is harmless and stays allowed.
-     *
-     * @dataProvider inlineScriptTemplateProvider
-     */
-    public function testNoSecondTagOpenAfterTheRealOne(string $path): void
-    {
-        $contents = (string) file_get_contents($path);
-
-        preg_match(self::inlineOpenTagPattern(), $contents, $m, PREG_OFFSET_CAPTURE);
-        $openEnd = $m[0][1] + strlen($m[0][0]);
-        $body = substr($contents, $openEnd);
-
-        $this->assertSame(
-            0,
-            substr_count(strtolower($body), strtolower(self::tagOpen())),
-            sprintf(
-                '%s repeats the literal script-open string after its opening tag. Hyva resolves '
-                . 'the tag to nonce with a last-occurrence, case-insensitive search, so a second '
-                . 'one (even in a comment or a JS string, in any casing) leaves the real tag '
-                . 'unnonced and the enforced checkout CSP silently refuses the whole block.',
-                basename($path)
-            )
-        );
-    }
-
-    /**
-     * @dataProvider inlineScriptTemplateProvider
-     */
-    public function testTemplateContainsExactlyOneScriptTagClose(string $path): void
-    {
-        $contents = (string) file_get_contents($path);
-
         $this->assertSame(
             1,
-            substr_count(strtolower($contents), strtolower(self::tagClose())),
+            $this->countCaseInsensitive($path, self::tagOpen()),
             sprintf(
-                '%s must contain exactly one literal script-close string; extractLastElement() '
-                . 'only recognises the block when the output ends with it.',
+                '%s contains the literal script-open string more than once. Hyva resolves the tag '
+                . 'to sign with a last-occurrence, case-insensitive search, so a second occurrence '
+                . '— in any casing, including inside a comment or a JS string — leaves the real '
+                . 'tag unsigned and the enforced checkout CSP silently refuses the whole block. '
+                . 'Write it as a concatenation or reword the comment.',
                 basename($path)
             )
         );
     }
 
     /**
-     * registerInlineScript() only rewrites the tag when the block's output ENDS
-     * with the closing tag, so nothing that emits may follow it.
-     *
-     * @dataProvider inlineScriptTemplateProvider
+     * @dataProvider scriptTagTemplateProvider
      */
-    public function testNothingEmittingFollowsTheClosingTag(string $path): void
+    public function testExactlyOneTagClose(string $path): void
     {
-        $trailer = $this->trailerAfterClosingTag($path);
-
-        // Short-echo tags emit by definition.
-        $this->assertDoesNotMatchRegularExpression(
-            '/<\?=/',
-            $trailer,
-            sprintf('%s uses a short-echo tag after the closing script tag.', basename($path))
-        );
-
-        foreach (['echo', 'print', 'printf', 'getChildHtml'] as $emitter) {
-            $this->assertStringNotContainsString(
-                $emitter,
-                $trailer,
-                sprintf(
-                    '%s calls %s after the closing script tag; Hyva then cannot recognise the '
-                    . 'script as the last element and skips nonce registration entirely.',
-                    basename($path),
-                    $emitter
-                )
-            );
-        }
-
-        // Strip PHP blocks, closed or left open at EOF (both emit nothing), and
-        // whatever is left must be whitespace only.
-        $stripped = preg_replace('/<\?(?:php\b|\s).*?(?:\?>|$)/s', '', $trailer) ?? '';
-
         $this->assertSame(
-            '',
-            trim($stripped),
+            1,
+            $this->countCaseInsensitive($path, self::tagClose()),
             sprintf(
-                '%s emits markup after the closing script tag; Hyva then cannot recognise the '
-                . 'script as the last element and skips nonce registration entirely.',
+                '%s contains the literal script-close string more than once. extractLastElement() '
+                . 'only recognises the block when the output ends with it, and a second occurrence '
+                . 'moves where that end is.',
                 basename($path)
             )
         );
     }
 
     /**
-     * The registration call must come AFTER the closing tag: it inspects the
-     * output buffer as it stands when called, so calling it earlier sees a
-     * buffer that does not yet end with the tag and silently does nothing.
+     * Enforces both remaining preconditions at once: the registration call
+     * exists, it comes after the closing tag, and nothing else follows the tag
+     * that could leave the buffer not ending with it.
      *
-     * @dataProvider inlineScriptTemplateProvider
+     * @dataProvider scriptTagTemplateProvider
      */
-    public function testTemplateRegistersItselfAfterTheClosingTag(string $path): void
+    public function testOnlyTheRegistrationCallFollowsTheClosingTag(string $path): void
     {
         $contents = (string) file_get_contents($path);
-
-        $registerPos = strpos($contents, self::REGISTER_CALL);
+        $closePos = stripos($contents, self::tagClose());
         $this->assertNotFalse(
-            $registerPos,
-            sprintf(
-                '%s renders an inline script but never calls $hyvaCsp->%s, so it gets no nonce '
-                . 'and the enforced checkout CSP refuses it.',
-                basename($path),
-                self::REGISTER_CALL
-            )
+            $closePos,
+            sprintf('%s mentions a script tag but never closes one.', basename($path))
         );
 
-        $closePos = strripos($contents, self::tagClose());
-        $this->assertNotFalse($closePos);
+        $trailer = substr($contents, $closePos + strlen(self::tagClose()));
 
-        $this->assertGreaterThan(
-            $closePos,
-            $registerPos,
+        $this->assertMatchesRegularExpression(
+            self::TRAILER_PATTERN,
+            $trailer,
             sprintf(
-                '%s calls %s before the closing script tag. It reads the output buffer as it '
-                . 'stands at that moment, so it finds no completed script element and registers '
-                . 'nothing.',
+                '%s must end with nothing but $hyvaCsp->registerInlineScript() after the closing '
+                . 'script tag. The helper inspects the output buffer as it stands when called: '
+                . 'anything emitted after the tag, or a call placed before it, means the buffer '
+                . 'does not end with a complete script element and the helper silently registers '
+                . 'nothing, so the enforced checkout CSP refuses the block. Trailer was: %s',
                 basename($path),
-                self::REGISTER_CALL
+                var_export($trailer, true)
             )
         );
     }
 
-    /**
-     * Everything after the last closing tag.
-     */
-    private function trailerAfterClosingTag(string $path): string
+    private function countCaseInsensitive(string $path, string $needle): int
     {
-        $contents = (string) file_get_contents($path);
-        $closePos = strripos($contents, self::tagClose());
-        $this->assertNotFalse($closePos, 'Expected a closing script tag');
+        $contents = strtolower((string) file_get_contents($path));
 
-        return substr($contents, $closePos + strlen(self::tagClose()));
+        return substr_count($contents, strtolower($needle));
     }
 }

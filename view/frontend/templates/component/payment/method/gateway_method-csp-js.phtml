@@ -482,9 +482,9 @@ $quoteDetails = json_encode(
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-            companySearchLimit: '<?= $companySearchLimit ?>',
-            isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
+            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            isOrderIntentEnabled: '<?= $escaper->escapeJs((string) $isOrderIntentEnabled) ?>',
             // Resolved copy for the persistent inline intent-approved notice,
             // or null when the brand switched it off. json_encode with the HEX
             // flags is the safe form inside an inline script block; escapeJs()

@@ -44,7 +44,7 @@ function <?= $gwBase ?>CompanySearchField() {
         selectedIndex: -1,
         isSelecting: false,
         manualMode: false,
-        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
+        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
