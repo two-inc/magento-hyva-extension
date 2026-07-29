@@ -308,11 +308,36 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
               <label for="company_id" class="font-semibold text-gray-700">
                 <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>
+              <!--
+                  `:disabled` is the ONLY thing that locks this field. It used
+                  to be set imperatively from company-name-payment.phtml, which
+                  disabled it on every shipping sync and never reversed it — so
+                  a company whose national identifier the search response
+                  omitted left the buyer with a required field that was empty
+                  AND uneditable. The lock is now derived state
+                  (`manualMode || companyIdEntryRequired`, see
+                  applyCompanyIdEditability()) with exactly one writer.
+
+                  The greyed-out look is `input.company_id:disabled` in
+                  custom.css, NOT a `:style` binding. Two reasons: CSP-friendly
+                  Alpine does not EVALUATE an attribute expression at all — it
+                  looks the whole string up as a key on the component, so an
+                  object literal `:style="{ backgroundColor: … }"` is not
+                  something it can compute (that lookup is also why the sibling
+                  `x-show="!manualMode"` resolves — against the `['!manualMode']`
+                  getter, not by negating anything). And a
+                  STRING `:style` sets the whole style attribute, which is
+                  where `x-show` writes `display: none`. Since the two
+                  bindings re-run on their own dependencies, a state change
+                  that re-ran only `:style` would drop the hidden mirror
+                  input's `display: none` and reveal it.
+              -->
               <input
                 type="text"
                 x-show="!manualMode"
                 :id="<?= $gwBase ?>GetCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetCompanyIdFieldName"
+                :disabled="companyIdDisabled"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'

@@ -213,6 +213,16 @@ describe("payment tile manual/search mode", () => {
     });
 
     test("the company-id field unlocks on the way into manual mode", () => {
+      // A restored pick that DID carry a registry identifier is the locked
+      // state — see the derivation in initialize(). Empty storage deliberately
+      // yields unlocked, so it cannot be the precondition here.
+      seedStorage({
+        quote_id: "test-quote-1",
+        store_id: "1",
+        company_name: "Example Trading Ltd",
+        company_id: "12345678",
+        manual_mode: false,
+      });
       const component = mountPaymentComponent();
       expect(component.companyIdDisabled).toBe(true);
 
@@ -221,6 +231,43 @@ describe("payment tile manual/search mode", () => {
       // Through the registered watcher, not an inline assignment: the derived
       // state has one owner, applyCompanyIdEditability().
       expect(component.companyIdDisabled).toBe(false);
+    });
+  });
+
+  describe("the markup carries the one flag", () => {
+    // State bound to nothing has no effect on the page, and this branch RENAMED
+    // the thing the template binds — so the binding is read out of the template
+    // rather than assumed. Without this, dropping `showManual` from the JS while
+    // leaving `x-show="showManual"` in the markup would leave both blocks
+    // permanently hidden and every state assertion above still green.
+    const MANUAL_ID_SELECTOR = "input.company_id:not([data-name])";
+    const SEARCH_ID_SELECTOR = 'input[data-name="company_id"]';
+
+    test("the manual-mode input shows on a bare `manualMode`", () => {
+      expect(
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          MANUAL_ID_SELECTOR,
+          "x-show",
+        ),
+      ).toBe("manualMode");
+    });
+
+    test("the search-mode input shows on the negating getter", () => {
+      // Not via readAlpineBinding(): `!manualMode` is CSP-legal but is not a
+      // bare property name, so that helper rejects it by design.
+      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      expect(doc.querySelector(SEARCH_ID_SELECTOR).getAttribute("x-show")).toBe(
+        "!manualMode",
+      );
+      // And the component answers that exact key.
+      const component = H.mountComponent(
+        env.alpineComponents[FORM_COMPONENT],
+        {},
+      );
+      expect(typeof component["!manualMode"]).toBe("function");
     });
   });
 

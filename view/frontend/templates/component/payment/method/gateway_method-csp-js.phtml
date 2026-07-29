@@ -192,9 +192,17 @@ $quoteDetails = json_encode(
          * select at all. Without one they see the name alone, and selectItem()
          * hands them an empty, editable company-id field to type the
          * organisation number into themselves.
+         *
+         * `item` itself is NOT guarded. A null element in `items` would throw
+         * on `item.name` in mapItems() one line below either way, so a guard
+         * here would buy nothing but the appearance of one.
+         *
+         * `id != null` rather than a truthiness test: an identifier of `0` is
+         * a value, not an absence. An empty-string `id` is treated as absent,
+         * which is what it means.
          */
         const identifierOf = (item) =>
-            item && item.national_identifier && item.national_identifier.id
+            item.national_identifier && item.national_identifier.id != null
                 ? String(item.national_identifier.id)
                 : '';
 
@@ -514,16 +522,24 @@ $quoteDetails = json_encode(
             // frozen. A brand overlay that overrides only the markup must bind
             // `manualMode` / `!manualMode`.
             manualMode: false,
+            // Bound by gateway_method.phtml as `:disabled` on the search-mode
+            // company-number input. It is the ONLY thing that locks that
+            // field; the greyed-out look derives from it in custom.css
+            // (`input.company_id:disabled`) rather than from a second piece of
+            // state saying the same thing.
             companyIdDisabled: true,
-            companyIdBgStyle: 'background-color: #D3D3D3',
-            // Set when the selected company arrived with NO national
-            // identifier, which the search response is allowed to omit. The
+            // Set whenever there is no registry-supplied identifier for the
+            // name currently in the name field: the selected company arrived
+            // with NO national identifier (which the search response is allowed
+            // to omit), or the buyer has typed / edited the name without
+            // picking a dropdown hit at all — getItems() recomputes it on every
+            // edit for exactly that case. The
             // company-id field is still required, so the buyer has to be able
             // to type the organisation number in themselves — without this the
             // field would sit empty AND disabled, an unfillable required field.
             // Kept separate from `manualMode` (which also switches the company
             // NAME field to free text) and folded into the same derived
-            // enabled/greyed-out state by applyCompanyIdEditability().
+            // enabled state by applyCompanyIdEditability().
             companyIdEntryRequired: false,
             isSelecting: false,
             isPaymentTermsAccepted: false,
@@ -752,11 +768,37 @@ $quoteDetails = json_encode(
                 // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                 this.manualMode = shippingCompanySelectionData.manual_mode || false;
-                // A restored selection with a name but no id is the same
-                // unfillable-required-field situation as a fresh one, so derive
-                // the flag from storage before computing the field state.
-                this.companyIdEntryRequired = Boolean(shippingCompanySelectionData.company_name)
-                    && !shippingCompanySelectionData.company_id;
+                /*
+                 * The SAME invariant getItems() recomputes and
+                 * applyCompanyIdEditability() consumes:
+                 * `!(company_id && company_name === search)` — enabled whenever
+                 * there is no registry-supplied identifier for the name the
+                 * field is about to hold, locked exactly when one has been
+                 * written for it.
+                 *
+                 * initialize() is not only first paint. Magewire re-renders
+                 * destroy and rebuild this component (see the search-cache
+                 * comment at the top of this file), so every state the
+                 * getItems() recompute produced re-enters here — and only
+                 * selectItem() ever writes storage. A name the buyer typed and
+                 * never picked therefore leaves NOTHING stored, so deriving the
+                 * flag from `Boolean(company_name) && !company_id` made the
+                 * re-render re-lock a field the recompute had just opened:
+                 * empty AND disabled AND required, the very dead end this
+                 * binding exists to avoid.
+                 *
+                 * The `$nextTick` below restores the name from storage too, so
+                 * the name the field ends up holding IS `company_name` — which
+                 * collapses the comparison and leaves `!company_id`. Empty
+                 * storage therefore yields ENABLED (nothing has vouched for a
+                 * number for whatever is in the field), while a restored pick
+                 * that DID carry a registry identifier stays LOCKED.
+                 *
+                 * The declared default is deliberately still `companyIdDisabled: true`:
+                 * that is what Alpine binds before this method runs, and the
+                 * field must not flash open.
+                 */
+                this.companyIdEntryRequired = !shippingCompanySelectionData.company_id;
                 this.applyCompanyIdEditability();
 
                 // The intent-approved notice is persistent — it survives
@@ -784,10 +826,19 @@ $quoteDetails = json_encode(
                     this.applyCompanyIdEditability();
                 });
 
+                // The shipping step's sync (company-name-payment.phtml's
+                // updatePaymentFields) arrives here. It can carry an EMPTY
+                // identifier now, for the same reason selectItem() can, so the
+                // editability has to be recomputed from what arrived — without
+                // this the buyer's shipping pick of an identifier-less company
+                // would land in a field still locked from the previous pick.
                 this.$el.addEventListener('update-company-data', (event) => {
                     this.search = event.detail.companyName;
                     this.companyName = event.detail.companyName;
                     this.companyId = event.detail.companyId;
+                    this.companyIdEntryRequired = Boolean(event.detail.companyName)
+                        && !event.detail.companyId;
+                    this.applyCompanyIdEditability();
                 });
 
                 this.$nextTick(() => {
@@ -818,6 +869,32 @@ $quoteDetails = json_encode(
                 }
 
                 this.search = this.$el.value;
+                /*
+                 * The buyer has EDITED the name, so re-derive whether they have
+                 * to be able to type the company number in themselves. This is
+                 * the name field's only edit handler (`@input.debounce.300ms`
+                 * in gateway_method.phtml), so it is where the recompute goes.
+                 *
+                 * An identifier belongs to the name it arrived with. Unless the
+                 * text still matches the name the current number was written
+                 * for, there is no registry-supplied identifier for what is in
+                 * the field NOW — and the number field has to be fillable,
+                 * because a buyer who types a name and never picks a dropdown
+                 * hit would otherwise face a `company_id` that is empty AND
+                 * disabled AND required, whose only escape ("Enter details
+                 * manually") sits inside the dropdown's `x-show="isOpen"` and
+                 * disappears the moment they tab away from the field.
+                 *
+                 * Deliberately NOT a blanket unlock, and deliberately not a
+                 * `companyIdDisabled: false` default: while the text still
+                 * matches the name a registry number was written for, the field
+                 * stays locked. That is the whole point of the binding — a
+                 * registry-supplied organisation number must not be typeable
+                 * over by hand.
+                 */
+                this.companyIdEntryRequired =
+                    !(this.companyId && this.search === this.companyName);
+                this.applyCompanyIdEditability();
                 this.selectedIndex = -1;
                 // Reset BEFORE the country check below: clearing the country
                 // after a failed search would leave this latched true, stacked
@@ -959,7 +1036,9 @@ $quoteDetails = json_encode(
                 this.isOpen = false;
                 this.items = [];
                 this.saveManualModeToStorage(true);
-                // Alpine's :disabled and :style bindings will update automatically
+                // No explicit unlock needed: the `manualMode` watcher runs
+                // applyCompanyIdEditability(), which writes the
+                // `companyIdDisabled` the field's `:disabled` is bound to.
             },
 
             enableSearch() {
@@ -1028,18 +1107,28 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Recompute the company-id field's enabled / greyed-out state.
+             * Recompute the company-id field's enabled state.
              *
              * Two independent reasons the buyer may type into it: manual entry
-             * of the whole company, and a searched company that came back with
-             * no national identifier. One derived state, one place it is
-             * computed — the previous inline `!manualMode` assignments in two
-             * places are what let the second reason get silently overwritten.
+             * of the whole company, and no registry-supplied identifier for the
+             * name currently in the name field — which covers both a searched
+             * company that came back without a national identifier and a name
+             * the buyer has typed or edited without picking a dropdown hit.
+             * One derived state, one place it is computed — the previous inline
+             * `!manualMode` assignments in two places are what let the second
+             * reason get silently overwritten.
+             *
+             * The invariant: enabled whenever there is no registry-supplied
+             * identifier for the current name, disabled exactly when one has
+             * been written for it.
+             *
+             * `companyIdDisabled` is what gateway_method.phtml binds, so this
+             * is the only writer of the field's locked state. The imperative
+             * `disabled = true` that company-name-payment.phtml used to apply
+             * on every shipping sync — and never reversed — is gone.
              */
             applyCompanyIdEditability() {
-                const editable = this.manualMode || this.companyIdEntryRequired;
-                this.companyIdDisabled = !editable;
-                this.companyIdBgStyle = editable ? '' : 'background-color: #D3D3D3';
+                this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
             },
 
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
@@ -1066,11 +1155,13 @@ $quoteDetails = json_encode(
                 const companyNameInput = document.getElementById("company_name");
                 if (companyNameInput) companyNameInput.value = companyName;
 
+                // Value only. The locked state is `companyIdDisabled`, which
+                // the field's `:disabled` is bound to and which
+                // applyCompanyIdEditability() is the sole writer of — the
+                // callers above set `companyIdEntryRequired` and call it
+                // BEFORE getting here.
                 const companyIdInput = document.getElementById("company_id");
-                if (companyIdInput) {
-                    companyIdInput.value = companyId;
-                    // Let Alpine's :disabled and :style bindings handle the visual state
-                }
+                if (companyIdInput) companyIdInput.value = companyId;
 
                 // Only trigger order intent if company ID changed to prevent
                 // duplicate messages — and only when there IS one. An intent
