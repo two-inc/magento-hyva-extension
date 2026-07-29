@@ -477,8 +477,19 @@ $quoteDetails = json_encode($quoteDetails);
             isOrderIntentEnabled: '<?= $isOrderIntentEnabled ?>',
             // Resolved copy for the persistent inline intent-approved notice,
             // or null when the brand switched it off. json_encode with the HEX
-            // flags is the safe form inside a <script> block; escapeJs() only
-            // handles scalars.
+            // flags is the safe form inside an inline script block; escapeJs()
+            // only handles scalars.
+            //
+            // Never write a literal script start tag anywhere in this block,
+            // not even inside a comment: Hyva's HtmlPageContent locates the
+            // element it has to nonce with a *last* occurrence search for
+            // "<" + "script", so a second one hijacks the match, the nonce
+            // lands in the middle of the JS and the real tag is left bare.
+            // Under the checkout's enforced CSP (hyva-checkout ships
+            // csp/policies/storefront_hyva_checkout_index_index/scripts/inline
+            // = 0) the browser then silently refuses the whole block and every
+            // Alpine.data registration below is lost. Two\GatewayHyva\Test\Unit
+            // \View\CspInlineScriptTemplateTest guards this.
             orderIntentApprovedNoticeCopy: <?= /* @noEscape */ json_encode(
                 $orderIntentApprovedNotice,
                 JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE,
