@@ -739,13 +739,25 @@ $quoteDetails = json_encode($quoteDetails);
                 const query = this.search;
                 this.isSearching = true;
 
-                const result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: this.countryCode,
-                    query: query,
-                    limit: this.companySearchLimit,
-                    signal: controller.signal,
-                });
+                // try/catch because the helper is a window global: if it were
+                // ever absent the await would throw, leaving this an unhandled
+                // rejection with `isSearching` latched true — and this picker
+                // DOES render a spinner off that flag, so it would spin
+                // forever. The helper swallows request failures itself, so
+                // reaching the catch means something structural.
+                let result;
+                try {
+                    result = await window.twoGatewayCompanySearch({
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        countryCode: this.countryCode,
+                        query: query,
+                        limit: this.companySearchLimit,
+                        signal: controller.signal,
+                    });
+                } catch (error) {
+                    console.error('Company search failed:', error);
+                    result = { status: 'failed', items: [] };
+                }
 
                 // The buyer typed on, or Magewire re-rendered us, while this
                 // was in flight. Writing anything now would fight the newer

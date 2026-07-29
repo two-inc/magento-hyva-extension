@@ -123,13 +123,23 @@ function <?= $gwBase ?>CompanySearchField() {
             this.searchAbortController = controller;
             this.isSearching = true;
 
-            const result = await window.twoGatewayCompanySearch({
-                checkoutApiUrl: this.checkoutApiUrl,
-                countryCode: countryCode,
-                query: this.search,
-                limit: 10,
-                signal: controller.signal,
-            });
+            // try/catch: the helper is a window global, and an absent one
+            // would throw out of getItems as an unhandled rejection with
+            // `isSearching` latched true. Request failures are handled inside
+            // the helper, so the catch means something structural.
+            let result;
+            try {
+                result = await window.twoGatewayCompanySearch({
+                    checkoutApiUrl: this.checkoutApiUrl,
+                    countryCode: countryCode,
+                    query: this.search,
+                    limit: 10,
+                    signal: controller.signal,
+                });
+            } catch (error) {
+                console.error('Company search failed:', error);
+                result = { status: 'failed', items: [] };
+            }
 
             // The buyer typed on, or this component was torn down, while the
             // request was in flight. Writing anything now would fight the

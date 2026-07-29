@@ -72,6 +72,7 @@ document.addEventListener('alpine:init', () => {
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
         searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
         countrySelectionShown: false,
+        searchUnavailableShown: false,
         selectedIndex: -1,
         // Company-search request state. `isSearching` is for an in-field
         // spinner and `isSearchUnavailable` for the "try again / enter
@@ -159,16 +160,7 @@ document.addEventListener('alpine:init', () => {
                     // what the old local try/catch degraded to.
                     console.error('Company search failed:', error);
                     result = { status: 'failed', items: [] };
-                    // This picker renders no unavailable notice of its own (see
-                    // the note below), so without a flash message the buyer
-                    // gets an inert field and only the console records it — and
-                    // since only selectItem() writes the hidden
-                    // shipping-company fields, they cannot set a company at
-                    // all.
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: this.searchUnavailableMessage,
-                    }], 5000);
+
                 } finally {
                     // Retire the loader unless a NEWER search now owns it.
                     //
@@ -206,6 +198,34 @@ document.addEventListener('alpine:init', () => {
                 this.searchAbortController = null;
                 this.isSearching = false;
                 this.items = result.items;
+                // This picker renders no unavailable notice of its own (see the
+                // note below), so a flash message is the ONLY signal a buyer
+                // gets. It has to fire on the common failure modes — timeout,
+                // non-2xx, network error, degraded 200 — not just on the
+                // structural error the catch above handles: those return a
+                // status without throwing. Without it the buyer sees an inert
+                // field, and since only selectItem() writes the hidden
+                // shipping-company fields they cannot set a company at all.
+                //
+                // Latched once per interaction, mirroring countrySelectionShown
+                // below: the search is debounced per keystroke, so a down API
+                // would otherwise toast on every one.
+                if (result.status === 'failed' || result.status === 'degraded') {
+                    if (!this.searchUnavailableShown) {
+                        this.searchUnavailableShown = true;
+                        // Guarded: this runs on a failure path whose whole point
+                        // is surviving a missing global, so it must not become
+                        // the thing that throws.
+                        if (typeof window.dispatchMessages === 'function') {
+                            window.dispatchMessages([{
+                                type: 'warning',
+                                text: this.searchUnavailableMessage,
+                            }], 5000);
+                        }
+                    }
+                } else {
+                    this.searchUnavailableShown = false;
+                }
                 // A timeout, non-2xx, network error or degraded 200 must not
                 // be rendered as "no companies found".
                 //
