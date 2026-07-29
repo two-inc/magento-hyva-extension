@@ -65,7 +65,6 @@ describe("shipping to payment company sync", () => {
     ].join("\n");
 
     env.browserStorage.removeItem(H.COMPANY_SELECTION_KEY);
-    env.browserStorage.removeItem("already_saved_company_details");
 
     syncedEvents = [];
     document

@@ -111,11 +111,12 @@ describe("company selection when storage is unusable", () => {
     }
 
     test("starts the payment-form observer even when storage throws", () => {
-      // The handler reads TWO keys: the company selection and the
-      // `already_saved_company_details` marker. Guarding only the first left an
-      // unguarded access between the clearer and observeForPaymentForm(), so a
-      // throwing storage stopped the observer from ever starting and the tile
-      // never synced the company — the same outage class the guard exists for.
+      // The handler used to touch a second storage key here — a write-only
+      // "already saved" marker whose only reader assigned it to two variables
+      // nothing used. It was unguarded, sitting between the clearer and
+      // observeForPaymentForm(), so a throwing storage stopped the observer from
+      // ever starting and the tile never synced the company. The key is deleted
+      // rather than guarded; this case is what proves the handler survives.
       // The observer starting is asserted through its effect: a company-name
       // input added AFTER boot gets populated from the stored selection.
       document.body.innerHTML = "";
