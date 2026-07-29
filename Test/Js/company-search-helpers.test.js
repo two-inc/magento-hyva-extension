@@ -219,6 +219,30 @@ describe("shared company-search helpers", () => {
       );
     });
 
+    test("an identifier of 0 is a value, not an absence", async () => {
+      // The predicate is `id != null`, not truthiness. A truthiness test read
+      // `id: 0` as "no identifier" and dropped it, which would hand the buyer
+      // an empty company-number field to retype an identifier the registry had
+      // already answered with.
+      const promise = window.twoGatewayCompanySearch(searchOptions());
+      fetchStub.last().respond({
+        items: [
+          {
+            name: "Example Trading Ltd",
+            highlight: "<em>Example</em> Trading Ltd",
+            national_identifier: { id: 0 },
+          },
+        ],
+      });
+
+      const result = await promise;
+
+      expect(result.items[0].companyId).toBe("0");
+      expect(result.items[0].companyDisplayName).toBe(
+        "<em>Example</em> Trading Ltd (0)",
+      );
+    });
+
     test("a genuine zero-result answer is empty, not failed", async () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
       fetchStub.last().respond({ items: [] });
