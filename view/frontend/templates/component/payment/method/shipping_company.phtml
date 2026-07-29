@@ -70,6 +70,7 @@ document.addEventListener('alpine:init', () => {
         isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
         quote : '<?= $quoteDetailsJson ?>',
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
+        searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
         countrySelectionShown: false,
         selectedIndex: -1,
         // Company-search request state. `isSearching` is for an in-field
@@ -113,8 +114,12 @@ document.addEventListener('alpine:init', () => {
                 this.countrySelectionShown = false; // Reset flag when country becomes available
             }
 
+            // Reset BEFORE the country split: clearing the country after a
+            // failed search would otherwise leave this latched true, stacked
+            // under the "select a country" warning.
+            this.isSearchUnavailable = false;
+
             if (this.countryCode) {
-                this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
                     this.items = [];
@@ -154,13 +159,34 @@ document.addEventListener('alpine:init', () => {
                     // what the old local try/catch degraded to.
                     console.error('Company search failed:', error);
                     result = { status: 'failed', items: [] };
+                    // This picker renders no unavailable notice of its own (see
+                    // the note below), so without a flash message the buyer
+                    // gets an inert field and only the console records it — and
+                    // since only selectItem() writes the hidden
+                    // shipping-company fields, they cannot set a company at
+                    // all.
+                    window.dispatchMessages([{
+                        type: 'warning',
+                        text: this.searchUnavailableMessage,
+                    }], 5000);
                 } finally {
-                    // Only the CURRENT search retires the loader. Overlapping
-                    // searches resolve in order start(A), abort(A), start(B),
-                    // done(A) — and the magewire loader is a boolean, not a
-                    // counter, so a superseded search dispatching done would
-                    // hide the overlay while B is still running.
-                    if (this.searchAbortController === controller) {
+                    // Retire the loader unless a NEWER search now owns it.
+                    //
+                    // The magewire loader is a boolean, not a counter, so two
+                    // rules have to hold at once:
+                    //   - a SUPERSEDED search must not dispatch done, or it
+                    //     hides the overlay while its replacement runs
+                    //     (start(A), abort(A), start(B), done(A));
+                    //   - a search that was aborted with NO successor MUST
+                    //     dispatch done, or the overlay latches on forever and
+                    //     blocks checkout. Every dismissal path — backspacing
+                    //     below three characters, tab-out, picking a result,
+                    //     clearing the country, a DOM-morph disconnect — is
+                    //     exactly this case.
+                    // `abortCompanySearch()` nulls the field synchronously and
+                    // a successor assigns it synchronously in the same task, so
+                    // null unambiguously means "nothing in flight".
+                    if (!this.searchAbortController || this.searchAbortController === controller) {
                         window.dispatchEvent(new Event('magewire:loader:done'));
                     }
                 }

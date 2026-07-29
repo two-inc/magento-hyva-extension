@@ -693,6 +693,10 @@ $quoteDetails = json_encode($quoteDetails);
 
                 this.search = this.$el.value;
                 this.selectedIndex = -1;
+                // Reset BEFORE the country check below: clearing the country
+                // after a failed search would leave this latched true, stacked
+                // under the "select a country" warning.
+                this.isSearchUnavailable = false;
                 const quoteData = JSON.parse(JSON.stringify(this.quote));
 
                 // Get country code using centralized helper
@@ -712,7 +716,6 @@ $quoteDetails = json_encode($quoteDetails);
                     return;
                 }
 
-                this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
                     this.items = [];
