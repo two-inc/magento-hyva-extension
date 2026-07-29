@@ -265,6 +265,15 @@ SPREADING the base. Object spread reads an accessor and copies its VALUE, so an 
 block while `!manualMode` correctly hid the search block. Both blocks gone, and every other
 test green, because nothing else in the suite mounts that factory.
 
+Also here, because it is the consequence of making manual mode visible rather than a fact
+about the flag: `company-name-payment.phtml`'s sync into the tile used to find the fields by
+`[data-name]`, which is on the SEARCH-mode pair only. While a restored `manual_mode` still
+displayed those inputs — the state that made the search box dead — they happened to be the
+submitting pair. With manual mode actually shown, that selector writes the hidden
+`payment[manual_*]` mirror, so the order would carry the buyer's previous company while the
+order intent was approved against the new one. The sync resolves `#company_name` /
+`#company_id` now, whose ids follow the mode.
+
 The tile's own file, for the `dispatch-order-intent` leak reason below.
 
 `company-selection-scoping.test.js` — what scopes the `shipping_company_selection`

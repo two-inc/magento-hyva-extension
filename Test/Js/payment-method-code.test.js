@@ -78,8 +78,12 @@ describe("payment-fields template method code", () => {
         checkedMethod +
         '" checked />',
       '<div x-data="stub">',
-      '  <input type="text" data-name="company_name" value="" />',
-      '  <input type="text" data-name="company_id" value="" />',
+      // As the tile renders them: the canonical ids are what carry the
+      // submitting `payment[company_name]` / `payment[company_id]` names and
+      // are what the sync writes; `data-name` marks the search-mode pair and is
+      // only the readiness signal the MutationObserver waits for.
+      '  <input type="text" id="company_name" data-name="company_name" value="" />',
+      '  <input type="text" id="company_id" data-name="company_id" value="" />',
       "</div>",
     ].join("\n");
   }
@@ -126,7 +130,7 @@ describe("payment-fields template method code", () => {
       );
 
       expect(intents.length).toBeGreaterThan(0);
-      expect(document.querySelector('[data-name="company_name"]').value).toBe(
+      expect(document.getElementById("company_name").value).toBe(
         "Example Trading Ltd",
       );
     });

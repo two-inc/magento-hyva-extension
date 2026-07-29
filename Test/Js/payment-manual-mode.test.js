@@ -294,4 +294,56 @@ describe("payment tile manual/search mode", () => {
       expect(component.companyIdDisabled).toBe(false);
     });
   });
+
+  describe("syncing a shipping company into a tile in manual mode", () => {
+    // The consequence of making manual mode VISIBLE. company-name-payment.phtml
+    // pushes the shipping selection into the tile, and it used to find the
+    // fields by `[data-name]` — which is on the SEARCH-mode pair only. While a
+    // restored `manual_mode` still displayed the search inputs (the state that
+    // made the search box dead) that happened to be the submitting pair. Once
+    // manual mode is actually shown, the same selector writes the HIDDEN
+    // `payment[manual_*]` mirror: the order would carry the buyer's previous
+    // company while the order intent was approved against the new one.
+    //
+    // In manual mode the ids swap, so `#company_name` is the manual input and
+    // the search input — the one still carrying `data-name` — is
+    // `#manual_company_name`. That is the shape asserted here.
+    beforeEach(() => {
+      document.body.innerHTML = [
+        '<input type="hidden" id="shipping-company" value="" />',
+        '<input type="hidden" id="shipping-company_id" value="" />',
+        '<div x-data="stub">',
+        '  <input type="text" id="company_name" data-manual="true" value="Previous Holdings Ltd" />',
+        '  <input type="text" id="manual_company_name" data-name="company_name" value="Previous Holdings Ltd" />',
+        '  <input type="text" id="company_id" data-manual="true" value="99999999" />',
+        '  <input type="text" id="manual_company_id" data-name="company_id" value="99999999" />',
+        "</div>",
+      ].join("\n");
+      env.browserStorage.setItem(
+        "shipping_company_selection",
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          store_id: "1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          manual_mode: true,
+        }),
+      );
+    });
+
+    test("writes the SUBMITTING field, not the hidden mirror", () => {
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+
+      expect(document.getElementById("company_name").value).toBe(
+        "Example Trading Ltd",
+      );
+      expect(document.getElementById("company_id").value).toBe("12345678");
+      // The search-mode mirror is what `[data-name]` points at, and it is
+      // hidden and submits `payment[manual_*]`, so it must NOT be the target.
+      expect(document.getElementById("manual_company_name").value).toBe(
+        "Previous Holdings Ltd",
+      );
+    });
+  });
 });
