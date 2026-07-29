@@ -274,12 +274,20 @@ function renderTemplateMarkup(relPath, extraRules) {
  * Read one element's Alpine attribute binding out of a rendered markup
  * template, the way CSP-friendly Alpine would.
  *
- * The CSP Alpine build Hyvä ships evaluates only a bare property path in an
- * attribute expression — no operators, no object literals; the
- * `['!showManual']` getter in gateway_method-csp-js.phtml exists precisely
- * because of that restriction. So this asserts the expression IS a bare
- * identifier, which doubles as a CSP-legality check, and resolves it as a
- * property of the component.
+ * The CSP Alpine build Hyvä ships evaluates only a property lookup in an
+ * attribute expression — no operators, no object literals. It looks the WHOLE
+ * expression up as a key on the component, which is why
+ * gateway_method-csp-js.phtml can define an `['!showManual']` getter and have
+ * `x-show="!showManual"` resolve to it: that binding is perfectly CSP-legal.
+ *
+ * This helper is deliberately NARROWER than CSP Alpine, and the check is the
+ * harness's own contract rather than a statement about CSP. It requires **a
+ * bare property name the component defines** — so a test can resolve the
+ * binding off a mounted component and assert on the value the page would get.
+ * It therefore also rejects two things CSP Alpine itself accepts: a dotted path
+ * (`foo.bar`), and a getter key that is not a valid identifier
+ * (`!showManual`). Both would need a different resolution strategy than
+ * `component[name]`; neither is what any binding under test uses.
  *
  * @param {string} relPath repo-relative markup template path
  * @param {string} selector CSS selector for the bound element
@@ -316,8 +324,10 @@ function readAlpineBinding(relPath, selector, attribute, extraRules) {
         attribute +
         '="' +
         expression +
-        '"` is not a bare identifier. CSP-friendly Alpine evaluates nothing ' +
-        "else in an attribute expression.",
+        '"` is not a bare property name the component defines. This harness ' +
+        "resolves a binding as `component[name]`, so it accepts only that — " +
+        "narrower on purpose than CSP-friendly Alpine, which also looks up " +
+        "dotted paths and non-identifier getter keys such as `!showManual`.",
     );
   }
 

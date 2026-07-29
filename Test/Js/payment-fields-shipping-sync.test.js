@@ -136,19 +136,30 @@ describe("shipping to payment company sync", () => {
     // never re-enable it, so an identifier-less selection landed in a required
     // field that was empty AND uneditable. The locked state belongs to the
     // Alpine component's `companyIdDisabled` alone.
+    //
+    // The value assertions are load-bearing, not decoration: the fixture starts
+    // undisabled, so a sync that did nothing at all would satisfy the `disabled`
+    // expectations on its own. Pinning the value is what proves the sync ran and
+    // still left the field alone.
     selectShippingCompany("Example Trading Ltd", "12345678");
+    expect(companyIdInput().value).toBe("12345678");
     expect(companyIdInput().disabled).toBe(false);
 
     selectShippingCompany("Other Example Ltd", "");
 
+    expect(companyIdInput().value).toBe("");
     expect(companyIdInput().disabled).toBe(false);
   });
 
   test("does not grey the field out imperatively", () => {
     // The grey belongs to `input.company_id:disabled` in custom.css, so that it
     // cannot get out of step with the disabled state it is supposed to signal.
+    //
+    // Same reason for the value assertion as the test above: the fixture's
+    // `style` starts empty, so a no-op sync would pass without it.
     selectShippingCompany("Example Trading Ltd", "12345678");
 
+    expect(companyIdInput().value).toBe("12345678");
     expect(companyIdInput().style.backgroundColor).toBe("");
   });
 
@@ -196,6 +207,140 @@ describe("shipping to payment company sync", () => {
     } finally {
       window.removeEventListener("dispatch-order-intent", listener);
     }
+  });
+
+  describe("the billing-as-shipping Magewire handler", () => {
+    // Registered inside a `DOMContentLoaded` callback, behind a poll for the
+    // `Magewire` global. jsdom has already fired DOMContentLoaded by the time
+    // the template is evaluated, so the callback is driven by hand — and the
+    // `Magewire` stub is installed BEFORE dispatching, because the else branch
+    // arms a 100ms `setTimeout` retry loop that would otherwise run forever.
+    //
+    // Without this, the `billing_as_shipping_address_updated` gate was the one
+    // change in this PR with no coverage at all: reverting it to
+    // `shippingCompany && shippingCompanyId` left the whole suite green.
+    let handler;
+
+    beforeEach(() => {
+      handler = null;
+      global.Magewire = {
+        on: (eventName, callback) => {
+          if (eventName === "billing_as_shipping_address_updated") {
+            handler = callback;
+          }
+        },
+      };
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      if (typeof handler !== "function") {
+        throw new Error(
+          "the template did not register a billing_as_shipping_address_updated " +
+            "handler — this throws rather than skipping, so a template change " +
+            "cannot quietly reduce these tests to testing nothing",
+        );
+      }
+    });
+
+    afterEach(() => {
+      delete global.Magewire;
+    });
+
+    /**
+     * Store a shipping selection WITHOUT firing `shipping-company-selected`,
+     * so only the Magewire handler under test can have moved the fields.
+     *
+     * @param {string} companyName
+     * @param {string} companyId
+     * @returns {void}
+     */
+    function storeShippingSelection(companyName, companyId) {
+      env.browserStorage.setItem(
+        "shipping_company_selection",
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: companyName,
+          company_id: companyId,
+          manual_mode: false,
+        }),
+      );
+    }
+
+    test("syncs a shipping company whose identifier is empty", () => {
+      // The RED for a revert to `shippingCompany && shippingCompanyId`: that
+      // gate skips this sync entirely, so toggling "billing same as shipping"
+      // back on leaves whatever the payment tile was already holding.
+      storeShippingSelection("Other Example Ltd", "");
+
+      handler({ billingAsShipping: true });
+
+      expect(companyNameInput().value).toBe("Other Example Ltd");
+      expect(companyIdInput().value).toBe("");
+      expect(syncedEvents).toEqual([
+        { companyName: "Other Example Ltd", companyId: "" },
+      ]);
+    });
+
+    test("overwrites a previously synced identified company", () => {
+      // The wrong-data path in full: company A is on the tile, the buyer's
+      // shipping pick is identifier-less company B, and place-order must not
+      // submit A's name or A's number.
+      selectShippingCompany("Example Trading Ltd", "12345678");
+      expect(companyIdInput().value).toBe("12345678");
+
+      storeShippingSelection("Other Example Ltd", "");
+      handler({ billingAsShipping: true });
+
+      expect(companyNameInput().value).toBe("Other Example Ltd");
+      expect(companyIdInput().value).toBe("");
+    });
+
+    test("syncs an identified shipping company too", () => {
+      storeShippingSelection("Example Trading Ltd", "12345678");
+
+      handler({ billingAsShipping: true });
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("12345678");
+    });
+
+    test("still skips a stored selection with no company name", () => {
+      // The relaxed gate is about the IDENTIFIER. An empty name is not a
+      // selection and syncing it would blank the payment tile.
+      selectShippingCompany("Example Trading Ltd", "12345678");
+
+      storeShippingSelection("", "");
+      handler({ billingAsShipping: true });
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("12345678");
+    });
+
+    test("does nothing when billing is no longer the same as shipping", () => {
+      storeShippingSelection("Other Example Ltd", "");
+
+      handler({ billingAsShipping: false });
+
+      expect(companyNameInput().value).toBe("");
+      expect(syncedEvents).toEqual([]);
+    });
+
+    test("dispatches no order intent, identified or not", () => {
+      // The handler passes `triggerOrderIntent = false` outright: this is a
+      // billing-address toggle, not a company change.
+      activateTwoPayment();
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+
+      try {
+        storeShippingSelection("Example Trading Ltd", "12345678");
+        handler({ billingAsShipping: true });
+
+        expect(companyIdInput().value).toBe("12345678");
+        expect(dispatched).toEqual([]);
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
+    });
   });
 
   test("does not sync when billing is not the same as shipping", () => {

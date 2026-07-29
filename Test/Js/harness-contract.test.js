@@ -154,10 +154,13 @@ describe("template renderer contract", () => {
       ).toThrow(/no element matching/);
     });
 
-    test("a binding CSP-friendly Alpine could not evaluate is a hard error", () => {
-      // Hyva ships the CSP Alpine build, which evaluates only a bare property
-      // path in an attribute expression — the reason gateway_method-csp-js.phtml
-      // carries a `['!showManual']` getter instead of writing `!showManual`.
+    test("a binding that is not a bare property name is a hard error", () => {
+      // The harness resolves a binding as `component[name]`, so that is all it
+      // accepts — narrower ON PURPOSE than CSP-friendly Alpine, which looks the
+      // whole expression up as a key and so happily evaluates the sibling
+      // `x-show="!showManual"` against the `['!showManual']` getter in
+      // gateway_method-csp-js.phtml. That binding is CSP-legal; it is just not
+      // resolvable this way, which is why the guard rejects it here.
       expect(() =>
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,
@@ -171,7 +174,7 @@ describe("template renderer contract", () => {
           'input[data-name="company_id"]',
           "x-show",
         ),
-      ).toThrow(/is not a bare identifier/);
+      ).toThrow(/is not a bare property name the component defines/);
     });
   });
 
