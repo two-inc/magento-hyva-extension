@@ -103,6 +103,18 @@ const PHP_VALUE_RULES = [
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
   [/^\$(pluralLabel|singularLabel|singleDay)$/, "day"],
   [/^\(int\) \$days$/, "14"],
+  // Markup-only values for renderTemplateMarkup() over companyName.phtml, whose
+  // chrome comes from Hyva Checkout's form-element renderer rather than from
+  // literal markup. They resolve to '' because nothing asserts on the rendered
+  // label, tooltip or wrapper — only on the Alpine bindings this module adds
+  // around them. `renderClass()` lands inside a `class="…"` attribute and
+  // `renderAttributes()` between attributes, so both must stay attribute-safe.
+  [/^\$renderer->render(Label|Before)\(\$element\)$/, ""],
+  // The normalizer collapses whitespace but keeps it, and this template breaks
+  // the chained call across lines, so the spaces are optional in the pattern.
+  [/^\$element ?->getRenderer\(\) ?->render(Tooltip|After)\(\$element\)$/, ""],
+  [/^\$element->renderClass\([\s\S]*\)$/, "form-input"],
+  [/^\$element->renderAttributes\(\$escaper\)$/, 'name="company"'],
 ];
 
 /**
@@ -359,6 +371,8 @@ const GATEWAY_METHOD_TEMPLATE =
 /** The markup half of the same component — Alpine attribute bindings live here. */
 const GATEWAY_METHOD_MARKUP_TEMPLATE =
   "view/frontend/templates/component/payment/method/gateway_method.phtml";
+const COMPANY_NAME_MARKUP_TEMPLATE =
+  "view/frontend/templates/form/field/companyName.phtml";
 const COMPANY_NAME_TEMPLATE =
   "view/frontend/templates/form/field/companyName-csp-js.phtml";
 const SHIPPING_COMPANY_TEMPLATE =
@@ -655,6 +669,7 @@ module.exports = {
   GATEWAY_METHOD_TEMPLATE: GATEWAY_METHOD_TEMPLATE,
   GATEWAY_METHOD_MARKUP_TEMPLATE: GATEWAY_METHOD_MARKUP_TEMPLATE,
   COMPANY_NAME_TEMPLATE: COMPANY_NAME_TEMPLATE,
+  COMPANY_NAME_MARKUP_TEMPLATE: COMPANY_NAME_MARKUP_TEMPLATE,
   SHIPPING_COMPANY_TEMPLATE: SHIPPING_COMPANY_TEMPLATE,
   renderTemplateJs: renderTemplateJs,
   renderTemplateMarkup: renderTemplateMarkup,

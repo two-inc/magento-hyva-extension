@@ -45,13 +45,12 @@ describe("payment-fields template method code", () => {
     };
     window.addEventListener("dispatch-order-intent", onIntent);
 
-    // A company already chosen, in the current quote and store view, so the
-    // clearers leave it alone and the order-intent path is reachable.
+    // A company already chosen in the current quote, so the stale-data clearer
+    // leaves it alone and the order-intent path is reachable.
     env.browserStorage.setItem(
       "shipping_company_selection",
       JSON.stringify({
         quote_id: "test-quote-1",
-        store_id: "1",
         company_name: "Example Trading Ltd",
         company_id: "12345678",
         manual_mode: false,
@@ -78,10 +77,10 @@ describe("payment-fields template method code", () => {
         checkedMethod +
         '" checked />',
       '<div x-data="stub">',
-      // As the tile renders them: the canonical ids are what carry the
-      // submitting `payment[company_name]` / `payment[company_id]` names and
-      // are what the sync writes; `data-name` marks the search-mode pair and is
-      // only the readiness signal the MutationObserver waits for.
+      // As the tile renders them. `data-name` is both the readiness signal the
+      // MutationObserver waits for and what the sync writes through; the ids are
+      // here because they are what the template emits, and the assertions read
+      // them rather than depending on the selector the writer happens to use.
       '  <input type="text" id="company_name" data-name="company_name" value="" />',
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
       "</div>",

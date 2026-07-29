@@ -455,6 +455,20 @@ describe("company-name field picker", () => {
       );
     });
 
+    test("is what the template actually binds", () => {
+      // The getter is only half the fix; the other half is `companyName.phtml`
+      // binding to it. Reverting the binding to `:key="item.companyId"` left
+      // every other test in this file green, because they all call the getter
+      // directly — so the binding is read out of the template here.
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "template[x-for]",
+          ":key",
+        ),
+      ).toBe("twoGatewayHyvaGetCompanyId");
+    });
+
     test("is the identifier itself when there is one", () => {
       expect(
         row("Example Trading Ltd", "12345678", 0).twoGatewayHyvaGetCompanyId(),
