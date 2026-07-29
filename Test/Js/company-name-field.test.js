@@ -423,4 +423,104 @@ describe("company-name field picker", () => {
       expect(event.stopImmediatePropagation).toHaveBeenCalled();
     });
   });
+
+  describe("the dropdown's x-for key", () => {
+    /**
+     * A row's scope, the way Alpine's `x-for` supplies it: `item` and `index`
+     * layered over the component, which is what the `:key` getter reads.
+     *
+     * @param {string} name
+     * @param {string} id the mapped identifier — '' when the hit had none
+     * @param {number} index
+     * @returns {Object}
+     */
+    function row(name, id, index) {
+      return Object.assign(Object.create(component), {
+        item: { companyName: name, companyDisplayName: name, companyId: id },
+        index: index,
+      });
+    }
+
+    test("stays unique when two hits in one response have no identifier", () => {
+      // Bound to `companyId`, this collided on '' — and Alpine renders one row
+      // per distinct key, so the whole list went down and the buyer lost
+      // companies that matched. Term-dependent, not order-dependent.
+      const first = row("Example Trading Ltd", "", 0);
+      const second = row("Example Holdings Ltd", "", 1);
+
+      expect(first.twoGatewayHyvaGetCompanyId()).toBeTruthy();
+      expect(second.twoGatewayHyvaGetCompanyId()).toBeTruthy();
+      expect(first.twoGatewayHyvaGetCompanyId()).not.toBe(
+        second.twoGatewayHyvaGetCompanyId(),
+      );
+    });
+
+    test("is what the template actually binds", () => {
+      // The getter is only half the fix; the other half is `companyName.phtml`
+      // binding to it. Reverting the binding to `:key="item.companyId"` left
+      // every other test in this file green, because they all call the getter
+      // directly — so the binding is read out of the template here.
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "template[x-for]",
+          ":key",
+        ),
+      ).toBe("twoGatewayHyvaGetCompanyId");
+    });
+
+    test("is the identifier itself when there is one", () => {
+      expect(
+        row("Example Trading Ltd", "12345678", 0).twoGatewayHyvaGetCompanyId(),
+      ).toBe("12345678");
+    });
+  });
+
+  describe("a Magewire re-render mid-flight", () => {
+    test("does not write results into a detached component", async () => {
+      const started = await startSearch("example");
+      expect(fetchStub.calls.length).toBe(1);
+
+      // Magewire's diff-merge replaces the address-form subtree: this
+      // component's root leaves the document while its request is in flight.
+      // The node has no `wire:ignore` — deliberately, it wraps a
+      // Magewire-bound address field — so the guard is in getItems().
+      root.remove();
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items).toEqual([]);
+      expect(component.isSearching).toBe(false);
+      expect(component.searchAbortController).toBe(null);
+      expect(component.isOpen).toBe(false);
+    });
+
+    test("does not write when the component root is gone entirely", async () => {
+      const started = await startSearch("example");
+
+      // Alpine's teardown leaves no `_x_dataStack` to walk up to, so `$root` is
+      // undefined rather than a detached node. A guard written as
+      // `this.$root && !this.$root.isConnected` passes here and writes anyway —
+      // which is how it shipped the first time.
+      component.$root = undefined;
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items).toEqual([]);
+      expect(component.isSearching).toBe(false);
+      expect(component.searchAbortController).toBe(null);
+    });
+
+    test("a component still in the document is written to as normal", async () => {
+      const started = await startSearch("example");
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items.length).toBe(1);
+      expect(component.isOpen).toBe(true);
+    });
+  });
 });
