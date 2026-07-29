@@ -231,3 +231,20 @@ summary::marker {
   color: #6f4900;
   line-height: 1.4;
 }
+
+/*
+ * Company-number field, locked state (TWO-25253).
+ *
+ * The field is greyed out exactly when it is disabled, by construction —
+ * `:disabled` is the single piece of state gateway_method.phtml binds, and the
+ * look derives from it here rather than from a second Alpine `:style` binding
+ * carrying the same fact. A string `:style` binding would also fight the
+ * element's `x-show`, which writes `display: none` into the same attribute.
+ *
+ * CSS rather than a Tailwind utility for the reason the positioning rules
+ * above give: the module must not depend on the merchant's Tailwind build
+ * having generated a class only this module uses.
+ */
+input.company_id:disabled {
+  background-color: #d3d3d3;
+}

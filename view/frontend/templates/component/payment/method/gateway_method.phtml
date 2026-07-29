@@ -308,11 +308,33 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
               <label for="company_id" class="font-semibold text-gray-700">
                 <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>
+              <!--
+                  `:disabled` is the ONLY thing that locks this field. It used
+                  to be set imperatively from company-name-payment.phtml, which
+                  disabled it on every shipping sync and never reversed it — so
+                  a company whose national identifier the search response
+                  omitted left the buyer with a required field that was empty
+                  AND uneditable. The lock is now derived state
+                  (`manualMode || companyIdEntryRequired`, see
+                  applyCompanyIdEditability()) with exactly one writer.
+
+                  The greyed-out look is `input.company_id:disabled` in
+                  custom.css, NOT a `:style` binding. Two reasons: CSP-friendly
+                  Alpine allows only a bare identifier in an attribute
+                  expression (no object literal, no operators — the same
+                  restriction the `['!showManual']` getter exists for), and a
+                  STRING `:style` sets the whole style attribute, which is
+                  where `x-show` writes `display: none`. Since the two
+                  bindings re-run on their own dependencies, a state change
+                  that re-ran only `:style` would drop the hidden mirror
+                  input's `display: none` and reveal it.
+              -->
               <input
                 type="text"
                 x-show="!showManual"
                 :id="<?= $gwBase ?>GetCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetCompanyIdFieldName"
+                :disabled="companyIdDisabled"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'

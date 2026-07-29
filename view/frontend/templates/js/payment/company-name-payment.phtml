@@ -51,12 +51,24 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
         const companyIdInput = document.querySelector('[data-name="company_id"]');
 
         if (companyNameInput && companyIdInput) {
-            // Update DOM elements
+            /*
+             * Values only — this function does NOT touch `disabled` or the
+             * background colour any more.
+             *
+             * It used to write `disabled = false; value = …; disabled = true`
+             * plus a grey background, and never reverse it. That made every
+             * shipping sync lock the field unconditionally, so once any
+             * identifier-BEARING company had synced here, picking an
+             * identifier-LESS one left `company_id` empty AND disabled: a
+             * required field the buyer had no way to fill. The lock is now
+             * derived state in the Alpine component
+             * (`companyIdDisabled`, bound as `:disabled`), which the
+             * `update-company-data` event below recomputes from what actually
+             * arrived, and the grey comes from `input.company_id:disabled` in
+             * custom.css.
+             */
             companyNameInput.value = companyName;
-            companyIdInput.disabled = false;
             companyIdInput.value = companyId;
-            companyIdInput.disabled = true;
-            companyIdInput.style.backgroundColor = "#D3D3D3";
 
             // Sync with Alpine.js component using event dispatch
             const alpineComponent = companyNameInput.closest('[x-data]');
@@ -260,15 +272,34 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
         const shippingCompany = shippingCompanySelectionData.company_name || "";
         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-        if (shippingCompany !== "" && shippingCompanyId !== "") {
+        /*
+         * Gated on the NAME alone. The identifier may legitimately be empty —
+         * the search response is allowed to omit `national_identifier` — and
+         * requiring it here skipped the sync entirely for such a pick, so the
+         * payment tile kept the PREVIOUS company's name AND identifier and
+         * place-order submitted company A while the buyer had selected company
+         * B. Nothing prompts a re-entry, so the buyer never sees it. Writing
+         * the empty identifier THROUGH is what keeps the two fields describing
+         * the same company — the same reasoning as fillCompanyData() no longer
+         * bailing on an empty id.
+         */
+        if (shippingCompany !== "") {
             /** Update payment method fields with shipping selection */
             const companyNameInput = document.querySelector('[data-name="company_name"]');
             const companyIdInput = document.querySelector('[data-name="company_id"]');
 
             if (companyNameInput && companyIdInput) {
                 // Check if two_payment method is active for order intent
+                // The identifier is part of the intent request, so an empty one
+                // dispatches nothing — matching fillCompanyData()'s
+                // `companyId &&` term. Without this, relaxing the gate above
+                // would have started firing intents for companies with no
+                // identifier: requests the listener discards, which still read
+                // as real submissions in the event log.
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
+                const shouldTriggerOrderIntent = Boolean(activePaymentMethod)
+                    && activePaymentMethod.value === "two_payment"
+                    && shippingCompanyId !== "";
 
                 // Use the centralized update function for consistency and Alpine.js sync
                 updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
@@ -294,7 +325,13 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                         const shippingCompany = shippingCompanySelectionData.company_name || "";
                         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-                        if (shippingCompany && shippingCompanyId) {
+                        // Name alone, for the same reason as the
+                        // shipping-company-selected handler above: an
+                        // identifier-less shipping company must still overwrite
+                        // whatever the payment tile is currently holding, or
+                        // toggling billing back to "same as shipping" leaves
+                        // the previous company's details in place.
+                        if (shippingCompany) {
                             updatePaymentFields(shippingCompany, shippingCompanyId, false, true);
                         }
                     }

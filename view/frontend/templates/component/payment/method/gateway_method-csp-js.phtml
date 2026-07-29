@@ -192,9 +192,17 @@ $quoteDetails = json_encode(
          * select at all. Without one they see the name alone, and selectItem()
          * hands them an empty, editable company-id field to type the
          * organisation number into themselves.
+         *
+         * `item` itself is NOT guarded. A null element in `items` would throw
+         * on `item.name` in mapItems() one line below either way, so a guard
+         * here would buy nothing but the appearance of one.
+         *
+         * `id != null` rather than a truthiness test: an identifier of `0` is
+         * a value, not an absence. An empty-string `id` is treated as absent,
+         * which is what it means.
          */
         const identifierOf = (item) =>
-            item && item.national_identifier && item.national_identifier.id
+            item.national_identifier && item.national_identifier.id != null
                 ? String(item.national_identifier.id)
                 : '';
 
@@ -502,8 +510,12 @@ $quoteDetails = json_encode(
             // `payment[company_id]`, the hidden mirror submits as
             // `payment[manual_*]` (which Magento ignores).
             showManual: false,
+            // Bound by gateway_method.phtml as `:disabled` on the search-mode
+            // company-number input. It is the ONLY thing that locks that
+            // field; the greyed-out look derives from it in custom.css
+            // (`input.company_id:disabled`) rather than from a second piece of
+            // state saying the same thing.
             companyIdDisabled: true,
-            companyIdBgStyle: 'background-color: #D3D3D3',
             // Set when the selected company arrived with NO national
             // identifier, which the search response is allowed to omit. The
             // company-id field is still required, so the buyer has to be able
@@ -511,7 +523,7 @@ $quoteDetails = json_encode(
             // field would sit empty AND disabled, an unfillable required field.
             // Kept separate from `manualMode` (which also switches the company
             // NAME field to free text) and folded into the same derived
-            // enabled/greyed-out state by applyCompanyIdEditability().
+            // enabled state by applyCompanyIdEditability().
             companyIdEntryRequired: false,
             isSelecting: false,
             isPaymentTermsAccepted: false,
@@ -762,10 +774,19 @@ $quoteDetails = json_encode(
                     this.applyCompanyIdEditability();
                 });
 
+                // The shipping step's sync (company-name-payment.phtml's
+                // updatePaymentFields) arrives here. It can carry an EMPTY
+                // identifier now, for the same reason selectItem() can, so the
+                // editability has to be recomputed from what arrived — without
+                // this the buyer's shipping pick of an identifier-less company
+                // would land in a field still locked from the previous pick.
                 this.$el.addEventListener('update-company-data', (event) => {
                     this.search = event.detail.companyName;
                     this.companyName = event.detail.companyName;
                     this.companyId = event.detail.companyId;
+                    this.companyIdEntryRequired = Boolean(event.detail.companyName)
+                        && !event.detail.companyId;
+                    this.applyCompanyIdEditability();
                 });
 
                 this.$nextTick(() => {
@@ -932,7 +953,9 @@ $quoteDetails = json_encode(
                 this.isOpen = false;
                 this.items = [];
                 this.saveManualModeToStorage(true);
-                // Alpine's :disabled and :style bindings will update automatically
+                // No explicit unlock needed: the `manualMode` watcher runs
+                // applyCompanyIdEditability(), which writes the
+                // `companyIdDisabled` the field's `:disabled` is bound to.
             },
 
             enableSearch() {
@@ -996,18 +1019,21 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Recompute the company-id field's enabled / greyed-out state.
+             * Recompute the company-id field's enabled state.
              *
              * Two independent reasons the buyer may type into it: manual entry
              * of the whole company, and a searched company that came back with
              * no national identifier. One derived state, one place it is
              * computed — the previous inline `!manualMode` assignments in two
              * places are what let the second reason get silently overwritten.
+             *
+             * `companyIdDisabled` is what gateway_method.phtml binds, so this
+             * is the only writer of the field's locked state. The imperative
+             * `disabled = true` that company-name-payment.phtml used to apply
+             * on every shipping sync — and never reversed — is gone.
              */
             applyCompanyIdEditability() {
-                const editable = this.manualMode || this.companyIdEntryRequired;
-                this.companyIdDisabled = !editable;
-                this.companyIdBgStyle = editable ? '' : 'background-color: #D3D3D3';
+                this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
             },
 
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
@@ -1034,11 +1060,13 @@ $quoteDetails = json_encode(
                 const companyNameInput = document.getElementById("company_name");
                 if (companyNameInput) companyNameInput.value = companyName;
 
+                // Value only. The locked state is `companyIdDisabled`, which
+                // the field's `:disabled` is bound to and which
+                // applyCompanyIdEditability() is the sole writer of — the
+                // callers above set `companyIdEntryRequired` and call it
+                // BEFORE getting here.
                 const companyIdInput = document.getElementById("company_id");
-                if (companyIdInput) {
-                    companyIdInput.value = companyId;
-                    // Let Alpine's :disabled and :style bindings handle the visual state
-                }
+                if (companyIdInput) companyIdInput.value = companyId;
 
                 // Only trigger order intent if company ID changed to prevent
                 // duplicate messages — and only when there IS one. An intent
