@@ -19,8 +19,10 @@ use PHPUnit\Framework\TestCase;
  * Hyva\Theme\Model\HtmlPageContent::extractLastElement(), which has two
  * preconditions:
  *
- *  1. the block's output, as it stands when the helper is called, must END with
- *     the closing tag, and
+ *  1. the output buffer as it stands when the helper is called — ob_get_contents(),
+ *     so page-wide, not just this block — must END with the closing tag, which is
+ *     also why cross-template render order can break this and why a file-local
+ *     guard cannot see that, and
  *  2. the opening tag is resolved by a LAST-occurrence, CASE-INSENSITIVE
  *     (mb_strripos) search for the tag-open string.
  *
@@ -43,8 +45,10 @@ use PHPUnit\Framework\TestCase;
  * closing tag to be the registration call.
  *
  * Static analysis only. A tag-open string that appears for the first time at
- * render time (an interpolated config value, a translated string) is out of
- * reach here; the escaping at each interpolation site is what covers that.
+ * render time (an interpolated config value, a buyer-supplied product name) is
+ * out of reach here; the escaping at each interpolation site is what covers
+ * that, and QuoteDetailsEncodingTest asserts it for the buyer-controlled
+ * payloads.
  */
 class CspInlineScriptTemplateTest extends TestCase
 {
@@ -54,7 +58,7 @@ class CspInlineScriptTemplateTest extends TestCase
      * The only thing allowed after the closing tag: the registration call, with
      * or without a closing PHP tag (Magento style often omits it at EOF).
      */
-    private const TRAILER_PATTERN = '/\A\s*<\?php\s+\$hyvaCsp->registerInlineScript\(\)\s*;?\s*(?:\?>)?\s*\z/';
+    private const TRAILER_PATTERN = '/\A\s*<\?php\s+\$\w+->registerInlineScript\(\)\s*;?\s*(?:\?>)?\s*\z/';
 
     /**
      * Assembled at runtime so this test file never contains the literal string
@@ -163,11 +167,14 @@ class CspInlineScriptTemplateTest extends TestCase
             self::TRAILER_PATTERN,
             $trailer,
             sprintf(
-                '%s must end with nothing but $hyvaCsp->registerInlineScript() after the closing '
-                . 'script tag. The helper inspects the output buffer as it stands when called: '
-                . 'anything emitted after the tag, or a call placed before it, means the buffer '
-                . 'does not end with a complete script element and the helper silently registers '
-                . 'nothing, so the enforced checkout CSP refuses the block. Trailer was: %s',
+                '%s must end with nothing but a $...->registerInlineScript() call after the '
+                . 'closing script tag. The helper inspects the output buffer as it stands when '
+                . 'called: anything emitted after the tag, or a call placed before it, means the '
+                . 'buffer does not end with a complete script element and the helper silently '
+                . 'registers nothing, so the enforced checkout CSP refuses the block. If this '
+                . 'template renders only an external src= include it needs no nonce and does not '
+                . 'belong in view/ mentioning the tag-open string at all — move it or rename the '
+                . 'mention. Trailer was: %s',
                 basename($path),
                 var_export($trailer, true)
             )

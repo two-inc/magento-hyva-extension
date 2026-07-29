@@ -26,7 +26,15 @@ $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+// Same flag set as gateway_method-csp-js.phtml, for the same reason: this
+// lands in an inline script and carries buyer-supplied values (email,
+// telephone, name, product names and descriptions). JSON_HEX_TAG is the
+// load-bearing one — without it a product named with a script end tag closes
+// the block early, which is both script injection and a second way to move
+// where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
+// is deliberately absent: it strips the incidental protection plain
+// json_encode() gives by escaping the slash in an end tag.
+$quoteDetailsJson = json_encode($quoteDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
 ?>
 <input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
 <input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
@@ -66,8 +74,8 @@ document.addEventListener('alpine:init', () => {
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
         countryCode : "",
-        isAddressSearchEnabled : '<?= $isAddressSearchEnabled ?>',
-        isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
+        isAddressSearchEnabled : '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
+        isCompanySearchEnabled : '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         quote : '<?= $quoteDetailsJson ?>',
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
         searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",

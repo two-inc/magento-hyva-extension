@@ -31,7 +31,15 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+// Same flag set as gateway_method-csp-js.phtml, for the same reason: this
+// lands in an inline script and carries buyer-supplied values (email,
+// telephone, name, product names and descriptions). JSON_HEX_TAG is the
+// load-bearing one — without it a product named with a script end tag closes
+// the block early, which is both script injection and a second way to move
+// where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
+// is deliberately absent: it strips the incidental protection plain
+// json_encode() gives by escaping the slash in an end tag.
+$quoteDetailsJson = json_encode($quoteDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
 
 /** Generated with hyva-csp-helper.php */
 ?>
@@ -45,7 +53,7 @@ function <?= $gwBase ?>CompanySearchField() {
         isSelecting: false,
         manualMode: false,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-        isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
+        isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
         // Company-search request state. `isSearching` drives an in-field
