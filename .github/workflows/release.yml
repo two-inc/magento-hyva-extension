@@ -1,32 +1,30 @@
 name: Release
 
-# Auto-bump on green CI: this fires only after the `CI` workflow finishes
-# on `main` or `staging`. The job-level guard below then requires that CI
-# actually succeeded before anything is bumped. This gates version bumps
-# behind CI rather than firing blindly on every push (the older
-# magento-plugin shape). `workflow_run` triggers off the workflow file on
-# the default branch — which is `staging` here, where this file lives —
-# so this is reliable; the `branches:` filter then scopes it to CI runs
-# on `main` or `staging`.
+# Triggered after CI completes on `main`. Release only fires when CI's
+# conclusion is 'success' (gated below), so a broken commit landing on
+# `main` cannot produce a tagged Release page.
 #
-# Two outcomes from one job, keyed on which branch CI ran for:
+# This workflow NO LONGER COMPUTES A VERSION. The version is decided on
+# the pull request that lands on `staging`
+# (.github/workflows/version-bump.yml + .github/scripts/decide-bump-level.sh),
+# from the conventional-commit types of that PR's own commits, so it
+# describes the change rather than the branch it merged into. By the time
+# a change reaches `main` the tree already declares the version it ships
+# as, and `main`'s only job is to tag that version and cut the Release.
 #
-#   staging — version-bump commit ONLY. No tag, no GitHub Release.
-#             The bump keeps the in-flight version moving so a staging
-#             install is always distinguishable from the last release.
-#   main    — version-bump commit + tag + GitHub Release, exactly the
-#             mechanics this workflow has always had.
+# Two consequences worth stating, because both were previously the other
+# way round:
 #
-# The bump LEVEL comes from `.github/scripts/decide-bump-level.sh`
-# (shared byte-identically across the Magento plugin repos): patch on
-# `staging`, minor on `main`, with a major escape hatch via a root
-# `.next-major` file or a `!` / `BREAKING CHANGE:` commit. The script
-# owns that decision — this workflow only consumes it.
+#   staging — nothing happens here at all. `staging` used to get a patch
+#             bump on every green commit; it now arrives carrying the
+#             version its PR computed.
+#   main    — tag + GitHub Release for the version already in the tree.
+#             No bump commit, so nothing is pushed to `main`.
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main, staging]
+    branches: [main]
 
 permissions:
   contents: write
@@ -40,19 +38,16 @@ concurrency:
 jobs:
   release:
     runs-on: ${{ vars.RUNNER_STANDARD }}
-    # Three guards, any of which stops a bump:
-    #   1. CI must have concluded successfully.
-    #   2. The run must be for `main` or `staging` (PR-CI runs carry the
-    #      feature branch as head_branch and are ignored — belt-and-braces
-    #      with the `branches:` filter above).
-    #   3. Skip bumpver's own "chore: Bump version" commit, whose push
-    #      re-fires CI and would otherwise loop this workflow forever.
-    #      The prefix must match bumpver.toml's `commit_message` exactly.
+    # CI must have succeeded, and the run must be for `main` (PR-CI runs
+    # carry the feature branch as head_branch and are ignored —
+    # belt-and-braces with the `branches:` filter above). There is no
+    # longer a bump-commit guard: nothing pushes a commit to `main` any
+    # more, and a subject guard would suppress a legitimate release whose
+    # tip is the version commit that came in from `staging`.
     if: >
       github.event.workflow_run.conclusion == 'success' &&
       (github.event.workflow_run.head_branch == 'main' ||
-       github.event.workflow_run.head_branch == 'staging') &&
-      !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
+       github.event.workflow_run.head_branch == 'staging')
     env:
       # The branch CI ran for — `main` or `staging`. Every step that needs
       # to know which of the two behaviours applies reads this.
@@ -96,39 +91,11 @@ jobs:
             echo "skip=0" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up Python
-        if: steps.gate.outputs.skip == '0'
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install bumpver
-        if: steps.gate.outputs.skip == '0'
-        run: pip install bumpver
-
       - name: Configure git identity
         if: steps.gate.outputs.skip == '0'
         run: |
           git config user.name "two-inc-app[bot]"
           git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
-
-      - name: Decide bump level
-        # The branch decides: `staging` -> patch, `main` -> minor, with a
-        # major escape hatch the script owns (root `.next-major` file, or a
-        # `!` / `BREAKING CHANGE:` commit). Outputs `level`, `set_version`
-        # (non-empty only for a major) and `reason`, and logs the whole
-        # decision — inputs included — to the step log.
-        #
-        # The script derives its OWN commit range and is deliberately not
-        # given one. Its range is anchored on the last bump commit rather
-        # than the last tag, because `staging` is only tagged once it
-        # reaches `main`; a tag-anchored range would re-discover the same
-        # breaking commit on every staging bump. That makes it a DIFFERENT
-        # range from the previous-tag range the release notes below use,
-        # and the two must stay separate.
-        if: steps.gate.outputs.skip == '0'
-        id: bump
-        run: .github/scripts/decide-bump-level.sh "$BRANCH"
 
       - name: Build release notes
         # `main` only — `staging` cuts no GitHub Release, so it needs no
@@ -136,7 +103,7 @@ jobs:
         # each non-merge commit into Breaking / Features / Fixes /
         # Internals / Other by conventional-commit type, with optional
         # Linear ticket prefix (e.g. INF-123/feat:). This is presentation
-        # only: the bump level no longer comes from which buckets are
+        # only: the version no longer comes from which buckets are
         # non-empty, it comes from the script above.
         if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
         id: notes
@@ -187,35 +154,20 @@ jobs:
           echo "--- release-notes.md preview ---"
           cat release-notes.md
 
-      - name: Bump version (bumpver — files + commit only)
-        # bumpver.toml is the single source of truth for which files
-        # carry the version (composer.json + etc/config.xml + README.md).
-        # --no-tag-commit --no-push override the tag=true/push=true in
-        # bumpver.toml because we tag and push manually after — the manual
-        # step lets us push under the App token (so downstream workflows
-        # fire) and writes the tag explicitly.
-        if: steps.gate.outputs.skip == '0'
-        env:
-          LEVEL: ${{ steps.bump.outputs.level }}
-          SET_VERSION: ${{ steps.bump.outputs.set_version }}
-        run: |
-          set -euo pipefail
-          if [ -n "$SET_VERSION" ]; then
-            # `--set-version` rather than `--major`: a declared
-            # `.next-major` may skip more than one major (current 2,
-            # declared 4), which `bumpver --major` cannot express.
-            bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
-          else
-            bumpver update "--${LEVEL}" --no-tag-commit --no-push
-          fi
-
-      - name: Read new version
+      - name: Read the version to release
+        # The version is NOT computed here any more. It was computed and
+        # committed on the pull request that landed on `staging`
+        # (.github/workflows/version-bump.yml + decide-bump-level.sh), so by the
+        # time a change reaches `main` the tree already declares the version it
+        # ships as. `main` only tags what is there and cuts the Release.
         if: steps.gate.outputs.skip == '0'
         id: ver
         run: |
-          new=$(bumpver show --environ | grep '^CURRENT_VERSION=' | cut -d= -f2)
+          set -euo pipefail
+          new=$(sed -n 's/^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' bumpver.toml | head -1)
+          [ -n "$new" ] || { echo "::error::could not read current_version from bumpver.toml"; exit 1; }
           echo "new=$new" >> "$GITHUB_OUTPUT"
-          echo "New version on ${BRANCH}: $new"
+          echo "Releasing version $new (already declared in the tree)"
 
       - name: Append full-diff link to release notes
         # `main` only — the notes only exist there.
@@ -227,17 +179,6 @@ jobs:
           if [ -n "$PREV" ]; then
             echo "**Full diff:** [\`${PREV}..${NEW}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV}...${NEW})" >> release-notes.md
           fi
-
-      - name: Push version bump
-        # Both branches: the bump commit is the entire deliverable on
-        # `staging`, and the first half of it on `main`.
-        if: steps.gate.outputs.skip == '0'
-        run: |
-          set -euo pipefail
-          # checkout@v5 already wrote the App token into the remote URL,
-          # so this push fires downstream workflows as the App identity
-          # (not GITHUB_TOKEN).
-          git push origin "$BRANCH"
 
       - name: Tag + push tag
         # `main` only. `staging` gets a version-bump commit and nothing

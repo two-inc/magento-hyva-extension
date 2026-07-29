@@ -28,16 +28,20 @@ Magewire/             # Magewire components (if applicable)
 
 ## Version Management
 
-Version bumps are automatic — CI does them. `.github/workflows/release.yml`
-fires after the `CI` workflow completes green on `staging` or `main`, and the
-level is decided by the branch, not by the commits:
+Version bumps are automatic — CI does them, on the pull request rather than
+after the merge. `.github/workflows/release.yml` now fires on `main` only and
+computes nothing: it reads the version out of `bumpver.toml`, tags it and cuts
+the Release.
 
-| Merge lands on | Bump | Also produces |
-|---|---|---|
-| `staging` | **patch** | nothing else — bump commit only |
-| `main` | **minor** | tag `X.Y.Z` + GitHub Release |
+| Change | What happens |
+|---|---|
+| PR into `staging` | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
+| merge into `staging` | nothing — the merge brings in the version its PR computed |
+| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release |
 
-A **major** is an explicit escape hatch and overrides the branch rule. Two
+With `M` the version on `origin/main` and `C` the version on the PR head, the PR's own commits (`origin/staging..HEAD`, `--no-merges`) decide the candidate: a `!` type or a `BREAKING CHANGE:` footer gives `(M.major + 1).0.0`, a `feat:` gives `M.major.(M.minor + 1).0`, and anything else — `fix` and `chore`/`docs`/`ci`/`test`/`refactor` alike — gives `M.major.M.minor.(M.patch + 1)`. The result is clamped with `max(C, candidate)`, which makes it idempotent (a re-run, the `synchronize` the bump commit itself fires, or a second fix commit on the same PR all write nothing) and means the version can never regress while `main` is behind `staging`.
+
+A **major** is an explicit escape hatch and overrides the rule above. Two
 independent signals, the higher wins:
 
 - **Declared** — a root `.next-major` file whose first whitespace-delimited
@@ -45,16 +49,18 @@ independent signals, the higher wins:
   (`3  # overlay migration, 3.0.0 release`). Reviewable in the PR that decides
   it, so a *planned* major with no single breaking commit still lands as a
   major. CI never clears the file; it disarms itself once the current major
-  reaches the declared one, and a declaration that has fallen *below* the
-  current major is a hard CI failure.
+  reaches the declared one, and a declaration that has fallen *below the major
+  on `main`* is a hard CI failure.
 - **Discovered** — a `!` on a conventional-commit type (`feat!:`,
-  `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer.
+  `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer, in **this PR's own
+  commits** only — never the cumulative `main..staging` range.
 
 The new version for a major is exactly `<target>.0.0`, so a declaration may
 skip more than one major.
-`.github/scripts/decide-bump-level.sh` owns the decision and is shared
-byte-identically across the Magento plugin repos; it logs the full decision —
-inputs included — to the workflow log on every run.
+`.github/scripts/decide-bump-level.sh` owns the decision, is unit-tested by
+`.github/scripts/test-decide-bump-level.sh`, and is shared byte-identically
+across the plugin repos; it logs the full decision — inputs included — to the
+workflow log on every run.
 
 Do not bump or tag by hand. If you must, for a local experiment only:
 

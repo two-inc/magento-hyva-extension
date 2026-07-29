@@ -1,163 +1,174 @@
 #!/usr/bin/env bash
 #
-# Decide the semantic-version bump level for a version-bump / release run.
+# Compute the version this pull request should land on `staging` with.
 #
-# Convention:
-#   patch  — change landing anywhere other than `main` (i.e. `staging`)
-#   minor  — change landing on `main`
-#   major  — escape hatch. Two independent signals, the higher wins:
+# The version describes the CHANGE, not the branch it is landing on. It is
+# derived from the conventional-commit types of the commits this PR adds, which
+# is what semver actually asks for. The previous scheme ("patch on staging,
+# minor on main") made the number describe the branch rule instead, so the same
+# change got a different version depending on where it merged.
 #
-#     Declared  a root `.next-major` file whose first whitespace-delimited
-#               token is the target major, with a short human reason on the
-#               same line. Human-editable and reviewable in the PR that
-#               decides it, so a *planned* major with no single breaking
-#               commit still lands as a major:
+#   M = version on `origin/main`          - the last released version
+#   C = version on this PR's head         - what the tree currently declares
+#   L = conventional-commit classification of `<base>..<head> --no-merges`
 #
-#                   3  # overlay migration, 3.0.0 release
+#   breaking  ->  candidate = (M.major + 1).0.0
+#   feat      ->  candidate = M.major.(M.minor + 1).0
+#   otherwise ->  candidate = M.major.M.minor.(M.patch + 1)
 #
-#     Discovered  a `!` on a conventional-commit type (`feat!:`,
-#                 `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer in the
-#                 commits under consideration. Covers a break that actually
-#                 happened.
+#   new = max(C, candidate)            # version_compare semantics
+#   new == C  ->  nothing to do
 #
-#   target = max(declared, current_major + (breaking ? 1 : 0))
-#   target > current_major  ->  major, new version is exactly <target>.0.0
-#   otherwise               ->  the branch rule above
+# Four properties this shape has deliberately, none of them incidental:
 #
-# `.next-major` is deliberately NEVER cleared by CI. The `target >
-# current_major` condition disarms it on its own once the major has shipped,
-# and leaving the file in place keeps the declared intent reviewable. The one
-# thing this scheme can still get wrong is a declaration that has fallen
-# BEHIND the current major, so that is a hard failure (see below) rather than
-# a silent no-op.
+#  1. THE RANGE IS THIS PR'S COMMITS ONLY (`origin/staging..HEAD`), never the
+#     cumulative `main..staging`. The cumulative range currently contains
+#     `feat!:` commits in several of these repos, so every PR would keep
+#     re-discovering the same break and re-proposing a major.
 #
-# Usage:  decide-bump-level.sh <branch> [<git-rev-range>]
+#  2. THE `max()` CLAMP, not "bump by one from C". This makes the computation
+#     idempotent by construction - re-running on the same head is a no-op, a
+#     second fix commit on the same PR is a no-op, and the version can NEVER
+#     REGRESS. That last part is load-bearing because `main` sits behind
+#     `staging` in these repos: with a stale main the raw candidate can compute
+#     BELOW the version already on staging, and on PrestaShop that would
+#     resurrect an already-run `upgrade/upgrade-<version>.php` filename.
 #
-# With no range, it is derived as "everything not already accounted for" — see
-# the anchor list below. Deriving it carefully matters: a naive
-# `<last-tag>..HEAD` would re-discover the same breaking commit on every single
-# staging PR and major-bump over and over, because `staging` is only tagged
-# when it reaches `main`.
+#  3. ONLY `feat` EARNS A MINOR. `chore`, `docs`, `ci`, `test`, `refactor`,
+#     `build`, `perf`, `style` all take a patch. The obvious-looking "minor
+#     unless every commit is a fix" rule would send a docs-only PR to a minor.
 #
-# Writes `level=`, `set_version=` and `reason=` to stdout as `key=value`
+#  4. `.next-major` IS COMPARED AGAINST MAIN'S MAJOR, not the head's. A
+#     declaration below the released major is always stale, and is a hard error
+#     rather than a silent no-op:
+#
+#         target_major = max(declared, M.major + breaking)
+#
+# PrestaShop-only clause: PrestaShop discovers upgrade scripts BY FILENAME and
+# runs `upgrade/upgrade-<version>.php` only for versions strictly above the
+# installed one. Appending a second migration to an already-installed version's
+# script therefore never runs on a shop that already reached that version -
+# silently, `number_upgraded=0`. So if this PR ADDS a new upgrade script and the
+# rule above produced no version change, force a patch bump so the script gets a
+# filename of its own. Editing an EXISTING script does not trigger this. The
+# clause is inert in the repos that have no `upgrade/upgrade-*.php` at all.
+#
+# Usage:  decide-bump-level.sh [<base-ref>] [<head-ref>]
+#         defaults: origin/staging HEAD
+#         MAIN_REF overrides the released-version ref (default origin/main).
+#
+# Writes `set_version=`, `changed=` and `reason=` to stdout as `key=value`
 # lines, and appends the same to $GITHUB_OUTPUT when running under Actions.
-# The full decision — including the declared reason string — is logged on
-# every run, so a stale `.next-major` is visible without digging.
+# `set_version` is ABSOLUTE and always populated; consumers pass it straight to
+# `bumpver update --set-version`. There is no bump "level" any more - a level
+# cannot express "clamp to what the tree already has".
 set -euo pipefail
 
-branch="${1:?usage: decide-bump-level.sh <branch> [<git-rev-range>]}"
-range="${2:-}"
+base_ref="${1:-origin/staging}"
+head_ref="${2:-HEAD}"
+main_ref="${MAIN_REF:-origin/main}"
 
 repo_root=$(git rev-parse --show-toplevel)
-toml="${repo_root}/bumpver.toml"
-[ -f "$toml" ] || { echo "::error::no bumpver.toml at ${toml}" >&2; exit 1; }
 
-current=$(sed -n 's/^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$toml" | head -1)
-[ -n "$current" ] || { echo "::error::could not read current_version from ${toml}" >&2; exit 1; }
-current_major=${current%%.*}
-case "$current_major" in
-    '' | *[!0-9]*) echo "::error::unparseable current_version '${current}' in ${toml}" >&2; exit 1 ;;
-esac
+die() {
+    echo "::error::$*" >&2
+    exit 1
+}
 
-# --- derive the range, if not given ------------------------------------------
+# --- reading a version out of a ref ------------------------------------------
 #
-# The base is the closest-to-HEAD of three anchors, each meaning "everything
-# before this is already accounted for":
-#
-#   1. the last version-bump commit — the normal steady-state anchor;
-#   2. the newest semver tag reachable from HEAD — covers a release cut
-#      without a bump commit on this branch;
-#   3. the commit that first added THIS script — the activation floor.
-#
-# (3) is what stops the very first run from re-discovering years of already
-# shipped `feat!:` commits and jumping several majors. Without it, four of the
-# six plugin repos would have gone straight to 3.0.0 the moment this landed.
-# It costs nothing afterwards: once a bump commit exists it is always closer
-# to HEAD, so (1) takes over and (3) never binds again.
-if [ -z "$range" ]; then
-    # Subject prefix of a bump commit, taken from bumpver's own configured
-    # commit_message so the two can't drift — the capitalisation of "bump"
-    # is not consistent across repos, so it must not be hardcoded here.
-    bump_msg=$(sed -n 's/^[[:space:]]*commit_message[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$toml" | head -1)
-    bump_prefix=${bump_msg%%\{*}
-    bump_prefix=${bump_prefix%% }
-    [ -n "$bump_prefix" ] || bump_prefix="chore: Bump version"
+# bumpver.toml is the source of truth everywhere it exists. It does NOT exist on
+# `main` in the PrestaShop repo (it was only ever added on `staging`), so fall
+# back to the module's own declarations rather than crashing - reading M is not
+# optional, it is the base of every candidate below.
+read_version() {
+    local ref="$1" v=""
 
-    self_rel=".github/scripts/decide-bump-level.sh"
-
-    candidates=""
-    add_candidate() {
-        [ -n "$1" ] || return 1
-        # Only anchors on this history are usable as a range base.
-        git merge-base --is-ancestor "$1" HEAD 2>/dev/null || return 1
-        candidates="${candidates}${1}
-"
+    v=$(git show "${ref}:bumpver.toml" 2>/dev/null |
+        sed -n 's/^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1) || true
+    [ -n "$v" ] && {
+        printf '%s' "$v"
+        return 0
     }
 
-    add_candidate "$(git log -1 --format='%H' --fixed-strings --grep="$bump_prefix" HEAD || true)" || true
-    # Version-sorted, so the first tag that is actually reachable is the newest.
-    for t in $(git tag --list --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true); do
-        if add_candidate "$(git rev-parse -q --verify "refs/tags/${t}^{commit}" || true)"; then
-            break
-        fi
-    done
-    add_candidate "$(git -C "$repo_root" log --diff-filter=A --format='%H' -1 -- "$self_rel" || true)" || true
+    v=$(git show "${ref}:config.xml" 2>/dev/null |
+        sed -n 's/.*<version><!\[CDATA\[\([^]]*\)\]\]><\/version>.*/\1/p' | head -1) || true
+    [ -n "$v" ] && {
+        printf '%s' "$v"
+        return 0
+    }
 
-    # Closest to HEAD wins — fewest commits between it and HEAD.
-    base=""
-    best=""
-    while IFS= read -r c; do
-        [ -n "$c" ] || continue
-        n=$(git rev-list --count "${c}..HEAD")
-        if [ -z "$best" ] || [ "$n" -lt "$best" ]; then
-            best="$n"
-            base="$c"
-        fi
-    done <<EOF
-${candidates}
-EOF
+    v=$(git show "${ref}:twopayment.php" 2>/dev/null |
+        sed -n "s/.*this->version[[:space:]]*=[[:space:]]*'\([^']*\)'.*/\1/p" | head -1) || true
+    [ -n "$v" ] && {
+        printf '%s' "$v"
+        return 0
+    }
 
-    if [ -n "$base" ]; then
-        range="${base}..HEAD"
-    else
-        range="HEAD"
+    return 1
+}
+
+# MAJOR MINOR PATCH out of a version string, ignoring any -TAGNUM suffix.
+split_version() {
+    local v="${1%%-*}"
+    [[ $v =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+    printf '%s %s %s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+}
+
+# `version_compare` semantics: echo the greater of the two versions. Ties echo
+# the first argument, which is why callers pass the head version first - a tie
+# means "the tree already has it" and must not read as a change.
+version_max() {
+    local am ai ap bm bi bp
+    read -r am ai ap <<<"$(split_version "$1")"
+    read -r bm bi bp <<<"$(split_version "$2")"
+    if [ "$am" -ne "$bm" ]; then
+        if [ "$am" -gt "$bm" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+        return
     fi
-fi
-
-# --- signal 1: declared major -------------------------------------------------
-declared=0
-declared_reason=""
-next_major_file="${repo_root}/.next-major"
-if [ -f "$next_major_file" ]; then
-    raw=$(head -1 "$next_major_file")
-    declared=$(printf '%s' "$raw" | awk '{print $1}')
-    declared_reason=$(printf '%s' "$raw" | sed 's/^[^[:space:]]*[[:space:]]*//; s/^#[[:space:]]*//')
-    case "$declared" in
-        '' | *[!0-9]*)
-            echo "::error::.next-major must start with the target major version as a bare integer; got '${raw}'" >&2
-            exit 1
-            ;;
-    esac
-    # The failure mode this scheme can still get wrong: a declaration left
-    # behind by a major that has already shipped some other way. Silently
-    # ignoring it would let it rot; regressing to it would be worse. Fail.
-    if [ "$declared" -lt "$current_major" ]; then
-        echo "::error::.next-major declares major ${declared} but the current version is ${current} (major ${current_major}). A declaration below the current major is always stale — delete or raise it." >&2
-        exit 1
+    if [ "$ai" -ne "$bi" ]; then
+        if [ "$ai" -gt "$bi" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+        return
     fi
-fi
+    if [ "$ap" -ne "$bp" ]; then
+        if [ "$ap" -gt "$bp" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
+        return
+    fi
+    printf '%s' "$1"
+}
 
-# --- signal 2: discovered breaking change ------------------------------------
-breaking=0
-breaking_reason=""
+main_version=$(read_version "$main_ref") ||
+    die "could not read a version from ${main_ref} (tried bumpver.toml, config.xml, twopayment.php)"
+head_version=$(read_version "$head_ref") ||
+    die "could not read a version from ${head_ref} (tried bumpver.toml, config.xml, twopayment.php)"
+
+main_parts=$(split_version "$main_version") ||
+    die "unparseable version '${main_version}' on ${main_ref}"
+read -r M_major M_minor M_patch <<<"$main_parts"
+split_version "$head_version" >/dev/null ||
+    die "unparseable version '${head_version}' on ${head_ref}"
+
+# --- classify this PR's commits ----------------------------------------------
+range="${base_ref}..${head_ref}"
 subject_re='^([A-Z]+-[0-9]+/)?[a-z]+(\([^)]+\))?!:'
 footer_re='^BREAKING[ -]CHANGE:'
+feat_re='^([A-Z]+-[0-9]+/)?feat(\([^)]+\))?:'
+
+breaking=0
+breaking_reason=""
+feat=0
+feat_reason=""
 
 while IFS= read -r subject; do
+    [ -n "$subject" ] || continue
     if printf '%s' "$subject" | grep -qE "$subject_re"; then
         breaking=1
         breaking_reason="$subject"
         break
+    fi
+    if [ "$feat" -eq 0 ] && printf '%s' "$subject" | grep -qE "$feat_re"; then
+        feat=1
+        feat_reason="$subject"
     fi
 done < <(git log "$range" --no-merges --format='%s')
 
@@ -169,62 +180,116 @@ if [ "$breaking" -eq 0 ]; then
     fi
 fi
 
-# --- combine ------------------------------------------------------------------
-discovered=$current_major
-[ "$breaking" -eq 1 ] && discovered=$((current_major + 1))
+# --- declared major (`.next-major`) ------------------------------------------
+declared=0
+declared_reason=""
+next_major_file="${repo_root}/.next-major"
+if [ -f "$next_major_file" ]; then
+    raw=$(head -1 "$next_major_file")
+    declared=$(printf '%s' "$raw" | awk '{print $1}')
+    declared_reason=$(printf '%s' "$raw" | sed 's/^[^[:space:]]*[[:space:]]*//; s/^#[[:space:]]*//')
+    case "$declared" in
+        '' | *[!0-9]*)
+            die ".next-major must start with the target major version as a bare integer; got '${raw}'"
+            ;;
+    esac
+    # A declaration that has fallen behind the RELEASED major is always stale -
+    # the major it declared has already shipped some other way. Ignoring it
+    # silently lets it rot; honouring it would regress. Fail.
+    if [ "$declared" -lt "$M_major" ]; then
+        die ".next-major declares major ${declared} but ${main_ref} is at ${main_version} (major ${M_major}). A declaration below the released major is always stale - delete or raise it."
+    fi
+fi
 
-target=$declared
-[ "$discovered" -gt "$target" ] && target=$discovered
+target_major=$declared
+discovered_major=$((M_major + breaking))
+[ "$discovered_major" -gt "$target_major" ] && target_major=$discovered_major
 
-set_version=""
-if [ "$target" -gt "$current_major" ]; then
-    level=major
-    # `--set-version` rather than `--major`: a declaration may skip more than
-    # one major (current 2, declared 4), which `bumpver --major` cannot express.
-    set_version="${target}.0.0"
-    if [ "$declared" -ge "$target" ]; then
+# --- candidate ---------------------------------------------------------------
+if [ "$target_major" -gt "$M_major" ]; then
+    candidate="${target_major}.0.0"
+    if [ "$declared" -ge "$target_major" ]; then
         why="declared .next-major=${declared}"
         [ -n "$declared_reason" ] && why="${why} (${declared_reason})"
     else
-        why="discovered breaking change: ${breaking_reason}"
+        why="breaking change: ${breaking_reason}"
     fi
-elif [ "$branch" = "main" ]; then
-    level=minor
-    why="branch rule: main -> minor"
+elif [ "$feat" -eq 1 ]; then
+    candidate="${M_major}.$((M_minor + 1)).0"
+    why="feature: ${feat_reason}"
 else
-    level=patch
-    why="branch rule: ${branch} -> patch"
+    candidate="${M_major}.${M_minor}.$((M_patch + 1))"
+    why="no feature or breaking commit in this PR -> patch"
 fi
+
+new=$(version_max "$head_version" "$candidate")
+if [ "$new" != "$candidate" ]; then
+    why="${why}; clamped to the version already on the head (${head_version} >= candidate ${candidate})"
+fi
+
+# --- PrestaShop-only: a NEW upgrade script needs a filename of its own -------
+#
+# `--diff-filter=A` against the merge base, so an EDIT to an existing script
+# never triggers this - only a genuinely new file does.
+added_upgrade_scripts=""
+if git rev-parse -q --verify "$base_ref" >/dev/null 2>&1; then
+    added_upgrade_scripts=$(git diff --diff-filter=A --name-only \
+        "${base_ref}...${head_ref}" -- 'upgrade/upgrade-*.php' 2>/dev/null || true)
+fi
+
+if [ -n "$added_upgrade_scripts" ] && [ "$new" = "$head_version" ]; then
+    # ...unless one of the added scripts is ALREADY named for the head version.
+    # That is the converged state: the script has a filename of its own and
+    # forcing again on the next `synchronize` would bump forever.
+    owns_its_filename=0
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        v=${path##*/upgrade-}
+        v=${v%.php}
+        [ "$v" = "$head_version" ] && owns_its_filename=1
+    done <<<"$added_upgrade_scripts"
+
+    if [ "$owns_its_filename" -eq 0 ]; then
+        read -r n_major n_minor n_patch <<<"$(split_version "$new")"
+        new="${n_major}.${n_minor}.$((n_patch + 1))"
+        why="${why}; forced a patch because this PR adds a new upgrade script and PrestaShop discovers upgrade scripts by filename"
+    else
+        why="${why}; the new upgrade script is already named for this version"
+    fi
+fi
+
+changed=false
+[ "$new" != "$head_version" ] && changed=true
 
 reason=$(printf '%s' "$why" | tr '\n' ' ')
 
-# Always log the whole decision, not just the outcome — a stale declaration or
-# an unexpected breaking commit is only visible if the inputs are printed too.
 {
-    echo "----- bump level decision -----"
-    echo "branch          : ${branch}"
-    echo "range           : ${range}"
-    echo "current version : ${current} (major ${current_major})"
+    echo "----- version decision -----"
+    echo "main (${main_ref})     : ${main_version}"
+    echo "head (${head_ref})     : ${head_version}"
+    echo "range                  : ${range}"
     if [ -f "$next_major_file" ]; then
-        echo "declared major  : ${declared}${declared_reason:+  — ${declared_reason}}"
+        echo "declared major         : ${declared}${declared_reason:+  - ${declared_reason}}"
     else
-        echo "declared major  : (no .next-major)"
+        echo "declared major         : (no .next-major)"
     fi
-    echo "breaking commit : ${breaking_reason:-none}"
-    echo "target major    : ${target}"
-    echo "level           : ${level}${set_version:+  -> ${set_version}}"
-    echo "reason          : ${reason}"
-    echo "-------------------------------"
+    echo "breaking commit        : ${breaking_reason:-none}"
+    echo "feature commit         : ${feat_reason:-none}"
+    echo "added upgrade scripts  : $(printf '%s' "${added_upgrade_scripts:-none}" | tr '\n' ' ')"
+    echo "candidate              : ${candidate}"
+    echo "set_version            : ${new}  (changed=${changed})"
+    echo "reason                 : ${reason}"
+    echo "----------------------------"
 } >&2
 
-echo "level=${level}"
-echo "set_version=${set_version}"
+echo "set_version=${new}"
+echo "changed=${changed}"
 echo "reason=${reason}"
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
-        echo "level=${level}"
-        echo "set_version=${set_version}"
+        echo "set_version=${new}"
+        echo "changed=${changed}"
         echo "reason=${reason}"
-    } >> "$GITHUB_OUTPUT"
+    } >>"$GITHUB_OUTPUT"
 fi
