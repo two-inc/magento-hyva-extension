@@ -25,10 +25,7 @@ const H = require("./hyva-harness");
 // A quote id that is a JSON NUMBER, which is what json_encode() emits for an
 // uncast Quote::getId().
 const NUMERIC_QUOTE = [
-  [
-    /^\$quoteDetails(Json)?$/,
-    '{"quote_id":42,"store_id":"1","shipping_country_id":"GB"}',
-  ],
+  [/^\$quoteDetails(Json)?$/, '{"quote_id":42,"shipping_country_id":"GB"}'],
 ];
 
 describe("quote id normalisation", () => {

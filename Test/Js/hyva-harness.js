@@ -52,7 +52,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
  * `<prefix>GatewayHyva`; the vanilla prefix is `two`.
  */
 const QUOTE_JSON =
-  '{"quote_id":"test-quote-1","store_id":"1","shipping_country_id":"GB","grand_total":100}';
+  '{"quote_id":"test-quote-1","shipping_country_id":"GB","grand_total":100}';
 
 /**
  * Fallback for an escapeJs()/escapeHtmlAttr() whose argument has no rule of its
@@ -390,9 +390,6 @@ const PAYMENT_FIELDS_TEMPLATE =
   "view/frontend/templates/js/payment/company-name-payment.phtml";
 
 /**
- * The globals gateway_method-csp-js.phtml publishes for the other two pickers.
- */
-/**
  * The company-selection storage key AS THE TEMPLATES BUILD IT.
  *
  * The blob is keyed per store view — `shipping_company_selection:<store_id>` —
@@ -402,6 +399,9 @@ const PAYMENT_FIELDS_TEMPLATE =
  */
 const COMPANY_SELECTION_KEY = "shipping_company_selection:1";
 
+/**
+ * The globals gateway_method-csp-js.phtml publishes for the other pickers.
+ */
 const SHARED_HELPER_GLOBALS = [
   "twoGatewayGetCountryCode",
   "twoGatewayIsDegradedResponse",
@@ -411,9 +411,10 @@ const SHARED_HELPER_GLOBALS = [
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
-  // correct in production (four templates each define the key and only the
-  // first assignment should win) but would otherwise carry the FIRST test
-  // file's copy — and the store id baked into its key — into every later one.
+  // correct in production (the publisher can render once per payment method and
+  // only the first assignment should win) but would otherwise carry the FIRST
+  // test file's copy — and the store id baked into its key — into every later
+  // one.
   "TWO_GATEWAY_COMPANY_SELECTION_STORE",
   "TWO_GATEWAY_COMPANY_SELECTION_KEY",
   "twoGatewayReadCompanySelection",

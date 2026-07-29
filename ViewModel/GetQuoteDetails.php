@@ -70,13 +70,6 @@ class GetQuoteDetails implements ArgumentInterface
             // other makes `!==` true forever, and the two clearers then wipe the
             // buyer's company on every page load.
             $quoteDetails["quote_id"] = (string) $quote->getId();
-            // And the store view, which is what scopes the company-selection
-            // browser-storage key. The quote is deliberately SHARED across
-            // store views, so a quote-id comparison alone cannot tell a store
-            // excursion from staying put — and the storage key is one global.
-            $quoteDetails["store_id"] = (string) $this->_storeManager
-                ->getStore()
-                ->getId();
             $quoteDetails["email"] = $quote->getCustomerEmail();
             if (!$quoteDetails["email"]) {
                 $quoteDetails["email"] = $quote

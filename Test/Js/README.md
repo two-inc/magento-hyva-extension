@@ -76,7 +76,7 @@ hard error rather than a fallback:
   never substituted with a blank;
 - any `<?` surviving substitution **throws**;
 - a template with no `<script>` block **throws**;
-- `loadSharedHelpers()` asserts each of the six `window.twoGateway*` globals actually
+- `loadSharedHelpers()` asserts each global in `SHARED_HELPER_GLOBALS` actually
   exists after evaluation;
 - an Alpine binding a test asks for that is missing, or is not CSP-evaluable, **throws**.
 
