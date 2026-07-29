@@ -462,4 +462,34 @@ describe("company-name field picker", () => {
     });
   });
 
+  describe("a Magewire re-render mid-flight", () => {
+    test("does not write results into a detached component", async () => {
+      const started = await startSearch("example");
+      expect(fetchStub.calls.length).toBe(1);
+
+      // Magewire's diff-merge replaces the address-form subtree: this
+      // component's root leaves the document while its request is in flight.
+      // The node has no `wire:ignore` — deliberately, it wraps a
+      // Magewire-bound address field — so the guard is in getItems().
+      root.remove();
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items).toEqual([]);
+      expect(component.isSearching).toBe(false);
+      expect(component.searchAbortController).toBe(null);
+      expect(component.isOpen).toBe(false);
+    });
+
+    test("a component still in the document is written to as normal", async () => {
+      const started = await startSearch("example");
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items.length).toBe(1);
+      expect(component.isOpen).toBe(true);
+    });
+  });
 });
