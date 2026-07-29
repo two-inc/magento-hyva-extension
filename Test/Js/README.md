@@ -26,9 +26,9 @@ This module ships no `.js` files for checkout. The code under test is an inline
 Hyvä's `hyva` global already exist. Jest cannot import a `.phtml`.
 
 Extracting the JS into real `.js` files would be the clean answer, and it remains the
-right long-term move. It is deliberately **not** done here: it is a production change,
-and this is a test-only PR. `hyva-harness.js` therefore does the extraction at test time
-instead:
+right long-term move. It was deliberately **not** done when this suite was introduced
+(TWO-25245, a test-only PR) and has not been done since. `hyva-harness.js` therefore does
+the extraction at test time instead:
 
 1. `<?php … ?>` blocks are dropped whole — they are the template's preamble and its
    trailing `registerInlineScript()` call, and they emit nothing into the page.
@@ -41,7 +41,21 @@ instead:
    a `<script>` tag would: a top-level `function` becomes a global, and the file's free
    references to `hyva`, `Alpine` and `window` resolve to the harness stubs.
 
-**No production code was changed to make this testable.**
+`renderTemplateMarkup()` is the same substitution with the `<script>` blocks removed
+instead of kept, and `readAlpineBinding(template, selector, attribute)` reads one Alpine
+attribute expression out of the result. Those exist because **component state bound to
+nothing has no user-visible effect**, and asserting on the state alone cannot tell the two
+apart — a defect this suite shipped once (see the TWO-25253 note below). `readAlpineBinding`
+throws when the element is missing, when the attribute is absent, and when the expression is
+not a bare identifier; the last one is a CSP check, since Hyvä ships the CSP Alpine build
+which evaluates nothing else in an attribute (the reason `gateway_method-csp-js.phtml`
+carries a `['!showManual']` getter rather than writing `!showManual` inline).
+
+**No production code has been changed to make this testable.** Later PRs do change these
+templates — that is what they are for — but the harness reads whatever the template happens
+to say, and nothing has been added to a template for the tests' benefit. `readAlpineBinding()`
+is the sharpest case: it asserts against a binding the page needs anyway, and the reason it
+exists is that the binding was MISSING and the tests could not tell.
 
 Two of the substituted values are constrained by the templates and worth knowing about
 before editing the table:
@@ -63,10 +77,11 @@ hard error rather than a fallback:
 - any `<?` surviving substitution **throws**;
 - a template with no `<script>` block **throws**;
 - `loadSharedHelpers()` asserts each of the six `window.twoGateway*` globals actually
-  exists after evaluation.
+  exists after evaluation;
+- an Alpine binding a test asks for that is missing, or is not CSP-evaluable, **throws**.
 
-`harness-contract.test.js` pins all four against fixtures in `fixtures/`, and also renders
-each of the three real templates and syntax-checks the output. So a template edit the
+`harness-contract.test.js` pins all of these against fixtures in `fixtures/`, and also
+renders each of the four real templates and syntax-checks the output. So a template edit the
 renderer cannot handle fails CI loudly instead of silently reducing the suite's coverage.
 
 ### What is stubbed, and what is not
@@ -139,11 +154,63 @@ caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inv
 `this.searchAbortController === controller` fails four tests, and weakening it to an
 unconditional `done` fails the supersession test.
 
-The TWO-25253 identifier guard was mutation-checked the same way, five separate reverts each
-going red: restoring the unguarded `item.national_identifier.id` read fails 8 tests; putting
-back `fillCompanyData()`'s bail on an empty id fails 3; reverting the `manualMode` watcher to
-assigning `!value` inline fails 1; dropping the `x-for :key` fallback fails 1; and dropping
-the `companyId &&` term from the order-intent trigger fails 1.
+The TWO-25253 identifier guard was mutation-checked the same way, **twenty-three** separate
+reverts, each red. Re-verified in full after the re-render fix below, against the shipped
+templates rather than carried forward — three counts in the previous revision of this table
+were wrong when written (`updatePaymentFields()` said 6, the shipping-sync gate said 3, and
+`applyCompanyIdEditability()` said 7), and several others legitimately moved because the
+fix changes what the field's state is at mount:
+
+| Mutation                                                                        | Tests failing                                                                    |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Delete `:disabled="companyIdDisabled"` from `gateway_method.phtml`              | `payment-company-selection.test.js` fails to run at all — 28 tests never execute |
+| Drop the editability recompute from `getItems()`                                | 2                                                                                |
+| `getItems()` recompute always `true` (blanket unlock)                           | 1                                                                                |
+| `getItems()` recompute always `false` (blanket lock)                            | 6                                                                                |
+| Hoist the `getItems()` recompute above its `isSelecting` early return           | 1                                                                                |
+| Require the identifier in the `billing_as_shipping_address_updated` gate        | 2                                                                                |
+| Drop `companyIdInput.value = companyId` from `updatePaymentFields()`            | 8                                                                                |
+| Restore the imperative `disabled = true` + grey in `company-name-payment.phtml` | 2                                                                                |
+| Require the identifier before syncing shipping → payment                        | 4                                                                                |
+| Drop the editability recompute from the `update-company-data` listener          | 2                                                                                |
+| `identifierOf` back to a truthiness test (so `id: 0` reads as absent)           | 1                                                                                |
+| Drop the empty-identifier term from the sync's order-intent gate                | 1                                                                                |
+| `manualMode` watcher back to assigning `!value` inline                          | 1                                                                                |
+| `companyIdDisabled` declared `false` instead of `true`                          | 1                                                                                |
+| Sync a selection with an empty company NAME too                                 | 1                                                                                |
+| `fillCompanyData()` bails on an empty id again                                  | 4                                                                                |
+| `selectItem()` stops deriving `companyIdEntryRequired`                          | 6                                                                                |
+| `initialize()` stops deriving it at all (forced `false`)                        | 5                                                                                |
+| `initialize()` back to `Boolean(company_name) && !company_id`                   | 3                                                                                |
+| `initialize()` derivation forced `true` (blanket unlock)                        | 3                                                                                |
+| Drop the `x-for :key` fallback                                                  | 1                                                                                |
+| Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
+| `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
+
+One of these **started green** in an earlier round, and it is worth recording why. Flipping
+the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls
+`applyCompanyIdEditability()` unconditionally and overwrites the literal — so every
+assertion made after mounting held either way. The literal is nonetheless the state Alpine
+binds on FIRST PAINT, before `initialize()` has run, and a wrong one flashes the field open.
+It is now pinned by mounting the factory without calling `initialize()`. Nothing in the
+re-verified table above starts green.
+
+Two things here have **no automated coverage** and are called out rather than implied: the
+`input.company_id:disabled` rule in `custom.css` (Jest asserts no styles), and Alpine's own
+evaluation of the binding. What the suite does assert is that the attribute exists on the
+right element and holds a bare property name, and that no second
+`:style` binding carries the same fact — a string `:style` would set the whole style
+attribute, which is where the element's `x-show` writes `display: none`.
+
+That bare-property-name check is the **harness's** contract, not a statement about CSP.
+`readAlpineBinding()` resolves a binding as `component[name]`, so that is all it accepts —
+narrower on purpose than the CSP Alpine build, which looks the whole expression up as a key
+and therefore evaluates the sibling `x-show="!showManual"` perfectly happily against the
+`['!showManual']` getter in `gateway_method-csp-js.phtml`. Dotted paths are the other thing
+CSP Alpine accepts and this helper rejects. An earlier revision of this file and of
+`harness-contract.test.js` described the guard as a CSP-legality check and cited
+`!showManual` as CSP-illegal; that was backwards, and the module's own getter is the
+counter-example.
 
 `company-name-field.test.js` — the address-form picker, which has no overlay and drives an
 in-field spinner instead. Same invariant, different surface: every exit from `getItems()`
@@ -164,15 +231,89 @@ with no identifier wrote the new NAME and left the PREVIOUS company's identifier
 field — disabled, so the buyer could not correct it, and read straight back out by
 `buildOrderIntentRequestBody()` and by the checkout's own `payment[company_id]`. Covered:
 name and id always describing the same company, the id field left empty but **editable**
-(empty and disabled is an unfillable required field), the greyed-out state derived in one
-place from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-lock a
-field still to be filled, selecting an identified company afterwards re-locking it, the
-same state restored from browser storage, no order intent dispatched for an empty id, and
-the dropdown's `x-for :key` staying unique when two hits in one response both lack an
-identifier (it is bound to `companyId`, and Alpine renders one row per distinct key, so a
-collision on `''` would silently cost the buyer a company that matched).
+(empty and disabled is an unfillable required field), the locked state derived in one place
+from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-lock a field
+still to be filled, selecting an identified company afterwards re-locking it, the same
+state arriving from the shipping step's `update-company-data` event and restored from
+browser storage, no order intent dispatched for an empty id, and the dropdown's
+`x-for :key` staying unique when two hits in one response both lack an identifier (it is
+bound to `companyId`, and Alpine renders one row per distinct key, so a collision on `''`
+would silently cost the buyer a company that matched).
 
-`harness-contract.test.js` — the four fail-loud guarantees above.
+Also covered there, and the reason the binding needed a second round: a name **typed
+without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
+default of `true` locked the field on first paint, where before the binding existed nothing
+locked it until a shipping sync did so imperatively. A buyer who typed a company name and
+never selected a hit was then facing a `company_id` that was empty AND disabled AND
+required — and the only escape, "Enter details manually", sits inside the dropdown's
+`x-show="isOpen"`, so it vanishes the moment they tab away. `getItems()`, the name field's
+own `@input.debounce.300ms` handler, now recomputes `companyIdEntryRequired` on every edit
+from the invariant the whole binding exists for: **enabled whenever there is no
+registry-supplied identifier for the name currently in the field, disabled exactly when one
+has been written for it**. Six tests pin it, including the two that stop an over-correction
+— a blanket unlock would re-open the hand-overwritable registry-number hole, and the
+recompute must stay BELOW the `isSelecting` early return or it undoes the lock the
+selection just applied. Note the declared default is deliberately still `true`: it is the
+state Alpine binds before `initialize()` runs, and the field must not flash open.
+
+And the reason it needed a THIRD round: that recompute writes **component state only**, and
+Magewire re-renders destroy and rebuild the component. Only `selectItem()` writes browser
+storage, so a name the buyer typed and never picked survives a re-render as _nothing at
+all_ — and `initialize()`, deriving the flag as `Boolean(company_name) && !company_id`,
+read empty storage as "locked" and re-shut a field the recompute had just opened. Same dead
+end, one Magewire round-trip later, and invisible to every test in the suite because nothing
+re-mounted after typing. `initialize()` now derives from the same invariant. With the
+`$nextTick` restore putting `company_name` back in the field, the comparison collapses to
+`!company_id`: empty storage yields **enabled** (nothing has vouched for a number for
+whatever is in the field), a restored pick that carried a registry identifier stays
+**locked**. Four tests re-mount over live storage to pin it.
+
+One case is pinned as deliberately NOT preserving what the recompute produced: editing the
+name after a pick. Storage still holds the picked company, name and identifier together, so
+the rebuild restores that company wholesale and the number is registry-supplied for the name
+beside it again — locked is then correct, and unlocking would reopen the very hole the
+binding closes. What is lost is the half-typed name, which is the restore's pre-existing
+"storage wins over a transient edit" behaviour. The pair never disagrees, which is the
+property that costs money.
+
+Every editability assertion in that file lands on `document.getElementById('company_id')
+.disabled`, applied through the **real** `:disabled` expression read out of
+`gateway_method.phtml`. That is not decoration. The first version of this suite asserted only
+on `companyIdDisabled`, which at the time was bound to nothing at all: the field was disabled
+imperatively elsewhere and never re-enabled, so the suite passed with the required field
+permanently uneditable — the exact condition the fix exists to prevent. Deleting the
+`:disabled` attribute from the template now fails the whole file at load. A test that cannot
+fail for the reason the fix exists is not a test of the fix.
+
+`payment-fields-shipping-sync.test.js` — `company-name-payment.phtml`, the bridge that
+copies the shipping step's company onto the payment tile. It gated on name **and**
+identifier, so an identifier-less selection was skipped entirely and the tile kept the
+previous company's name and number: place-order submitted company A for a buyer who had
+selected company B, with nothing prompting a re-entry. It also disabled `#company_id` on
+every sync and never reversed it. Covered: an identifier-less company syncing, overwriting
+the previous one rather than being skipped, the field never being disabled or greyed
+imperatively, an empty NAME still being skipped, and the order intent firing for an
+identified company but not for an identifier-less one.
+
+The `shipping-company-selected` path and the `billing_as_shipping_address_updated` Magewire
+path are both driven, because the same gate was relaxed in both and only the first had
+coverage — reverting the second to `shippingCompany && shippingCompanyId` left the suite
+fully green. The Magewire handler registers inside a `DOMContentLoaded` callback behind a
+poll for the `Magewire` global, so the test installs a `Magewire` stub **first** (the else
+branch arms a 100ms `setTimeout` retry loop that would otherwise never stop) and then
+dispatches `DOMContentLoaded` by hand — jsdom fired the real one long before the template
+was evaluated. It throws rather than skips if no handler gets registered.
+
+The two "does not touch the field imperatively" tests assert the synced **value** as well
+as `disabled` / `style`. That is load-bearing: the fixture starts undisabled with an empty
+`style`, so a sync that did nothing whatsoever would satisfy those expectations on its own,
+and the tests would have been green by construction.
+
+Its own file because the template registers unremovable top-level `window` listeners — see
+the known-leak note below.
+
+`harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
+renderer.
 
 ## Deliberately out of scope
 
@@ -188,9 +329,14 @@ collision on `''` would silently cost the buyer a company that matched).
   suite. The exception is `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
   `payment-company-selection.test.js` does assert on: the identifier guard made an empty
   `companyId` reachable there, and the wrong-data consequence had to be pinned.
-- **Rendered markup.** `isSearchUnavailable` is asserted as component state, not as
-  chrome: the markup that binds it lives in `companyName.phtml` / outside this module, and
-  the branded overlay ships its own fork of it.
+- **Rendered markup, as chrome.** Nothing here mounts a template and asserts on what a buyer
+  would see. `isSearchUnavailable`, for instance, is asserted as component state only: the
+  markup binding it lives in `companyName.phtml` / outside this module, and the branded
+  overlay ships its own fork of it. The one exception is deliberate and narrow — where
+  component state has no effect at all unless a binding carries it to an element, the binding
+  itself is read out of the template and applied (`readAlpineBinding()`, and the
+  `:disabled` assertions in `payment-company-selection.test.js`). That is not a chrome
+  assertion; it is what stops the state being dead. CSS is still entirely uncovered.
 - **`initShippingCompanyStorage()`**'s new-session detection. It runs on `alpine:init` in
   every test in that file, so a throw would be caught, but its quote-id comparison is not
   asserted.
@@ -210,10 +356,16 @@ inert rather than flaky, and both are deliberate: the file runs under
 `input[name="payment-method-option"]:checked`, which is the debounced callback's first exit.
 It asserts on the dispatch with a listener of its own that it removes.
 
-Elsewhere the leak is inert for a simpler reason: nothing else dispatches the event, and each
-handler only arms the debounce when it fires. A new test that dispatches it belongs in its
-own file for the same reason — or have the production template guard its registration the way
-the helpers guard theirs (`window.x = window.x || …`).
+`company-name-payment.phtml` has the same shape — anonymous top-level `window` listeners for
+`shipping-company-selected` and `checkout:payment:method-activate`. `payment-fields-shipping-sync.test.js`
+drives those listeners directly, so it evaluates that template **once**, in `beforeAll`, and
+resets the DOM and browser storage per test instead. A per-test load there would run one
+handler per preceding test on every dispatch.
+
+Elsewhere the leak is inert for a simpler reason: nothing else dispatches these events, and
+each handler only arms the debounce when it fires. A new test that dispatches one belongs in
+its own file for the same reason — or have the production template guard its registration the
+way the helpers guard theirs (`window.x = window.x || …`).
 
 ## Adding tests
 

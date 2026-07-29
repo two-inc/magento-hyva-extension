@@ -114,6 +114,70 @@ describe("template renderer contract", () => {
     });
   });
 
+  describe("markup rendering, for the Alpine attribute bindings", () => {
+    // Component state bound to nothing has no user-visible effect, so a test
+    // asserting on it can pass while the page is broken. That is a defect this
+    // suite has actually shipped once (TWO-25253), and reading the binding out
+    // of the markup template is what makes it detectable — which in turn means
+    // these guarantees need pinning like the JS renderer's do.
+    test("shares the JS renderer's hard error on an unmapped expression", () => {
+      expect(() =>
+        H.renderTemplateMarkup(FIXTURES + "unknown-tag.phtml.fixture"),
+      ).toThrow(/no test value for PHP expression `\$somethingNobodyMapped`/);
+    });
+
+    test("strips <script> blocks, leaving only markup", () => {
+      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
+
+      expect(markup).not.toContain("<?");
+      expect(markup).not.toContain("<script");
+      expect(markup).toContain('data-name="company_id"');
+    });
+
+    test("a missing binding is a hard error, not a silent undefined", () => {
+      expect(() =>
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          'input[data-name="company_id"]',
+          ":somethingNobodyBound",
+        ),
+      ).toThrow(/has no `:somethingNobodyBound` binding/);
+    });
+
+    test("an element the selector cannot find is a hard error", () => {
+      expect(() =>
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          "input#nothing-like-this",
+          ":disabled",
+        ),
+      ).toThrow(/no element matching/);
+    });
+
+    test("a binding that is not a bare property name is a hard error", () => {
+      // The harness resolves a binding as `component[name]`, so that is all it
+      // accepts — narrower ON PURPOSE than CSP-friendly Alpine, which looks the
+      // whole expression up as a key and so happily evaluates the sibling
+      // `x-show="!showManual"` against the `['!showManual']` getter in
+      // gateway_method-csp-js.phtml. That binding is CSP-legal; it is just not
+      // resolvable this way, which is why the guard rejects it here.
+      expect(() =>
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          'input[data-name="company_name"]',
+          "@input.debounce.300ms",
+        ),
+      ).not.toThrow();
+      expect(() =>
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          'input[data-name="company_id"]',
+          "x-show",
+        ),
+      ).toThrow(/is not a bare property name/);
+    });
+  });
+
   test("the shared helpers are asserted to exist after loading, not assumed", () => {
     const env = H.installHyvaEnvironment();
     try {

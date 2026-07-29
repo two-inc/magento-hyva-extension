@@ -54,6 +54,13 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const QUOTE_JSON =
   '{"quote_id":"test-quote-1","shipping_country_id":"GB","grand_total":100}';
 
+/**
+ * Fallback for an escapeJs()/escapeHtmlAttr() whose argument has no rule of its
+ * own — the translated user-facing strings. Its output lands inside single
+ * quotes in JS and inside double quotes in markup, so it must contain neither.
+ */
+const ESCAPED_STRING = "Escaped message";
+
 const PHP_VALUE_RULES = [
   [/^\$gwBase$/, "twoGatewayHyva"],
   [/^\$brandedViewModel->getMethodCode\(\)$/, "two_payment"],
@@ -84,14 +91,17 @@ const PHP_VALUE_RULES = [
     '"Approved"',
   ],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
+  // Markup-only values, for renderTemplateMarkup() over gateway_method.phtml.
+  // `__()` resolves explicitly rather than falling through the escapeHtmlAttr
+  // unwrapper to the same place, so the table names every expression it
+  // answers instead of relying on a default.
+  [/^__\(.*\)$/, ESCAPED_STRING],
+  [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
+  [/^\$configModel->getCheckoutSubtitleHtml\(\)$/, ""],
+  [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
+  [/^\$(pluralLabel|singularLabel|singleDay)$/, "day"],
+  [/^\(int\) \$days$/, "14"],
 ];
-
-/**
- * Fallback for an escapeJs() whose argument has no rule of its own — the
- * translated user-facing strings. Its output always lands inside single quotes,
- * so it must contain none.
- */
-const ESCAPED_STRING = "Escaped message";
 
 /**
  * Resolve a normalized PHP expression to its test value, or null if no rule
@@ -116,10 +126,32 @@ function resolveExpression(expression, rules) {
     }
   }
 
-  const escapeJs = /^\$escaper->escapeJs\(\s*([\s\S]*?)\s*\)$/.exec(expression);
-  if (escapeJs !== null) {
+  // htmlspecialchars() is unwrapped AND applied: it is used in the markup
+  // template to put the quote JSON into an attribute, so the entity-escaped
+  // quotes are what keeps the rendered markup parseable — exactly as in the
+  // page. Resolving it to a blank would leave a `"` mid-attribute and silently
+  // truncate the element the test then queries.
+  const htmlSpecialChars =
+    /^htmlspecialchars\(\s*([\s\S]*?)\s*,[\s\S]*\)$/.exec(expression);
+  if (htmlSpecialChars !== null) {
+    const resolved = resolveExpression(htmlSpecialChars[1], rules);
+
+    return (resolved === null ? ESCAPED_STRING : resolved).replace(
+      /"/g,
+      "&quot;",
+    );
+  }
+
+  // escapeHtml / escapeHtmlAttr unwrap the same way escapeJs does, and for the
+  // same reason: the escaping applied at the call site must not decide what the
+  // suite is testing.
+  const escaped =
+    /^\$escaper->escape(?:Js|Html|HtmlAttr)\(\s*([\s\S]*?)\s*\)$/.exec(
+      expression,
+    );
+  if (escaped !== null) {
     // Drop a `(string)` cast the template may apply before escaping.
-    const inner = escapeJs[1].replace(/^\(string\)\s*/, "");
+    const inner = escaped[1].replace(/^\(string\)\s*/, "");
     const resolved = resolveExpression(inner, rules);
 
     return resolved === null ? ESCAPED_STRING : resolved;
@@ -147,13 +179,17 @@ function normalizeExpression(raw) {
 }
 
 /**
- * Render a `.phtml` template's inline JS the way PHP would, minus the PHP.
+ * Substitute a `.phtml` template's PHP the way PHP would, minus the PHP.
+ *
+ * The shared step behind renderTemplateJs() and renderTemplateMarkup(), so the
+ * markup half of a template gets the same fail-loud substitution — and the same
+ * `PHP_VALUE_RULES` table — as its `<script>` half.
  *
  * @param {string} relPath repo-relative template path
  * @param {Array<[RegExp, string]>} [extraRules] per-test rules, tried first
- * @returns {string} the concatenated `<script>` bodies
+ * @returns {string} the rendered template
  */
-function renderTemplateJs(relPath, extraRules) {
+function renderTemplate(relPath, extraRules) {
   const absPath = path.join(REPO_ROOT, relPath);
   let source = fs.readFileSync(absPath, "utf8");
 
@@ -184,6 +220,19 @@ function renderTemplateJs(relPath, extraRules) {
     throw new Error("harness: unsubstituted PHP tag left in " + relPath);
   }
 
+  return source;
+}
+
+/**
+ * Render a `.phtml` template's inline JS the way PHP would, minus the PHP.
+ *
+ * @param {string} relPath repo-relative template path
+ * @param {Array<[RegExp, string]>} [extraRules] per-test rules, tried first
+ * @returns {string} the concatenated `<script>` bodies
+ */
+function renderTemplateJs(relPath, extraRules) {
+  const source = renderTemplate(relPath, extraRules);
+
   // Attributes are discarded, which is also how a `<script nonce="…">` from
   // the CSP work stays invisible to this harness.
   const blocks = [];
@@ -197,6 +246,94 @@ function renderTemplateJs(relPath, extraRules) {
     throw new Error("harness: no <script> block found in " + relPath);
   }
   return blocks.join("\n");
+}
+
+/**
+ * Render a `.phtml` template's MARKUP the way PHP would, minus the PHP and
+ * minus its `<script>` blocks.
+ *
+ * Exists so a test can assert on an Alpine attribute binding — which lives in
+ * the markup template, not in the `-csp-js` one — against the real shipped
+ * file. Component state that is bound to nothing has no user-visible effect,
+ * and reading the binding out of the template is what makes a test able to fail
+ * when the binding is missing. Same fail-loud substitution as the JS half: an
+ * unknown or leftover PHP tag throws.
+ *
+ * @param {string} relPath repo-relative template path
+ * @param {Array<[RegExp, string]>} [extraRules] per-test rules, tried first
+ * @returns {string} the rendered markup
+ */
+function renderTemplateMarkup(relPath, extraRules) {
+  return renderTemplate(relPath, extraRules).replace(
+    /<script\b[^>]*>[\s\S]*?<\/script>/g,
+    "",
+  );
+}
+
+/**
+ * Read one element's Alpine attribute binding out of a rendered markup
+ * template, the way CSP-friendly Alpine would.
+ *
+ * The CSP Alpine build Hyvä ships evaluates only a property lookup in an
+ * attribute expression — no operators, no object literals. It looks the WHOLE
+ * expression up as a key on the component, which is why
+ * gateway_method-csp-js.phtml can define an `['!showManual']` getter and have
+ * `x-show="!showManual"` resolve to it: that binding is perfectly CSP-legal.
+ *
+ * This helper is deliberately NARROWER than CSP Alpine, and the check is the
+ * harness's own contract rather than a statement about CSP. It requires **a
+ * bare property name** — so a test can resolve the binding off a mounted
+ * component and assert on the value the page would get. Whether the component
+ * actually HAS that property is a separate check, made at runtime by each
+ * suite's own binding-application helper.
+ * It therefore also rejects two things CSP Alpine itself accepts: a dotted path
+ * (`foo.bar`), and a getter key that is not a valid identifier
+ * (`!showManual`). Both would need a different resolution strategy than
+ * `component[name]`; neither is what any binding under test uses.
+ *
+ * @param {string} relPath repo-relative markup template path
+ * @param {string} selector CSS selector for the bound element
+ * @param {string} attribute the Alpine binding, e.g. `:disabled`
+ * @param {Array<[RegExp, string]>} [extraRules]
+ * @returns {string} the bound property name
+ */
+function readAlpineBinding(relPath, selector, attribute, extraRules) {
+  const markup = renderTemplateMarkup(relPath, extraRules);
+  const doc = new DOMParser().parseFromString(markup, "text/html");
+  const element = doc.querySelector(selector);
+  if (element === null) {
+    throw new Error(
+      "harness: no element matching `" + selector + "` in " + relPath,
+    );
+  }
+
+  const expression = element.getAttribute(attribute);
+  if (expression === null) {
+    throw new Error(
+      "harness: `" +
+        selector +
+        "` in " +
+        relPath +
+        " has no `" +
+        attribute +
+        "` binding. Component state bound to nothing has no effect on the " +
+        "page, so this throws rather than letting a test assert on it.",
+    );
+  }
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(expression)) {
+    throw new Error(
+      "harness: `" +
+        attribute +
+        '="' +
+        expression +
+        '"` is not a bare property name. This harness ' +
+        "resolves a binding as `component[name]`, so it accepts only that — " +
+        "narrower on purpose than CSP-friendly Alpine, which also looks up " +
+        "dotted paths and non-identifier getter keys such as `!showManual`.",
+    );
+  }
+
+  return expression;
 }
 
 /**
@@ -217,6 +354,9 @@ function loadTemplate(relPath, extraRules) {
 
 const GATEWAY_METHOD_TEMPLATE =
   "view/frontend/templates/component/payment/method/gateway_method-csp-js.phtml";
+/** The markup half of the same component — Alpine attribute bindings live here. */
+const GATEWAY_METHOD_MARKUP_TEMPLATE =
+  "view/frontend/templates/component/payment/method/gateway_method.phtml";
 const COMPANY_NAME_TEMPLATE =
   "view/frontend/templates/form/field/companyName-csp-js.phtml";
 const SHIPPING_COMPANY_TEMPLATE =
@@ -511,9 +651,12 @@ module.exports = {
   ESCAPED_STRING: ESCAPED_STRING,
   PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,
   GATEWAY_METHOD_TEMPLATE: GATEWAY_METHOD_TEMPLATE,
+  GATEWAY_METHOD_MARKUP_TEMPLATE: GATEWAY_METHOD_MARKUP_TEMPLATE,
   COMPANY_NAME_TEMPLATE: COMPANY_NAME_TEMPLATE,
   SHIPPING_COMPANY_TEMPLATE: SHIPPING_COMPANY_TEMPLATE,
   renderTemplateJs: renderTemplateJs,
+  renderTemplateMarkup: renderTemplateMarkup,
+  readAlpineBinding: readAlpineBinding,
   loadTemplate: loadTemplate,
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
