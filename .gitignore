@@ -32,3 +32,6 @@ CLAUDE.local.md
 .agent-notes/
 .serena/
 .claude/
+
+# Adversarial-review scratch diffs — never committed.
+.review/

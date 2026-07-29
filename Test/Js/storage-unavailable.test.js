@@ -98,6 +98,64 @@ describe("company selection when storage is unusable", () => {
     expect(pickerRegistered()).toBe(true);
   });
 
+  describe("the payment step's DOMContentLoaded handler", () => {
+    /**
+     * Boot the payment-fields template the way the page does.
+     *
+     * @returns {void}
+     */
+    function bootPaymentStep() {
+      H.loadSharedHelpers();
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+    }
+
+    test("starts the payment-form observer even when storage throws", () => {
+      // The handler reads TWO keys: the company selection and the
+      // `already_saved_company_details` marker. Guarding only the first left an
+      // unguarded access between the clearer and observeForPaymentForm(), so a
+      // throwing storage stopped the observer from ever starting and the tile
+      // never synced the company — the same outage class the guard exists for.
+      // The observer starting is asserted through its effect: a company-name
+      // input added AFTER boot gets populated from the stored selection.
+      document.body.innerHTML = "";
+      let live = true;
+      env.hyva.getBrowserStorage = function () {
+        if (live) throw new Error("storage is disabled");
+        return env.browserStorage;
+      };
+
+      expect(bootPaymentStep).not.toThrow();
+
+      // Storage comes back and a selection exists; the observer must still be
+      // watching for the payment form to appear.
+      live = false;
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+        }),
+      );
+      document.body.innerHTML = [
+        '<div x-data="stub">',
+        '  <input type="text" id="company_name" data-name="company_name" value="" />',
+        '  <input type="text" id="company_id" data-name="company_id" value="" />',
+        "</div>",
+      ].join("\n");
+
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          expect(document.getElementById("company_name").value).toBe(
+            "Example Trading Ltd",
+          );
+          resolve();
+        }, 0);
+      });
+    });
+  });
+
   test("a stored primitive is not handed back as a selection", () => {
     // `|| {}` alone only rescues a FALSY parse, so `42` would flow out and
     // contradict the accessor's own contract.
@@ -129,6 +187,10 @@ describe("company selection when storage is unusable", () => {
       expect(env.browserStorage.getItem("shipping_company_selection:")).toBe(
         null,
       );
+      // And not under the empty key either: real localStorage accepts '' as a
+      // key, so dropping the `if (key)` guard writes there rather than throwing.
+      // Without this assertion the guard was a fourth, unpinned change.
+      expect(env.browserStorage.getItem("")).toBe(null);
     });
   });
 });

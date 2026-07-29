@@ -61,6 +61,47 @@ $methodCode = $brandedViewModel->getMethodCode();
         return (window.twoGatewayReadCompanySelection
             || function() { return {}; })();
     };
+    /*
+     * `already_saved_company_details` is a second, separate key — a marker for
+     * "we have already pushed these values into the tile" — and it gets the same
+     * treatment for the same reason. Two of its four accesses sit in the
+     * DOMContentLoaded handler BETWEEN the guarded clearer and
+     * observeForPaymentForm(), so an unguarded throw there stopped the
+     * payment-form MutationObserver from ever starting and the tile never synced
+     * the company. Guarding only the selection accessors left that half of the
+     * handler exposed.
+     */
+    const twoPaymentReadSavedDetails = function() {
+        try {
+            const raw = hyva.getBrowserStorage().getItem('already_saved_company_details');
+            const parsed = JSON.parse(raw || '{}');
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                ? parsed
+                : {};
+        } catch (error) {
+            return {};
+        }
+    };
+    const twoPaymentHasSavedDetails = function() {
+        try {
+            return hyva.getBrowserStorage().getItem('already_saved_company_details') !== null;
+        } catch (error) {
+            // Report "present" so the caller does not try to seed it and throw
+            // again on the write.
+            return true;
+        }
+    };
+    const twoPaymentWriteSavedDetails = function(details) {
+        try {
+            hyva.getBrowserStorage().setItem(
+                'already_saved_company_details',
+                JSON.stringify(details),
+            );
+        } catch (error) {
+            // Only loss is the marker; the caller's own state is already set.
+        }
+    };
+
     const twoPaymentWriteSelection = function(patch) {
         return (window.twoGatewayWriteCompanySelection
             || function() { return {}; })(patch);
@@ -133,7 +174,7 @@ $methodCode = $brandedViewModel->getMethodCode();
                 company_name: companyName,
                 company_id: companyId
             };
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
+            twoPaymentWriteSavedDetails(updatedCompanyDetails);
 
             // Trigger order intent if requested
             if (triggerOrderIntent) {
@@ -179,8 +220,8 @@ $methodCode = $brandedViewModel->getMethodCode();
          * Initialize previously saved company details only if it doesn't exist.
          * This preserves company information across page reloads while allowing clean state for new sessions.
          */
-        if (!hyva.getBrowserStorage().getItem('already_saved_company_details')) {
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+        if (!twoPaymentHasSavedDetails()) {
+            twoPaymentWriteSavedDetails({});
         }
 
         /**
@@ -298,7 +339,7 @@ $methodCode = $brandedViewModel->getMethodCode();
 
             /** Retrieve previously saved company details to check if order intent should be dispatched */
             const shippingCompanySelectionData = twoPaymentReadSelection();
-            const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
+            const alreadySavedCompanyDetails = twoPaymentReadSavedDetails();
 
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
