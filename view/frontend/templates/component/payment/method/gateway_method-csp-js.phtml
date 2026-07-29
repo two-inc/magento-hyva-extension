@@ -495,13 +495,23 @@ $quoteDetails = json_encode(
             department: '',
             orderNote: '',
             poNumber: '',
+            // THE single manual/search fact for this component. It gates both
+            // what the buyer SEES (which of the duplicated name / id inputs is
+            // x-show'd) and what the component DOES (getItems() refuses to
+            // search in manual mode).
+            //
+            // It used to be two properties — `manualMode` for behaviour,
+            // `showManual` for visibility — with no watcher between them, and
+            // initialize() restored only the first. A `manual_mode: true` left
+            // in browser storage by the ADDRESS form therefore rendered a live
+            // search box on the payment tile whose every keystroke returned
+            // early: no request, no spinner, no dropdown. It was inescapable
+            // too, because the tile's own links wrote only `showManual`.
+            //
+            // `showManual` survives below as a read-only derived getter, so the
+            // markup (including a brand overlay that overrides only the
+            // template) keeps working. This property is its only writer.
             manualMode: false,
-            // Manual / search dual-mode toggle for the company-name + company-id pair.
-            // Inputs are duplicated in the template (one per mode, x-show'd); the
-            // visible-mode input always submits as `payment[company_name]` /
-            // `payment[company_id]`, the hidden mirror submits as
-            // `payment[manual_*]` (which Magento ignores).
-            showManual: false,
             companyIdDisabled: true,
             companyIdBgStyle: 'background-color: #D3D3D3',
             // Set when the selected company arrived with NO national
@@ -637,28 +647,40 @@ $quoteDetails = json_encode(
                 return this.search.length < 3;
             },
 
+            // Visibility is DERIVED from the one manual/search fact above,
+            // never stored a second time. The name and id inputs are
+            // duplicated in the template (one per mode, x-show'd); the
+            // visible-mode input always submits as `payment[company_name]` /
+            // `payment[company_id]`, the hidden mirror submits as
+            // `payment[manual_*]` (which Magento ignores).
+            get showManual() {
+                return this.manualMode;
+            },
+
             // CSP-friendly Alpine forbids the `!` operator in attribute
             // expressions. Templates using `x-show="!showManual"` resolve
             // this magic getter (bare identifier `!showManual`) instead
             // of evaluating the negation inline. Mirrors the pattern in
             // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
             ['!showManual']() {
-                return !this.showManual;
+                return !this.manualMode;
             },
 
             // Manual / search mode toggle handlers
             <?= $gwBase ?>OnSearchModeClick() {
-                this.showManual = false;
+                // enableSearch(), not a bare flag write: it also clears the
+                // PERSISTED `manual_mode`. Without that, the tile could not get
+                // itself out of a manual mode it had restored from storage —
+                // enableSearch() is bound only in the address template — which
+                // is what made the dead search field inescapable here.
+                this.enableSearch();
             },
             <?= $gwBase ?>OnManualEntryClick() {
-                // This — not enterManually() — is what the visible "Enter
-                // details manually" link binds. A search still on the wire
-                // would otherwise land after the switch, spin the spinner
-                // forever and reopen the dropdown over the manual fields.
-                this.abortCompanySearch();
-                this.isSearchUnavailable = false;
-                this.isOpen = false;
-                this.showManual = true;
+                // enterManually(), for the mirror-image reason: it aborts a
+                // search still on the wire (which would otherwise land after
+                // the switch, spin the spinner forever and reopen the dropdown
+                // over the manual fields) and persists the mode.
+                this.enterManually();
             },
             <?= $gwBase ?>OnCompanyItemClick(event) {
                 return this.handleItemClick(event);
@@ -938,7 +960,12 @@ $quoteDetails = json_encode(
             enableSearch() {
                 this.manualMode = false;
                 this.saveManualModeToStorage(false);
-                document.getElementById('company_name')?.focus();
+                // $nextTick because the dual-input `:id` bindings swap on this
+                // same flag: until Alpine flushes, 'company_name' is still the
+                // manual field that is on its way out of view.
+                this.$nextTick(() => {
+                    document.getElementById('company_name')?.focus();
+                });
             },
 
             saveManualModeToStorage(manualMode) {

@@ -172,6 +172,19 @@ the dropdown's `x-for :key` staying unique when two hits in one response both la
 identifier (it is bound to `companyId`, and Alpine renders one row per distinct key, so a
 collision on `''` would silently cost the buyer a company that matched).
 
+`payment-manual-mode.test.js` — the payment tile's manual/search mode, which used to be two
+properties with no watcher between them: `manualMode` (behaviour — `getItems()` refuses to
+search) and `showManual` (visibility — which of the duplicated inputs is `x-show`n).
+`initialize()` restored only the first from browser storage, and the address form writes
+`manual_mode: true` into that same key, so the tile came up showing a live search box that
+could not search — no request, no spinner, no dropdown — and its own two links wrote only the
+display flag, so there was no way back. `showManual` is now a read-only getter over
+`manualMode`. Covered: a restored `manual_mode` putting the tile into the manual fields rather
+than a dead search box, the tile's own "Search for company" link clearing the mode _and_ the
+persisted copy so a search then really goes on the wire, "Enter details manually" persisting
+the mode and superseding an in-flight search, and the dual-input ids following the one flag.
+The tile's own file, for the `dispatch-order-intent` leak reason below.
+
 `harness-contract.test.js` — the four fail-loud guarantees above.
 
 ## Deliberately out of scope
