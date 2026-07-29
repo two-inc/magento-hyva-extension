@@ -196,6 +196,16 @@ put not clearing, a new quote still clearing, a pre-scoping blob being armed rat
 wiped, and the restore path preserving `quote_id`, `store_id` and `manual_mode`. This
 supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
 
+`payment-method-code.test.js` — that `company-name-payment.phtml` compares against the
+BRAND's payment method code rather than the literal `two_payment`. Harmless only while every
+brand shipped its own fork of the template; once the overlay was de-forked onto the vanilla
+file, a branded store selects its own method code, nothing matched, and the order intent was
+never dispatched — silently. These tests render the template with a NON-default brand code
+via `extraRules`, because the harness's default substitution is `two_payment`, which is
+indistinguishable from the hardcoded literal. Covered on both entry points (page load and
+`checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
+rendered JS contains no `two_payment` at all.
+
 `harness-contract.test.js` — the four fail-loud guarantees above.
 
 ## Deliberately out of scope

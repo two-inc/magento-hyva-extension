@@ -13,7 +13,13 @@
     <body>
         <referenceBlock name="before.body.end">
             <block name="two_getway_payment_method"
-                template="Two_GatewayHyva::js/payment/company-name-payment.phtml" after="-"/>
+                template="Two_GatewayHyva::js/payment/company-name-payment.phtml" after="-">
+                <arguments>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
+                    </argument>
+                </arguments>
+            </block>
         </referenceBlock>
     </body>
 </page>
