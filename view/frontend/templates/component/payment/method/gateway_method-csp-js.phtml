@@ -174,13 +174,48 @@ $quoteDetails = json_encode(
         });
         const url = options.checkoutApiUrl + '/companies/v2/company?' + queryParams;
 
-        const mapItems = (data) => ((data && data.items) || []).map(item => ({
-            companyName: item.name,
-            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-            companyId: item.national_identifier.id,
-            lookupId: item.lookup_id,
-            item: item,
-        }));
+        /*
+         * `national_identifier` is OPTIONAL in the search response — the
+         * company may have none in its home registry, internal identifier
+         * types are stripped from the field, and the object itself may be
+         * absent, null, or carry a null/empty `id`. (The field inside is
+         * `id`, not `value`.)
+         *
+         * Reading it unguarded threw a TypeError on a legitimate hit, and a
+         * throw here lands inside the dropdown's own query pipeline: it takes
+         * the WHOLE result list down, not just this one hit, and leaves the
+         * field stuck on "Searching…" with no error the buyer can act on.
+         *
+         * So render the company with whatever it has. The identifier is only
+         * the buyer's disambiguator between two similarly-named companies;
+         * dropping the hit instead would remove a company they then cannot
+         * select at all. Without one they see the name alone, and selectItem()
+         * hands them an empty, editable company-id field to type the
+         * organisation number into themselves.
+         */
+        const identifierOf = (item) =>
+            item && item.national_identifier && item.national_identifier.id
+                ? String(item.national_identifier.id)
+                : '';
+
+        const mapItems = (data) => ((data && data.items) || []).map(item => {
+            const identifier = identifierOf(item);
+
+            return {
+                companyName: item.name,
+                // The no-identifier branch stays a template literal rather
+                // than a bare `item.highlight` so this field keeps being a
+                // string in every branch: it is bound with `x-html`, where a
+                // bare `undefined` would render the word "undefined" anyway,
+                // and a caller reading `.length` off it would throw.
+                companyDisplayName: identifier
+                    ? `${item.highlight} (${identifier})`
+                    : `${item.highlight}`,
+                companyId: identifier,
+                lookupId: item.lookup_id,
+                item: item,
+            };
+        });
 
         const cached = window.twoGatewayCompanySearchCache.get(url);
         if (cached) {
@@ -469,6 +504,15 @@ $quoteDetails = json_encode(
             showManual: false,
             companyIdDisabled: true,
             companyIdBgStyle: 'background-color: #D3D3D3',
+            // Set when the selected company arrived with NO national
+            // identifier, which the search response is allowed to omit. The
+            // company-id field is still required, so the buyer has to be able
+            // to type the organisation number in themselves — without this the
+            // field would sit empty AND disabled, an unfillable required field.
+            // Kept separate from `manualMode` (which also switches the company
+            // NAME field to free text) and folded into the same derived
+            // enabled/greyed-out state by applyCompanyIdEditability().
+            companyIdEntryRequired: false,
             isSelecting: false,
             isPaymentTermsAccepted: false,
             selectedIndex: -1,
@@ -649,8 +693,16 @@ $quoteDetails = json_encode(
             },
 
             // Dropdown-iteration reactive getters (bound inside template x-for scope).
+            //
+            // This one is the `x-for :key`, so it must be UNIQUE per row.
+            // `companyId` is now empty whenever a hit has no national
+            // identifier, so two such hits in one response would collide on
+            // '' and Alpine would render only one of them — the buyer would
+            // lose a company that matched. Fall back to the list position,
+            // which is unique by construction, and prefix it so it can never
+            // collide with a real identifier either.
             <?= $gwBase ?>GetCompanyId() {
-                return this.item.companyId;
+                return this.item.companyId || `two-idx-${this.index}`;
             },
             <?= $gwBase ?>GetCompanyDisplayName() {
                 return this.item.companyDisplayName;
@@ -678,8 +730,12 @@ $quoteDetails = json_encode(
                 // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                 this.manualMode = shippingCompanySelectionData.manual_mode || false;
-                this.companyIdDisabled = !this.manualMode;
-                this.companyIdBgStyle = !this.manualMode ? 'background-color: #D3D3D3' : '';
+                // A restored selection with a name but no id is the same
+                // unfillable-required-field situation as a fresh one, so derive
+                // the flag from storage before computing the field state.
+                this.companyIdEntryRequired = Boolean(shippingCompanySelectionData.company_name)
+                    && !shippingCompanySelectionData.company_id;
+                this.applyCompanyIdEditability();
 
                 // The intent-approved notice is persistent — it survives
                 // checkout re-renders and failed place-order validation, which
@@ -698,10 +754,12 @@ $quoteDetails = json_encode(
                     this.orderIntentApprovedNotice = '';
                 });
 
-                // Watch manualMode and update derived state reactively
-                this.$watch('manualMode', (value) => {
-                    this.companyIdDisabled = !value;
-                    this.companyIdBgStyle = !value ? 'background-color: #D3D3D3' : '';
+                // Watch manualMode and update derived state reactively. Goes
+                // through applyCompanyIdEditability() rather than assigning
+                // `!value` directly, so leaving manual mode cannot re-disable a
+                // company-id field the buyer still has to fill in by hand.
+                this.$watch('manualMode', () => {
+                    this.applyCompanyIdEditability();
                 });
 
                 this.$el.addEventListener('update-company-data', (event) => {
@@ -848,6 +906,13 @@ $quoteDetails = json_encode(
                 this.search = item.companyName;
                 this.manualMode = false;
 
+                // The hit may carry no national identifier — see identifierOf()
+                // above. Setting this BEFORE fillCompanyData() matters: the
+                // watcher on `manualMode` (just cleared) recomputes the field
+                // state, and this flag has to be current when it does.
+                this.companyIdEntryRequired = !item.companyId;
+                this.applyCompanyIdEditability();
+
                 // Preserve quote_id for session detection
                 const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
@@ -930,10 +995,38 @@ $quoteDetails = json_encode(
                 }
             },
 
+            /**
+             * Recompute the company-id field's enabled / greyed-out state.
+             *
+             * Two independent reasons the buyer may type into it: manual entry
+             * of the whole company, and a searched company that came back with
+             * no national identifier. One derived state, one place it is
+             * computed — the previous inline `!manualMode` assignments in two
+             * places are what let the second reason get silently overwritten.
+             */
+            applyCompanyIdEditability() {
+                const editable = this.manualMode || this.companyIdEntryRequired;
+                this.companyIdDisabled = !editable;
+                this.companyIdBgStyle = editable ? '' : 'background-color: #D3D3D3';
+            },
+
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
-                if (!companyId || !companyName) return;
+                /*
+                 * The NAME is what makes this call meaningful; the id is
+                 * allowed to be empty, because the search response is allowed
+                 * to omit the national identifier.
+                 *
+                 * It used to bail on an empty id, which left the buyer looking
+                 * at the newly selected company's name beside the PREVIOUS
+                 * company's id — in a disabled field they could not correct,
+                 * and read straight back out by buildOrderIntentRequestBody()
+                 * and by the checkout's own `payment[company_id]`. Writing both
+                 * fields unconditionally is what keeps name and id describing
+                 * the same company.
+                 */
+                if (!companyName) return;
 
                 this.companyName = companyName;
                 this.companyId = companyId;
@@ -947,8 +1040,13 @@ $quoteDetails = json_encode(
                     // Let Alpine's :disabled and :style bindings handle the visual state
                 }
 
-                // Only trigger order intent if company ID changed to prevent duplicate messages
-                if (this.isOrderIntentEnabled && triggerOrderIntent && companyId !== this.lastOrderIntentCompanyId) {
+                // Only trigger order intent if company ID changed to prevent
+                // duplicate messages — and only when there IS one. An intent
+                // for an empty company id is a request the listener would
+                // discard anyway; dispatching it just makes the empty case look
+                // like a real submission in the event log.
+                if (this.isOrderIntentEnabled && triggerOrderIntent && companyId
+                    && companyId !== this.lastOrderIntentCompanyId) {
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 }
             },

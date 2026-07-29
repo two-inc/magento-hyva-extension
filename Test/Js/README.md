@@ -106,6 +106,14 @@ resolved instead of rejecting would make either look fine.
   matters because the field may not be deployed yet.
 - the cache: keyed by URL so the country is part of the key, serves a repeat search without
   a request, preserves `empty` as `empty`, and evicts oldest-first at fifty entries.
+- **a hit with no usable `national_identifier`** (the object absent, `null`, or carrying a
+  null / empty `id` — all four shapes). The field is optional in the search response, and
+  the field inside it is `id`, not `value`; reading it unguarded threw a `TypeError` on a
+  legitimate hit. A throw there lands inside the dropdown's own query pipeline, so it took
+  the WHOLE result list down and left the field on "Searching…". Such a hit is now rendered
+  with the company name alone and an empty `companyId`, the other hits in the same response
+  survive it, and a numeric `id` is coerced to a string. TWO-25253; the same defect was
+  fixed in `magento-plugin` (#286) and `woocommerce-plugin` (#393).
 - `twoGatewayGetCountryCode`'s six-step fallback order, each step pinned, ending at `''`
   rather than `undefined`.
 
@@ -131,6 +139,12 @@ caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inv
 `this.searchAbortController === controller` fails four tests, and weakening it to an
 unconditional `done` fails the supersession test.
 
+The TWO-25253 identifier guard was mutation-checked the same way, five separate reverts each
+going red: restoring the unguarded `item.national_identifier.id` read fails 8 tests; putting
+back `fillCompanyData()`'s bail on an empty id fails 3; reverting the `manualMode` watcher to
+assigning `!value` inline fails 1; dropping the `x-for :key` fallback fails 1; and dropping
+the `companyId &&` term from the order-intent trigger fails 1.
+
 `company-name-field.test.js` — the address-form picker, which has no overlay and drives an
 in-field spinner instead. Same invariant, different surface: every exit from `getItems()`
 leaves `isSearching` false and nothing on the wire — selection-in-progress, manual mode,
@@ -142,6 +156,22 @@ detail lookup filling the address fields, a failed lookup leaving a buyer-typed 
 alone, a company with no lookup id skipping the request, and the click handlers stopping
 propagation so the address-book modal does not close.
 
+`payment-company-selection.test.js` — what the payment component
+(`twoGatewayHyvaPaymentMethodBase`) does with a selected company once `companyId` is
+allowed to be empty. Stopping the throw above is only half the fix; the half that costs
+money is downstream. `fillCompanyData()` used to bail on an empty id, so selecting a company
+with no identifier wrote the new NAME and left the PREVIOUS company's identifier in the
+field — disabled, so the buyer could not correct it, and read straight back out by
+`buildOrderIntentRequestBody()` and by the checkout's own `payment[company_id]`. Covered:
+name and id always describing the same company, the id field left empty but **editable**
+(empty and disabled is an unfillable required field), the greyed-out state derived in one
+place from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-lock a
+field still to be filled, selecting an identified company afterwards re-locking it, the
+same state restored from browser storage, no order intent dispatched for an empty id, and
+the dropdown's `x-for :key` staying unique when two hits in one response both lack an
+identifier (it is bound to `companyId`, and Alpine renders one row per distinct key, so a
+collision on `''` would silently cost the buyer a company that matched).
+
 `harness-contract.test.js` — the four fail-loud guarantees above.
 
 ## Deliberately out of scope
@@ -150,12 +180,14 @@ propagation so the address-book modal does not close.
   the same thing twice with a weaker tool. (Note: the tests named in TWO-25245 —
   `CspInlineScriptTemplateTest.php`, `QuoteDetailsEncodingTest.php` — are not on `staging`
   yet; they arrive with the open CSP-nonce PR.)
-- **The payment-method Alpine components** in `gateway_method-csp-js.phtml`. The template
-  is loaded whole, so `twoGatewayHyvaPaymentMethodBase`, the order-intent recheck, the
-  term chips and the form-validation wrapper all _evaluate_ under test — but nothing
-  asserts on them. Mutating any of them leaves the suite green. They are a much larger
-  surface (Magewire round-trips, a 500ms debounced global listener, `Alpine.store`) and
-  belong in their own suite.
+- **Most of the payment-method Alpine components** in `gateway_method-csp-js.phtml`. The
+  template is loaded whole, so the order-intent recheck, the term chips and the
+  form-validation wrapper all _evaluate_ under test — but nothing asserts on them, and
+  mutating any of them leaves the suite green. They are a much larger surface (Magewire
+  round-trips, a 500ms debounced global listener, `Alpine.store`) and belong in their own
+  suite. The exception is `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
+  `payment-company-selection.test.js` does assert on: the identifier guard made an empty
+  `companyId` reachable there, and the wrong-data consequence had to be pinned.
 - **Rendered markup.** `isSearchUnavailable` is asserted as component state, not as
   chrome: the markup that binds it lives in `companyName.phtml` / outside this module, and
   the branded overlay ships its own fork of it.
@@ -171,12 +203,17 @@ harness evaluates the template once per test, and that listener cannot be remove
 afterwards — it is anonymous — so a test file accumulates one handler per test on the
 jsdom window it shares.
 
-Today that is inert: nothing in the suite dispatches `dispatch-order-intent`, and each
-handler only arms a 500ms debounce when it fires. But the first test that _does_ dispatch
-it will inherit one handler per preceding test in the same file, which presents as an
-order-dependent flake rather than as the leak it is. If you write that test, put it in its
-own file, or have the production template guard its registration the way the helpers guard
-theirs (`window.x = window.x || …`).
+`payment-company-selection.test.js` is the one file that _does_ dispatch that event, via
+`selectItem()`, so it inherits one handler per preceding test in it. Two things keep that
+inert rather than flaky, and both are deliberate: the file runs under
+`jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and its DOM has no
+`input[name="payment-method-option"]:checked`, which is the debounced callback's first exit.
+It asserts on the dispatch with a listener of its own that it removes.
+
+Elsewhere the leak is inert for a simpler reason: nothing else dispatches the event, and each
+handler only arms the debounce when it fires. A new test that dispatches it belongs in its
+own file for the same reason — or have the production template guard its registration the way
+the helpers guard theirs (`window.x = window.x || …`).
 
 ## Adding tests
 
