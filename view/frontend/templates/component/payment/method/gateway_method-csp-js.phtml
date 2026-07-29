@@ -63,8 +63,9 @@ $quoteDetails = $quoteModel->getQuoteDetails();
 // Test/Unit/View/QuoteDetailsEncodingTest covers both.
 $quoteDetails = json_encode(
     $quoteDetails,
-    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE,
-);
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 /** Generated with hyva-csp-helper.php */
 ?>
@@ -516,8 +517,9 @@ $quoteDetails = json_encode(
             // \View\CspInlineScriptTemplateTest guards the static cases.
             orderIntentApprovedNoticeCopy: <?= /* @noEscape */ json_encode(
                 $orderIntentApprovedNotice,
-                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE,
-            ) ?>,
+                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+            ) ?: 'null' ?>,
             // Live notice text. '' keeps the x-show'd element hidden and, more
             // importantly, keeps the property defined even for a brand that
             // suppressed the notice — an undefined property would make Alpine

@@ -31,8 +31,8 @@ $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
 $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetails = json_encode(
     $quoteDetails,
-    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-);
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>

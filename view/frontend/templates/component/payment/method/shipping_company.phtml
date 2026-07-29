@@ -34,7 +34,18 @@ $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 // where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
 // is deliberately absent: it strips the incidental protection plain
 // json_encode() gives by escaping the slash in an end tag.
-$quoteDetailsJson = json_encode($quoteDetails, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
+// JSON_INVALID_UTF8_SUBSTITUTE and the `?: '{}'` are not belt-and-braces. A
+// single malformed byte in a product name makes json_encode() return false, and
+// this value is interpolated bare, so the template would emit `quote : ,` — a
+// syntax error that kills every Alpine.data() registration in the block. That is
+// this very outage arriving through data. Substitute the bad byte, and if the
+// encode still fails fall back to an empty object: the country lookup then falls
+// through to reading the DOM, which degrades instead of dying.
+$quoteDetailsJson = json_encode(
+    $quoteDetails,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 ?>
 <input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
 <input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
@@ -192,8 +203,18 @@ document.addEventListener('alpine:init', () => {
                 } finally {
                     // Retire the loader unless a NEWER search now owns it.
                     //
-                    // The magewire loader is a boolean, not a counter, so two
-                    // rules have to hold at once:
+                    // ASSUMPTION, UNVERIFIED: the magewire loader is a boolean,
+                    // not a counter. Both orderings below are correct under a
+                    // boolean — `done` fires exactly once per owning `start`.
+                    // Under a counter, abort-with-successor would leak a count
+                    // permanently and the overlay would never clear. This has not
+                    // been confirmed against Magewire's own implementation
+                    // (magewirephp/magewire's loader plugin), and the Jest stub
+                    // models a boolean, so the suite cannot detect a mismatch
+                    // either. If the overlay is ever seen latching on after a
+                    // superseded search, check this first.
+                    //
+                    // Under a boolean, two rules have to hold at once:
                     //   - a SUPERSEDED search must not dispatch done, or it
                     //     hides the overlay while its replacement runs
                     //     (start(A), abort(A), start(B), done(A));

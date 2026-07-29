@@ -71,7 +71,13 @@ class QuoteDetailsEncodingTest extends TestCase
                 continue;
             }
             $contents = (string) file_get_contents($file->getPathname());
-            if (!preg_match('/json_encode\(\s*\$quote/', $contents)) {
+            // Keyed on reading the payload plus encoding something, never on a
+            // variable name: an encode under any other name must not escape the
+            // flag assertions.
+            if (strpos($contents, 'getQuoteDetails()') === false) {
+                continue;
+            }
+            if (strpos(self::withoutCommentsStatic($contents), 'json_encode(') === false) {
                 continue;
             }
             $relative = str_replace(self::TEMPLATE_ROOT . '/', '', $file->getPathname());
@@ -130,22 +136,40 @@ class QuoteDetailsEncodingTest extends TestCase
     {
         $contents = (string) file_get_contents($path);
 
-        preg_match_all('/<\?=\s*(?:\/\*[^*]*\*\/\s*)?(\$[A-Za-z_]\w*)\s*\?>/', $contents, $matches);
+        // Any echo tag, not just a bare variable: an array element or a method
+        // call on the payload reaches the same JS sink.
+        preg_match_all('/<\?=([\s\S]*?)\?>/', $contents, $matches);
 
-        $raw = array_values(array_filter(
-            $matches[1],
-            static function (string $var) use ($contents): bool {
-                if (!preg_match('/quote/i', $var)) {
-                    return false;
-                }
+        $wrappers = ['json_encode(', 'escapeJs(', 'escapeHtml', 'escapeUrl', 'htmlspecialchars('];
 
-                // A variable assigned from json_encode() is already the encoded
-                // form; its flag set is asserted by the tests above.
-                $assignment = '/' . preg_quote($var, '/') . '\s*=\s*json_encode\(/';
+        $raw = [];
+        foreach ($matches[1] as $rawExpression) {
+            $expression = trim((string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $rawExpression));
 
-                return !preg_match($assignment, $contents);
+            $readsPayload = preg_match('/\$quote\w*/i', $expression)
+                || strpos($expression, 'getQuoteDetails') !== false;
+            if (!$readsPayload) {
+                continue;
             }
-        ));
+
+            foreach ($wrappers as $wrapper) {
+                if (strpos($expression, $wrapper) !== false) {
+                    continue 2;
+                }
+            }
+
+            // A bare variable assigned from json_encode() in this template is
+            // already the encoded form, and flagSetsUsedBy() asserts that call's
+            // flags — every call in the file, so this exemption cannot be used to
+            // launder an unchecked encode.
+            if (preg_match('/\A\$[A-Za-z_]\w*\z/', $expression)
+                && preg_match('/' . preg_quote($expression, '/') . '\s*=\s*json_encode\(/', $contents)
+            ) {
+                continue;
+            }
+
+            $raw[] = $expression;
+        }
 
         $this->assertSame(
             [],
@@ -271,6 +295,47 @@ class QuoteDetailsEncodingTest extends TestCase
     }
 
     /**
+     * A malformed byte in a product name makes json_encode() return false. Both
+     * bare and quoted interpolations then emit nothing — `quote : ,` — which is a
+     * parse error that kills every Alpine.data() registration in the block: this
+     * outage, arriving through data. JSON_INVALID_UTF8_SUBSTITUTE keeps the encode
+     * succeeding, and the `?: '{}'` is the second line of defence for any other
+     * reason an encode can fail, so the block still parses and the country lookup
+     * degrades to reading the DOM instead of dying.
+     *
+     * @dataProvider quoteEncodingTemplateProvider
+     */
+    public function testMalformedUtf8CannotCollapseTheEncoding(string $path): void
+    {
+        // A lone 0xE9 byte: valid latin1, invalid UTF-8. A product name imported
+        // from a legacy feed is the realistic source.
+        $malformed = ['items' => [['name' => "Caf\xE9 Widget"]]];
+
+        foreach ($this->flagSetsUsedBy($path) as $flags) {
+            $this->assertNotFalse(
+                json_encode($malformed, $flags),
+                sprintf(
+                    '%s encodes the quote payload with flags that return false on malformed UTF-8. '
+                    . 'The template then emits nothing where a value belongs, which is a syntax '
+                    . 'error that kills every Alpine.data() registration in the block. Add '
+                    . 'JSON_INVALID_UTF8_SUBSTITUTE.',
+                    basename($path)
+                )
+            );
+        }
+
+        $this->assertMatchesRegularExpression(
+            '/\)\s*\?:\s*\x27\{\}\x27/',
+            (string) file_get_contents($path),
+            sprintf(
+                '%s must fall back to an empty object when json_encode() fails for any other '
+                . 'reason, rather than emitting nothing into the JS.',
+                basename($path)
+            )
+        );
+    }
+
+    /**
      * gateway_method.phtml carries the same payload but into an HTML attribute,
      * not into JavaScript, so the json_encode flags are not what protects it and
      * the flag sets in the two templates legitimately differ. Its defence is the
@@ -302,38 +367,55 @@ class QuoteDetailsEncodingTest extends TestCase
     }
 
     /**
-     * Every flag set the template passes to json_encode for the quote payload,
-     * resolved to ints. All of them, not just the first: a second unprotected
-     * call must not be able to hide behind a well-flagged one above it.
+     * Every flag set passed to json_encode() anywhere in the template, resolved
+     * to ints.
+     *
+     * Deliberately keyed on the CALL, not on the argument's name. Keying on a
+     * `$quote`-ish variable name let a second encode under any other name — or
+     * one whose flags were passed as a variable — become invisible to this test,
+     * while testNoQuoteDerivedValueIsEchoedRaw() excused the same variable
+     * *because* it was assigned from json_encode(). The two guards excused each
+     * other. In a template that reads the quote payload at all, every encode site
+     * has to declare literal flags.
      *
      * @return array<int, int>
      */
     private function flagSetsUsedBy(string $path): array
     {
-        $contents = (string) file_get_contents($path);
+        $contents = $this->withoutComments((string) file_get_contents($path));
+        $arguments = $this->jsonEncodeArgumentLists($contents);
 
-        $sites = preg_match_all(
-            '/json_encode\(\s*\$quote\w*\s*(?:,\s*([A-Z_|\s]*?)\s*,?\s*)?\)/',
-            $contents,
-            $matches,
-            PREG_SET_ORDER
-        );
         $this->assertNotSame(
-            0,
-            $sites,
+            [],
+            $arguments,
             sprintf('%s must encode the quote payload with json_encode()', basename($path))
         );
 
         $flagSets = [];
-        foreach ($matches as $match) {
-            $expression = trim($match[1] ?? '');
+        foreach ($arguments as $argumentList) {
+            $parts = $this->splitTopLevel($argumentList);
+            $expression = trim($parts[1] ?? '');
+
             $this->assertNotSame(
                 '',
                 $expression,
                 sprintf(
-                    '%s calls json_encode() on the quote payload with no flags. That leaves the '
-                    . 'buyer-controlled payload able to close the inline script block.',
-                    basename($path)
+                    '%s calls json_encode() with no flags. That leaves the buyer-controlled '
+                    . 'payload able to close the inline script block. Argument list: %s',
+                    basename($path),
+                    $argumentList
+                )
+            );
+
+            $this->assertMatchesRegularExpression(
+                '/\A[A-Z0-9_]+(?:\s*\|\s*[A-Z0-9_]+)*\z/',
+                $expression,
+                sprintf(
+                    '%s passes json_encode() flags as %s. They must be a literal expression of '
+                    . 'flag constants, or this test cannot see what the encoding actually is and '
+                    . 'the site becomes invisible to the guard.',
+                    basename($path),
+                    $expression
                 )
             );
 
@@ -350,5 +432,95 @@ class QuoteDetailsEncodingTest extends TestCase
         }
 
         return $flagSets;
+    }
+
+    /**
+     * Strip comments, so a comment that mentions json_encode() — several of them
+     * explain exactly this guard — is not scanned as a call site.
+     */
+    private static function withoutCommentsStatic(string $contents): string
+    {
+        $contents = (string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $contents);
+
+        return (string) preg_replace('#(?<![:"\'])//[^\n]*#', ' ', $contents);
+    }
+
+    private function withoutComments(string $contents): string
+    {
+        // Block comments first, then line comments, protecting the `//` in a URL.
+        $contents = (string) preg_replace('#/\*[\s\S]*?\*/#', ' ', $contents);
+
+        return (string) preg_replace('#(?<![:"\'])//[^\n]*#', ' ', $contents);
+    }
+
+    /**
+     * Argument lists of every json_encode() call in the source, found by walking
+     * parentheses rather than by regex so a multi-line call, a nested call or a
+     * trailing `?: '{}'` cannot hide a site.
+     *
+     * @return array<int, string>
+     */
+    private function jsonEncodeArgumentLists(string $contents): array
+    {
+        $lists = [];
+        $offset = 0;
+        $needle = 'json_encode(';
+
+        while (($found = strpos($contents, $needle, $offset)) !== false) {
+            $cursor = $found + strlen($needle);
+            $depth = 1;
+            $length = strlen($contents);
+
+            while ($cursor < $length && $depth > 0) {
+                if ($contents[$cursor] === '(') {
+                    $depth++;
+                } elseif ($contents[$cursor] === ')') {
+                    $depth--;
+                }
+                $cursor++;
+            }
+
+            $lists[] = substr(
+                $contents,
+                $found + strlen($needle),
+                $cursor - 1 - ($found + strlen($needle))
+            );
+            $offset = $cursor;
+        }
+
+        return $lists;
+    }
+
+    /**
+     * Split an argument list on top-level commas only.
+     *
+     * @return array<int, string>
+     */
+    private function splitTopLevel(string $argumentList): array
+    {
+        $parts = [];
+        $depth = 0;
+        $buffer = '';
+
+        foreach (str_split($argumentList) as $char) {
+            if ($char === '(' || $char === '[') {
+                $depth++;
+            } elseif ($char === ')' || $char === ']') {
+                $depth--;
+            }
+
+            if ($char === ',' && $depth === 0) {
+                $parts[] = $buffer;
+                $buffer = '';
+                continue;
+            }
+            $buffer .= $char;
+        }
+
+        if (trim($buffer) !== '') {
+            $parts[] = $buffer;
+        }
+
+        return $parts;
     }
 }

@@ -69,18 +69,64 @@ const PHP_VALUE_RULES = [
   [/^\$isOrderIntentEnabled$/, "1"],
   [/^\$isAddressSearchEnabled$/, "1"],
   [/^\$isCompanySearchEnabled$/, "1"],
+  [/^\$currentQuoteId$/, "test-quote-1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
   [/^\$merchantName$/, "Example Shop"],
   [/^\$orderIntentConfig\[.*\]$/, "test"],
   [/^\$quoteDetails(Json)?$/, QUOTE_JSON],
   // Bare, not quoted: json_encode() of a string yields a JSON string literal.
-  [/^json_encode\(\s*\$orderIntentApprovedNotice.*\)$/, '"Approved"'],
+  // The optional `?: …` tail is the fallback for json_encode() returning false;
+  // TWO-25238 added it so a malformed byte cannot make the template emit nothing
+  // where a value belongs.
+  [
+    /^json_encode\(\s*\$orderIntentApprovedNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
+    '"Approved"',
+  ],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
-  // Keep last: escapeJs() wraps many different expressions, and its output
-  // always lands inside single quotes, so it must contain none.
-  [/^\$escaper->escapeJs\(.*\)$/, "Escaped message"],
 ];
+
+/**
+ * Fallback for an escapeJs() whose argument has no rule of its own — the
+ * translated user-facing strings. Its output always lands inside single quotes,
+ * so it must contain none.
+ */
+const ESCAPED_STRING = "Escaped message";
+
+/**
+ * Resolve a normalized PHP expression to its test value, or null if no rule
+ * applies.
+ *
+ * escapeJs() is unwrapped rather than matched by a catch-all. TWO-25238 wrapped
+ * a set of config values in escapeJs() and a catch-all silently degraded every
+ * one of them to the literal `ESCAPED_STRING`, which turned an API base URL into
+ * a value `new URL()` rejects and left four other tests exercising a meaningless
+ * string while still passing. Unwrapping keeps each value's own rule
+ * authoritative no matter how it is escaped at the call site, so adding
+ * escaping to a template can never again change what the suite tests.
+ *
+ * @param {string} expression whitespace-collapsed inner expression
+ * @param {Array<[RegExp, string]>} rules
+ * @returns {string|null}
+ */
+function resolveExpression(expression, rules) {
+  for (let i = 0; i < rules.length; i += 1) {
+    if (rules[i][0].test(expression)) {
+      return rules[i][1];
+    }
+  }
+
+  const escapeJs = /^\$escaper->escapeJs\(\s*([\s\S]*?)\s*\)$/.exec(expression);
+  if (escapeJs !== null) {
+    // Drop a `(string)` cast the template may apply before escaping.
+    const inner = escapeJs[1].replace(/^\(string\)\s*/, "");
+    const resolved = resolveExpression(inner, rules);
+
+    return resolved === null ? ESCAPED_STRING : resolved;
+  }
+
+  return null;
+}
 
 /**
  * Collapse a PHP tag's inner expression to a single line for matching.
@@ -119,10 +165,9 @@ function renderTemplateJs(relPath, extraRules) {
   const rules = (extraRules || []).concat(PHP_VALUE_RULES);
   source = source.replace(/<\?=([\s\S]*?)\?>/g, function (_match, raw) {
     const expression = normalizeExpression(raw);
-    for (let i = 0; i < rules.length; i += 1) {
-      if (rules[i][0].test(expression)) {
-        return rules[i][1];
-      }
+    const resolved = resolveExpression(expression, rules);
+    if (resolved !== null) {
+      return resolved;
     }
     throw new Error(
       "harness: no test value for PHP expression `" +
@@ -176,6 +221,8 @@ const COMPANY_NAME_TEMPLATE =
   "view/frontend/templates/form/field/companyName-csp-js.phtml";
 const SHIPPING_COMPANY_TEMPLATE =
   "view/frontend/templates/component/payment/method/shipping_company.phtml";
+const PAYMENT_FIELDS_TEMPLATE =
+  "view/frontend/templates/js/payment/company-name-payment.phtml";
 
 /**
  * The globals gateway_method-csp-js.phtml publishes for the other two pickers.
@@ -461,6 +508,8 @@ async function flushPromises() {
 module.exports = {
   REPO_ROOT: REPO_ROOT,
   QUOTE_JSON: QUOTE_JSON,
+  ESCAPED_STRING: ESCAPED_STRING,
+  PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,
   GATEWAY_METHOD_TEMPLATE: GATEWAY_METHOD_TEMPLATE,
   COMPANY_NAME_TEMPLATE: COMPANY_NAME_TEMPLATE,
   SHIPPING_COMPANY_TEMPLATE: SHIPPING_COMPANY_TEMPLATE,
