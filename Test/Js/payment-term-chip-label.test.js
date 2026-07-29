@@ -141,11 +141,41 @@ describe("term chip caption", () => {
     return inner.closest(".two-term-chips");
   }
 
+  /**
+   * The caption text, as the harness substitutes any `__()` call. Asserted on
+   * the TEXT rather than on `label.label`, so a caption reintroduced as a
+   * `<span class="label">` or a bare `<div>` cannot slip past the selector.
+   *
+   * @param {HTMLElement} el
+   * @returns {boolean}
+   */
+  function hasCaptionText(el) {
+    return el.textContent.indexOf(H.ESCAPED_STRING) !== -1;
+  }
+
   it("renders no caption above the sole-term chip", () => {
     const single = branch(renderDoc(), '.two-term-chips [data-single="1"]');
 
     expect(single).not.toBeNull();
     expect(single.querySelector("label.label")).toBeNull();
+    expect(hasCaptionText(single)).toBe(false);
+  });
+
+  /**
+   * The label tests above build their own dataset, so on their own they cannot
+   * see the template stop emitting the attribute — delete `data-label-single`
+   * from the template and every one of them still passes while the chip
+   * regresses to the bare duration this ticket is about. This is the wire
+   * between the two halves, asserted from the rendered markup.
+   */
+  it("wires the single-term label through to the sole chip", () => {
+    const chip = renderDoc().querySelector('.two-term-chips [data-single="1"]');
+
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute("data-label-single")).toBeTruthy();
+    // The days attribute is what `%1` is replaced with; a chip that lost it
+    // would render 'Payment Terms 0 days'.
+    expect(chip.getAttribute("data-days")).toBeTruthy();
   });
 
   it("still captions the selectable chip strip", () => {
@@ -153,5 +183,6 @@ describe("term chip caption", () => {
 
     expect(multi).not.toBeNull();
     expect(multi.querySelector("label.label")).not.toBeNull();
+    expect(hasCaptionText(multi)).toBe(true);
   });
 });

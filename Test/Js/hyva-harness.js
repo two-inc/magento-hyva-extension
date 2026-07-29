@@ -101,7 +101,7 @@ const PHP_VALUE_RULES = [
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$configModel->getCheckoutSubtitleHtml\(\)$/, ""],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
-  [/^\$(pluralLabel|singularLabel|singleDay)$/, "day"],
+  [/^\$(pluralLabel|singularLabel|singleLabel|singleDay)$/, "day"],
   [/^\(int\) \$days$/, "14"],
   // Markup-only values for renderTemplateMarkup() over companyName.phtml, whose
   // chrome comes from Hyva Checkout's form-element renderer rather than from
