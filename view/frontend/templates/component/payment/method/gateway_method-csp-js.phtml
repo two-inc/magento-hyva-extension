@@ -94,6 +94,13 @@ $quoteDetails = json_encode($quoteDetails);
      * components, and a component-owned cache would be discarded exactly
      * when re-issuing searches hurts most. Keyed by request URL, so
      * country / limit / query are all part of the key.
+     *
+     * Entries never expire, and because the cache is window-scoped it also
+     * survives every Magewire re-render for the life of the page — so a
+     * company registered mid-session stays absent from an already-searched
+     * term until the buyer reloads. Deliberate, not a bug: buyers search for
+     * their own company, which is already registered, so a TTL would spend
+     * API calls on a case that essentially never happens.
      */
     window.twoGatewayCompanySearchCache = window.twoGatewayCompanySearchCache || new Map();
 
