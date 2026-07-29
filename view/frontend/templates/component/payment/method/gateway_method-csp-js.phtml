@@ -667,7 +667,7 @@ $quoteDetails = json_encode(
 
             // CSP-friendly Alpine forbids the `!` operator in attribute
             // expressions. Templates using `x-show="!manualMode"` resolve
-            // this magic getter (bare identifier `!manualMode`) instead
+            // this magic METHOD (bare identifier `!manualMode`) instead
             // of evaluating the negation inline. Mirrors the pattern in
             // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
             //

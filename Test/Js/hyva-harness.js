@@ -280,7 +280,7 @@ function renderTemplateMarkup(relPath, extraRules) {
  * The CSP Alpine build Hyvä ships evaluates only a property lookup in an
  * attribute expression — no operators, no object literals. It looks the WHOLE
  * expression up as a key on the component, which is why
- * gateway_method-csp-js.phtml can define an `['!manualMode']` getter and have
+ * gateway_method-csp-js.phtml can define an `['!manualMode']` METHOD and have
  * `x-show="!manualMode"` resolve to it: that binding is perfectly CSP-legal.
  *
  * This helper is deliberately NARROWER than CSP Alpine, and the check is the
