@@ -186,6 +186,27 @@ function <?= $gwBase ?>CompanySearchField() {
                 this.searchAbortController = null;
                 return;
             }
+            // Magewire may have re-rendered the address form while this was in
+            // flight and replaced the node this component is bound to. Writing
+            // `items` then populates a component that is no longer in the
+            // document: no dropdown appears, and this dead copy is left holding
+            // search state.
+            //
+            // Checked here rather than by putting `wire:ignore` on the x-data
+            // node in companyName.phtml, which is the payment form's remedy for
+            // the same class of problem. That subtree is not equivalent: the
+            // payment form documents having no wire:model inputs inside it,
+            // whereas this one wraps a Magewire-bound address field rendered by
+            // Hyva's own form renderer, and opting it out of the diff-merge
+            // cycle would stop the field updating.
+            // Fails CLOSED: once Alpine has torn the subtree down there is no
+            // `_x_dataStack` to walk up to, so `$root` is undefined — the state
+            // this most needs to catch.
+            if (!this.$root || !this.$root.isConnected) {
+                this.isSearching = false;
+                this.searchAbortController = null;
+                return;
+            }
 
             this.searchAbortController = null;
             this.isSearching = false;
