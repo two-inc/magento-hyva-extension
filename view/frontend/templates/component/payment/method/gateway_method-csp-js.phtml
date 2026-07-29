@@ -1344,6 +1344,7 @@ $quoteDetails = json_encode(
             days: 0,
             labelSingular: '1 day',
             labelPlural: '%1 days',
+            labelSingle: '',
             errorMessage: 'Could not update payment term. Please try again.',
             isUpdating: false,
             single: false,
@@ -1357,10 +1358,19 @@ $quoteDetails = json_encode(
                 // live in the plugin's i18n/<locale>.csv files.
                 if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
                 if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
+                // Only the sole-term chip carries this: it names the term
+                // inside the chip ('Payment Terms 30 days') because that
+                // branch renders no heading above the chips.
+                if (this.$el.dataset.labelSingle) this.labelSingle = this.$el.dataset.labelSingle;
                 if (this.$el.dataset.errorMessage) this.errorMessage = this.$el.dataset.errorMessage;
             },
 
             get label() {
+                // Sole-term chip: 'Payment Terms %1 days' — same string Luma's
+                // singleTermLabel uses, including its 1-day plural quirk.
+                if (this.single && this.labelSingle) {
+                    return this.labelSingle.replace('%1', this.days);
+                }
                 return this.days === 1
                     ? this.labelSingular
                     : this.labelPlural.replace('%1', this.days);

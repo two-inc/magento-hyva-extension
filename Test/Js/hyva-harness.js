@@ -101,7 +101,15 @@ const PHP_VALUE_RULES = [
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$configModel->getCheckoutSubtitleHtml\(\)$/, ""],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
-  [/^\$(pluralLabel|singularLabel|singleDay)$/, "day"],
+  // The sole-term chip's format string and day count get values of their own,
+  // ahead of the shared group below. Folding them in with `$pluralLabel` and
+  // `$singularLabel` gave the chip four attributes carrying the identical
+  // literal `day`, which made a test that reads one of them unable to tell it
+  // apart from the others — so sourcing an attribute from the WRONG variable,
+  // the actual defect TWO-25266 fixes, rendered a green suite.
+  [/^\$singleLabel$/, "Payment Terms %1 days"],
+  [/^\$singleDay$/, "30"],
+  [/^\$(pluralLabel|singularLabel)$/, "day"],
   [/^\(int\) \$days$/, "14"],
   // Markup-only values for renderTemplateMarkup() over companyName.phtml, whose
   // chrome comes from Hyva Checkout's form-element renderer rather than from
