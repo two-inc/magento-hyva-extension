@@ -17,7 +17,7 @@ TWO_STORE_COUNTRY    ?= NO
 HYVA_PACKAGIST_URL   ?= https://hyva-themes.repo.packagist.com
 export PORT
 
-.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-js
 
 .DEFAULT_GOAL := help
 
@@ -211,3 +211,10 @@ test:
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
+
+## Run the browser JS test suite (Jest + jsdom, needs host Node 20+)
+test-js:
+	@if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then \
+		npm ci --no-audit --no-fund; \
+	fi
+	npm run test:js
