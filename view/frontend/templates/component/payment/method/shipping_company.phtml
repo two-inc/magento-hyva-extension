@@ -53,24 +53,47 @@ $quoteDetailsJson = json_encode(
 document.addEventListener('alpine:init', () => {
 
     /**
-     * Initialize shipping company selection storage for new checkout sessions.
-     * We detect a new session by checking if the current quote ID differs from the stored one.
-     * This ensures stale company data from previous orders is cleared.
+     * Initialize shipping company selection storage for a new checkout.
+     *
+     * Two independent reasons to reset. A different QUOTE is a different order,
+     * so the previous order's company must not carry over. A different STORE
+     * VIEW is the other one, and it is the reason this used to leak: the quote
+     * is shared across store views by design, so a quote-id comparison never
+     * fires on a store excursion. `shipping_company_selection` is a single
+     * global key with no quote, store or checkout suffix, so a company chosen
+     * in one checkout — or a `manual_mode: true` set there — survived for the
+     * whole quote and turned up in the next one.
      */
     const initShippingCompanyStorage = () => {
         const quoteData = <?= $quoteDetailsJson ?>;
         const currentQuoteId = quoteData.quote_id || '';
+        const currentStoreId = String(quoteData.store_id || '');
         const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
         const storedQuoteId = storedData.quote_id || '';
+        const storedStoreId = String(storedData.store_id || '');
 
-        // Clear storage if quote ID changed (new order) or if storage is empty
-        if (!storedQuoteId || storedQuoteId !== currentQuoteId) {
+        const quoteChanged = !storedQuoteId || storedQuoteId !== currentQuoteId;
+        // An ABSENT stored store id is not a mismatch — it is a blob written
+        // before this scoping existed. Treating it as one would wipe a live
+        // selection out from under a buyer mid-checkout, once, for no gain.
+        const storeChanged = storedStoreId !== '' && storedStoreId !== currentStoreId;
+
+        if (quoteChanged || storeChanged) {
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
                 quote_id: currentQuoteId,
+                store_id: currentStoreId,
                 company_name: '',
                 company_id: '',
                 manual_mode: false
             }));
+            return;
+        }
+
+        // Nothing to clear, but arm the older blob so the NEXT store excursion
+        // is detectable rather than silently unscoped forever.
+        if (storedStoreId === '' && currentStoreId !== '') {
+            storedData.store_id = currentStoreId;
+            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(storedData));
         }
     };
     initShippingCompanyStorage();

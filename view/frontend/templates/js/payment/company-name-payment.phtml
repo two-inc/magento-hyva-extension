@@ -17,6 +17,7 @@ use Hyva\Theme\Model\ViewModelRegistry;
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 $currentQuoteId = $quoteDetails['quote_id'] ?? '';
+$currentStoreId = $quoteDetails['store_id'] ?? '';
 ?>
 <script>
     /**
@@ -28,6 +29,13 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
      * Current quote ID from PHP - used to detect new checkout sessions
      */
     const currentQuoteId = '<?= $escaper->escapeJs((string) $currentQuoteId) ?>';
+
+    /**
+     * Current store view from PHP. The company-selection storage key is one
+     * global, and the quote is shared across store views, so this — not the
+     * quote id — is what tells one checkout's state from another's.
+     */
+    const currentStoreId = '<?= $escaper->escapeJs((string) $currentStoreId) ?>';
 
     /**
      * Check if billing address is set to be the same as shipping address.
@@ -86,22 +94,39 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     document.addEventListener("DOMContentLoaded", () => {
 
         /**
-         * Clear stale company data when a new checkout session is detected.
-         * This prevents the "Please select a country" error when ordering again in the same browser session.
+         * Clear stale company data when a new checkout is detected.
+         *
+         * A new QUOTE means a new order. A new STORE VIEW means a different
+         * checkout over the SAME quote, which is the case this used to miss
+         * entirely — and it is the one that matters, because the missed clear
+         * left `manual_mode: true` in place for the rest of the quote and with
+         * it a payment-tile search field that did nothing.
          */
         const clearStaleCompanyDataIfNeeded = () => {
             const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
             const storedQuoteId = storedData.quote_id || '';
+            const storedStoreId = String(storedData.store_id || '');
 
-            // If quote ID changed (new order started), clear company data
-            if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
+            const quoteChanged = currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId;
+            // An absent stored store id is a pre-scoping blob, not a mismatch.
+            const storeChanged = currentStoreId && storedStoreId && storedStoreId !== currentStoreId;
+
+            if (quoteChanged || storeChanged) {
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
                     quote_id: currentQuoteId,
+                    store_id: currentStoreId,
                     company_name: '',
                     company_id: '',
                     manual_mode: false
                 }));
                 hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+                return;
+            }
+
+            // Arm an older blob so the next store excursion is detectable.
+            if (!storedStoreId && currentStoreId) {
+                storedData.store_id = currentStoreId;
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(storedData));
             }
         };
         clearStaleCompanyDataIfNeeded();
@@ -139,10 +164,20 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                 const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
 
                 if (persistedShippingIdValue) {
-                    const restoredData = {
+                    // MERGED into the existing blob, not substituted for it.
+                    // This used to write a two-key object, which silently
+                    // dropped `quote_id` — and clearStaleCompanyDataIfNeeded()
+                    // needs both quote ids to be non-empty, so one page load
+                    // through here disarmed the new-order clear permanently.
+                    // Same for `store_id` and the store-view clear, and
+                    // `manual_mode` has to survive or a reload throws a buyer
+                    // mid-manual-entry back into search mode.
+                    const restoredData = Object.assign({}, shippingCompanySelectionData, {
+                        quote_id: shippingCompanySelectionData.quote_id || currentQuoteId,
+                        store_id: shippingCompanySelectionData.store_id || currentStoreId,
                         company_name: persistedShippingValue,
                         company_id: persistedShippingIdValue
-                    };
+                    });
                     hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(restoredData));
                     updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
                     paymentFieldsInitialized = true;

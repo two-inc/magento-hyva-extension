@@ -185,6 +185,17 @@ persisted copy so a search then really goes on the wire, "Enter details manually
 the mode and superseding an in-flight search, and the dual-input ids following the one flag.
 The tile's own file, for the `dispatch-order-intent` leak reason below.
 
+`company-selection-scoping.test.js` — what scopes the `shipping_company_selection`
+browser-storage key, which is one global with no quote, store or checkout suffix. Both of the
+things that clear it compared QUOTE ids only, and the quote is shared across store views by
+design, so a store excursion cleared nothing: the other checkout's company and its
+`manual_mode: true` survived the whole quote. The payment step's restore path made that
+permanent by rewriting the blob as a two-key object, dropping the `quote_id` its own clearer
+needs. Covered on both surfaces: a store-view excursion on the same quote clearing, staying
+put not clearing, a new quote still clearing, a pre-scoping blob being armed rather than
+wiped, and the restore path preserving `quote_id`, `store_id` and `manual_mode`. This
+supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
+
 `harness-contract.test.js` — the four fail-loud guarantees above.
 
 ## Deliberately out of scope
@@ -204,9 +215,6 @@ The tile's own file, for the `dispatch-order-intent` leak reason below.
 - **Rendered markup.** `isSearchUnavailable` is asserted as component state, not as
   chrome: the markup that binds it lives in `companyName.phtml` / outside this module, and
   the branded overlay ships its own fork of it.
-- **`initShippingCompanyStorage()`**'s new-session detection. It runs on `alpine:init` in
-  every test in that file, so a throw would be caught, but its quote-id comparison is not
-  asserted.
 
 ## Known leak, and why it is left alone
 

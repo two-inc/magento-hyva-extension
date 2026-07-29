@@ -52,7 +52,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
  * `<prefix>GatewayHyva`; the vanilla prefix is `two`.
  */
 const QUOTE_JSON =
-  '{"quote_id":"test-quote-1","shipping_country_id":"GB","grand_total":100}';
+  '{"quote_id":"test-quote-1","store_id":"1","shipping_country_id":"GB","grand_total":100}';
 
 const PHP_VALUE_RULES = [
   [/^\$gwBase$/, "twoGatewayHyva"],
@@ -70,6 +70,7 @@ const PHP_VALUE_RULES = [
   [/^\$isAddressSearchEnabled$/, "1"],
   [/^\$isCompanySearchEnabled$/, "1"],
   [/^\$currentQuoteId$/, "test-quote-1"],
+  [/^\$currentStoreId$/, "1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
   [/^\$merchantName$/, "Example Shop"],
