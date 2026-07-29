@@ -503,25 +503,13 @@ $quoteDetails = json_encode(
             department: '',
             orderNote: '',
             poNumber: '',
-            // THE single manual/search fact for this component. It gates both
-            // what the buyer SEES (which of the duplicated name / id inputs is
-            // x-show'd) and what the component DOES (getItems() refuses to
-            // search in manual mode).
-            //
-            // It used to be two properties — `manualMode` for behaviour,
-            // `showManual` for visibility — with no watcher between them, and
-            // initialize() restored only the first. A `manual_mode: true` left
-            // in browser storage by the ADDRESS form therefore rendered a live
-            // search box on the payment tile whose every keystroke returned
-            // early: no request, no spinner, no dropdown. It was inescapable
-            // too, because the tile's own links wrote only `showManual`.
-            //
-            // `showManual` is gone rather than kept as a derived alias: the
-            // component the template binds is built by SPREADING this object,
-            // and spread flattens accessors to a value, so an alias would have
-            // frozen. A brand overlay that overrides only the markup must bind
-            // `manualMode` / `!manualMode`.
             manualMode: false,
+            // Manual / search dual-mode toggle for the company-name + company-id pair.
+            // Inputs are duplicated in the template (one per mode, x-show'd); the
+            // visible-mode input always submits as `payment[company_name]` /
+            // `payment[company_id]`, the hidden mirror submits as
+            // `payment[manual_*]` (which Magento ignores).
+            showManual: false,
             // Bound by gateway_method.phtml as `:disabled` on the search-mode
             // company-number input. It is the ONLY thing that locks that
             // field; the greyed-out look derives from it in custom.css
@@ -666,36 +654,27 @@ $quoteDetails = json_encode(
             },
 
             // CSP-friendly Alpine forbids the `!` operator in attribute
-            // expressions. Templates using `x-show="!manualMode"` resolve
-            // this magic METHOD (bare identifier `!manualMode`) instead
+            // expressions. Templates using `x-show="!showManual"` resolve
+            // this magic getter (bare identifier `!showManual`) instead
             // of evaluating the negation inline. Mirrors the pattern in
             // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
-            //
-            // A METHOD, deliberately, not a `get` accessor: PaymentFormWithValidation()
-            // builds itself by spreading PaymentMethodBase(), and object spread
-            // reads accessors and copies the resulting VALUE. An accessor here
-            // would be flattened to a static boolean on the component the
-            // template actually binds, freezing the visible mode forever. A
-            // method survives the spread intact.
-            ['!manualMode']() {
-                return !this.manualMode;
+            ['!showManual']() {
+                return !this.showManual;
             },
 
             // Manual / search mode toggle handlers
             <?= $gwBase ?>OnSearchModeClick() {
-                // enableSearch(), not a bare flag write: it also clears the
-                // PERSISTED `manual_mode`. Without that, the tile could not get
-                // itself out of a manual mode it had restored from storage —
-                // enableSearch() is bound only in the address template — which
-                // is what made the dead search field inescapable here.
-                this.enableSearch();
+                this.showManual = false;
             },
             <?= $gwBase ?>OnManualEntryClick() {
-                // enterManually(), for the mirror-image reason: it aborts a
-                // search still on the wire (which would otherwise land after
-                // the switch, spin the spinner forever and reopen the dropdown
-                // over the manual fields) and persists the mode.
-                this.enterManually();
+                // This — not enterManually() — is what the visible "Enter
+                // details manually" link binds. A search still on the wire
+                // would otherwise land after the switch, spin the spinner
+                // forever and reopen the dropdown over the manual fields.
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
+                this.showManual = true;
             },
             <?= $gwBase ?>OnCompanyItemClick(event) {
                 return this.handleItemClick(event);
@@ -703,31 +682,30 @@ $quoteDetails = json_encode(
 
             // Reactive id / name getters for the dual-input pattern.
             // The visible-mode input gets the canonical id/name; the hidden
-            // mirror gets a `manual_`-prefixed pair Magento ignores. All read
-            // `manualMode` directly — see the spread note on ['!manualMode'].
+            // mirror gets a `manual_`-prefixed pair Magento ignores.
             <?= $gwBase ?>GetCompanyNameId() {
-                return this.manualMode ? 'manual_company_name' : 'company_name';
+                return this.showManual ? 'manual_company_name' : 'company_name';
             },
             <?= $gwBase ?>GetCompanyNameField() {
-                return this.manualMode ? 'payment[manual_company_name]' : 'payment[company_name]';
+                return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
             },
             <?= $gwBase ?>GetManualCompanyNameId() {
-                return !this.manualMode ? 'manual_company_name' : 'company_name';
+                return !this.showManual ? 'manual_company_name' : 'company_name';
             },
             <?= $gwBase ?>GetManualCompanyNameField() {
-                return !this.manualMode ? 'payment[manual_company_name]' : 'payment[company_name]';
+                return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
             },
             <?= $gwBase ?>GetCompanyIdFieldId() {
-                return this.manualMode ? 'manual_company_id' : 'company_id';
+                return this.showManual ? 'manual_company_id' : 'company_id';
             },
             <?= $gwBase ?>GetCompanyIdFieldName() {
-                return this.manualMode ? 'payment[manual_company_id]' : 'payment[company_id]';
+                return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]';
             },
             <?= $gwBase ?>GetManualCompanyIdFieldId() {
-                return this.manualMode ? 'company_id' : 'manual_company_id';
+                return this.showManual ? 'company_id' : 'manual_company_id';
             },
             <?= $gwBase ?>GetManualCompanyIdFieldName() {
-                return this.manualMode ? 'payment[company_id]' : 'payment[manual_company_id]';
+                return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]';
             },
 
             // Dropdown-iteration reactive getters (bound inside template x-for scope).
@@ -767,7 +745,27 @@ $quoteDetails = json_encode(
 
                 // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                this.manualMode = shippingCompanySelectionData.manual_mode || false;
+                /*
+                 * `manual_mode` is deliberately NOT restored here.
+                 *
+                 * An order cannot be placed without a company id — the
+                 * sole-trader flow mints a synthetic one rather than going
+                 * without — and placement credit-checks whatever id is
+                 * submitted. So manual company entry can only ever produce a
+                 * placeable order on a checkout that is NOT using this payment
+                 * method, which by definition is not this tile.
+                 *
+                 * Restoring the flag is what made the tile unusable: the
+                 * ADDRESS form writes `manual_mode: true` into this same shared
+                 * key, and the tile came up with a live-looking company-search
+                 * box whose every keystroke returned early at the `manualMode`
+                 * guard in getItems() — no request, no spinner, no dropdown —
+                 * and no way back, because the tile has no binding for
+                 * enableSearch(). The tile now always offers working search.
+                 *
+                 * Removing the tile's own manual-entry affordance, which is
+                 * dead UI for the same reason, is tracked separately.
+                 */
                 /*
                  * The SAME invariant getItems() recomputes and
                  * applyCompanyIdEditability() consumes:
@@ -1044,12 +1042,7 @@ $quoteDetails = json_encode(
             enableSearch() {
                 this.manualMode = false;
                 this.saveManualModeToStorage(false);
-                // $nextTick because the dual-input `:id` bindings swap on this
-                // same flag: until Alpine flushes, 'company_name' is still the
-                // manual field that is on its way out of view.
-                this.$nextTick(() => {
-                    document.getElementById('company_name')?.focus();
-                });
+                document.getElementById('company_name')?.focus();
             },
 
             saveManualModeToStorage(manualMode) {
@@ -1376,6 +1369,7 @@ $quoteDetails = json_encode(
             days: 0,
             labelSingular: '1 day',
             labelPlural: '%1 days',
+            labelSingle: '',
             errorMessage: 'Could not update payment term. Please try again.',
             isUpdating: false,
             single: false,
@@ -1389,10 +1383,19 @@ $quoteDetails = json_encode(
                 // live in the plugin's i18n/<locale>.csv files.
                 if (this.$el.dataset.labelSingular) this.labelSingular = this.$el.dataset.labelSingular;
                 if (this.$el.dataset.labelPlural) this.labelPlural = this.$el.dataset.labelPlural;
+                // Only the sole-term chip carries this: it names the term
+                // inside the chip ('Payment Terms 30 days') because that
+                // branch renders no heading above the chips.
+                if (this.$el.dataset.labelSingle) this.labelSingle = this.$el.dataset.labelSingle;
                 if (this.$el.dataset.errorMessage) this.errorMessage = this.$el.dataset.errorMessage;
             },
 
             get label() {
+                // Sole-term chip: 'Payment Terms %1 days' — same string Luma's
+                // singleTermLabel uses, including its 1-day plural quirk.
+                if (this.single && this.labelSingle) {
+                    return this.labelSingle.replace('%1', this.days);
+                }
                 return this.days === 1
                     ? this.labelSingular
                     : this.labelPlural.replace('%1', this.days);

@@ -66,10 +66,10 @@ document.addEventListener('alpine:init', () => {
      */
     const initShippingCompanyStorage = () => {
         const quoteData = <?= $quoteDetailsJson ?>;
-        const currentQuoteId = quoteData.quote_id || '';
+        const currentQuoteId = String(quoteData.quote_id || '');
         const currentStoreId = String(quoteData.store_id || '');
         const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-        const storedQuoteId = storedData.quote_id || '';
+        const storedQuoteId = String(storedData.quote_id || '');
         const storedStoreId = String(storedData.store_id || '');
 
         // ONE predicate pair, duplicated verbatim in the sibling template

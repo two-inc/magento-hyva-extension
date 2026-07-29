@@ -41,7 +41,13 @@ class GetQuoteDetails implements ArgumentInterface
 
             $quoteDetails = [];
             // Include quote ID to detect new checkout sessions and clear stale storage data
-            $quoteDetails["quote_id"] = $quote->getId();
+            // Cast for the same reason as store_id below: this value is
+            // compared, as a string, by TWO separate clearers — one reading it
+            // out of json_encode() (where an int stays a number) and one out of
+            // an escapeJs()'d PHP string. An int on one side and a string on the
+            // other makes `!==` true forever, and the two clearers then wipe the
+            // buyer's company on every page load.
+            $quoteDetails["quote_id"] = (string) $quote->getId();
             // And the store view, which is what scopes the company-selection
             // browser-storage key. The quote is deliberately SHARED across
             // store views, so a quote-id comparison alone cannot tell a store

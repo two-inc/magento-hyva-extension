@@ -240,45 +240,10 @@ from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-loc
 still to be filled, selecting an identified company afterwards re-locking it, the same
 state arriving from the shipping step's `update-company-data` event and restored from
 browser storage, no order intent dispatched for an empty id, and the dropdown's
-`x-for :key` staying unique when two hits in one response both lack an identifier (it is
+`x-for :key` staying unique when two hits in one response both lack an identifier (it was
 bound to `companyId`, and Alpine renders one row per distinct key, so a collision on `''`
-would silently cost the buyer a company that matched).
-
-`payment-manual-mode.test.js` — the payment tile's manual/search mode, which used to be two
-properties with no watcher between them: `manualMode` (behaviour — `getItems()` refuses to
-search) and `showManual` (visibility — which of the duplicated inputs is `x-show`n).
-`initialize()` restored only the first from browser storage, and the address form writes
-`manual_mode: true` into that same key, so the tile came up showing a live search box that
-could not search — no request, no spinner, no dropdown — and its own two links wrote only the
-display flag, so there was no way back. `showManual` is gone; the template binds `manualMode`
-and the `['!manualMode']` method.
-
-Assertions are on the SUBMITTING field pair (`payment[company_name]` vs
-`payment[manual_company_name]`) rather than on the flag, because the flag is what changed and
-the field pair is what a buyer's order carries. Covered: a restored `manual_mode` putting the
-manual pair in front of the buyer rather than a dead search box, the tile's own "Search for
-company" link clearing the mode _and_ its persisted copy so a search then really goes on the
-wire, "Enter details manually" persisting the mode and superseding an in-flight search, and
-`companyIdDisabled` following through the registered `manualMode` watcher (which the mount
-fires for real — a `$watch` stubbed to a no-op let that chain regress unnoticed).
-
-The last case mounts `twoGatewayHyvaPaymentFormWithValidation`, and it is the load-bearing
-one: that — not `PaymentMethodBase` — is what `gateway_method.phtml` binds, and it is built by
-SPREADING the base. Object spread reads an accessor and copies its VALUE, so an intermediate
-`get showManual()` froze to `false` on the only component that matters, hiding the manual
-block while `!manualMode` correctly hid the search block. Both blocks gone, and every other
-test green, because nothing else in the suite mounts that factory.
-
-Also here, because it is the consequence of making manual mode visible rather than a fact
-about the flag: `company-name-payment.phtml`'s sync into the tile used to find the fields by
-`[data-name]`, which is on the SEARCH-mode pair only. While a restored `manual_mode` still
-displayed those inputs — the state that made the search box dead — they happened to be the
-submitting pair. With manual mode actually shown, that selector writes the hidden
-`payment[manual_*]` mirror, so the order would carry the buyer's previous company while the
-order intent was approved against the new one. The sync resolves `#company_name` /
-`#company_id` now, whose ids follow the mode.
-
-The tile's own file, for the `dispatch-order-intent` leak reason below.
+silently cost the buyer a company that matched; both surfaces bind a getter with a positional
+fallback now — the address form's arrived later than the tile's).
 
 `company-selection-scoping.test.js` — what scopes the `shipping_company_selection`
 browser-storage key, which is one global with no quote, store or checkout suffix. Both of the
@@ -290,6 +255,27 @@ needs. Covered on both surfaces: a store-view excursion on the same quote cleari
 put not clearing, a new quote still clearing, a pre-scoping blob being armed rather than
 wiped, and the restore path preserving `quote_id`, `store_id` and `manual_mode`. This
 supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
+
+Also here: the payment tile must NOT restore `manual_mode` from that key. An order cannot be
+placed without a company id — the sole-trader flow mints a synthetic one rather than going
+without — and placement credit-checks whatever id is submitted, so manual company entry is
+only meaningful on a checkout that is not using this payment method. Restoring the flag gave
+the tile a live-looking search box whose every keystroke returned early at the `manualMode`
+guard: no request, no spinner, no dropdown, and no way back, because the tile has no binding
+for `enableSearch()`. The assertion is a real request on the wire, which is the only thing
+that distinguishes "search works" from "search silently declines".
+
+`quote-id-normalisation.test.js` — that the quote id the two clearers compare is a string on
+both sides. They read the same value through different pipes: the shipping step out of
+`json_encode()`, where an int stays a JSON number, and the payment step out of an
+`escapeJs()`'d PHP string. `Quote::getId()` is int-ish, so `42 !== "42"` is true forever and
+the two clearers wipe the buyer's company on every page load, each undoing the other. Cast at
+source in `GetQuoteDetails`, with `String()` on both sides for blobs predating the cast.
+
+Its own file for a reason worth knowing: `initShippingCompanyStorage()` registers an
+`alpine:init` listener the harness cannot remove, so listeners accumulate across tests within
+a file — and a test using a different quote id than its neighbours gets cleared by theirs.
+That is not hypothetical; it is why these two tests are not in the file above.
 
 `payment-method-code.test.js` — that `company-name-payment.phtml` compares against the
 BRAND's payment method code rather than the literal `two_payment`. Harmless only while every
@@ -372,6 +358,21 @@ and the tests would have been green by construction.
 
 Its own file because the template registers unremovable top-level `window` listeners — see
 the known-leak note below.
+
+`payment-method-code.test.js` — that `company-name-payment.phtml` compares the active checkout
+method against the BRAND's method code rather than a hardcoded literal. Harmless for as long
+as every brand shipped its own fork of the template; once a brand overlay renders the vanilla
+file, a branded store selects its own code, none of the four comparisons match, and the order
+intent is never dispatched — silently, because nothing errors when a company is available and
+no intent goes out.
+
+These tests render the template with a NON-default brand code via `extraRules`, which is the
+only way to tell "reads the view model" from "happens to say the default": the harness's own
+substitution for `getMethodCode()` is the same string a hardcoded literal would have. Both
+spellings are pinned — the view-model call and the `$methodCode` local the template hoists it
+into — so neither can quietly stop being covered. Covered on both entry points (page load and
+`checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
+rendered JS contains no default literal at all.
 
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.

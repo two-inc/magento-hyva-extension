@@ -16,11 +16,9 @@ use Hyva\Theme\Model\ViewModelRegistry;
 /** @var ViewModelRegistry $viewModels */
 
 /**
- * The brand's own payment method code. This template used to compare against
- * the literal `two_payment`, which was invisible while every brand shipped its
- * own fork of the file; now that the overlay renders this one, a hardcoded code
- * means the order-intent dispatch never fires on a branded store. Supplied as a
- * layout argument — see hyva_checkout_index_index.xml.
+ * The brand's own payment method code. Supplied as a layout argument — see
+ * hyva_checkout_index_index.xml, in this same commit, because without it
+ * getData() returns null and the first getMethodCode() call fatals.
  *
  * @var BrandedHyvaViewModelInterface $brandedViewModel
  */
@@ -68,27 +66,8 @@ $methodCode = $brandedViewModel->getMethodCode();
         if (!forceUpdate && !isBillingAsShipping()) {
             return;
         }
-        /*
-         * By ID, not by `[data-name]`. The tile renders the company name and
-         * number twice — once per manual/search mode — and only the VISIBLE
-         * copy carries the canonical `company_name` / `company_id` id and so
-         * the `payment[company_name]` / `payment[company_id]` name Magento
-         * reads; the hidden mirror submits `payment[manual_*]`, which Magento
-         * ignores. The ids follow the mode (see the Get*Id getters in
-         * gateway_method-csp-js.phtml), so `getElementById` always resolves to
-         * the submitting field, whichever mode the buyer is in.
-         *
-         * `[data-name]` is on the SEARCH-mode inputs only. Writing through it
-         * was harmless while a restored `manual_mode` still displayed the
-         * search inputs — the state that made the search box dead. Now that
-         * manual mode is visible, that selector would put the new company into
-         * a hidden `payment[manual_*]` input while the visible one still held
-         * the previous company: the order would carry the old company and the
-         * order intent the new one. fillCompanyData() already resolves these
-         * by id for the same reason.
-         */
-        const companyNameInput = document.getElementById('company_name');
-        const companyIdInput = document.getElementById('company_id');
+        const companyNameInput = document.querySelector('[data-name="company_name"]');
+        const companyIdInput = document.querySelector('[data-name="company_id"]');
 
         if (companyNameInput && companyIdInput) {
             /*
@@ -148,7 +127,7 @@ $methodCode = $brandedViewModel->getMethodCode();
          */
         const clearStaleCompanyDataIfNeeded = () => {
             const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const storedQuoteId = storedData.quote_id || '';
+            const storedQuoteId = String(storedData.quote_id || '');
             const storedStoreId = String(storedData.store_id || '');
 
             // ONE predicate pair, duplicated verbatim in the sibling template
@@ -248,8 +227,8 @@ $methodCode = $brandedViewModel->getMethodCode();
                 initializePaymentFieldsFromShipping();
                 paymentFieldsInitialized = true;
 
-                // Check if this brand's Two method is already selected on page load
-                // and trigger order intent if needed
+                // Check if this brand's Two method is already selected on page
+                // load and trigger order intent if needed
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
                 if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
                     const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
@@ -364,7 +343,7 @@ $methodCode = $brandedViewModel->getMethodCode();
             const companyIdInput = document.querySelector('[data-name="company_id"]');
 
             if (companyNameInput && companyIdInput) {
-                // Check if this brand's Two method is active for order intent.
+                // Check if this brand's Two method is active for order intent
                 // The identifier is part of the intent request, so an empty one
                 // dispatches nothing — matching fillCompanyData()'s
                 // `companyId &&` term. Without this, relaxing the gate above

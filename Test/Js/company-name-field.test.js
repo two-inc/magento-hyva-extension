@@ -455,6 +455,20 @@ describe("company-name field picker", () => {
       );
     });
 
+    test("is what the template actually binds", () => {
+      // The getter is only half the fix; the other half is `companyName.phtml`
+      // binding to it. Reverting the binding to `:key="item.companyId"` left
+      // every other test in this file green, because they all call the getter
+      // directly — so the binding is read out of the template here.
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "template[x-for]",
+          ":key",
+        ),
+      ).toBe("twoGatewayHyvaGetCompanyId");
+    });
+
     test("is the identifier itself when there is one", () => {
       expect(
         row("Example Trading Ltd", "12345678", 0).twoGatewayHyvaGetCompanyId(),
@@ -480,6 +494,23 @@ describe("company-name field picker", () => {
       expect(component.isSearching).toBe(false);
       expect(component.searchAbortController).toBe(null);
       expect(component.isOpen).toBe(false);
+    });
+
+    test("does not write when the component root is gone entirely", async () => {
+      const started = await startSearch("example");
+
+      // Alpine's teardown leaves no `_x_dataStack` to walk up to, so `$root` is
+      // undefined rather than a detached node. A guard written as
+      // `this.$root && !this.$root.isConnected` passes here and writes anyway —
+      // which is how it shipped the first time.
+      component.$root = undefined;
+
+      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      await started.pending;
+
+      expect(component.items).toEqual([]);
+      expect(component.isSearching).toBe(false);
+      expect(component.searchAbortController).toBe(null);
     });
 
     test("a component still in the document is written to as normal", async () => {

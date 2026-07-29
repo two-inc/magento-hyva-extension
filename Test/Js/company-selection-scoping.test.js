@@ -339,4 +339,63 @@ describe("company-selection storage scoping", () => {
       expect(stored().store_id).toBe(CURRENT_STORE);
     });
   });
+
+  describe("a manual_mode left in storage by the address form", () => {
+    // The payment tile must not restore it. An order cannot be placed without a
+    // company id — the sole-trader flow mints a synthetic one — and placement
+    // credit-checks whatever id is submitted, so manual company entry is only
+    // meaningful on a checkout NOT using this payment method. Restoring the flag
+    // gave the tile a live-looking search box whose every keystroke returned
+    // early at the `manualMode` guard: no request, no spinner, no dropdown, and
+    // no way back, because the tile has no binding for enableSearch().
+    let fetchStub;
+
+    beforeEach(() => {
+      document.body.innerHTML = [
+        '<div id="tile-root">',
+        '  <input type="text" id="company_name" value="" />',
+        '  <input type="text" id="company_id" value="" disabled />',
+        "</div>",
+      ].join("\n");
+      jest.useFakeTimers();
+      fetchStub = H.stubFetch();
+      jest.spyOn(console, "error").mockImplementation(() => {});
+      H.loadSharedHelpers();
+      env.fireAlpineInit();
+    });
+
+    afterEach(() => {
+      fetchStub.restore();
+      jest.useRealTimers();
+    });
+
+    test("leaves the tile able to search", async () => {
+      seed({
+        quote_id: "test-quote-1",
+        store_id: CURRENT_STORE,
+        company_name: "",
+        company_id: "",
+        manual_mode: true,
+      });
+
+      const input = document.getElementById("company_name");
+      const component = H.mountComponent(
+        env.alpineComponents.twoGatewayHyvaPaymentMethodBase,
+        { el: input, root: document.getElementById("tile-root") },
+      );
+      component.$watch = function () {};
+      component.initialize(JSON.parse(H.QUOTE_JSON));
+
+      expect(component.manualMode).toBe(false);
+
+      input.value = "Exa";
+      component.getItems();
+      await H.flushPromises();
+
+      // A request actually on the wire is the whole assertion: with the flag
+      // restored, getItems() returned at the guard and nothing happened at all.
+      expect(fetchStub.calls.length).toBe(1);
+      expect(component.isSearching).toBe(true);
+    });
+  });
 });
