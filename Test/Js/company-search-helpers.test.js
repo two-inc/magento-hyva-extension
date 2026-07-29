@@ -132,6 +132,93 @@ describe("shared company-search helpers", () => {
       ]);
     });
 
+    // `national_identifier` is OPTIONAL in the search response — the company
+    // may have none in its home registry, internal identifier types are
+    // stripped from the field, and the field inside it is `id`, not `value`.
+    // So all four of these shapes are reachable on a legitimate hit. Reading
+    // it unguarded threw a TypeError inside the dropdown's own query
+    // pipeline, which took the whole result list down and left the field on
+    // "Searching…" — hence a rendered company rather than a throw, and rather
+    // than a dropped hit the buyer could no longer select at all.
+    describe.each([
+      ["national_identifier absent", {}],
+      ["national_identifier null", { national_identifier: null }],
+      ["id null", { national_identifier: { id: null } }],
+      ["id empty", { national_identifier: { id: "" } }],
+    ])("a hit with %s", (_label, missing) => {
+      /** @returns {Object} an api item with the identifier shape under test */
+      function unusableItem() {
+        return Object.assign(
+          {
+            name: "Example Trading Ltd",
+            highlight: "<em>Example</em> Trading Ltd",
+            lookup_id: "lookup-1",
+          },
+          missing,
+        );
+      }
+
+      test("is reported ok, with no identifier suffix and an empty id", async () => {
+        const item = unusableItem();
+        const promise = window.twoGatewayCompanySearch(searchOptions());
+        fetchStub.last().respond({ items: [item] });
+
+        const result = await promise;
+
+        expect(result.status).toBe("ok");
+        expect(result.items).toEqual([
+          {
+            companyName: "Example Trading Ltd",
+            companyDisplayName: "<em>Example</em> Trading Ltd",
+            companyId: "",
+            lookupId: "lookup-1",
+            item: item,
+          },
+        ]);
+      });
+
+      test("does not take the rest of the result list down with it", async () => {
+        // The whole point of the guard: one hit with no identifier must not
+        // cost the buyer every other company that matched.
+        const promise = window.twoGatewayCompanySearch(searchOptions());
+        fetchStub.last().respond({
+          items: [unusableItem(), apiItem("Other Example Ltd", "222")],
+        });
+
+        const result = await promise;
+
+        expect(result.status).toBe("ok");
+        expect(result.items.map((i) => i.companyName)).toEqual([
+          "Example Trading Ltd",
+          "Other Example Ltd",
+        ]);
+        expect(result.items.map((i) => i.companyId)).toEqual(["", "222"]);
+      });
+    });
+
+    test("a numeric identifier is carried as a string", async () => {
+      // `companyId` is written into an input's `.value` and `.trim()`ed by
+      // the order-intent guard, so a number arriving from the API has to be
+      // coerced here rather than at each of those call sites.
+      const promise = window.twoGatewayCompanySearch(searchOptions());
+      fetchStub.last().respond({
+        items: [
+          {
+            name: "Example Trading Ltd",
+            highlight: "<em>Example</em> Trading Ltd",
+            national_identifier: { id: 12345678 },
+          },
+        ],
+      });
+
+      const result = await promise;
+
+      expect(result.items[0].companyId).toBe("12345678");
+      expect(result.items[0].companyDisplayName).toBe(
+        "<em>Example</em> Trading Ltd (12345678)",
+      );
+    });
+
     test("a genuine zero-result answer is empty, not failed", async () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
       fetchStub.last().respond({ items: [] });
