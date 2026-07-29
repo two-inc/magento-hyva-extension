@@ -516,8 +516,12 @@ $quoteDetails = json_encode(
             // (`input.company_id:disabled`) rather than from a second piece of
             // state saying the same thing.
             companyIdDisabled: true,
-            // Set when the selected company arrived with NO national
-            // identifier, which the search response is allowed to omit. The
+            // Set whenever there is no registry-supplied identifier for the
+            // name currently in the name field: the selected company arrived
+            // with NO national identifier (which the search response is allowed
+            // to omit), or the buyer has typed / edited the name without
+            // picking a dropdown hit at all — getItems() recomputes it on every
+            // edit for exactly that case. The
             // company-id field is still required, so the buyer has to be able
             // to type the organisation number in themselves — without this the
             // field would sit empty AND disabled, an unfillable required field.
@@ -817,6 +821,32 @@ $quoteDetails = json_encode(
                 }
 
                 this.search = this.$el.value;
+                /*
+                 * The buyer has EDITED the name, so re-derive whether they have
+                 * to be able to type the company number in themselves. This is
+                 * the name field's only edit handler (`@input.debounce.300ms`
+                 * in gateway_method.phtml), so it is where the recompute goes.
+                 *
+                 * An identifier belongs to the name it arrived with. Unless the
+                 * text still matches the name the current number was written
+                 * for, there is no registry-supplied identifier for what is in
+                 * the field NOW — and the number field has to be fillable,
+                 * because a buyer who types a name and never picks a dropdown
+                 * hit would otherwise face a `company_id` that is empty AND
+                 * disabled AND required, whose only escape ("Enter details
+                 * manually") sits inside the dropdown's `x-show="isOpen"` and
+                 * disappears the moment they tab away from the field.
+                 *
+                 * Deliberately NOT a blanket unlock, and deliberately not a
+                 * `companyIdDisabled: false` default: while the text still
+                 * matches the name a registry number was written for, the field
+                 * stays locked. That is the whole point of the binding — a
+                 * registry-supplied organisation number must not be typeable
+                 * over by hand.
+                 */
+                this.companyIdEntryRequired =
+                    !(this.companyId && this.search === this.companyName);
+                this.applyCompanyIdEditability();
                 this.selectedIndex = -1;
                 // Reset BEFORE the country check below: clearing the country
                 // after a failed search would leave this latched true, stacked
@@ -1022,10 +1052,17 @@ $quoteDetails = json_encode(
              * Recompute the company-id field's enabled state.
              *
              * Two independent reasons the buyer may type into it: manual entry
-             * of the whole company, and a searched company that came back with
-             * no national identifier. One derived state, one place it is
-             * computed — the previous inline `!manualMode` assignments in two
-             * places are what let the second reason get silently overwritten.
+             * of the whole company, and no registry-supplied identifier for the
+             * name currently in the name field — which covers both a searched
+             * company that came back without a national identifier and a name
+             * the buyer has typed or edited without picking a dropdown hit.
+             * One derived state, one place it is computed — the previous inline
+             * `!manualMode` assignments in two places are what let the second
+             * reason get silently overwritten.
+             *
+             * The invariant: enabled whenever there is no registry-supplied
+             * identifier for the current name, disabled exactly when one has
+             * been written for it.
              *
              * `companyIdDisabled` is what gateway_method.phtml binds, so this
              * is the only writer of the field's locked state. The imperative
