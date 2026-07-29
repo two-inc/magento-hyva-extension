@@ -236,9 +236,10 @@ from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-loc
 still to be filled, selecting an identified company afterwards re-locking it, the same
 state arriving from the shipping step's `update-company-data` event and restored from
 browser storage, no order intent dispatched for an empty id, and the dropdown's
-`x-for :key` staying unique when two hits in one response both lack an identifier (it is
+`x-for :key` staying unique when two hits in one response both lack an identifier (it was
 bound to `companyId`, and Alpine renders one row per distinct key, so a collision on `''`
-would silently cost the buyer a company that matched).
+silently cost the buyer a company that matched; both surfaces bind a getter with a positional
+fallback now — the address form's arrived later than the tile's).
 
 Also covered there, and the reason the binding needed a second round: a name **typed
 without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
@@ -311,6 +312,21 @@ and the tests would have been green by construction.
 
 Its own file because the template registers unremovable top-level `window` listeners — see
 the known-leak note below.
+
+`payment-method-code.test.js` — that `company-name-payment.phtml` compares the active checkout
+method against the BRAND's method code rather than a hardcoded literal. Harmless for as long
+as every brand shipped its own fork of the template; once a brand overlay renders the vanilla
+file, a branded store selects its own code, none of the four comparisons match, and the order
+intent is never dispatched — silently, because nothing errors when a company is available and
+no intent goes out.
+
+These tests render the template with a NON-default brand code via `extraRules`, which is the
+only way to tell "reads the view model" from "happens to say the default": the harness's own
+substitution for `getMethodCode()` is the same string a hardcoded literal would have. Both
+spellings are pinned — the view-model call and the `$methodCode` local the template hoists it
+into — so neither can quietly stop being covered. Covered on both entry points (page load and
+`checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
+rendered JS contains no default literal at all.
 
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.

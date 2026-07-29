@@ -64,6 +64,8 @@ const ESCAPED_STRING = "Escaped message";
 const PHP_VALUE_RULES = [
   [/^\$gwBase$/, "twoGatewayHyva"],
   [/^\$brandedViewModel->getMethodCode\(\)$/, "two_payment"],
+  // company-name-payment.phtml hoists the same value into a local.
+  [/^\$methodCode$/, "two_payment"],
   // Order matters: the str_replace() wrapper has to be matched before the
   // bare getMagewireBlockName() rule below it.
   [/^str_replace\(.*getMagewireBlockName\(\).*\)$/, "two_payment"],

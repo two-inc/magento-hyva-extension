@@ -156,4 +156,4 @@ sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface
 2. **Styles not applying**: Rebuild Tailwind CSS
 3. **Alpine.js not working**: Check browser console for JS errors, ensure `x-data` is on parent element
-4. **Payment method not showing**: Verify `two_payment` is enabled in admin config
+4. **Payment method not showing**: Verify the brand's Two payment method is enabled in admin config. The method code comes from `BrandedHyvaViewModelInterface::getMethodCode()` — never hardcode it in templates or tests.
