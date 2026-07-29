@@ -90,14 +90,20 @@ document.addEventListener('alpine:init', () => {
                 this.searchAbortController = null;
             }
             this.isSearching = false;
-            // Release the toast latch here rather than only on a successful
-            // result. Every dismissal runs through this method — backspacing
-            // below three characters, tab-out, picking a result, clearing the
-            // country, a DOM-morph disconnect — so "once per interaction" means
-            // what it says. Clearing it ONLY on success would make it once per
-            // page load, and once the 5s toast expired the buyer would be back
-            // to an inert field with no signal at all, which is the failure
-            // this exists to prevent.
+        },
+
+        /**
+         * End of one search interaction: allow the "unavailable" toast to fire
+         * again next time.
+         *
+         * Deliberately NOT folded into abortCompanySearch(), which also runs at
+         * the TOP of every search to supersede the previous request — resetting
+         * there would re-toast on every debounced keystroke, which is the
+         * throttle this latch exists to provide. It is also not reset only on a
+         * successful result: that made it once per PAGE LOAD, and once the 5s
+         * toast expired the buyer was back to an inert field with no signal.
+         */
+        endSearchInteraction() {
             this.searchUnavailableShown = false;
         },
         async getItems() {
@@ -132,6 +138,7 @@ document.addEventListener('alpine:init', () => {
             if (this.countryCode) {
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
+                    this.endSearchInteraction();
                     this.items = [];
                     return;
                 }
@@ -255,6 +262,7 @@ document.addEventListener('alpine:init', () => {
                 // response writes items + opens the dropdown for a country the
                 // buyer no longer has selected.
                 this.abortCompanySearch();
+                this.endSearchInteraction();
                 // Only show the message once per interaction to avoid spamming
                 if (!this.countrySelectionShown && this.search.length >= 3) {
                     this.countrySelectionShown = true;
@@ -270,6 +278,7 @@ document.addEventListener('alpine:init', () => {
             // The buyer has chosen; anything still on the wire is stale and
             // would reopen a dropdown they have just dismissed.
             this.abortCompanySearch();
+            this.endSearchInteraction();
             this.isSearchUnavailable = false;
             this.isOpen = false;
             this.items = [];
@@ -355,6 +364,7 @@ document.addEventListener('alpine:init', () => {
                 // Without the abort, an in-flight search lands after the
                 // buyer has tabbed away and reopens the dropdown.
                 this.abortCompanySearch();
+                this.endSearchInteraction();
                 this.isSearchUnavailable = false;
                 this.isOpen = false;
                 this.items = [];
