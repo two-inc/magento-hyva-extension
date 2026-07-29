@@ -227,8 +227,10 @@ $quoteDetails = json_encode($quoteDetails);
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId) {
         const controller = new AbortController();
+        // No reason argument: nothing reads it, and the sibling search helper
+        // does not pass one either.
         const timer = setTimeout(
-            () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+            () => controller.abort(),
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
         try {
@@ -691,6 +693,10 @@ $quoteDetails = json_encode($quoteDetails);
 
                 this.search = this.$el.value;
                 this.selectedIndex = -1;
+                // Reset BEFORE the country check below: clearing the country
+                // after a failed search would leave this latched true, stacked
+                // under the "select a country" warning.
+                this.isSearchUnavailable = false;
                 const quoteData = JSON.parse(JSON.stringify(this.quote));
 
                 // Get country code using centralized helper
@@ -710,7 +716,6 @@ $quoteDetails = json_encode($quoteDetails);
                     return;
                 }
 
-                this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
                     this.items = [];
@@ -734,13 +739,25 @@ $quoteDetails = json_encode($quoteDetails);
                 const query = this.search;
                 this.isSearching = true;
 
-                const result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: this.countryCode,
-                    query: query,
-                    limit: this.companySearchLimit,
-                    signal: controller.signal,
-                });
+                // try/catch because the helper is a window global: if it were
+                // ever absent the await would throw, leaving this an unhandled
+                // rejection with `isSearching` latched true — and this picker
+                // DOES render a spinner off that flag, so it would spin
+                // forever. The helper swallows request failures itself, so
+                // reaching the catch means something structural.
+                let result;
+                try {
+                    result = await window.twoGatewayCompanySearch({
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        countryCode: this.countryCode,
+                        query: query,
+                        limit: this.companySearchLimit,
+                        signal: controller.signal,
+                    });
+                } catch (error) {
+                    console.error('Company search failed:', error);
+                    result = { status: 'failed', items: [] };
+                }
 
                 // The buyer typed on, or Magewire re-rendered us, while this
                 // was in flight. Writing anything now would fight the newer

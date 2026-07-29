@@ -70,7 +70,9 @@ document.addEventListener('alpine:init', () => {
         isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
         quote : '<?= $quoteDetailsJson ?>',
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
+        searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
         countrySelectionShown: false,
+        searchUnavailableShown: false,
         selectedIndex: -1,
         // Company-search request state. `isSearching` is for an in-field
         // spinner and `isSearchUnavailable` for the "try again / enter
@@ -89,13 +91,36 @@ document.addEventListener('alpine:init', () => {
             }
             this.isSearching = false;
         },
+
+        /**
+         * End of one search interaction: allow the "unavailable" toast to fire
+         * again next time.
+         *
+         * Deliberately NOT folded into abortCompanySearch(), which also runs at
+         * the TOP of every search to supersede the previous request — resetting
+         * there would re-toast on every debounced keystroke, which is the
+         * throttle this latch exists to provide. It is also not reset only on a
+         * successful result: that made it once per PAGE LOAD, and once the 5s
+         * toast expired the buyer was back to an inert field with no signal.
+         */
+        endSearchInteraction() {
+            this.searchUnavailableShown = false;
+        },
         async getItems() {
             // Guard: Don't run if element is disconnected (being destroyed during DOM morph)
-            if (!this.$el || !this.$el.isConnected) return;
+            if (!this.$el || !this.$el.isConnected) {
+                // Still cancel: otherwise a fetch stays on the wire for a
+                // detached instance and its controller is never released.
+                this.abortCompanySearch();
+                return;
+            }
 
             this.search = this.$el.value;
             this.selectedIndex = -1;
-            if (!this.isCompanySearchEnabled) return;
+            if (!this.isCompanySearchEnabled) {
+                this.abortCompanySearch();
+                return;
+            }
 
             // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
             const quoteData = JSON.parse(this.quote);
@@ -105,10 +130,15 @@ document.addEventListener('alpine:init', () => {
                 this.countrySelectionShown = false; // Reset flag when country becomes available
             }
 
+            // Reset BEFORE the country split: clearing the country after a
+            // failed search would otherwise leave this latched true, stacked
+            // under the "select a country" warning.
+            this.isSearchUnavailable = false;
+
             if (this.countryCode) {
-                this.isSearchUnavailable = false;
                 if (this.search.length < 3) {
                     this.abortCompanySearch();
+                    this.endSearchInteraction();
                     this.items = [];
                     return;
                 }
@@ -130,14 +160,44 @@ document.addEventListener('alpine:init', () => {
                 // its only progress signal rather than being removed and
                 // replaced with nothing.
                 window.dispatchEvent(new Event('magewire:loader:start'));
-                const result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: this.countryCode,
-                    query: this.search,
-                    limit: this.companySearchLimit,
-                    signal: controller.signal,
-                });
-                window.dispatchEvent(new Event('magewire:loader:done'));
+                let result;
+                try {
+                    result = await window.twoGatewayCompanySearch({
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        countryCode: this.countryCode,
+                        query: this.search,
+                        limit: this.companySearchLimit,
+                        signal: controller.signal,
+                    });
+                } catch (error) {
+                    // The helper swallows request failures itself, so reaching
+                    // here means something structural (a missing global). Fail
+                    // visibly rather than as an unhandled rejection, which is
+                    // what the old local try/catch degraded to.
+                    console.error('Company search failed:', error);
+                    result = { status: 'failed', items: [] };
+
+                } finally {
+                    // Retire the loader unless a NEWER search now owns it.
+                    //
+                    // The magewire loader is a boolean, not a counter, so two
+                    // rules have to hold at once:
+                    //   - a SUPERSEDED search must not dispatch done, or it
+                    //     hides the overlay while its replacement runs
+                    //     (start(A), abort(A), start(B), done(A));
+                    //   - a search that was aborted with NO successor MUST
+                    //     dispatch done, or the overlay latches on forever and
+                    //     blocks checkout. Every dismissal path — backspacing
+                    //     below three characters, tab-out, picking a result,
+                    //     clearing the country, a DOM-morph disconnect — is
+                    //     exactly this case.
+                    // `abortCompanySearch()` nulls the field synchronously and
+                    // a successor assigns it synchronously in the same task, so
+                    // null unambiguously means "nothing in flight".
+                    if (!this.searchAbortController || this.searchAbortController === controller) {
+                        window.dispatchEvent(new Event('magewire:loader:done'));
+                    }
+                }
 
                 // Superseded by a newer search, or the component was
                 // destroyed by a DOM morph while this was in flight. Writing
@@ -154,6 +214,34 @@ document.addEventListener('alpine:init', () => {
                 this.searchAbortController = null;
                 this.isSearching = false;
                 this.items = result.items;
+                // This picker renders no unavailable notice of its own (see the
+                // note below), so a flash message is the ONLY signal a buyer
+                // gets. It has to fire on the common failure modes — timeout,
+                // non-2xx, network error, degraded 200 — not just on the
+                // structural error the catch above handles: those return a
+                // status without throwing. Without it the buyer sees an inert
+                // field, and since only selectItem() writes the hidden
+                // shipping-company fields they cannot set a company at all.
+                //
+                // Latched once per interaction, mirroring countrySelectionShown
+                // below: the search is debounced per keystroke, so a down API
+                // would otherwise toast on every one.
+                if (result.status === 'failed' || result.status === 'degraded') {
+                    if (!this.searchUnavailableShown) {
+                        this.searchUnavailableShown = true;
+                        // Guarded: this runs on a failure path whose whole point
+                        // is surviving a missing global, so it must not become
+                        // the thing that throws.
+                        if (typeof window.dispatchMessages === 'function') {
+                            window.dispatchMessages([{
+                                type: 'warning',
+                                text: this.searchUnavailableMessage,
+                            }], 5000);
+                        }
+                    }
+                } else {
+                    this.searchUnavailableShown = false;
+                }
                 // A timeout, non-2xx, network error or degraded 200 must not
                 // be rendered as "no companies found".
                 //
@@ -169,6 +257,12 @@ document.addEventListener('alpine:init', () => {
                     this.isOpen = true;
                 }
             } else {
+                // The country was cleared while a search was on the wire. Without
+                // the abort, `searchAbortController` still matches and the
+                // response writes items + opens the dropdown for a country the
+                // buyer no longer has selected.
+                this.abortCompanySearch();
+                this.endSearchInteraction();
                 // Only show the message once per interaction to avoid spamming
                 if (!this.countrySelectionShown && this.search.length >= 3) {
                     this.countrySelectionShown = true;
@@ -184,6 +278,7 @@ document.addEventListener('alpine:init', () => {
             // The buyer has chosen; anything still on the wire is stale and
             // would reopen a dropdown they have just dismissed.
             this.abortCompanySearch();
+            this.endSearchInteraction();
             this.isSearchUnavailable = false;
             this.isOpen = false;
             this.items = [];
@@ -269,6 +364,7 @@ document.addEventListener('alpine:init', () => {
                 // Without the abort, an in-flight search lands after the
                 // buyer has tabbed away and reopens the dropdown.
                 this.abortCompanySearch();
+                this.endSearchInteraction();
                 this.isSearchUnavailable = false;
                 this.isOpen = false;
                 this.items = [];
