@@ -141,24 +141,19 @@ describe("term chip caption", () => {
     return inner.closest(".two-term-chips");
   }
 
-  /**
-   * The caption text, as the harness substitutes any `__()` call. Asserted on
-   * the TEXT rather than on `label.label`, so a caption reintroduced as a
-   * `<span class="label">` or a bare `<div>` cannot slip past the selector.
-   *
-   * @param {HTMLElement} el
-   * @returns {boolean}
-   */
-  function hasCaptionText(el) {
-    return el.textContent.indexOf(H.ESCAPED_STRING) !== -1;
-  }
-
   it("renders no caption above the sole-term chip", () => {
     const single = branch(renderDoc(), '.two-term-chips [data-single="1"]');
 
     expect(single).not.toBeNull();
     expect(single.querySelector("label.label")).toBeNull();
-    expect(hasCaptionText(single)).toBe(false);
+    // Asserted on the branch's whole text, not on `label.label`, so a caption
+    // reintroduced as a `<span class="label">` or a bare `<div>` cannot slip
+    // past the selector. The single branch's rendered text is legitimately
+    // empty: the chip's own content arrives through `x-text`, which is a
+    // binding rather than a text node. If a text node is ever wanted here —
+    // an sr-only hint, the loading state — this assertion is the right place
+    // to make the decision explicit rather than something to loosen.
+    expect(single.textContent.trim()).toBe("");
   });
 
   /**
@@ -172,17 +167,27 @@ describe("term chip caption", () => {
     const chip = renderDoc().querySelector('.two-term-chips [data-single="1"]');
 
     expect(chip).not.toBeNull();
-    expect(chip.getAttribute("data-label-single")).toBeTruthy();
-    // The days attribute is what `%1` is replaced with; a chip that lost it
-    // would render 'Payment Terms 0 days'.
-    expect(chip.getAttribute("data-days")).toBeTruthy();
+    // Exact values, not `toBeTruthy()`: the harness gives the format string and
+    // the day count values distinct from the duration labels' `day`, so this
+    // catches the attribute being sourced from the WRONG variable — which is
+    // the bug itself — and not merely being deleted.
+    expect(chip.getAttribute("data-label-single")).toBe(
+      "Payment Terms %1 days",
+    );
+    // What `%1` is replaced with. A chip that lost it renders '… 0 days'.
+    expect(chip.getAttribute("data-days")).toBe("30");
   });
 
   it("still captions the selectable chip strip", () => {
     const multi = branch(renderDoc(), '.two-term-chips [role="group"]');
 
+    const caption = multi.querySelector("label.label");
+
     expect(multi).not.toBeNull();
-    expect(multi.querySelector("label.label")).not.toBeNull();
-    expect(hasCaptionText(multi)).toBe(true);
+    expect(caption).not.toBeNull();
+    // Scoped to the caption element: asserting the placeholder appears
+    // somewhere in the branch would stop pinning the caption the moment a
+    // second translated text node lands anywhere in that branch.
+    expect(caption.textContent).toContain(H.ESCAPED_STRING);
   });
 });
