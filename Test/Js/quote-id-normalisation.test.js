@@ -48,16 +48,13 @@ describe("quote id normalisation", () => {
    * @returns {void}
    */
   function seed(data) {
-    env.browserStorage.setItem(
-      "shipping_company_selection",
-      JSON.stringify(data),
-    );
+    env.browserStorage.setItem(H.COMPANY_SELECTION_KEY, JSON.stringify(data));
   }
 
   /** @returns {Object} */
   function stored() {
     return JSON.parse(
-      env.browserStorage.getItem("shipping_company_selection") || "{}",
+      env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
     );
   }
 
@@ -66,31 +63,63 @@ describe("quote id normalisation", () => {
    * @returns {void}
    */
   function seedSelection(storedQuoteId) {
+    // No `store_id` inside the blob: the store view lives in the KEY now, so a
+    // field of that name would be dead weight a reader could mistake for scope.
     seed({
       quote_id: storedQuoteId,
-      store_id: "1",
       company_name: "Example Trading Ltd",
       company_id: "12345678",
       manual_mode: false,
     });
   }
 
+  /**
+   * Load the publisher, then the shipping step, then fire Alpine's ready event.
+   *
+   * The publisher is not optional here. The shipping template resolves the two
+   * accessors into locals behind a `function(){ return {}; }` fallback so a page
+   * without gateway_method-csp-js.phtml degrades instead of throwing — which
+   * means a test that skips the publisher reads `{}` and writes nowhere. Both
+   * cases below would then "pass" without a single quote-id comparison having
+   * happened, which is exactly the comparison this file exists to pin.
+   *
+   * @returns {void}
+   */
+  function run() {
+    H.loadSharedHelpers();
+    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE, NUMERIC_QUOTE);
+    env.fireAlpineInit();
+  }
+
   test("a numeric current id matches the same id stored as a string", () => {
     seedSelection("42");
 
-    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE, NUMERIC_QUOTE);
-    env.fireAlpineInit();
+    run();
 
     // Without the normalisation, 42 !== "42" and this clears — on every load.
     expect(stored().company_name).toBe("Example Trading Ltd");
     expect(stored().quote_id).toBe("42");
   });
 
+  test("a numeric STORED id matches the same id read as a string", () => {
+    // The mirror of the case above, and the one that actually pins the
+    // stored-side String(). Numeric ids are already in live storage: on
+    // `staging` the shipping clearer writes `quote_id: quoteData.quote_id`
+    // straight out of json_encode(), so every blob written before the PHP cast
+    // landed holds a NUMBER. Normalising only the current side leaves
+    // `42 !== "42"` true against exactly those blobs, and the clearers then wipe
+    // the buyer's company on every page load for the rest of the quote.
+    seedSelection(42);
+
+    run();
+
+    expect(stored().company_name).toBe("Example Trading Ltd");
+  });
+
   test("and still clears when the quote genuinely changed", () => {
     seedSelection("41");
 
-    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE, NUMERIC_QUOTE);
-    env.fireAlpineInit();
+    run();
 
     expect(stored().company_name).toBe("");
     expect(stored().quote_id).toBe("42");

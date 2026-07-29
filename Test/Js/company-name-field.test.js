@@ -102,7 +102,7 @@ describe("company-name field picker", () => {
 
   test("manual mode is restored from browser storage on init", () => {
     env.browserStorage.setItem(
-      "shipping_company_selection",
+      H.COMPANY_SELECTION_KEY,
       JSON.stringify({ manual_mode: true }),
     );
 
@@ -299,7 +299,7 @@ describe("company-name field picker", () => {
         seen.push(event.detail),
       );
       env.browserStorage.setItem(
-        "shipping_company_selection",
+        H.COMPANY_SELECTION_KEY,
         JSON.stringify({ quote_id: "test-quote-1" }),
       );
 
@@ -313,7 +313,7 @@ describe("company-name field picker", () => {
       expect(component.isSelecting).toBe(true);
 
       const stored = JSON.parse(
-        env.browserStorage.getItem("shipping_company_selection"),
+        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY),
       );
       expect(stored).toEqual({
         quote_id: "test-quote-1",
@@ -395,7 +395,7 @@ describe("company-name field picker", () => {
       expect(component.items).toEqual([]);
       expect(component.isOpen).toBe(false);
       expect(
-        JSON.parse(env.browserStorage.getItem("shipping_company_selection"))
+        JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY))
           .manual_mode,
       ).toBe(true);
     });
@@ -406,7 +406,7 @@ describe("company-name field picker", () => {
 
       expect(component.manualMode).toBe(false);
       expect(
-        JSON.parse(env.browserStorage.getItem("shipping_company_selection"))
+        JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY))
           .manual_mode,
       ).toBe(false);
     });

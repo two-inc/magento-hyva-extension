@@ -392,6 +392,16 @@ const PAYMENT_FIELDS_TEMPLATE =
 /**
  * The globals gateway_method-csp-js.phtml publishes for the other two pickers.
  */
+/**
+ * The company-selection storage key AS THE TEMPLATES BUILD IT.
+ *
+ * The blob is keyed per store view — `shipping_company_selection:<store_id>` —
+ * and the suffix here has to track the `$currentStoreId` rule in
+ * PHP_VALUE_RULES above, which is why both live in this file rather than being
+ * spelled out in each test.
+ */
+const COMPANY_SELECTION_KEY = "shipping_company_selection:1";
+
 const SHARED_HELPER_GLOBALS = [
   "twoGatewayGetCountryCode",
   "twoGatewayIsDegradedResponse",
@@ -399,6 +409,14 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyDetail",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The per-store company-selection accessor. Listed for the same reason as the
+  // cache above: these are assigned as `window.X = window.X || …`, which is
+  // correct in production (four templates each define the key and only the
+  // first assignment should win) but would otherwise carry the FIRST test
+  // file's copy — and the store id baked into its key — into every later one.
+  "TWO_GATEWAY_COMPANY_SELECTION_KEY",
+  "twoGatewayReadCompanySelection",
+  "twoGatewayWriteCompanySelection",
 ];
 
 /**
@@ -672,6 +690,7 @@ async function flushPromises() {
 
 module.exports = {
   REPO_ROOT: REPO_ROOT,
+  COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
   QUOTE_JSON: QUOTE_JSON,
   ESCAPED_STRING: ESCAPED_STRING,
   PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,

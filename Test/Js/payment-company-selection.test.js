@@ -174,7 +174,7 @@ describe("payment component company selection", () => {
   /** @returns {Object} the persisted shipping-company selection */
   function storedSelection() {
     return JSON.parse(
-      env.browserStorage.getItem("shipping_company_selection") || "{}",
+      env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
     );
   }
 
@@ -513,7 +513,7 @@ describe("payment component company selection", () => {
   describe("restored from browser storage", () => {
     test("a stored name with no id comes back editable", () => {
       env.browserStorage.setItem(
-        "shipping_company_selection",
+        H.COMPANY_SELECTION_KEY,
         JSON.stringify({
           quote_id: "test-quote-1",
           company_name: "Example Trading Ltd",
@@ -532,7 +532,7 @@ describe("payment component company selection", () => {
 
     test("a stored name with an id comes back locked", () => {
       env.browserStorage.setItem(
-        "shipping_company_selection",
+        H.COMPANY_SELECTION_KEY,
         JSON.stringify({
           quote_id: "test-quote-1",
           company_name: "Example Trading Ltd",

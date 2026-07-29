@@ -55,6 +55,36 @@ $quoteDetailsJson = json_encode(
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /*
+     * Resolved once, with a fallback, and NEVER called as
+     * `window.twoGatewayReadCompanySelection(...)` directly.
+     *
+     * The accessor is published by gateway_method-csp-js.phtml, which the
+     * checkout always renders — the same assumption the existing
+     * `twoGatewayGetCountryCode` consumers already make. But these call sites sit
+     * inside the `alpine:init` / `DOMContentLoaded` handlers that also register
+     * the pickers and start the payment-form observer, so a bare call on a page
+     * where the publisher was somehow absent would throw BEFORE those
+     * registrations and take the whole company-search UI down with it. Degrading
+     * to "no carry-over between steps" is survivable; a dead checkout step is
+     * not.
+     *
+     * Uniquely named per template on purpose: these are top-level `const`
+     * declarations in separate inline script blocks, which share one global
+     * lexical scope, so a name reused across two templates is a redeclaration
+     * SyntaxError that kills whichever block loads second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoAddressReadSelection = window.twoGatewayReadCompanySelection
+        || function() { return {}; };
+    const twoAddressWriteSelection = window.twoGatewayWriteCompanySelection
+        || function() { return {}; };
+
 function <?= $gwBase ?>CompanySearchField() {
     return {
         isOpen: false,
@@ -80,7 +110,7 @@ function <?= $gwBase ?>CompanySearchField() {
 
         init() {
             // Restore manualMode from storage
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const data = twoAddressReadSelection();
             this.manualMode = data.manual_mode || false;
         },
 
@@ -247,18 +277,13 @@ function <?= $gwBase ?>CompanySearchField() {
                 input.dispatchEvent(new Event('input', { bubbles: false }));
             }
 
-            // MERGED into the existing blob, never rebuilt from a key
-            // list: a rebuild drops `store_id`, and an absent store id is
-            // read as a pre-scoping blob and re-armed with the CURRENT
-            // store — so one selection would make the next store-view
-            // excursion undetectable and leak the company again.
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const companyData = Object.assign({}, existingData, {
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            const companyData = twoAddressWriteSelection({
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false
             });
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: companyData
@@ -350,9 +375,7 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         saveManualModeToStorage(manualMode) {
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            data.manual_mode = manualMode;
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
+            twoAddressWriteSelection({ manual_mode: manualMode });
         },
 
         closeDropdown() {

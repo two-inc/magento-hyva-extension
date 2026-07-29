@@ -44,6 +44,7 @@ $merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
 
 $quoteDetails = $quoteModel->getQuoteDetails();
+$currentStoreId = $quoteDetails["store_id"] ?? '';
 // The HEX flags are load-bearing, not decoration. This lands inside a
 // single-quoted JS string literal in an inline script and carries
 // buyer-supplied values (email, telephone, address, product names). Without
@@ -70,6 +71,71 @@ $quoteDetails = json_encode(
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /*
+     * The company selection the checkout carries between its steps, keyed per
+     * STORE VIEW.
+     *
+     * It used to be one global `shipping_company_selection`, and the quote is
+     * shared across store views by design — so a buyer who changed store view
+     * (typically a language switch) kept the same quote, no quote-id comparison
+     * fired, and the company chosen in the other checkout survived the whole
+     * quote. Scoping the key rather than clearing on a store change means each
+     * store view keeps its OWN selection: a language toggle destroys nothing,
+     * and there is no cross-store bleed left to clear up after.
+     *
+     * Read and write go through these two so the key is built in one place, and
+     * so a write can never rebuild the blob from a partial key list — dropping
+     * `quote_id` that way is what silently disarmed the new-order clear.
+     *
+     * Published from this template because it is where the other shared
+     * `twoGateway*` helpers live, and because every consumer calls them after
+     * load rather than at script-eval time.
+     */
+    window.TWO_GATEWAY_COMPANY_SELECTION_KEY = window.TWO_GATEWAY_COMPANY_SELECTION_KEY
+        || 'shipping_company_selection:<?= $escaper->escapeJs((string) $currentStoreId) ?>';
+
+    /**
+     * Read the current store view's company selection.
+     *
+     * Also retires the pre-scoping global key on first sight. It is dropped
+     * rather than adopted into the current store: adopting it would reproduce
+     * the very cross-store leak this scoping removes, once, for every buyer
+     * mid-checkout at deploy time. The cost is that such a buyer re-picks their
+     * company once, from a dropdown that works.
+     *
+     * @returns {Object} the stored blob, or {} when absent or unparseable
+     */
+    window.twoGatewayReadCompanySelection = window.twoGatewayReadCompanySelection || function() {
+        const storage = hyva.getBrowserStorage();
+        if (storage.getItem('shipping_company_selection') !== null) {
+            storage.removeItem('shipping_company_selection');
+        }
+        // try/catch, not a bare JSON.parse: this runs inside the `alpine:init`
+        // and `DOMContentLoaded` handlers that also register the pickers, so a
+        // malformed value would throw before those registrations and take the
+        // whole company-search UI down with it.
+        try {
+            return JSON.parse(storage.getItem(window.TWO_GATEWAY_COMPANY_SELECTION_KEY) || '{}') || {};
+        } catch (error) {
+            return {};
+        }
+    };
+
+    /**
+     * Merge `patch` into the current store view's company selection.
+     *
+     * @param {Object} patch keys to overwrite; everything else is preserved
+     * @returns {Object} the merged blob as written
+     */
+    window.twoGatewayWriteCompanySelection = window.twoGatewayWriteCompanySelection || function(patch) {
+        const merged = Object.assign({}, window.twoGatewayReadCompanySelection(), patch || {});
+        hyva.getBrowserStorage().setItem(
+            window.TWO_GATEWAY_COMPANY_SELECTION_KEY,
+            JSON.stringify(merged),
+        );
+        return merged;
+    };
+
     /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
@@ -744,27 +810,27 @@ $quoteDetails = json_encode(
                 twoPaymentComponentInstance = this;
 
                 // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
-                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                const shippingCompanySelectionData = window.twoGatewayReadCompanySelection();
                 /*
                  * `manual_mode` is deliberately NOT restored here.
                  *
-                 * An order cannot be placed without a company id — the
-                 * sole-trader flow mints a synthetic one rather than going
-                 * without — and placement credit-checks whatever id is
-                 * submitted. So manual company entry can only ever produce a
-                 * placeable order on a checkout that is NOT using this payment
-                 * method, which by definition is not this tile.
+                 * The flag records a choice made on the ADDRESS form, whose
+                 * company field has its own manual/search mode — and which
+                 * writes it into the selection blob this tile also reads.
+                 * Adopting another surface's mode as this tile's opening state
+                 * is the bug: the tile came up with a live-looking
+                 * company-search box whose every keystroke returned early at
+                 * the `manualMode` guard in getItems() — no request, no
+                 * spinner, no dropdown — and with no way out, because
+                 * enableSearch() is bound on the address form and never here.
                  *
-                 * Restoring the flag is what made the tile unusable: the
-                 * ADDRESS form writes `manual_mode: true` into this same shared
-                 * key, and the tile came up with a live-looking company-search
-                 * box whose every keystroke returned early at the `manualMode`
-                 * guard in getItems() — no request, no spinner, no dropdown —
-                 * and no way back, because the tile has no binding for
-                 * enableSearch(). The tile now always offers working search.
-                 *
-                 * Removing the tile's own manual-entry affordance, which is
-                 * dead UI for the same reason, is tracked separately.
+                 * So the tile now opens in search mode always. It is NOT
+                 * "manual entry is meaningless here": the dual-input pattern
+                 * swaps the `:id`/`:name` bindings, so whichever mode is
+                 * visible carries `payment[company_name]` / `payment[company_id]`
+                 * and submits canonically — a buyer who picks manual entry ON
+                 * THIS TILE gets a working, credit-checkable path, and that
+                 * affordance is left exactly as it was.
                  */
                 /*
                  * The SAME invariant getItems() recomputes and
@@ -1010,19 +1076,14 @@ $quoteDetails = json_encode(
                 this.companyIdEntryRequired = !item.companyId;
                 this.applyCompanyIdEditability();
 
-                // MERGED into the existing blob, never rebuilt from a key
-                // list: a rebuild drops `store_id`, and an absent store id is
-                // read as a pre-scoping blob and re-armed with the CURRENT
-                // store — so one selection would make the next store-view
-                // excursion undetectable and leak the company again.
-                const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(
-                    Object.assign({}, existingData, {
-                        company_name: item.companyName,
-                        company_id: item.companyId,
-                        manual_mode: false
-                    })
-                ));
+                // A merging write, never a rebuild from a key list: dropping
+                // `quote_id` that way is what silently disarmed the new-order
+                // clear.
+                window.twoGatewayWriteCompanySelection({
+                    company_name: item.companyName,
+                    company_id: item.companyId,
+                    manual_mode: false
+                });
 
                 this.fillCompanyData(item.companyId, item.companyName);
             },
@@ -1046,9 +1107,7 @@ $quoteDetails = json_encode(
             },
 
             saveManualModeToStorage(manualMode) {
-                const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                data.manual_mode = manualMode;
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
+                window.twoGatewayWriteCompanySelection({ manual_mode: manualMode });
             },
 
             // Keyboard navigation

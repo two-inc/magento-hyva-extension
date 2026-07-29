@@ -241,16 +241,32 @@ bound to `companyId`, and Alpine renders one row per distinct key, so a collisio
 silently cost the buyer a company that matched; both surfaces bind a getter with a positional
 fallback now — the address form's arrived later than the tile's).
 
-`company-selection-scoping.test.js` — what scopes the `shipping_company_selection`
-browser-storage key, which is one global with no quote, store or checkout suffix. Both of the
-things that clear it compared QUOTE ids only, and the quote is shared across store views by
-design, so a store excursion cleared nothing: the other checkout's company and its
-`manual_mode: true` survived the whole quote. The payment step's restore path made that
-permanent by rewriting the blob as a two-key object, dropping the `quote_id` its own clearer
-needs. Covered on both surfaces: a store-view excursion on the same quote clearing, staying
-put not clearing, a new quote still clearing, a pre-scoping blob being armed rather than
-wiped, and the restore path preserving `quote_id`, `store_id` and `manual_mode`. This
-supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
+`company-selection-scoping.test.js` — what scopes the company-selection browser-storage key.
+It used to be one global `shipping_company_selection`, and both of the things that clear it
+compare QUOTE ids only; the quote is shared across store views by design, so a store excursion
+cleared nothing and the other checkout's company plus its `manual_mode: true` survived the
+whole quote. The key is now `shipping_company_selection:<store_id>`, so there is no store-view
+clearing at all any more and there must not be: an excursion is a DIFFERENT KEY, the other
+view's selection is invisible, and a language toggle destroys nothing. `store_id` is therefore
+not a field inside the blob — the key carries it. The payment step's restore path used to make
+the leak permanent by rewriting the blob as a two-key object, dropping the `quote_id` its own
+clearer needs; every writer now merges through `window.twoGatewayWriteCompanySelection()`.
+Covered on both surfaces: a new quote clearing, the same quote not, a blob with no `quote_id`
+being stamped rather than wiped, another store view's key being neither read nor modified, the
+pre-scoping unsuffixed key being dropped rather than adopted (adopting would reproduce the
+cross-store leak once for every buyer mid-checkout at deploy), all three `selectItem()` writers
+preserving `quote_id` through a selection, and the restore path preserving `quote_id` and
+`manual_mode`. This supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
+
+Storage access goes through `window.twoGatewayReadCompanySelection()` /
+`window.twoGatewayWriteCompanySelection(patch)`, published by
+`gateway_method-csp-js.phtml`; each consuming template resolves them once into a uniquely-named
+local with a `function(){ return {}; }` fallback so a page missing the publisher degrades
+instead of throwing. That fallback makes a silent pass possible in a test: load a consuming
+template without the publisher and it reads `{}`, writes nowhere, and asserts nothing. Every
+test touching company-selection storage therefore calls `H.loadSharedHelpers()` first, and uses
+`H.COMPANY_SELECTION_KEY` rather than a literal key so the store suffix cannot drift from the
+harness's `$currentStoreId` rule.
 
 Also here: the payment tile must NOT restore `manual_mode` from that key. An order cannot be
 placed without a company id — the sole-trader flow mints a synthetic one rather than going
@@ -283,8 +299,8 @@ indistinguishable from the hardcoded literal. Covered on both entry points (page
 `checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
 rendered JS contains no `two_payment` at all.
 
-Also covered there, and the reason the binding needed a second round: a name **typed
-without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
+Also covered in `payment-company-selection.test.js`, and the reason that binding needed a
+second round: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
 default of `true` locked the field on first paint, where before the binding existed nothing
 locked it until a shipping sync did so imperatively. A buyer who typed a company name and
 never selected a hit was then facing a `company_id` that was empty AND disabled AND
