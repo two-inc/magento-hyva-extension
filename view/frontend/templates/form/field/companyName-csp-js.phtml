@@ -199,7 +199,10 @@ function <?= $gwBase ?>CompanySearchField() {
             // whereas this one wraps a Magewire-bound address field rendered by
             // Hyva's own form renderer, and opting it out of the diff-merge
             // cycle would stop the field updating.
-            if (this.$root && !this.$root.isConnected) {
+            // Fails CLOSED: once Alpine has torn the subtree down there is no
+            // `_x_dataStack` to walk up to, so `$root` is undefined — the state
+            // this most needs to catch.
+            if (!this.$root || !this.$root.isConnected) {
                 this.isSearching = false;
                 this.searchAbortController = null;
                 return;
@@ -244,14 +247,17 @@ function <?= $gwBase ?>CompanySearchField() {
                 input.dispatchEvent(new Event('input', { bubbles: false }));
             }
 
-            // Preserve quote_id for session detection
+            // MERGED into the existing blob, never rebuilt from a key
+            // list: a rebuild drops `store_id`, and an absent store id is
+            // read as a pre-scoping blob and re-armed with the CURRENT
+            // store — so one selection would make the next store-view
+            // excursion undetectable and leak the company again.
             const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const companyData = {
-                quote_id: existingData.quote_id || '',
+            const companyData = Object.assign({}, existingData, {
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false
-            };
+            });
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {

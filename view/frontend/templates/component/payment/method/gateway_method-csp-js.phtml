@@ -508,9 +508,11 @@ $quoteDetails = json_encode(
             // early: no request, no spinner, no dropdown. It was inescapable
             // too, because the tile's own links wrote only `showManual`.
             //
-            // `showManual` survives below as a read-only derived getter, so the
-            // markup (including a brand overlay that overrides only the
-            // template) keeps working. This property is its only writer.
+            // `showManual` is gone rather than kept as a derived alias: the
+            // component the template binds is built by SPREADING this object,
+            // and spread flattens accessors to a value, so an alias would have
+            // frozen. A brand overlay that overrides only the markup must bind
+            // `manualMode` / `!manualMode`.
             manualMode: false,
             companyIdDisabled: true,
             companyIdBgStyle: 'background-color: #D3D3D3',
@@ -647,22 +649,19 @@ $quoteDetails = json_encode(
                 return this.search.length < 3;
             },
 
-            // Visibility is DERIVED from the one manual/search fact above,
-            // never stored a second time. The name and id inputs are
-            // duplicated in the template (one per mode, x-show'd); the
-            // visible-mode input always submits as `payment[company_name]` /
-            // `payment[company_id]`, the hidden mirror submits as
-            // `payment[manual_*]` (which Magento ignores).
-            get showManual() {
-                return this.manualMode;
-            },
-
             // CSP-friendly Alpine forbids the `!` operator in attribute
-            // expressions. Templates using `x-show="!showManual"` resolve
-            // this magic getter (bare identifier `!showManual`) instead
+            // expressions. Templates using `x-show="!manualMode"` resolve
+            // this magic getter (bare identifier `!manualMode`) instead
             // of evaluating the negation inline. Mirrors the pattern in
             // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
-            ['!showManual']() {
+            //
+            // A METHOD, deliberately, not a `get` accessor: PaymentFormWithValidation()
+            // builds itself by spreading PaymentMethodBase(), and object spread
+            // reads accessors and copies the resulting VALUE. An accessor here
+            // would be flattened to a static boolean on the component the
+            // template actually binds, freezing the visible mode forever. A
+            // method survives the spread intact.
+            ['!manualMode']() {
                 return !this.manualMode;
             },
 
@@ -688,30 +687,31 @@ $quoteDetails = json_encode(
 
             // Reactive id / name getters for the dual-input pattern.
             // The visible-mode input gets the canonical id/name; the hidden
-            // mirror gets a `manual_`-prefixed pair Magento ignores.
+            // mirror gets a `manual_`-prefixed pair Magento ignores. All read
+            // `manualMode` directly — see the spread note on ['!manualMode'].
             <?= $gwBase ?>GetCompanyNameId() {
-                return this.showManual ? 'manual_company_name' : 'company_name';
+                return this.manualMode ? 'manual_company_name' : 'company_name';
             },
             <?= $gwBase ?>GetCompanyNameField() {
-                return this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+                return this.manualMode ? 'payment[manual_company_name]' : 'payment[company_name]';
             },
             <?= $gwBase ?>GetManualCompanyNameId() {
-                return !this.showManual ? 'manual_company_name' : 'company_name';
+                return !this.manualMode ? 'manual_company_name' : 'company_name';
             },
             <?= $gwBase ?>GetManualCompanyNameField() {
-                return !this.showManual ? 'payment[manual_company_name]' : 'payment[company_name]';
+                return !this.manualMode ? 'payment[manual_company_name]' : 'payment[company_name]';
             },
             <?= $gwBase ?>GetCompanyIdFieldId() {
-                return this.showManual ? 'manual_company_id' : 'company_id';
+                return this.manualMode ? 'manual_company_id' : 'company_id';
             },
             <?= $gwBase ?>GetCompanyIdFieldName() {
-                return this.showManual ? 'payment[manual_company_id]' : 'payment[company_id]';
+                return this.manualMode ? 'payment[manual_company_id]' : 'payment[company_id]';
             },
             <?= $gwBase ?>GetManualCompanyIdFieldId() {
-                return this.showManual ? 'company_id' : 'manual_company_id';
+                return this.manualMode ? 'company_id' : 'manual_company_id';
             },
             <?= $gwBase ?>GetManualCompanyIdFieldName() {
-                return this.showManual ? 'payment[company_id]' : 'payment[manual_company_id]';
+                return this.manualMode ? 'payment[company_id]' : 'payment[manual_company_id]';
             },
 
             // Dropdown-iteration reactive getters (bound inside template x-for scope).
@@ -935,14 +935,19 @@ $quoteDetails = json_encode(
                 this.companyIdEntryRequired = !item.companyId;
                 this.applyCompanyIdEditability();
 
-                // Preserve quote_id for session detection
+                // MERGED into the existing blob, never rebuilt from a key
+                // list: a rebuild drops `store_id`, and an absent store id is
+                // read as a pre-scoping blob and re-armed with the CURRENT
+                // store — so one selection would make the next store-view
+                // excursion undetectable and leak the company again.
                 const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
-                    quote_id: existingData.quote_id || '',
-                    company_name: item.companyName,
-                    company_id: item.companyId,
-                    manual_mode: false
-                }));
+                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(
+                    Object.assign({}, existingData, {
+                        company_name: item.companyName,
+                        company_id: item.companyId,
+                        manual_mode: false
+                    })
+                ));
 
                 this.fillCompanyData(item.companyId, item.companyName);
             },

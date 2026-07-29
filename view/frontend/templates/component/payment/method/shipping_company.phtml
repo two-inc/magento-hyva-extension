@@ -72,13 +72,17 @@ document.addEventListener('alpine:init', () => {
         const storedQuoteId = storedData.quote_id || '';
         const storedStoreId = String(storedData.store_id || '');
 
-        const quoteChanged = !storedQuoteId || storedQuoteId !== currentQuoteId;
-        // An ABSENT stored store id is not a mismatch — it is a blob written
-        // before this scoping existed. Treating it as one would wipe a live
-        // selection out from under a buyer mid-checkout, once, for no gain.
-        const storeChanged = storedStoreId !== '' && storedStoreId !== currentStoreId;
+        // ONE predicate pair, duplicated verbatim in the sibling template
+        // (see the note there). Both terms require the CURRENT id to be
+        // non-empty: GetQuoteDetails() returns [] on a LocalizedException, and
+        // a comparison against '' would wipe a live selection on every page
+        // load of a checkout that is merely failing to describe itself.
+        const quoteChanged = currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId;
+        const storeChanged = currentStoreId && storedStoreId && storedStoreId !== currentStoreId;
 
-        if (quoteChanged || storeChanged) {
+        // Nothing stored at all: seed, rather than falling through to the
+        // arming branch and leaving a blob with no ids to compare next time.
+        if (!storedQuoteId && !storedStoreId) {
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
                 quote_id: currentQuoteId,
                 store_id: currentStoreId,
@@ -89,10 +93,29 @@ document.addEventListener('alpine:init', () => {
             return;
         }
 
-        // Nothing to clear, but arm the older blob so the NEXT store excursion
-        // is detectable rather than silently unscoped forever.
-        if (storedStoreId === '' && currentStoreId !== '') {
-            storedData.store_id = currentStoreId;
+        if (quoteChanged || storeChanged) {
+            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                quote_id: currentQuoteId,
+                store_id: currentStoreId,
+                company_name: '',
+                company_id: '',
+                manual_mode: false
+            }));
+            // Cleared here too, not only in the sibling template: whichever of
+            // the two runs first re-stamps the ids and so disarms the other,
+            // and this key outliving the excursion re-populates the tile.
+            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+            return;
+        }
+
+        // Same quote, same store, but an id may be MISSING — a blob written
+        // before this scoping existed, or by an older tab. Arm it in place;
+        // treating an absent id as a mismatch would wipe a live selection out
+        // from under a buyer mid-checkout, once, for no gain. Both ids get
+        // armed: leaving `quote_id` absent keeps the new-order clear disarmed.
+        if ((!storedQuoteId && currentQuoteId) || (!storedStoreId && currentStoreId)) {
+            storedData.quote_id = storedQuoteId || currentQuoteId;
+            storedData.store_id = storedStoreId || currentStoreId;
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(storedData));
         }
     };
@@ -353,14 +376,17 @@ document.addEventListener('alpine:init', () => {
                 shippingCompanyIdInput.value = item.companyId;
             }
 
-            // Store shipping company selection data (preserve quote_id for session detection)
+            // MERGED into the existing blob, never rebuilt from a key
+            // list: a rebuild drops `store_id`, and an absent store id is
+            // read as a pre-scoping blob and re-armed with the CURRENT
+            // store — so one selection would make the next store-view
+            // excursion undetectable and leak the company again.
             const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const shippingCompanySelectionData = {
-                quote_id: existingData.quote_id || '',
+            const shippingCompanySelectionData = Object.assign({}, existingData, {
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false
-            };
+            });
 
             hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
 

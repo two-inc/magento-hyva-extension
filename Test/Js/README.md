@@ -26,9 +26,8 @@ This module ships no `.js` files for checkout. The code under test is an inline
 Hyvä's `hyva` global already exist. Jest cannot import a `.phtml`.
 
 Extracting the JS into real `.js` files would be the clean answer, and it remains the
-right long-term move. It is deliberately **not** done here: it is a production change,
-and this is a test-only PR. `hyva-harness.js` therefore does the extraction at test time
-instead:
+right long-term move. It is deliberately **not** done here: it is a production change.
+`hyva-harness.js` therefore does the extraction at test time instead:
 
 1. `<?php … ?>` blocks are dropped whole — they are the template's preamble and its
    trailing `registerInlineScript()` call, and they emit nothing into the page.
@@ -41,7 +40,10 @@ instead:
    a `<script>` tag would: a top-level `function` becomes a global, and the file's free
    references to `hyva`, `Alpine` and `window` resolve to the harness stubs.
 
-**No production code was changed to make this testable.**
+**No production code was changed to make this testable** — that was true of the PR that
+introduced the harness (TWO-25245), and is worth preserving as a habit, but it is a
+statement about that PR rather than a rule: later PRs do change these templates and add
+tests in the same commit.
 
 Two of the substituted values are constrained by the templates and worth knowing about
 before editing the table:
@@ -66,7 +68,7 @@ hard error rather than a fallback:
   exists after evaluation.
 
 `harness-contract.test.js` pins all four against fixtures in `fixtures/`, and also renders
-each of the three real templates and syntax-checks the output. So a template edit the
+each of the four real templates and syntax-checks the output. So a template edit the
 renderer cannot handle fails CI loudly instead of silently reducing the suite's coverage.
 
 ### What is stubbed, and what is not
@@ -169,8 +171,9 @@ place from `manualMode || companyIdEntryRequired` so leaving manual mode cannot 
 field still to be filled, selecting an identified company afterwards re-locking it, the
 same state restored from browser storage, no order intent dispatched for an empty id, and
 the dropdown's `x-for :key` staying unique when two hits in one response both lack an
-identifier (it is bound to `companyId`, and Alpine renders one row per distinct key, so a
-collision on `''` would silently cost the buyer a company that matched).
+identifier (it was bound to `companyId`, and Alpine renders one row per distinct key, so a
+collision on `''` silently cost the buyer a company that matched; it is bound to a getter
+with a positional fallback now).
 
 `payment-manual-mode.test.js` — the payment tile's manual/search mode, which used to be two
 properties with no watcher between them: `manualMode` (behaviour — `getItems()` refuses to
@@ -178,11 +181,25 @@ search) and `showManual` (visibility — which of the duplicated inputs is `x-sh
 `initialize()` restored only the first from browser storage, and the address form writes
 `manual_mode: true` into that same key, so the tile came up showing a live search box that
 could not search — no request, no spinner, no dropdown — and its own two links wrote only the
-display flag, so there was no way back. `showManual` is now a read-only getter over
-`manualMode`. Covered: a restored `manual_mode` putting the tile into the manual fields rather
-than a dead search box, the tile's own "Search for company" link clearing the mode _and_ the
-persisted copy so a search then really goes on the wire, "Enter details manually" persisting
-the mode and superseding an in-flight search, and the dual-input ids following the one flag.
+display flag, so there was no way back. `showManual` is gone; the template binds `manualMode`
+and the `['!manualMode']` method.
+
+Assertions are on the SUBMITTING field pair (`payment[company_name]` vs
+`payment[manual_company_name]`) rather than on the flag, because the flag is what changed and
+the field pair is what a buyer's order carries. Covered: a restored `manual_mode` putting the
+manual pair in front of the buyer rather than a dead search box, the tile's own "Search for
+company" link clearing the mode _and_ its persisted copy so a search then really goes on the
+wire, "Enter details manually" persisting the mode and superseding an in-flight search, and
+`companyIdDisabled` following through the registered `manualMode` watcher (which the mount
+fires for real — a `$watch` stubbed to a no-op let that chain regress unnoticed).
+
+The last case mounts `twoGatewayHyvaPaymentFormWithValidation`, and it is the load-bearing
+one: that — not `PaymentMethodBase` — is what `gateway_method.phtml` binds, and it is built by
+SPREADING the base. Object spread reads an accessor and copies its VALUE, so an intermediate
+`get showManual()` froze to `false` on the only component that matters, hiding the manual
+block while `!manualMode` correctly hid the search block. Both blocks gone, and every other
+test green, because nothing else in the suite mounts that factory.
+
 The tile's own file, for the `dispatch-order-intent` leak reason below.
 
 `company-selection-scoping.test.js` — what scopes the `shipping_company_selection`
@@ -224,7 +241,7 @@ rendered JS contains no `two_payment` at all.
   `companyId` reachable there, and the wrong-data consequence had to be pinned.
 - **Rendered markup.** `isSearchUnavailable` is asserted as component state, not as
   chrome: the markup that binds it lives in `companyName.phtml` / outside this module, and
-  the branded overlay ships its own fork of it.
+  a brand overlay may override it.
 
 ## Known leak, and why it is left alone
 

@@ -169,7 +169,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php endif ?>
             <!-- Company Name (manual / search dual-mode) -->
             <div class="min-h-108">
-                <div class="flex flex-col field required gap-2" x-show="showManual">
+                <div class="flex flex-col field required gap-2" x-show="manualMode">
                     <div class="field required">
                         <label for="company_name" class="font-semibold text-gray-700">
                             <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
@@ -191,7 +191,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                         </span>
                     </div>
                 </div>
-                <div class="flex flex-col field required w-full relative" x-show="!showManual">
+                <div class="flex flex-col field required w-full relative" x-show="!manualMode">
                     <div class="flex flex-col items-center w-full">
                         <div class="bg-white w-full gap-2 flex-col flex">
                             <div class="field required">
@@ -310,7 +310,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
               </label>
               <input
                 type="text"
-                x-show="!showManual"
+                x-show="!manualMode"
                 :id="<?= $gwBase ?>GetCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetCompanyIdFieldName"
                 data-name="company_id"
@@ -320,7 +320,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
               />
               <input
                 type="text"
-                x-show="showManual"
+                x-show="manualMode"
                 :id="<?= $gwBase ?>GetManualCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetManualCompanyIdFieldName"
                 required

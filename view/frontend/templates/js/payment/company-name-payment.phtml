@@ -30,6 +30,7 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 $currentQuoteId = $quoteDetails['quote_id'] ?? '';
 $currentStoreId = $quoteDetails['store_id'] ?? '';
+$methodCode = $brandedViewModel->getMethodCode();
 ?>
 <script>
     /**
@@ -119,8 +120,12 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
             const storedQuoteId = storedData.quote_id || '';
             const storedStoreId = String(storedData.store_id || '');
 
+            // ONE predicate pair, duplicated verbatim in the sibling template
+            // (see the note there). Both terms require the CURRENT id to be
+            // non-empty: GetQuoteDetails() returns [] on a LocalizedException, and
+            // a comparison against '' would wipe a live selection on every page
+            // load of a checkout that is merely failing to describe itself.
             const quoteChanged = currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId;
-            // An absent stored store id is a pre-scoping blob, not a mismatch.
             const storeChanged = currentStoreId && storedStoreId && storedStoreId !== currentStoreId;
 
             if (quoteChanged || storeChanged) {
@@ -135,9 +140,12 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
                 return;
             }
 
-            // Arm an older blob so the next store excursion is detectable.
-            if (!storedStoreId && currentStoreId) {
-                storedData.store_id = currentStoreId;
+            // Arm a blob that is missing an id so the next excursion is
+            // detectable. BOTH ids: this clearer needs `quote_id` non-empty, so
+            // arming only the store id would leave it disarmed for the quote.
+            if ((!storedQuoteId && currentQuoteId) || (!storedStoreId && currentStoreId)) {
+                storedData.quote_id = storedQuoteId || currentQuoteId;
+                storedData.store_id = storedStoreId || currentStoreId;
                 hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(storedData));
             }
         };
@@ -212,7 +220,7 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
                 // Check if this brand's Two method is already selected on page load
                 // and trigger order intent if needed
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                if (activePaymentMethod && activePaymentMethod.value === "<?= $brandedViewModel->getMethodCode() ?>") {
+                if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
                     const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                     if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                         window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -234,7 +242,7 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
 
                             // Check if this brand's Two method is already selected and trigger order intent
                             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                            if (activePaymentMethod && activePaymentMethod.value === "<?= $brandedViewModel->getMethodCode() ?>") {
+                            if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
                                 const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
                                 if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                                     window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -263,7 +271,7 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
         const paymentMethod = event.detail.method;
 
         /** Check if the selected payment method is this brand's Two method */
-        if (paymentMethod === "<?= $brandedViewModel->getMethodCode() ?>") {
+        if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
             /** Initialize payment method but don't overwrite existing company data */
             /** The company data should only be updated by shipping section selections */
 
@@ -316,7 +324,7 @@ $currentStoreId = $quoteDetails['store_id'] ?? '';
             if (companyNameInput && companyIdInput) {
                 // Check if this brand's Two method is active for order intent
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "<?= $brandedViewModel->getMethodCode() ?>";
+                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>';
 
                 // Use the centralized update function for consistency and Alpine.js sync
                 updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);

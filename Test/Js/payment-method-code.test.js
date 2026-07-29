@@ -22,7 +22,12 @@
 const H = require("./hyva-harness");
 
 const BRAND_METHOD = "examplebrand_payment";
-const BRAND_RULES = [[/^\$brandedViewModel->getMethodCode\(\)$/, BRAND_METHOD]];
+// The template hoists the view-model call into `$methodCode` and interpolates
+// that; both spellings are pinned so neither can silently stop being covered.
+const BRAND_RULES = [
+  [/^\$brandedViewModel->getMethodCode\(\)$/, BRAND_METHOD],
+  [/^\$methodCode$/, BRAND_METHOD],
+];
 
 describe("payment-fields template method code", () => {
   let env;
