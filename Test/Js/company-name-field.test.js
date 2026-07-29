@@ -193,11 +193,16 @@ describe("company-name field picker", () => {
     });
 
     test("the search asks for the country the quote resolves to", async () => {
-      await startSearch("acme");
+      const { pending } = await startSearch("acme");
 
       const url = new URL(fetchStub.last().url);
       expect(url.searchParams.get("country")).toBe("GB");
       expect(url.searchParams.get("q")).toBe("acme");
+
+      // Settled before finishing: an unsettled search leaves a live 30s timer
+      // armed behind the test.
+      fetchStub.last().respond({ items: [] });
+      await pending;
     });
 
     test("a genuine zero-result search is not flagged unavailable", async () => {

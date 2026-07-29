@@ -80,8 +80,11 @@ describe("shared company-search helpers", () => {
       );
     });
 
-    test("the query string carries an upper-cased country, limit, offset and q", () => {
-      window.twoGatewayCompanySearch(
+    // Each of these settles its request before finishing. An unsettled search
+    // leaves a live 30s timer armed behind the test, which is both a leak and a
+    // reason for jest to complain about a worker that would not exit.
+    test("the query string carries an upper-cased country, limit, offset and q", async () => {
+      const promise = window.twoGatewayCompanySearch(
         searchOptions({ countryCode: "no", query: "a b" }),
       );
 
@@ -91,14 +94,22 @@ describe("shared company-search helpers", () => {
       expect(url.searchParams.get("limit")).toBe("10");
       expect(url.searchParams.get("offset")).toBe("0");
       expect(url.searchParams.get("q")).toBe("a b");
+
+      fetchStub.last().respond({ items: [] });
+      await promise;
     });
 
-    test('an absent country code degrades to an empty parameter, not "undefined"', () => {
-      window.twoGatewayCompanySearch(searchOptions({ countryCode: undefined }));
+    test('an absent country code degrades to an empty parameter, not "undefined"', async () => {
+      const promise = window.twoGatewayCompanySearch(
+        searchOptions({ countryCode: undefined }),
+      );
 
       expect(new URL(fetchStub.last().url).searchParams.get("country")).toBe(
         "",
       );
+
+      fetchStub.last().respond({ items: [] });
+      await promise;
     });
   });
 
@@ -334,8 +345,12 @@ describe("shared company-search helpers", () => {
       await window.twoGatewayCompanySearch(searchOptions({ query: "q1" }));
       expect(fetchStub.calls).toHaveLength(callsBefore);
 
-      window.twoGatewayCompanySearch(searchOptions({ query: "q0" }));
+      const evicted = window.twoGatewayCompanySearch(
+        searchOptions({ query: "q0" }),
+      );
       expect(fetchStub.calls).toHaveLength(callsBefore + 1);
+      fetchStub.last().respond({ items: [] });
+      await evicted;
     });
   });
 

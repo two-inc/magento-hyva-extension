@@ -124,7 +124,10 @@ the interaction ends — the earlier once-per-_page-load_ latch left the buyer w
 field for the rest of the session), and a genuine zero-result search is _not_ flagged
 unavailable.
 
-Both loader rules were mutation-checked while writing: inverting the guard to
+The suite was mutation-checked against the four behaviours it claims to pin, by breaking
+each one in the template and confirming a red run: relaxing `degraded === true` to
+truthiness fails 2 tests, moving the 30s ceiling to 5s fails 3, treating every abort as a
+caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inverting the guard to
 `this.searchAbortController === controller` fails four tests, and weakening it to an
 unconditional `done` fails the supersession test.
 
@@ -160,11 +163,28 @@ propagation so the address-book modal does not close.
   every test in that file, so a throw would be caught, but its quote-id comparison is not
   asserted.
 
+## Known leak, and why it is left alone
+
+`gateway_method-csp-js.phtml` registers a top-level
+`window.addEventListener("dispatch-order-intent", …)` at the bottom of its script. The
+harness evaluates the template once per test, and that listener cannot be removed
+afterwards — it is anonymous — so a test file accumulates one handler per test on the
+jsdom window it shares.
+
+Today that is inert: nothing in the suite dispatches `dispatch-order-intent`, and each
+handler only arms a 500ms debounce when it fires. But the first test that _does_ dispatch
+it will inherit one handler per preceding test in the same file, which presents as an
+order-dependent flake rather than as the leak it is. If you write that test, put it in its
+own file, or have the production template guard its registration the way the helpers guard
+theirs (`window.x = window.x || …`).
+
 ## Adding tests
 
 Drive behaviour through the component's own methods (`component.getItems()`) rather than
 reaching into the helpers, and settle each `fetch` explicitly — out-of-order responses,
-aborts and timeouts are the subject matter, so controlling the timing is the point.
+aborts and timeouts are the subject matter, so controlling the timing is the point. Settle
+or abort every request a test starts: an unsettled search leaves a live 30s timer armed
+behind the test.
 
 One trap worth naming: `startSearch()` in both component suites returns the pending
 `getItems()` promise **wrapped in an object**. Returning it bare from an `async` function
