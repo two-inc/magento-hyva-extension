@@ -91,11 +91,19 @@ document.addEventListener('alpine:init', () => {
         },
         async getItems() {
             // Guard: Don't run if element is disconnected (being destroyed during DOM morph)
-            if (!this.$el || !this.$el.isConnected) return;
+            if (!this.$el || !this.$el.isConnected) {
+                // Still cancel: otherwise a fetch stays on the wire for a
+                // detached instance and its controller is never released.
+                this.abortCompanySearch();
+                return;
+            }
 
             this.search = this.$el.value;
             this.selectedIndex = -1;
-            if (!this.isCompanySearchEnabled) return;
+            if (!this.isCompanySearchEnabled) {
+                this.abortCompanySearch();
+                return;
+            }
 
             // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
             const quoteData = JSON.parse(this.quote);
@@ -130,14 +138,32 @@ document.addEventListener('alpine:init', () => {
                 // its only progress signal rather than being removed and
                 // replaced with nothing.
                 window.dispatchEvent(new Event('magewire:loader:start'));
-                const result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: this.countryCode,
-                    query: this.search,
-                    limit: this.companySearchLimit,
-                    signal: controller.signal,
-                });
-                window.dispatchEvent(new Event('magewire:loader:done'));
+                let result;
+                try {
+                    result = await window.twoGatewayCompanySearch({
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        countryCode: this.countryCode,
+                        query: this.search,
+                        limit: this.companySearchLimit,
+                        signal: controller.signal,
+                    });
+                } catch (error) {
+                    // The helper swallows request failures itself, so reaching
+                    // here means something structural (a missing global). Fail
+                    // visibly rather than as an unhandled rejection, which is
+                    // what the old local try/catch degraded to.
+                    console.error('Company search failed:', error);
+                    result = { status: 'failed', items: [] };
+                } finally {
+                    // Only the CURRENT search retires the loader. Overlapping
+                    // searches resolve in order start(A), abort(A), start(B),
+                    // done(A) — and the magewire loader is a boolean, not a
+                    // counter, so a superseded search dispatching done would
+                    // hide the overlay while B is still running.
+                    if (this.searchAbortController === controller) {
+                        window.dispatchEvent(new Event('magewire:loader:done'));
+                    }
+                }
 
                 // Superseded by a newer search, or the component was
                 // destroyed by a DOM morph while this was in flight. Writing
@@ -169,6 +195,11 @@ document.addEventListener('alpine:init', () => {
                     this.isOpen = true;
                 }
             } else {
+                // The country was cleared while a search was on the wire. Without
+                // the abort, `searchAbortController` still matches and the
+                // response writes items + opens the dropdown for a country the
+                // buyer no longer has selected.
+                this.abortCompanySearch();
                 // Only show the message once per interaction to avoid spamming
                 if (!this.countrySelectionShown && this.search.length >= 3) {
                     this.countrySelectionShown = true;

@@ -227,8 +227,10 @@ $quoteDetails = json_encode($quoteDetails);
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId) {
         const controller = new AbortController();
+        // No reason argument: nothing reads it, and the sibling search helper
+        // does not pass one either.
         const timer = setTimeout(
-            () => controller.abort(new DOMException('timeout', 'TimeoutError')),
+            () => controller.abort(),
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
         try {
