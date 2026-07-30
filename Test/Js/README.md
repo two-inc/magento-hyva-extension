@@ -76,7 +76,7 @@ hard error rather than a fallback:
   never substituted with a blank;
 - any `<?` surviving substitution **throws**;
 - a template with no `<script>` block **throws**;
-- `loadSharedHelpers()` asserts each of the six `window.twoGateway*` globals actually
+- `loadSharedHelpers()` asserts each global in `SHARED_HELPER_GLOBALS` actually
   exists after evaluation;
 - an Alpine binding a test asks for that is missing, or is not CSP-evaluable, **throws**.
 
@@ -241,8 +241,66 @@ bound to `companyId`, and Alpine renders one row per distinct key, so a collisio
 silently cost the buyer a company that matched; both surfaces bind a getter with a positional
 fallback now — the address form's arrived later than the tile's).
 
-Also covered there, and the reason the binding needed a second round: a name **typed
-without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
+`company-selection-scoping.test.js` — what scopes the company-selection browser-storage key.
+It used to be one global `shipping_company_selection`, and both of the things that clear it
+compare QUOTE ids only; the quote is shared across store views by design, so a store excursion
+cleared nothing and the other checkout's company plus its `manual_mode: true` survived the
+whole quote. The key is now `shipping_company_selection:<store_id>`, so there is no store-view
+clearing at all any more and there must not be: an excursion is a DIFFERENT KEY, the other
+view's selection is invisible, and a language toggle destroys nothing. `store_id` is therefore
+not a field inside the blob — the key carries it. The payment step's restore path used to make
+the leak permanent by rewriting the blob as a two-key object, dropping the `quote_id` its own
+clearer needs; every writer now merges through `window.twoGatewayWriteCompanySelection()`.
+Covered on both surfaces: a new quote clearing, the same quote not, a blob with no `quote_id`
+being stamped rather than wiped, another store view's key being neither read nor modified, the
+pre-scoping unsuffixed key being dropped rather than adopted (adopting would reproduce the
+cross-store leak once for every buyer mid-checkout at deploy), all three `selectItem()` writers
+preserving `quote_id` through a selection, and the restore path preserving `quote_id` and
+`manual_mode`. This supersedes the old "`initShippingCompanyStorage()` is out of scope" note.
+
+Storage access goes through `window.twoGatewayReadCompanySelection()` /
+`window.twoGatewayWriteCompanySelection(patch)`, published by
+`gateway_method-csp-js.phtml`; each consuming template resolves them once into a uniquely-named
+local with a `function(){ return {}; }` fallback so a page missing the publisher degrades
+instead of throwing. That fallback makes a silent pass possible in a test: load a consuming
+template without the publisher and it reads `{}`, writes nowhere, and asserts nothing. Every
+test touching company-selection storage therefore calls `H.loadSharedHelpers()` first, and uses
+`H.COMPANY_SELECTION_KEY` rather than a literal key so the store suffix cannot drift from the
+harness's `$currentStoreId` rule.
+
+Also here: the payment tile must NOT restore `manual_mode` from that key. An order cannot be
+placed without a company id — the sole-trader flow mints a synthetic one rather than going
+without — and placement credit-checks whatever id is submitted, so manual company entry is
+only meaningful on a checkout that is not using this payment method. Restoring the flag gave
+the tile a live-looking search box whose every keystroke returned early at the `manualMode`
+guard: no request, no spinner, no dropdown, and no way back, because the tile has no binding
+for `enableSearch()`. The assertion is a real request on the wire, which is the only thing
+that distinguishes "search works" from "search silently declines".
+
+`quote-id-normalisation.test.js` — that the quote id the two clearers compare is a string on
+both sides. They read the same value through different pipes: the shipping step out of
+`json_encode()`, where an int stays a JSON number, and the payment step out of an
+`escapeJs()`'d PHP string. `Quote::getId()` is int-ish, so `42 !== "42"` is true forever and
+the two clearers wipe the buyer's company on every page load, each undoing the other. Cast at
+source in `GetQuoteDetails`, with `String()` on both sides for blobs predating the cast.
+
+Its own file for a reason worth knowing: `initShippingCompanyStorage()` registers an
+`alpine:init` listener the harness cannot remove, so listeners accumulate across tests within
+a file — and a test using a different quote id than its neighbours gets cleared by theirs.
+That is not hypothetical; it is why these two tests are not in the file above.
+
+`payment-method-code.test.js` — that `company-name-payment.phtml` compares against the
+BRAND's payment method code rather than the literal `two_payment`. Harmless only while every
+brand shipped its own fork of the template; once the overlay was de-forked onto the vanilla
+file, a branded store selects its own method code, nothing matched, and the order intent was
+never dispatched — silently. These tests render the template with a NON-default brand code
+via `extraRules`, because the harness's default substitution is `two_payment`, which is
+indistinguishable from the hardcoded literal. Covered on both entry points (page load and
+`checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
+rendered JS contains no `two_payment` at all.
+
+Also covered in `payment-company-selection.test.js`, and the reason that binding needed a
+second round: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
 default of `true` locked the field on first paint, where before the binding existed nothing
 locked it until a shipping sync did so imperatively. A buyer who typed a company name and
 never selected a hit was then facing a `company_id` that was empty AND disabled AND
@@ -328,6 +386,20 @@ into — so neither can quietly stop being covered. Covered on both entry points
 `checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
 rendered JS contains no default literal at all.
 
+`storage-unavailable.test.js` — that unusable browser storage cannot kill a checkout step. The
+company-selection accessors run inside the `alpine:init` and `DOMContentLoaded` handlers that
+go on to call `Alpine.data()` and to start the payment-form MutationObserver, so anything that
+throws in them takes those registrations with it and the buyer gets a step that renders and
+does nothing. Not hypothetical: an earlier revision guarded only the `JSON.parse`, leaving
+`getBrowserStorage()`, `getItem` and `removeItem` outside the try, and a throwing storage stub
+left `searchInput` unregistered. Covered: a throwing `getBrowserStorage()`, a throwing
+`getItem()`, a storage shim with no `removeItem` (the narrowest way to reach the legacy-key
+purge), a stored primitive not being handed back as a selection, and — when the store view
+cannot be resolved at all — the key staying empty rather than collapsing to
+`shipping_company_selection:`, a store-less bucket every store view would share.
+
+Its own file, like the quote-id one, because of the unremovable `alpine:init` listener.
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
@@ -347,15 +419,12 @@ renderer.
   `companyId` reachable there, and the wrong-data consequence had to be pinned.
 - **Rendered markup, as chrome.** Nothing here mounts a template and asserts on what a buyer
   would see. `isSearchUnavailable`, for instance, is asserted as component state only: the
-  markup binding it lives in `companyName.phtml` / outside this module, and the branded
-  overlay ships its own fork of it. The one exception is deliberate and narrow — where
+  markup binding it lives in `companyName.phtml` / outside this module, and a brand overlay
+  may override it. The one exception is deliberate and narrow — where
   component state has no effect at all unless a binding carries it to an element, the binding
   itself is read out of the template and applied (`readAlpineBinding()`, and the
   `:disabled` assertions in `payment-company-selection.test.js`). That is not a chrome
   assertion; it is what stops the state being dead. CSS is still entirely uncovered.
-- **`initShippingCompanyStorage()`**'s new-session detection. It runs on `alpine:init` in
-  every test in that file, so a throw would be caught, but its quote-id comparison is not
-  asserted.
 
 ## Known leak, and why it is left alone
 

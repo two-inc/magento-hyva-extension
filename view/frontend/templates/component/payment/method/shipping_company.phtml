@@ -52,25 +52,82 @@ $quoteDetailsJson = json_encode(
 <script>
 document.addEventListener('alpine:init', () => {
 
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoShippingReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoShippingWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
+
     /**
-     * Initialize shipping company selection storage for new checkout sessions.
-     * We detect a new session by checking if the current quote ID differs from the stored one.
-     * This ensures stale company data from previous orders is cleared.
+     * Drop the previous ORDER's company from this store view's selection.
+     *
+     * Only the quote is compared. A store-view change needs no comparison at
+     * all any more: the storage key carries the store view, so each one keeps
+     * its own selection and a language toggle is invisible here.
+     *
+     * `String()` on both sides because the two clearers read this value through
+     * different pipes — this one out of json_encode(), where an int-ish
+     * Quote::getId() stays a JSON number, and the payment step out of an
+     * escapeJs()'d PHP string. GetQuoteDetails casts it too; this is the belt
+     * for blobs written before that cast existed.
+     *
+     * Both terms require the CURRENT id to be non-empty: getQuoteDetails()
+     * returns [] on a LocalizedException, and comparing against '' would wipe a
+     * live selection on every page load of a checkout that is merely failing to
+     * describe itself.
      */
     const initShippingCompanyStorage = () => {
         const quoteData = <?= $quoteDetailsJson ?>;
-        const currentQuoteId = quoteData.quote_id || '';
-        const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-        const storedQuoteId = storedData.quote_id || '';
+        const currentQuoteId = String(quoteData.quote_id || '');
+        const storedData = twoShippingReadSelection();
+        const storedQuoteId = String(storedData.quote_id || '');
 
-        // Clear storage if quote ID changed (new order) or if storage is empty
-        if (!storedQuoteId || storedQuoteId !== currentQuoteId) {
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+        if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
+            twoShippingWriteSelection({
                 quote_id: currentQuoteId,
                 company_name: '',
                 company_id: '',
                 manual_mode: false
-            }));
+            });
+            return;
+        }
+
+        // Stamp the quote id on a selection that has none — a blob written
+        // before this existed, or by an older tab. Without it the comparison
+        // above stays disarmed for the rest of the quote.
+        if (!storedQuoteId && currentQuoteId) {
+            twoShippingWriteSelection({ quote_id: currentQuoteId });
         }
     };
     initShippingCompanyStorage();
@@ -330,16 +387,13 @@ document.addEventListener('alpine:init', () => {
                 shippingCompanyIdInput.value = item.companyId;
             }
 
-            // Store shipping company selection data (preserve quote_id for session detection)
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const shippingCompanySelectionData = {
-                quote_id: existingData.quote_id || '',
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            const shippingCompanySelectionData = twoShippingWriteSelection({
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false
-            };
-
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
+            });
 
             // Dispatch event to notify other components (payment fields will handle their own sync)
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {

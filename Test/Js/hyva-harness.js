@@ -79,6 +79,7 @@ const PHP_VALUE_RULES = [
   [/^\$isAddressSearchEnabled$/, "1"],
   [/^\$isCompanySearchEnabled$/, "1"],
   [/^\$currentQuoteId$/, "test-quote-1"],
+  [/^\$currentStoreId$/, "1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
   [/^\$merchantName$/, "Example Shop"],
@@ -389,7 +390,17 @@ const PAYMENT_FIELDS_TEMPLATE =
   "view/frontend/templates/js/payment/company-name-payment.phtml";
 
 /**
- * The globals gateway_method-csp-js.phtml publishes for the other two pickers.
+ * The company-selection storage key AS THE TEMPLATES BUILD IT.
+ *
+ * The blob is keyed per store view — `shipping_company_selection:<store_id>` —
+ * and the suffix here has to track the `$currentStoreId` rule in
+ * PHP_VALUE_RULES above, which is why both live in this file rather than being
+ * spelled out in each test.
+ */
+const COMPANY_SELECTION_KEY = "shipping_company_selection:1";
+
+/**
+ * The globals gateway_method-csp-js.phtml publishes for the other pickers.
  */
 const SHARED_HELPER_GLOBALS = [
   "twoGatewayGetCountryCode",
@@ -398,6 +409,16 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyDetail",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The per-store company-selection accessor. Listed for the same reason as the
+  // cache above: these are assigned as `window.X = window.X || …`, which is
+  // correct in production (the publisher can render once per payment method and
+  // only the first assignment should win) but would otherwise carry the FIRST
+  // test file's copy — and the store id baked into its key — into every later
+  // one.
+  "TWO_GATEWAY_COMPANY_SELECTION_STORE",
+  "TWO_GATEWAY_COMPANY_SELECTION_KEY",
+  "twoGatewayReadCompanySelection",
+  "twoGatewayWriteCompanySelection",
 ];
 
 /**
@@ -409,8 +430,8 @@ const SHARED_HELPER_GLOBALS = [
  *
  * @returns {void}
  */
-function loadSharedHelpers() {
-  loadTemplate(GATEWAY_METHOD_TEMPLATE);
+function loadSharedHelpers(extraRules) {
+  loadTemplate(GATEWAY_METHOD_TEMPLATE, extraRules);
   SHARED_HELPER_GLOBALS.forEach(function (name) {
     if (window[name] === undefined) {
       throw new Error("harness: " + name + " was not exported onto window");
@@ -671,6 +692,7 @@ async function flushPromises() {
 
 module.exports = {
   REPO_ROOT: REPO_ROOT,
+  COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
   QUOTE_JSON: QUOTE_JSON,
   ESCAPED_STRING: ESCAPED_STRING,
   PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,

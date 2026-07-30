@@ -48,7 +48,7 @@ describe("payment-fields template method code", () => {
     // A company already chosen in the current quote, so the stale-data clearer
     // leaves it alone and the order-intent path is reachable.
     env.browserStorage.setItem(
-      "shipping_company_selection",
+      H.COMPANY_SELECTION_KEY,
       JSON.stringify({
         quote_id: "test-quote-1",
         company_name: "Example Trading Ltd",
@@ -92,6 +92,14 @@ describe("payment-fields template method code", () => {
    * @returns {void}
    */
   function run(extraRules) {
+    // The publisher FIRST, then the consumer. The company selection is reached
+    // only through `window.twoGatewayReadCompanySelection`, which this template
+    // resolves into a local behind a `function(){ return {}; }` fallback so a
+    // page without the publisher degrades instead of throwing. Without the
+    // publisher loaded here that fallback returns `{}`, no company is ever
+    // found, and the order-intent path these tests are about is unreachable —
+    // a suite that passes its negative cases while testing nothing.
+    H.loadSharedHelpers();
     H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE, extraRules);
     document.dispatchEvent(new Event("DOMContentLoaded"));
   }

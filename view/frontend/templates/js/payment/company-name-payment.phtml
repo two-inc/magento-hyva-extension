@@ -30,6 +30,42 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
 $methodCode = $brandedViewModel->getMethodCode();
 ?>
 <script>
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoPaymentReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoPaymentWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
     /**
      * Track initialization state to prevent duplicate order intents
      */
@@ -92,13 +128,6 @@ $methodCode = $brandedViewModel->getMethodCode();
                 }));
             }
 
-            // Update saved company details
-            const updatedCompanyDetails = {
-                company_name: companyName,
-                company_id: companyId
-            };
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
-
             // Trigger order intent if requested
             if (triggerOrderIntent) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -109,40 +138,42 @@ $methodCode = $brandedViewModel->getMethodCode();
     document.addEventListener("DOMContentLoaded", () => {
 
         /**
-         * Clear stale company data when a new checkout session is detected.
-         * This prevents the "Please select a country" error when ordering again in the same browser session.
+         * Drop the previous ORDER's company from this store view's selection.
+         *
+         * Quote only. The storage key carries the store view, so a store change
+         * needs no comparison — each view keeps its own selection.
+         *
+         * Byte-identical in shape to the sibling in shipping_company.phtml, and
+         * deliberately so: that template is behind the company-search config
+         * flag, so on a store with the flag OFF this is the only clearer there
+         * is and it has to behave the same.
          */
         const clearStaleCompanyDataIfNeeded = () => {
-            const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const storedQuoteId = storedData.quote_id || '';
+            const storedData = twoPaymentReadSelection();
+            const storedQuoteId = String(storedData.quote_id || '');
 
-            // If quote ID changed (new order started), clear company data
             if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                twoPaymentWriteSelection({
                     quote_id: currentQuoteId,
                     company_name: '',
                     company_id: '',
                     manual_mode: false
-                }));
-                hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+                });
+                return;
+            }
+
+            if (!storedQuoteId && currentQuoteId) {
+                twoPaymentWriteSelection({ quote_id: currentQuoteId });
             }
         };
         clearStaleCompanyDataIfNeeded();
-
-        /**
-         * Initialize previously saved company details only if it doesn't exist.
-         * This preserves company information across page reloads while allowing clean state for new sessions.
-         */
-        if (!hyva.getBrowserStorage().getItem('already_saved_company_details')) {
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
-        }
 
         /**
          * Initialize payment fields with persisted shipping company data on page load.
          * This ensures payment section reflects the current shipping selection after page refresh.
          */
         const initializePaymentFieldsFromShipping = () => {
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const shippingCompanySelectionData = twoPaymentReadSelection();
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
@@ -162,11 +193,18 @@ $methodCode = $brandedViewModel->getMethodCode();
                 const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
 
                 if (persistedShippingIdValue) {
-                    const restoredData = {
+                    // A merging write. This used to substitute a two-key object
+                    // for the whole blob, which silently dropped `quote_id` —
+                    // and the clearer above needs both quote ids non-empty, so
+                    // one page load through here disarmed the new-order clear
+                    // for the rest of the quote. `manual_mode` has to survive
+                    // too, or a reload throws a buyer who is mid-manual-entry on
+                    // the ADDRESS form back into search mode.
+                    twoPaymentWriteSelection({
+                        quote_id: shippingCompanySelectionData.quote_id || currentQuoteId,
                         company_name: persistedShippingValue,
                         company_id: persistedShippingIdValue
-                    };
-                    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(restoredData));
+                    });
                     updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
                     paymentFieldsInitialized = true;
                 }
@@ -189,7 +227,7 @@ $methodCode = $brandedViewModel->getMethodCode();
                 // load and trigger order intent if needed
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
                 if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
-                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                    const shippingCompanySelectionData = twoPaymentReadSelection();
                     if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                         window.dispatchEvent(new Event("dispatch-order-intent"));
                     }
@@ -211,7 +249,7 @@ $methodCode = $brandedViewModel->getMethodCode();
                             // Check if this brand's Two method is already selected and trigger order intent
                             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
                             if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
-                                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                                const shippingCompanySelectionData = twoPaymentReadSelection();
                                 if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                                     window.dispatchEvent(new Event("dispatch-order-intent"));
                                 }
@@ -243,14 +281,9 @@ $methodCode = $brandedViewModel->getMethodCode();
             /** Initialize payment method but don't overwrite existing company data */
             /** The company data should only be updated by shipping section selections */
 
-            /** Retrieve previously saved company details to check if order intent should be dispatched */
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
-
+            const shippingCompanySelectionData = twoPaymentReadSelection();
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-            const savedShippingCompany = alreadySavedCompanyDetails.company_name || "";
-            const savedShippingCompanyId = alreadySavedCompanyDetails.company_id || "";
 
             /** If we have shipping company data but payment fields are empty, populate them */
             if (shippingCompany && shippingCompanyId) {
@@ -280,7 +313,7 @@ $methodCode = $brandedViewModel->getMethodCode();
         }
 
         /** Retrieve the latest shipping company selection data */
-        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+        const shippingCompanySelectionData = twoPaymentReadSelection();
         const shippingCompany = shippingCompanySelectionData.company_name || "";
         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
@@ -333,7 +366,7 @@ $methodCode = $brandedViewModel->getMethodCode();
 
                     if (billingAsShipping) {
                         // Billing is now same as shipping - sync company data from shipping
-                        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                        const shippingCompanySelectionData = twoPaymentReadSelection();
                         const shippingCompany = shippingCompanySelectionData.company_name || "";
                         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 

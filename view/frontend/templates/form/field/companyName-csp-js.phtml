@@ -55,6 +55,42 @@ $quoteDetailsJson = json_encode(
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoAddressReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoAddressWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
 function <?= $gwBase ?>CompanySearchField() {
     return {
         isOpen: false,
@@ -80,7 +116,7 @@ function <?= $gwBase ?>CompanySearchField() {
 
         init() {
             // Restore manualMode from storage
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const data = twoAddressReadSelection();
             this.manualMode = data.manual_mode || false;
         },
 
@@ -247,15 +283,13 @@ function <?= $gwBase ?>CompanySearchField() {
                 input.dispatchEvent(new Event('input', { bubbles: false }));
             }
 
-            // Preserve quote_id for session detection
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const companyData = {
-                quote_id: existingData.quote_id || '',
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            const companyData = twoAddressWriteSelection({
                 company_name: item.companyName,
                 company_id: item.companyId,
                 manual_mode: false
-            };
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
+            });
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: companyData
@@ -347,9 +381,7 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         saveManualModeToStorage(manualMode) {
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            data.manual_mode = manualMode;
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
+            twoAddressWriteSelection({ manual_mode: manualMode });
         },
 
         closeDropdown() {

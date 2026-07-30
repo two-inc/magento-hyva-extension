@@ -36,6 +36,16 @@ describe("shipping to payment company sync", () => {
   // handler per preceding test firing on every dispatch.
   beforeAll(() => {
     env = H.installHyvaEnvironment();
+    // The publisher FIRST. This template reads and writes the company selection
+    // only through `window.twoGatewayReadCompanySelection` /
+    // `…WriteCompanySelection`, resolved once into a local with a
+    // `function(){ return {}; }` fallback. That fallback is what keeps a page
+    // missing the publisher from throwing — but in a test it also reads `{}` and
+    // writes nowhere, so every assertion below would pass against a bridge that
+    // never saw the seeded selection. A real checkout always renders
+    // gateway_method-csp-js.phtml, so loading it here is the faithful page, not
+    // a convenience.
+    H.loadSharedHelpers();
     H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
   });
 
@@ -54,8 +64,7 @@ describe("shipping to payment company sync", () => {
       "</div>",
     ].join("\n");
 
-    env.browserStorage.removeItem("shipping_company_selection");
-    env.browserStorage.removeItem("already_saved_company_details");
+    env.browserStorage.removeItem(H.COMPANY_SELECTION_KEY);
 
     syncedEvents = [];
     document
@@ -74,7 +83,7 @@ describe("shipping to payment company sync", () => {
    */
   function selectShippingCompany(companyName, companyId) {
     env.browserStorage.setItem(
-      "shipping_company_selection",
+      H.COMPANY_SELECTION_KEY,
       JSON.stringify({
         quote_id: "test-quote-1",
         company_name: companyName,
@@ -254,7 +263,7 @@ describe("shipping to payment company sync", () => {
      */
     function storeShippingSelection(companyName, companyId) {
       env.browserStorage.setItem(
-        "shipping_company_selection",
+        H.COMPANY_SELECTION_KEY,
         JSON.stringify({
           quote_id: "test-quote-1",
           company_name: companyName,
