@@ -326,8 +326,9 @@ function <?= $gwBase ?>CompanySearchField() {
          * the panel is shut and the query is at full length, so without
          * `isCompanySelected` this link told a buyer their company was not on
          * the list immediately after they picked it off that list. Not a dead
-         * end — editing the name clears the flag in getItems() and the link
-         * returns, which is the state the copy is true for again. (Manual entry
+         * end — editing the name clears the flag in noteCompanyQuery(), on the
+         * keystroke rather than half a second behind it, and the link returns to
+         * the state the copy is true for again. (Manual entry
          * already being in effect offers neither too, via `searchModeActive`,
          * where the reverse link takes over.)
          *

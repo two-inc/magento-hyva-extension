@@ -554,10 +554,15 @@ describe("address-step manual-entry affordance", () => {
       const CHOSEN = { companyName: "Acme Widgets Ltd", companyId: "111" };
 
       /**
-       * Pick a company the way the dropdown does, then let the `input` event
-       * selectItem() dispatches consume the selection flag — so what is
-       * asserted afterwards is the settled post-selection state and not the
-       * one-shot guard inside getItems().
+       * Pick a company the way the dropdown does, then run the debounced handler
+       * once to consume `isSelecting` — so what is asserted afterwards is the
+       * settled post-selection state rather than the one-shot guard.
+       *
+       * getItems() is called directly rather than through a dispatched `input`
+       * event, which means the interleaving where a keystroke lands BEFORE that
+       * consumption is not covered here. That window is a live finding against
+       * `noteCompanyQuery()`'s `isSelecting` guard, not something this helper
+       * should paper over.
        *
        * @returns {Promise<void>}
        */
