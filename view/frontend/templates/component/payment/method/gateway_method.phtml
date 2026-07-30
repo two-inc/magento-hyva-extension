@@ -236,20 +236,20 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 data-validate='{"required": true}'
                                 >
                             <!--
-                                In-field searching indicator (TWO-25288): a
-                                pure-CSS radial-spokes spinner, drawn entirely
-                                by custom.css from this one childless element —
-                                no image asset and no child nodes to keep in
-                                step with the CSS.
+                                In-field searching indicator (TWO-25288): an
+                                animated loading GIF, applied by custom.css as a
+                                `background-image` on this one childless element.
+                                A background image rather than an `<img>` so the
+                                asset URL resolves relative to the stylesheet and
+                                needs no asset-helper plumbing here; childless
+                                because a background image needs no child nodes.
 
                                 BOTH classes are load-bearing and neither may
-                                be dropped or merged into a compound selector:
-                                `two-company-search__spinner` carries position
-                                and the spokes geometry, `two-term-chip__loading`
-                                carries paint. A brand overlay recolours the
-                                paint class with a flat single-class `color`
-                                rule and wins on load order; the geometry reads
-                                that colour back through `currentColor`.
+                                be dropped: `two-company-search__spinner` carries
+                                position, size and the image, while
+                                `two-term-chip__loading` is the shared loading
+                                hook this markup has always carried and which the
+                                payment-term chips also use.
 
                                 Deliberately NOT the global magewire loader —
                                 a full-screen overlay on every keystroke is

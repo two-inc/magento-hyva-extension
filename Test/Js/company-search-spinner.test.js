@@ -4,22 +4,21 @@
  *
  * TWO-25288. The company-search spinner, on BOTH surfaces that search.
  *
- * The spinner is now drawn entirely in CSS from one childless element, so what
- * the templates have to get right is a very small set of things that are all
- * invisible to every other suite:
+ * The spinner is an animated GIF applied by the stylesheet as a background image
+ * on one childless element, so what the templates have to get right is a very
+ * small set of things that are all invisible to every other suite:
  *
  *  - it exists at all. The shipping-address field carried `isSearching` in
  *    component state, driven correctly on every exit path, and bound it to
  *    nothing — so that form searched with no feedback whatsoever. A state
  *    property bound to nothing has no user-visible effect, which is why the
  *    binding is read out of the shipped markup here rather than assumed.
- *  - it keeps BOTH classes, spelled exactly. The positioning class carries the
- *    spokes geometry and the chip-loading class carries the paint; a brand
- *    overlay recolours the paint class with a flat single-class rule and wins on
- *    stylesheet load order. Drop either class and the spinner is either unpaint-
- *    able or ungeometried, and nothing else in CI notices.
+ *  - it keeps BOTH classes, spelled exactly. The positioning class carries
+ *    position, size and the background image; the chip-loading class is the
+ *    shared loading hook this markup has always carried and which the
+ *    payment-term chips also use. Drop either and nothing else in CI notices.
  *  - it has NO children. The old markup carried three dot spans. Leaving them in
- *    would put three masked, conic-gradient-painted boxes inside the spinner.
+ *    would paint three stray dots on top of the GIF.
  *  - it stays `aria-hidden`. It is decorative; the search result is what gets
  *    announced.
  *
@@ -145,17 +144,28 @@ describe.each(SURFACES)("company-search spinner — $label", (surface) => {
 });
 
 /**
- * The stylesheet is the entire spinner, so the two properties that decide
- * whether it visibly spins at all get pinned here.
+ * The stylesheet is the entire spinner: the element is childless, so the image
+ * and the box it is painted into come from here and nowhere else.
  *
- * jsdom does not lay out or animate, so this reads the shipped CSS as text. A
- * blunt check, but it is the axis that nearly shipped broken: `steps(12, end)`
- * over a full turn advances in 30deg increments and the spokes repeat every
- * 30deg, so every rendered state maps the pattern onto itself and the spinner
- * stands dead still while the animation runs. A test asserting only the
- * animation NAME would have passed a motionless spinner.
+ * The motion comes from the GIF itself, which is why nothing here asserts a CSS
+ * animation. The previous revision of this branch drew the spinner with a
+ * conic-gradient and a rotate keyframe; that shipped visibly motionless and was
+ * abandoned in favour of the animated GIF the PrestaShop plugin already uses.
+ * A CSS rule cannot pause, slow or step a GIF, so there is deliberately no
+ * reduced-motion rule to assert either.
+ *
+ * Where it can, this reads the real declarations back through jsdom's cascade
+ * rather than regex-matching the file, so a rule that parses differently from
+ * how it reads fails. jsdom resolves `background-image`, `background-repeat` and
+ * `background-size`; it does NOT resolve the multi-value `background-position`
+ * shorthand, so that one is not asserted.
  */
 describe("company-search spinner stylesheet", () => {
+  /** @returns {string} the shipped stylesheet, verbatim */
+  function stylesheetText() {
+    return fs.readFileSync(path.join(H.REPO_ROOT, STYLESHEET), "utf8");
+  }
+
   /**
    * The stylesheet with its comments stripped.
    *
@@ -166,9 +176,7 @@ describe("company-search spinner stylesheet", () => {
    * @returns {string}
    */
   function declarations() {
-    return fs
-      .readFileSync(path.join(H.REPO_ROOT, STYLESHEET), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "");
+    return stylesheetText().replace(/\/\*[\s\S]*?\*\//g, "");
   }
 
   /** @returns {string} */
@@ -182,28 +190,65 @@ describe("company-search spinner stylesheet", () => {
     return match[1];
   }
 
-  test("spins linearly, never in spoke-period steps", () => {
-    const rule = spinnerRule();
+  /**
+   * The spinner's computed style, with the real shipped stylesheet applied to a
+   * node carrying the spinner class.
+   *
+   * @returns {CSSStyleDeclaration}
+   */
+  function computedSpinnerStyle() {
+    const style = document.createElement("style");
+    style.textContent = stylesheetText();
+    document.head.appendChild(style);
 
-    expect(rule).toMatch(
-      /animation:\s*two-spinner-spin\s+[\d.]+m?s\s+linear\s+infinite\s*;/,
-    );
-    expect(rule).not.toMatch(/steps\s*\(/);
+    const el = document.createElement("span");
+    el.className = POSITION_CLASS + " " + PAINT_CLASS;
+    document.body.appendChild(el);
+
+    return getComputedStyle(el);
+  }
+
+  afterEach(() => {
+    document.head.innerHTML = "";
+    document.body.innerHTML = "";
   });
 
-  test("does not centre itself with a transform the animation owns", () => {
-    // `transform` belongs to the keyframes. A transform in the positioning
-    // block is interpolated away to the rotation over the first cycle and drops
-    // the spinner out of the field.
-    expect(spinnerRule()).not.toMatch(/(^|[\s;])transform\s*:/);
+  test("paints itself with the loading GIF as a background image", () => {
+    const computed = computedSpinnerStyle();
+
+    // Read through the cascade, so a declaration jsdom cannot parse fails here
+    // even though it is present in the file.
+    expect(computed.backgroundImage).toMatch(/loader\.gif/);
+    expect(computed.backgroundRepeat).toBe("no-repeat");
+    expect(computed.backgroundSize).toBe("16px 16px");
+  });
+
+  test("references an asset that actually exists on disk", () => {
+    const match = spinnerRule().match(
+      /background-image:\s*url\(\s*["']?([^"')]+)["']?\s*\)/,
+    );
+    if (match === null) {
+      throw new Error("no background-image url() in the spinner rule");
+    }
+    const url = match[1];
+
+    // A URL in a stylesheet resolves against the stylesheet's own location, so
+    // that is what the on-disk check has to resolve against too. Without this,
+    // a correct-looking URL pointing at a file that was never committed passes.
+    const resolved = path.resolve(
+      path.dirname(path.join(H.REPO_ROOT, STYLESHEET)),
+      url,
+    );
+
+    expect(fs.existsSync(resolved)).toBe(true);
   });
 
   test("keeps the selector a single flat class, with no !important", () => {
     const css = declarations();
 
-    // A compound selector or a descendant chain would out-specify the flat
-    // single-class `color` rule a brand overlay uses on the paint class, and
-    // silently break branded recolouring with nothing else failing.
+    // The element carries a second, shared class. A compound selector or a
+    // descendant chain here would out-specify any flat single-class rule
+    // targeting that shared class, and break it with nothing else failing.
     expect(css).not.toMatch(/\.two-company-search__spinner\s*\./);
     expect(css).not.toMatch(/\.\S+\s+\.two-company-search__spinner/);
     expect(spinnerRule()).not.toMatch(/!important/);

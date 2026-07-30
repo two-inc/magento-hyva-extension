@@ -81,9 +81,11 @@ $form = $block->getData("form");
 
                 Same element and same two classes as the payment tile, so one
                 stylesheet rule serves both surfaces: the positioning class
-                carries the spokes geometry, the chip-loading class carries the
-                paint a brand overlay recolours. Childless by design — the
-                spokes are drawn by CSS.
+                carries position, size and the loading GIF applied as a
+                `background-image`, and the chip-loading class is the shared
+                loading hook this markup has always carried, which the
+                payment-term chips also use. Childless by design — a background
+                image needs no child nodes.
             -->
             <span
                 x-show="isSearching"
