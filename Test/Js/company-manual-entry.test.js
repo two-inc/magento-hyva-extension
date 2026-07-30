@@ -74,6 +74,9 @@ const ROW_SELECTOR = ".two-company-manual-entry-row";
 const PERSISTENT_SELECTOR = ".two-company-manual-entry";
 const SEARCH_AGAIN_SELECTOR = ".two-company-search-again";
 
+/** The min-characters hint (TWO-25288 element 4), reused for the round-2 gap. */
+const MIN_CHARS_SELECTOR = ".two-company-search__min-chars";
+
 /** Every affordance that must answer the keyboard, with the action it runs. */
 const KEYBOARD_AFFORDANCES = [
   { label: "in-dropdown row", selector: ROW_SELECTOR, action: "enterManually" },
@@ -504,6 +507,24 @@ describe("address-step manual-entry affordance", () => {
       return component[bound];
     }
 
+    /**
+     * Is the min-characters hint showing, as the shipped `x-show` binding
+     * decides it? Read out of the markup for the same reason as
+     * `persistentVisible()` above.
+     *
+     * @returns {boolean}
+     */
+    function hintVisible() {
+      const hint = renderDoc().querySelector(MIN_CHARS_SELECTOR);
+      expect(hint).not.toBeNull();
+      const bound = hint.getAttribute("x-show");
+      // Unlike `persistentManualEntryVisible`, this binding names a plain
+      // method rather than a getter (CSP-friendly Alpine resolves either the
+      // same way, as a property lookup it then calls), so it must be invoked.
+      expect(typeof component[bound]).toBe("function");
+      return component[bound]();
+    }
+
     test("the empty field offers the link below it and no panel", () => {
       // The state the in-dropdown row cannot cover: nothing typed, so the panel
       // is shut. Something must still offer manual entry here — this is the
@@ -617,6 +638,71 @@ describe("address-step manual-entry affordance", () => {
         // And the debounced handler behind it does not take it away again.
         await component.getItems();
         expect(persistentVisible()).toBe(true);
+      });
+
+      /*
+       * The interleaving pickFromDropdown()'s own doc comment names as
+       * uncovered: a REAL keystroke landing BEFORE the debounced getItems()
+       * tick has ever consumed `isSelecting` (TWO-25288 element 5 round 2).
+       *
+       * Pre-fix, `noteCompanyQuery()` gated on `isSelecting` itself, so this
+       * keystroke was indistinguishable from the synthetic echo `selectItem()`
+       * dispatches on itself and was silently dropped: both the link and the
+       * min-chars hint stayed down, over a field the buyer was actively
+       * correcting, for as long as they kept typing within the 500ms window.
+       */
+      describe("a real keystroke landing before the debounced tick", () => {
+        function selectThenEcho() {
+          component.items = [CHOSEN];
+          component.selectItem(CHOSEN);
+          // The synthetic echo selectItem() dispatches on itself, simulated
+          // the same way "the undebounced handler does not consume the
+          // selection flag" does above — no debounced tick has run yet.
+          component.noteCompanyQuery();
+          expect(component.isSelecting).toBe(true);
+          expect(component.isCompanySelected).toBe(true);
+        }
+
+        test("a short correction shows the min-chars hint immediately, not the link", () => {
+          selectThenEcho();
+
+          field.value = "Jo";
+          component.noteCompanyQuery();
+
+          // Believed on the keystroke: neither still claiming the old
+          // selection nor blanked outright.
+          expect(component.isCompanySelected).toBe(false);
+          expect(component.isSelecting).toBe(false);
+          expect(component.showDropdown()).toBe(false);
+          // Both show together below the threshold — the hint and the link
+          // answer different questions ("how many more characters" and "is
+          // there another way in") and are not mutually exclusive the way the
+          // row and the link are.
+          expect(hintVisible()).toBe(true);
+          expect(persistentVisible()).toBe(true);
+        });
+
+        test("a full-length correction opens the row and searches on the tick behind it", async () => {
+          selectThenEcho();
+
+          field.value = "y".repeat(INJECTED_MIN + 1);
+          component.noteCompanyQuery();
+
+          expect(component.isCompanySelected).toBe(false);
+          expect(component.isSelecting).toBe(false);
+          expect(component.showDropdown()).toBe(true);
+          expect(persistentVisible()).toBe(false);
+
+          // The debounced tick behind this keystroke must search for the
+          // correction rather than silently no-opping on a stale
+          // `isSelecting` — the same one-shot guard the test above this
+          // block exists to pin.
+          const pending = component.getItems();
+          await H.flushPromises();
+          expect(fetchStub.calls.length).toBeGreaterThan(0);
+          fetchStub.last().respond({ items: [] });
+          await pending;
+        });
       });
 
       test("retyping past the threshold offers the row, still not the link", async () => {

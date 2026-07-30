@@ -477,6 +477,50 @@ describe("address-step company number", () => {
     });
   });
 
+  describe("init restores the completed-selection flag (TWO-25288 element 5 round 2)", () => {
+    // `isCompanySelected` gates `persistentManualEntryVisible` — the
+    // manual-entry link below the field. init() restores `companyName` and
+    // `companyId` from storage but, pre-fix, left `isCompanySelected` at its
+    // `false` default: a page reload after a completed pick showed the
+    // "my company is not on the list" link beside a field that already held a
+    // valid, restored answer.
+    test("a restored pick with a valid id marks the selection complete", () => {
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+
+      expect(component.isCompanySelected).toBe(true);
+    });
+
+    test("a restored HAND-TYPED identifier counts as a completed selection too", () => {
+      // Not narrowed to `hasVouchedCompanyId()` (registry-only): a manually
+      // entered identifier is just as complete a pick as a registry one, and
+      // the link's copy — "my company is not on the list" — is equally wrong
+      // beside either.
+      component = mount({
+        company_name: "Jo Smith Trading",
+        company_id: "1234567",
+        company_id_source: "manual",
+      });
+
+      expect(component.isCompanySelected).toBe(true);
+    });
+
+    test("a restored selection with no identifier is not marked complete", () => {
+      component = mount({ company_name: "Acme Ltd", company_id: "" });
+
+      expect(component.isCompanySelected).toBe(false);
+    });
+
+    test("empty storage leaves the selection incomplete", () => {
+      component = mount({});
+
+      expect(component.isCompanySelected).toBe(false);
+    });
+  });
+
   describe("a typed number reaches the rest of the checkout", () => {
     test("it is written through the store-view-keyed accessor", () => {
       component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });

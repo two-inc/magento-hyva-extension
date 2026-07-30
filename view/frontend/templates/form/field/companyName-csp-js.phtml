@@ -99,7 +99,36 @@ function <?= $gwBase ?>CompanySearchField() {
         search: '',
         items: [],
         selectedIndex: -1,
+        // True from the moment selectItem() runs until the debounced getItems()
+        // tick behind its synthetic `input` finally fires with no REAL edit
+        // having landed in between. Its only remaining job is telling that tick
+        // apart from an ordinary one, so it must NOT re-search the name just
+        // picked. It does not gate noteCompanyQuery() any more (see
+        // `awaitingSelectionEcho`) — a real keystroke clears it early, in
+        // noteCompanyQuery() itself, so a debounced tick that lands behind a
+        // genuine correction searches for that correction instead of silently
+        // no-opping.
         isSelecting: false,
+        /*
+         * One-shot, consumed by the very NEXT `noteCompanyQuery()` call —
+         * always the synthetic `input` selectItem() dispatches on itself, since
+         * that call happens synchronously inside selectItem() before control
+         * returns to whatever triggered the selection (TWO-25288 element 5
+         * round 2).
+         *
+         * `isSelecting` used to do this job too, but it lives across the whole
+         * debounce window rather than one call, so a REAL keystroke typed
+         * before the debounced getItems() tick fired was gated by the exact
+         * same flag as the synthetic echo — both the manual-entry link and the
+         * min-chars hint stayed frozen in the just-selected state for as long
+         * as the buyer kept typing within 500ms of the pick, which is a worse
+         * affordance than the one this ticket started from. Splitting the
+         * "ignore my own echo" job onto a flag consumed by exactly one call
+         * fixes that: only the echo itself is swallowed, and the very next
+         * keystroke — echo or not — is free to update `isCompanySelected` and
+         * the visible query on the spot.
+         */
+        awaitingSelectionEcho: false,
         // True from the moment a company is chosen from the dropdown until the
         // buyer edits the field again. Distinct from `isSelecting`, which is a
         // one-shot flag consumed by the very next getItems() tick: this one has
@@ -225,6 +254,21 @@ function <?= $gwBase ?>CompanySearchField() {
             this.companyIdSource = data.company_id_source || '';
             this.companyIdEntryRequired = !this.hasVouchedCompanyId();
             this.applyCompanyIdEditability();
+            /*
+             * A restored pick with a valid identifier is a completed selection,
+             * exactly like one made this page load via selectItem() (TWO-25288
+             * element 5 round 2). Without this, `isCompanySelected` stayed at
+             * its `false` default across a reload, and `persistentManualEntryVisible`
+             * showed "my company is not on the list" beside a field that
+             * already held a valid, restored answer.
+             *
+             * Keyed off `companyId` alone, not `hasVouchedCompanyId()`: a
+             * restored MANUAL identifier is just as complete a pick as a
+             * registry one, and `hasVouchedCompanyId()` answers a narrower
+             * question — whether the number may still be edited — not whether
+             * a company has been chosen.
+             */
+            this.isCompanySelected = Boolean(this.companyId);
         },
 
         /*
@@ -263,19 +307,34 @@ function <?= $gwBase ?>CompanySearchField() {
          * has to stay on the request half — an undebounced search would put one
          * request per keystroke on the wire.
          *
-         * `isSelecting` is checked but deliberately NOT consumed. selectItem()
-         * sets that flag and then dispatches `input` on the field, so this
-         * handler runs first; clearing it here would let the debounced
-         * getItems() tick behind it fall straight through its own guard and
-         * search for the name the buyer has just chosen.
+         * `awaitingSelectionEcho` is the one this swallows, and only for the
+         * single call it names: selectItem() sets it and then dispatches
+         * `input` on the field, so this handler runs first, synchronously,
+         * before selectItem() returns. Consuming it here — not leaving it for
+         * getItems() the way `isSelecting` is — is what stops a REAL keystroke
+         * typed a moment later from being mistaken for that same echo (TWO-25288
+         * element 5 round 2): the echo is the only call gated, so the very next
+         * one always reaches the code below.
          *
-         * Nothing is aborted, cleared or requested here. The debounced handler
-         * owns the whole request lifecycle, and duplicating any part of it is
-         * how `isSearching` ends up latched on.
+         * `isSelecting` is read but deliberately CLEARED here rather than left
+         * alone, on any call that gets this far — i.e. every call except the
+         * echo itself. That is what makes a real correction typed within the
+         * debounce window reach the search: without it, the debounced
+         * getItems() tick behind this keystroke would still see `isSelecting`
+         * true, hit its own one-shot guard, and silently skip searching for
+         * the very text the buyer just corrected.
+         *
+         * Nothing is aborted, cleared or requested here beyond that. The
+         * debounced handler owns the whole request lifecycle, and duplicating
+         * any part of it is how `isSearching` ends up latched on.
          */
         noteCompanyQuery() {
-            if (this.isSelecting) return;
+            if (this.awaitingSelectionEcho) {
+                this.awaitingSelectionEcho = false;
+                return;
+            }
 
+            this.isSelecting = false;
             this.search = this.$el.value;
             // Any edit ends the selection, exactly as in getItems(). Written
             // here as well so the min-characters hint answers the keystroke
@@ -535,6 +594,13 @@ function <?= $gwBase ?>CompanySearchField() {
             // the wire, or `isSearching` latches true.
             if (this.isSelecting) {
                 this.isSelecting = false;
+                // Settled either way by the time this tick runs: the echo
+                // already consumed it if it ran first, as it does in
+                // production. Clearing it here too is what stops it being
+                // mistaken for a still-pending echo by whatever
+                // `noteCompanyQuery()` call comes next, in callers that reach
+                // this tick without one ever having run.
+                this.awaitingSelectionEcho = false;
                 this.abortCompanySearch();
                 return;
             }
@@ -720,6 +786,9 @@ function <?= $gwBase ?>CompanySearchField() {
             this.abortCompanySearch();
             this.isSearchUnavailable = false;
             this.isSelecting = true;
+            // Armed together: this one is for noteCompanyQuery()'s single echo
+            // call below, `isSelecting` is for getItems()'s tick behind it.
+            this.awaitingSelectionEcho = true;
             this.isOpen = false;
             this.items = [];
             this.search = item.companyName;
