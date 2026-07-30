@@ -315,10 +315,13 @@ describe("company-name field picker", () => {
       const stored = JSON.parse(
         env.browserStorage.getItem(H.COMPANY_SELECTION_KEY),
       );
+      // A pick is the only writer allowed to claim registry provenance, and the
+      // restore path locks the number field on exactly that claim.
       expect(stored).toEqual({
         quote_id: "test-quote-1",
         company_name: "Acme Widgets",
         company_id: "111",
+        company_id_source: "registry",
         manual_mode: false,
       });
       expect(seen).toEqual([stored]);
