@@ -302,7 +302,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                  * Do not restate the number.
                                  */
                                 ?>
-                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(
+                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtml(
                                     __("Please enter %1 or more characters", $companySearchMinChars),
                                 ) ?>
                                 </div>

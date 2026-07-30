@@ -92,6 +92,16 @@ $form = $block->getData("form");
                 data-validate='{"required":true}'
             <?php endif; ?>
             autocomplete="off"
+            <?php
+            /*
+             * Points at the minimum-characters hint below, so a screen reader
+             * announces it as a description of this field rather than leaving it
+             * as unassociated text elsewhere in the DOM. `x-show` toggles
+             * `display`, and assistive technology ignores a described-by target
+             * that is hidden, so the association is correct in both states.
+             */
+            ?>
+            aria-describedby="two-company-search-min-chars"
             @input.debounce.500ms="getItems"
             />
             <!--
@@ -137,6 +147,7 @@ $form = $block->getData("form");
              */
             ?>
             <div
+                id="two-company-search-min-chars"
                 x-show="<?= $gwBase ?>ShouldShowMinCharsMessage"
                 class="two-company-search__min-chars mt-1 text-sm text-gray-700"
             ><?= $escaper->escapeHtml(
