@@ -236,12 +236,24 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 data-validate='{"required": true}'
                                 >
                             <!--
-                                In-field searching indicator. Reuses the
-                                payment-term chips' three-dot loader
-                                (`two-term-chip__loading`, styled and animated
-                                by Two_Gateway) rather than introducing a
-                                second loading idiom; custom.css only supplies
-                                the positioning that puts it inside the field.
+                                In-field searching indicator (TWO-25288): an
+                                animated loading GIF, applied by custom.css as a
+                                `background-image` on this one childless element.
+                                A background image rather than an `<img>` so the
+                                asset URL resolves relative to the stylesheet and
+                                needs no asset-helper plumbing here; childless
+                                because a background image needs no child nodes.
+
+                                `two-company-search__spinner` is the class that
+                                does the work — position, size and the image.
+                                `two-term-chip__loading` paints nothing here: it
+                                is the shared loading hook this markup has always
+                                carried, kept as a legacy/overlay hook so a
+                                merchant or brand overlay styling that class
+                                still reaches this element. Its own declarations
+                                are inert on a childless element with a fixed box
+                                and a background image.
+
                                 Deliberately NOT the global magewire loader —
                                 a full-screen overlay on every keystroke is
                                 the bug that pattern replaced.
@@ -250,7 +262,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 x-show="isSearching"
                                 class="two-company-search__spinner two-term-chip__loading"
                                 aria-hidden="true"
-                            ><span>.</span><span>.</span><span>.</span></span>
+                            ></span>
                             </span>
                             <!-- Search Results Dropdown -->
                             <div

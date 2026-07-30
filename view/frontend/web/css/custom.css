@@ -155,6 +155,16 @@ summary::marker {
   opacity: 0.75;
 }
 
+/*
+ * The payment-term chips' three-dot loader. This is also the shared loading
+ * hook the company-search spinner further down has always carried alongside its
+ * own class. Every declaration here does reach the spinner through the cascade;
+ * they are simply inert on it — the spinner is a childless element with a fixed
+ * box and a background image, so the text-level declarations have nothing to
+ * affect, and `display` is redeclared by the spinner's own rule. The `> span`
+ * dot rules below apply only to the chips, which are the only markup with dot
+ * children.
+ */
 .two-term-chip__loading {
   display: inline-block;
   letter-spacing: 2px;
@@ -195,21 +205,23 @@ summary::marker {
 }
 
 /*
- * Company-search chrome (TWO-25233).
+ * Company-search chrome (TWO-25233, spinner reworked under TWO-25288).
  *
- * Only positioning and the notice's colours live here. The spinner's dots
- * and their animation are the payment-term chips' `two-term-chip__loading`
- * rules, shipped by Two_Gateway — one loading idiom in the checkout, not
- * two. Positioning is CSS rather than Tailwind utilities so the module does
- * not depend on the merchant's Tailwind build having generated a specific
- * set of inset classes.
+ * This is the ONLY stylesheet the Hyva checkout loads for this module, so
+ * everything the company-search spinner needs — geometry, positioning and the
+ * reference to its image asset — is here. An earlier version of this comment
+ * said the dots and their animation came from the base module and only
+ * positioning lived here; that was never true on this surface. Positioning is
+ * CSS rather than Tailwind
+ * utilities so the module does not depend on the merchant's Tailwind build
+ * having generated a specific set of inset classes.
  */
 .two-company-search {
   position: relative;
 }
 
 /*
- * Reserve room for the dots unconditionally rather than only while
+ * Reserve room for the spinner unconditionally rather than only while
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  */
@@ -217,12 +229,37 @@ summary::marker {
   padding-right: 34px;
 }
 
+/*
+ * The company-search spinner: the same animated loading GIF the PrestaShop
+ * plugin already ships, drawn as a `background-image` on one childless element.
+ *
+ * A `background-image` rather than an `<img>` because a URL in this stylesheet
+ * resolves relative to the stylesheet's own published location, so the asset
+ * needs no Magento asset-helper plumbing in the templates. Static-content deploy
+ * publishes `css/` and `images/` under the same module directory, which is what
+ * makes `../images/` correct.
+ *
+ * Fixed 16px rather than `1em`: the GIF is natively 16x16 and scaling it up
+ * blurs it.
+ *
+ * The element carries both `two-company-search__spinner` (this rule) and
+ * `two-term-chip__loading` (the shared loading hook this markup has always
+ * carried, kept as a legacy/overlay hook and inert here). This rule comes later
+ * in the file and matches on a single class apiece, so it wins `display`, the
+ * one property both rules declare.
+ */
 .two-company-search__spinner {
   position: absolute;
-  top: 50%;
+  top: calc(50% - 8px);
   right: 12px;
-  transform: translateY(-50%);
+  display: inline-block;
+  width: 16px;
+  height: 16px;
   pointer-events: none;
+  background-image: url("../images/loader.gif");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
 }
 
 .two-company-search__unavailable {
