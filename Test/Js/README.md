@@ -486,9 +486,21 @@ Mutation-checked, each revert confirmed red. Counts are failures within
 | Delete the dropdown term from `persistentManualEntryVisible`           | 2 + 1 address-company-id          |
 | `persistentManualEntryVisible` always true                             | 4 + 1 address-company-id          |
 | `persistentManualEntryVisible` always false                            | 3 + 1 address-company-id          |
+| `enterManually()` stops clearing `items`                               | 1 + 1 company-name-field          |
+| `enterManually()` stops calling `stopPropagation`                      | 1 + 1 company-name-field          |
+| `getItems()` stops applying the response's `items`                     | 1 + 3 company-name-field          |
 | Never register the Alpine component                                    | 110 repo-wide (bootstrap guards)  |
 
-The last three rows are the ones that matter for the retarget. `address-company-id.test.js`
+Three of those rows exist because of a vacuity audit rather than a design decision, and the
+class is worth knowing. An assertion that a collection is EMPTY after some call proves nothing
+when the collection was already empty before it — it holds whether or not the code cleared
+anything, so it cannot fail. Two assertions in this suite were in that state, caught by a
+neighbouring suite's tests and not by their own. Both now seed the collection non-empty first,
+which is what makes the clear observable; the mutations above are what demonstrate the
+difference. A third (`items` empty at the moment the panel opens) is genuinely unfalsifiable
+and is labelled in the source as a precondition rather than offered as evidence.
+
+The `persistentManualEntryVisible` rows are the ones that matter for the retarget. `address-company-id.test.js`
 already pinned that link's gate before this change, as a bare search-mode term; it is
 retargeted here rather than relaxed, and it goes red under **all three** of those mutations —
 including the gate being deleted outright — which is what shows the retargeted version can

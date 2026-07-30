@@ -250,6 +250,10 @@ describe("address-step manual-entry affordance", () => {
     test("at the threshold the dropdown opens with an empty result list", () => {
       type("x".repeat(INJECTED_MIN));
 
+      // A PRECONDITION, not a claim: nothing has populated `items` in this
+      // scenario, so this cannot fail and is not offered as evidence. It is
+      // recorded because it is what makes the next line meaningful — the panel
+      // is open while the result list is empty.
       expect(component.items).toEqual([]);
       expect(component.showDropdown()).toBe(true);
       // Nothing has been requested — this is the undebounced handler, and the
@@ -287,6 +291,10 @@ describe("address-step manual-entry affordance", () => {
       // precisely this moment.
       field.value = "x".repeat(INJECTED_MIN);
       component.noteCompanyQuery();
+      // Seeded NON-empty for the same reason as below: `items` is empty here
+      // anyway, so a bare "is empty afterwards" assertion could not tell an
+      // empty response being applied from the response being ignored entirely.
+      component.items = [{ companyName: "Stale Result", companyId: "999" }];
       const pending = component.getItems();
       await H.flushPromises();
       fetchStub.last().respond({ items: [] });
@@ -439,6 +447,11 @@ describe("address-step manual-entry affordance", () => {
       };
       type("x".repeat(INJECTED_MIN));
       expect(component.showDropdown()).toBe(true);
+      // Seeded NON-empty on purpose. `items` is empty at this point in the
+      // scenario, so asserting it is empty after the call would hold whether or
+      // not the code cleared anything — an assertion structurally unable to
+      // fail. Putting a row in first is what makes the clear observable.
+      component.items = [{ companyName: "Acme Widgets", companyId: "111" }];
 
       component.enterManually(event);
 
