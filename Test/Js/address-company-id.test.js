@@ -132,17 +132,31 @@ describe("address-step company number", () => {
   /**
    * Pick a search hit, INCLUDING the echo the pick causes.
    *
-   * selectItem() writes the chosen name back into the field, which fires the
-   * field's own `input` binding; `isSelecting` is the one-shot flag that
-   * swallows it. Tests that skip the echo leave the flag set, and the next
-   * keystroke they simulate is swallowed instead — which silently turns an
-   * assertion about an edited name into an assertion about nothing.
+   * selectItem() writes the chosen name back into the field via `$root`'s
+   * querySelector, which fires the field's own `input` binding — the
+   * UNDEBOUNCED one first, in the real DOM. `noteCompanyQuery()` is what
+   * actually swallows that echo (via the one-shot `awaitingSelectionEcho`
+   * flag, consumed by exactly this call), so it is simulated here directly,
+   * in the same order the browser fires it, rather than only through the
+   * debounced `getItems()` tick behind it. `isSelecting` is a second flag
+   * `getItems()` still checks for its own reason — skipping the request that
+   * would otherwise re-search the name just picked — and it stays armed until
+   * that tick runs, which `typeName()` below supplies.
+   *
+   * Tests that skip this helper's echo call and drive `selectItem()` directly
+   * leave BOTH flags set, and the next keystroke they simulate through
+   * `noteCompanyQuery()` is swallowed instead of processed — which silently
+   * turns an assertion about an edited name into an assertion about nothing.
    *
    * @param {Object} item
    * @returns {Promise<void>}
    */
   async function pick(item) {
     component.selectItem(item);
+    // The synthetic echo, simulated in real DOM order: selectItem() already
+    // wrote `item.companyName` into the field, so this reads that value
+    // through `$el` and is swallowed rather than processed.
+    component.noteCompanyQuery();
     await typeName(item.companyName);
   }
 
@@ -226,20 +240,65 @@ describe("address-step company number", () => {
       expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
     });
 
-    test("the persistent manual-entry link is gated on searchModeActive", () => {
-      // It has to live OUTSIDE the results dropdown: the dropdown's own
-      // `showDropdown` term requires at least one result, so the only route
-      // into manual entry used to disappear exactly when the search found
-      // nothing — which is the case a company with no registry identifier is
-      // in. Both halves are checked, binding and property.
+    test("the persistent manual-entry link is gated on search mode, a closed dropdown AND no selection", () => {
+      // RETARGETED by TWO-25288 element 5, not relaxed. The original gate was a
+      // bare `searchModeActive`, which was right while the dropdown needed at
+      // least one result to open: the only route into manual entry would
+      // otherwise have vanished exactly when the search found nothing, which is
+      // the case a company with no registry identifier is in.
+      //
+      // The dropdown now opens on typed length alone and carries a manual-entry
+      // row of its own with identical wording, so this link additionally has to
+      // disappear while the panel is open — two identical links on screen at
+      // once is a defect. What it still owns is the states in which the panel is
+      // shut: an untouched field, a query too short to search, and a full-length
+      // query whose panel a click outside dismissed.
+      //
+      // And a third term, because the identical wording is a factual claim about
+      // the current state: a chosen company must not be told it is not on the
+      // list. That one is asserted here at the gate and exercised through the
+      // real selectItem() path by the element-5 suite.
+      //
+      // Both of the original halves are still pinned — outside the panel, and
+      // named by a property the component actually defines — plus the new terms.
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
       const link = doc.querySelector(".two-company-manual-entry");
       const gate = link.closest("[x-show]");
+      const bound = gate.getAttribute("x-show");
 
-      expect(gate.getAttribute("x-show")).toBe("searchModeActive");
       expect(gate.closest("[x-show='showDropdown']")).toBeNull();
-      expect("searchModeActive" in mount()).toBe(true);
+      expect(bound).toBeTruthy();
+
+      component = mount();
+      expect(bound in component).toBe(true);
+
+      // The search-mode half, unchanged: nothing to switch between with no
+      // lookup, and nothing for "manual" to be the opposite of once it is on.
+      component.isCompanySearchEnabled = "";
+      expect(component[bound]).toBe(false);
+      component.isCompanySearchEnabled = "1";
+      component.manualMode = true;
+      expect(component[bound]).toBe(false);
+
+      // The new half. Deliberately asserted in BOTH directions: a gate stuck
+      // false would hide the link from the empty field it is the only
+      // affordance for, and a gate stuck true would put it beside the panel's
+      // own copy.
+      component.manualMode = false;
+      component.isOpen = false;
+      expect(component[bound]).toBe(true);
+      component.isOpen = true;
+      expect(component[bound]).toBe(false);
+
+      // The selection half, also in both directions from the same starting
+      // point: panel shut and search mode on, so the only thing deciding the
+      // gate here is whether a company has been chosen.
+      component.isOpen = false;
+      component.isCompanySelected = true;
+      expect(component[bound]).toBe(false);
+      component.isCompanySelected = false;
+      expect(component[bound]).toBe(true);
     });
 
     test("the mode links resolve both ways round the search flag", () => {
@@ -429,6 +488,71 @@ describe("address-step company number", () => {
 
       component.enableSearch();
       expect(component.companyIdDisabled).toBe(true);
+    });
+  });
+
+  describe("init restores the completed-selection flag (TWO-25288 element 5 round 2)", () => {
+    // `isCompanySelected` gates `persistentManualEntryVisible` — the
+    // manual-entry link below the field. init() restores `companyName` and
+    // `companyId` from storage but, pre-fix, left `isCompanySelected` at its
+    // `false` default: a page reload after a completed pick showed the
+    // "my company is not on the list" link beside a field that already held a
+    // valid, restored answer.
+    test("a restored pick with a valid id marks the selection complete", () => {
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+
+      expect(component.isCompanySelected).toBe(true);
+    });
+
+    test("a restored HAND-TYPED identifier counts as a completed selection too", () => {
+      // Not narrowed to `hasVouchedCompanyId()` (registry-only): a manually
+      // entered identifier is just as complete a pick as a registry one, and
+      // the link's copy — "my company is not on the list" — is equally wrong
+      // beside either.
+      component = mount({
+        company_name: "Jo Smith Trading",
+        company_id: "1234567",
+        company_id_source: "manual",
+      });
+
+      expect(component.isCompanySelected).toBe(true);
+    });
+
+    test("a restored selection with no identifier is not marked complete", () => {
+      component = mount({ company_name: "Acme Ltd", company_id: "" });
+
+      expect(component.isCompanySelected).toBe(false);
+    });
+
+    test("empty storage leaves the selection incomplete", () => {
+      component = mount({});
+
+      expect(component.isCompanySelected).toBe(false);
+    });
+
+    test("a real edit after a restored selection flips it back (TWO-25288 element 5 round 2)", () => {
+      // The two fixes chained, not just proven in isolation: init() marks a
+      // restored pick complete, and a real keystroke through
+      // noteCompanyQuery() — exactly like a buyer correcting a name they
+      // reloaded the page onto — must still be able to end that state.
+      // Without noteCompanyQuery()'s own unconditional
+      // `this.isCompanySelected = false`, a restored selection could look
+      // identical to one made this page load but never be editable.
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+      expect(component.isCompanySelected).toBe(true);
+
+      nameField.value = "Acme Limited";
+      component.noteCompanyQuery();
+
+      expect(component.isCompanySelected).toBe(false);
     });
   });
 

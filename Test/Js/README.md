@@ -443,6 +443,101 @@ stylesheet. Counts are failures within `company-search-spinner.test.js` (13 test
 | Make the spinner rule a descendant selector                   | 2             |
 | Add `!important` to the spinner's `background-image`          | 1             |
 
+`company-manual-entry.test.js` — the manual-entry affordance on the address step, TWO-25288
+element 5. The wording is the cheap part; three things had made the affordance not work.
+**Timing:** the row lives inside the results dropdown and the dropdown was gated on
+`items.length > 0`, so the one route into manual entry appeared only once a search had fired
+AND matched — absent in exactly the case it exists for, a company the registry does not have.
+It now opens on typed length alone, from an undebounced second `@input` handler
+(`noteCompanyQuery`) that runs alongside the debounced `getItems`; the debounce has to stay on
+the request half or every keystroke goes on the wire. **Keyboard:** all three links were bare
+`<span>`s with a click handler and no role, tabindex or keydown. They are now
+`role="button"` + `tabindex="0"` with Enter and Space handlers, and `role="button"` rather
+than `role="option"` deliberately — this panel is not a listbox, so a lone `option` would be
+an option with no owning list. `.prevent` is load-bearing (Space scrolls, Enter submits) and
+is only visible in the attribute NAME, so the tests read attribute names, not just values.
+**Duplication:** there are two routes into manual entry and they now carry identical copy, so
+`persistentManualEntryVisible` makes them mutually exclusive — the link below the field owns
+the states in which the panel is SHUT, the in-dropdown row owns the states in which it is open,
+including a search that matched nothing or failed. The `never both, never neither` assertion
+sweeps the whole length range rather than sampling it. The threshold is injected as 5
+throughout, so a leftover literal 3 fails.
+
+The two do not cover the searching mode between them, and the wording is why. The copy is a
+factual claim about the current state rather than a label, so a **completed selection** offers
+neither route: `selectItem()` lowers `isOpen`, which left the link showing "my company is not
+on the list" to a buyer who had just picked their company off that list. `isCompanySelected` is
+the term that excludes it, and editing the name clears the flag so the link returns.
+
+That bug is the reason for the `states the length sweep cannot reach` group, and the lesson
+generalises past this suite. The length sweep drives a component that has never selected a
+company nor closed a dropdown, so every point it visits is one where exactly one route is
+correct — it could not have reached the failing state, and a sweep unable to reach a state is
+not evidence about it. A wide-looking loop reads as strong coverage and was worth none here.
+The group walks in deliberately: through the real `selectItem()` path, both halves of the
+recovery, and an outside click.
+
+The outside click is also why the descriptions above changed. `closeDropdown()` is bound as
+`@click.outside` and lowers `isOpen` without touching `search`, so at full query length the row
+goes and the link takes back over — the row does not own "everything from the threshold
+upwards", as three comments here and in the templates used to say. Exactly one route shows
+either way, so only the description was wrong; the behaviour is left alone and now pinned.
+
+The reverse link (`Search for company`) got the same keyboard treatment even though element 5
+does not name it: making the way INTO manual entry keyboard-operable while leaving the way out
+mouse-only would have built a trap that did not exist before.
+
+Mutation-checked, each revert confirmed red. Counts are failures within
+`company-manual-entry.test.js` (33 tests) unless another suite is named:
+
+| Mutation                                                              | Tests failing                     |
+| --------------------------------------------------------------------- | --------------------------------- |
+| Restore `items.length > 0` to `showDropdown()`                         | 6 + 1 address-company-id          |
+| Revert both links to the `Enter details manually` wording              | 2                                 |
+| Reword only the in-dropdown row, leaving the other on the old string   | 2                                 |
+| Drop the undebounced `@input="noteCompanyQuery"` binding               | 1                                 |
+| Let `noteCompanyQuery()` consume `isSelecting`                         | 1                                 |
+| Read a literal `3` instead of `minSearchChars` in `noteCompanyQuery()` | 1 + 1 company-search-min-chars    |
+| Drop `tabindex="0"` from the in-dropdown row                           | 1                                 |
+| Drop `role="button"` from all three links                              | 3                                 |
+| Use `role="option"` on the in-dropdown row                             | 1                                 |
+| Drop `@keydown.space.stop.prevent` from all three                      | 4                                 |
+| Rename the Space handler's event so Space stops being handled          | 3                                 |
+| Drop `.prevent` from the Space handlers                                | 4                                 |
+| Delete the dropdown term from `persistentManualEntryVisible`           | 4 + 1 address-company-id          |
+| Delete the selection term from `persistentManualEntryVisible`          | 1 + 1 address-company-id          |
+| `persistentManualEntryVisible` always true                             | 7 + 1 address-company-id          |
+| `persistentManualEntryVisible` always false                            | 5 + 1 address-company-id          |
+| `enterManually()` stops clearing `items`                               | 1 + 1 company-name-field          |
+| `enterManually()` stops calling `stopPropagation`                      | 1 + 1 company-name-field          |
+| `getItems()` stops applying the response's `items`                     | 1 + 3 company-name-field          |
+| Never register the Alpine component                                    | 110 repo-wide (bootstrap guards)  |
+
+Two of the Space rows look redundant and are not. Deleting the attribute leaves one keydown
+handler where there should be two, which the attribute-name assertions catch; renaming its
+event keeps two well-formed handlers and only stops Space being one of them. The second is the
+sharper mutation, and it is the one that would survive a careless "fix".
+
+Every count above was produced by a harness that refuses to report a result unless
+`git diff --stat` shows the tree actually changed, and that prints the failing tests BY NAME.
+The names are the point: a mutation can go red while every named failure sits in a
+neighbouring suite, which means the local assertion is not what caught it.
+
+Three of those rows exist because of a vacuity audit rather than a design decision, and the
+class is worth knowing. An assertion that a collection is EMPTY after some call proves nothing
+when the collection was already empty before it — it holds whether or not the code cleared
+anything, so it cannot fail. Two assertions in this suite were in that state, caught by a
+neighbouring suite's tests and not by their own. Both now seed the collection non-empty first,
+which is what makes the clear observable; the mutations above are what demonstrate the
+difference. A third (`items` empty at the moment the panel opens) is genuinely unfalsifiable
+and is labelled in the source as a precondition rather than offered as evidence.
+
+The `persistentManualEntryVisible` rows are the ones that matter for the retarget. `address-company-id.test.js`
+already pinned that link's gate before this change, as a bare search-mode term; it is
+retargeted here rather than relaxed, and it goes red under **all three** of those mutations —
+including the gate being deleted outright — which is what shows the retargeted version can
+still fail.
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 

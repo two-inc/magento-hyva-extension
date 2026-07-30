@@ -264,8 +264,11 @@ describe("company-name field picker", () => {
       fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
       await pending;
 
-      // showDropdown() has no manualMode term, so writing items here
-      // would render the list over the manual-entry fields.
+      // showDropdown() does now carry a manual-mode term, so nothing would be
+      // rendered over the manual-entry fields — but writing items here would
+      // still leave a stale result list ready to appear the moment the buyer
+      // switched back to searching, with `isOpen` still set from the keystroke
+      // that started this search.
       expect(component.manualMode).toBe(true);
       expect(component.items).toEqual([]);
       expect(component.isOpen).toBe(false);
