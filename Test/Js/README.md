@@ -426,6 +426,23 @@ descendant selector here would out-specify any flat rule targeting the shared cl
 it with nothing else failing. Nothing asserts a CSS animation — the motion is in the GIF, and
 for the same reason there is no reduced-motion rule to assert, since CSS cannot pause a GIF.
 
+Mutation-checked the same way, each revert confirmed red against the shipped templates and
+stylesheet. Counts are failures within `company-search-spinner.test.js` (13 tests):
+
+| Mutation                                                      | Tests failing |
+| ------------------------------------------------------------- | ------------- |
+| Drop `two-term-chip__loading` from both templates             | 2             |
+| Delete the spinner `<span>` from `companyName.phtml`          | 5             |
+| Drop `x-show="isSearching"` from both spinners                | 2             |
+| Bind the spinner to a property the component does not define  | 2             |
+| Restore the three dot spans inside the spinner                | 2             |
+| Drop `aria-hidden` from both spinners                         | 2             |
+| Point `background-image` at an asset that was never committed | 2             |
+| `background-repeat: repeat`                                   | 1             |
+| `background-size: 20px 20px` (scale the 16x16 GIF up)         | 1             |
+| Make the spinner rule a descendant selector                   | 2             |
+| Add `!important` to the spinner's `background-image`          | 1             |
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
