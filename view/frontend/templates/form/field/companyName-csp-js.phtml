@@ -816,6 +816,18 @@ function <?= $gwBase ?>CompanySearchField() {
                 input.value = item.companyName;
                 // Use bubbles: false to prevent address book modal from closing
                 input.dispatchEvent(new Event('input', { bubbles: false }));
+            } else {
+                // No field to dispatch the echo on, so neither
+                // noteCompanyQuery() nor getItems() will ever run to consume
+                // `awaitingSelectionEcho` or `isSelecting` the normal way.
+                // Leaving them armed would make this component swallow the
+                // very next real keystroke it sees, mistaking it for an echo
+                // that was never actually dispatched — the same class of bug
+                // this round fixed, reached through a different door. Reset
+                // immediately: with nothing dispatched, there is nothing to
+                // guard against.
+                this.isSelecting = false;
+                this.awaitingSelectionEcho = false;
             }
 
             // A merging write, never a rebuild from a key list: dropping

@@ -132,17 +132,31 @@ describe("address-step company number", () => {
   /**
    * Pick a search hit, INCLUDING the echo the pick causes.
    *
-   * selectItem() writes the chosen name back into the field, which fires the
-   * field's own `input` binding; `isSelecting` is the one-shot flag that
-   * swallows it. Tests that skip the echo leave the flag set, and the next
-   * keystroke they simulate is swallowed instead — which silently turns an
-   * assertion about an edited name into an assertion about nothing.
+   * selectItem() writes the chosen name back into the field via `$root`'s
+   * querySelector, which fires the field's own `input` binding — the
+   * UNDEBOUNCED one first, in the real DOM. `noteCompanyQuery()` is what
+   * actually swallows that echo (via the one-shot `awaitingSelectionEcho`
+   * flag, consumed by exactly this call), so it is simulated here directly,
+   * in the same order the browser fires it, rather than only through the
+   * debounced `getItems()` tick behind it. `isSelecting` is a second flag
+   * `getItems()` still checks for its own reason — skipping the request that
+   * would otherwise re-search the name just picked — and it stays armed until
+   * that tick runs, which `typeName()` below supplies.
+   *
+   * Tests that skip this helper's echo call and drive `selectItem()` directly
+   * leave BOTH flags set, and the next keystroke they simulate through
+   * `noteCompanyQuery()` is swallowed instead of processed — which silently
+   * turns an assertion about an edited name into an assertion about nothing.
    *
    * @param {Object} item
    * @returns {Promise<void>}
    */
   async function pick(item) {
     component.selectItem(item);
+    // The synthetic echo, simulated in real DOM order: selectItem() already
+    // wrote `item.companyName` into the field, so this reads that value
+    // through `$el` and is swallowed rather than processed.
+    component.noteCompanyQuery();
     await typeName(item.companyName);
   }
 
@@ -516,6 +530,27 @@ describe("address-step company number", () => {
 
     test("empty storage leaves the selection incomplete", () => {
       component = mount({});
+
+      expect(component.isCompanySelected).toBe(false);
+    });
+
+    test("a real edit after a restored selection flips it back (TWO-25288 element 5 round 2)", () => {
+      // The two fixes chained, not just proven in isolation: init() marks a
+      // restored pick complete, and a real keystroke through
+      // noteCompanyQuery() — exactly like a buyer correcting a name they
+      // reloaded the page onto — must still be able to end that state.
+      // Without noteCompanyQuery()'s own unconditional
+      // `this.isCompanySelected = false`, a restored selection could look
+      // identical to one made this page load but never be editable.
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+      expect(component.isCompanySelected).toBe(true);
+
+      nameField.value = "Acme Limited";
+      component.noteCompanyQuery();
 
       expect(component.isCompanySelected).toBe(false);
     });

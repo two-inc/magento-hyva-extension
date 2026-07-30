@@ -320,20 +320,32 @@ describe("address-step manual-entry affordance", () => {
       expect(component.isSearching).toBe(false);
     });
 
-    test("the undebounced handler does not consume the selection flag", async () => {
-      // selectItem() sets `isSelecting` and then dispatches `input` on the
-      // field, so the undebounced handler runs FIRST. Clearing the flag there
-      // would let the debounced getItems() behind it fall through its own guard
-      // and search for the name the buyer just chose — reopening a dropdown they
-      // have just dismissed.
+    test("the echo call does not consume isSelecting (TWO-25288 element 5 round 2)", async () => {
+      // selectItem() arms `awaitingSelectionEcho` and `isSelecting` together and
+      // then dispatches `input` on the field, so the undebounced handler runs
+      // FIRST — this call IS that dispatch, simulated directly. It is swallowed
+      // by the `awaitingSelectionEcho` guard and returns before touching
+      // `isSelecting` at all, which is what this test pins: the echo call must
+      // leave `isSelecting` exactly as selectItem() set it, so the debounced
+      // getItems() tick behind it still hits ITS OWN one-shot guard and does not
+      // fall through to search for the name the buyer just chose.
+      //
+      // This is NOT a general property of `noteCompanyQuery()` any more. A
+      // SECOND call — a real keystroke, once the echo has been swallowed — DOES
+      // clear `isSelecting` on purpose, precisely so a correction typed inside
+      // the debounce window reaches the search instead of being silently
+      // skipped. See "a real keystroke landing before the debounced tick" below
+      // for that call.
       component.selectItem({
         companyName: "Acme Widgets",
         companyId: "111",
         lookupId: "",
       });
       expect(component.isSelecting).toBe(true);
+      expect(component.awaitingSelectionEcho).toBe(true);
 
       component.noteCompanyQuery();
+      expect(component.awaitingSelectionEcho).toBe(false);
       expect(component.isSelecting).toBe(true);
       expect(component.showDropdown()).toBe(false);
 
@@ -341,6 +353,31 @@ describe("address-step manual-entry affordance", () => {
       expect(component.isSelecting).toBe(false);
       expect(fetchStub.calls).toHaveLength(0);
       expect(component.showDropdown()).toBe(false);
+    });
+
+    test("selectItem() resets both flags immediately if there is no field to echo through", () => {
+      // Both flags are armed unconditionally at the top of selectItem(), but
+      // the echo they wait for is only ever dispatched inside the `if (input)`
+      // branch below. If that querySelector ever misses — a root with no text
+      // input, a Magewire re-render mid-flight — nothing would EVER run to
+      // consume them the normal way, and the next real keystroke this
+      // component saw would be swallowed as if it were the echo: the same
+      // defect this round fixed, reached through a different door.
+      const emptyRoot = document.createElement("div");
+      const orphan = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: field,
+        root: emptyRoot,
+      });
+      orphan.init();
+
+      orphan.selectItem({
+        companyName: "Acme Widgets",
+        companyId: "111",
+        lookupId: "",
+      });
+
+      expect(orphan.isSelecting).toBe(false);
+      expect(orphan.awaitingSelectionEcho).toBe(false);
     });
 
     test("no dropdown in manual mode or with the lookup switched off", () => {
