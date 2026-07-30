@@ -196,7 +196,7 @@ It is now pinned by mounting the factory without calling `initialize()`. Nothing
 re-verified table above starts green.
 
 Two things here have **no automated coverage** and are called out rather than implied: the
-`input.company_id:disabled` rule in `custom.css` (Jest asserts no styles), and Alpine's own
+`input.company_id:disabled` rule in `custom.css` (no test asserts that rule), and Alpine's own
 evaluation of the binding. What the suite does assert is that the attribute exists on the
 right element and holds a bare property name, and that no second
 `:style` binding carries the same fact — a string `:style` would set the whole style
