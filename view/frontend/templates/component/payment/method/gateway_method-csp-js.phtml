@@ -31,6 +31,7 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $companySearchLimit = $configModel->getCompanySearchLimit();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
 // null ⇒ the active brand switched the notice off; the component's setter
 // then no-ops and gateway_method.phtml emits no element at all.
@@ -665,6 +666,12 @@ $quoteDetails = json_encode(
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            // The one threshold for this repo, emitted from PHP
+            // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as
+            // a literal in each guard (TWO-25288). Cast to an int, NOT quoted
+            // like the neighbouring config values: these are numeric length
+            // comparisons and a string would compare lexically.
+            minSearchChars: <?= (int) $companySearchMinChars ?>,
             isOrderIntentEnabled: '<?= $escaper->escapeJs((string) $isOrderIntentEnabled) ?>',
             // Resolved copy for the persistent inline intent-approved notice,
             // or null when the brand switched it off. json_encode with the HEX
@@ -760,7 +767,7 @@ $quoteDetails = json_encode(
                 this.selectedIndex = parseInt(event.currentTarget.dataset.index);
             },
             <?= $gwBase ?>ShouldShowMinCharsMessage() {
-                return this.search.length < 3;
+                return this.search.length < this.minSearchChars;
             },
 
             // CSP-friendly Alpine forbids the `!` operator in attribute
@@ -1020,7 +1027,7 @@ $quoteDetails = json_encode(
 
                 if (!this.countryCode) {
                     // Only show the message once per interaction when user has typed enough
-                    if (!this.countrySelectionShown && this.search.length >= 3) {
+                    if (!this.countrySelectionShown && this.search.length >= this.minSearchChars) {
                         this.countrySelectionShown = true;
                         window.dispatchMessages([{ type: 'warning', text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>' }], 5000);
                     }
@@ -1028,7 +1035,7 @@ $quoteDetails = json_encode(
                     return;
                 }
 
-                if (this.search.length < 3) {
+                if (this.search.length < this.minSearchChars) {
                     this.abortCompanySearch();
                     this.items = [];
                     this.isSearching = false;

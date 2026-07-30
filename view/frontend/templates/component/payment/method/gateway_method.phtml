@@ -26,6 +26,7 @@ $gwBase = $fnPrefix . 'GatewayHyva';
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
 $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
 $quoteDetails = $quoteModel->getQuoteDetails();
@@ -290,7 +291,20 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                         </div>
                                     </template>
                                 </div>
-                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?>
+                                <?php
+                                /*
+                                 * The count is INTERPOLATED from the same value
+                                 * ShouldShowMinCharsMessage compares against
+                                 * (TWO-25288) — it used to be a literal in the
+                                 * copy and a second literal in the guard, so the
+                                 * number claimed here and the number enforced
+                                 * could drift apart with nothing to catch it.
+                                 * Do not restate the number.
+                                 */
+                                ?>
+                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtml(
+                                    __("Please enter %1 or more characters", $companySearchMinChars),
+                                ) ?>
                                 </div>
                                 <!--
                                     A timed-out, failed or degraded search must

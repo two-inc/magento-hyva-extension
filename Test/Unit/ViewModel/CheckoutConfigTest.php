@@ -130,6 +130,29 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
+     * The company-search threshold, TWO-25288.
+     *
+     * One constant for the repo, reached through one getter. The templates read
+     * it for BOTH the guard that enforces it and the hint that claims it, so
+     * this is the single point where the two can be kept from drifting apart.
+     *
+     * Asserted as an int rather than loosely: it is emitted into the Alpine
+     * components as a bare numeric literal for a numeric length comparison, and
+     * a string would compare lexically there.
+     */
+    public function testCompanySearchMinCharsIsTheSharedConstant(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $this->assertSame(3, CheckoutConfig::COMPANY_SEARCH_MIN_CHARS);
+        $this->assertSame(
+            CheckoutConfig::COMPANY_SEARCH_MIN_CHARS,
+            $viewModel->getCompanySearchMinChars()
+        );
+    }
+
+    /**
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
      */
     private function noticeFor(object $brandRegistry): ?array
