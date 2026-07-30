@@ -30,6 +30,7 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $quoteDetails = $quoteModel->getQuoteDetails();
 // Same flag set as gateway_method-csp-js.phtml, for the same reason: this
 // lands in an inline script and carries buyer-supplied values (email,
@@ -99,8 +100,49 @@ function <?= $gwBase ?>CompanySearchField() {
         selectedIndex: -1,
         isSelecting: false,
         manualMode: false,
+        /*
+         * The company the identifier below currently belongs to, and that
+         * identifier.
+         *
+         * `companyName` is NOT the live field text — `search` is. It records
+         * the name a registry-supplied identifier was written FOR, so the
+         * editability rule can ask whether the text still describes the same
+         * company. Collapsing the two would make every keystroke look like it
+         * still had a vouched-for number.
+         */
+        companyName: '',
+        companyId: '',
+        /*
+         * Bound by companyName.phtml as `:disabled` on the company-number
+         * input, and the ONLY thing that locks that field — the greyed look
+         * derives from it in custom.css (`input.company_id:disabled`), shared
+         * with the payment tile.
+         *
+         * Declared locked so the field cannot flash open before init() runs.
+         */
+        companyIdDisabled: true,
+        /*
+         * Set whenever there is no registry-supplied identifier for the name
+         * the field currently holds: the selected company arrived without a
+         * national identifier (the search response is allowed to omit it), the
+         * buyer typed or edited the name without picking a hit, or manual
+         * entry is active. The number is what placement credit-checks, so the
+         * buyer has to be able to type it in themselves in every one of those
+         * cases — otherwise the field sits empty AND locked, and there is no
+         * other company-number input in the checkout to fall back on.
+         */
+        companyIdEntryRequired: false,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
+        /*
+         * Whether the registry lookup is switched on for this store.
+         *
+         * With it off this field pair is a plain name + number form: no
+         * request, no dropdown, neither mode link, and the number always
+         * typeable — which is why the editability rule below carries a term
+         * for it rather than the template carrying a PHP branch.
+         */
+        isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
         // Company-search request state. `isSearching` drives an in-field
@@ -118,10 +160,88 @@ function <?= $gwBase ?>CompanySearchField() {
             // Restore manualMode from storage
             const data = twoAddressReadSelection();
             this.manualMode = data.manual_mode || false;
+
+            /*
+             * Restore the company pair too, so the number the buyer typed on a
+             * previous page load — or the one a registry pick supplied —
+             * survives the Magewire re-renders that destroy and rebuild this
+             * component. Only selectItem() and onCompanyIdInput() write
+             * storage, so an unrestored component would come back empty and
+             * the checkout would lose the identifier placement needs.
+             *
+             * `companyName` is restored alongside the id deliberately: the
+             * editability rule compares the field text against it, and
+             * restoring one without the other would make a restored pick look
+             * like an edited name and unlock a registry-supplied number.
+             */
+            this.companyName = data.company_name || '';
+            this.companyId = data.company_id || '';
+            this.companyIdEntryRequired = !this.companyId;
+            this.applyCompanyIdEditability();
         },
 
         showDropdown() {
             return this.isOpen && this.items.length > 0;
+        },
+
+        /*
+         * Mode-link visibility. Bare getters because CSP-friendly Alpine looks
+         * the whole attribute string up as a key on the component rather than
+         * evaluating it, so `!manualMode` and `manualMode && flag` are both
+         * things the template cannot express.
+         */
+        get manualModeActive() {
+            return Boolean(this.isCompanySearchEnabled) && this.manualMode;
+        },
+
+        get searchModeActive() {
+            return Boolean(this.isCompanySearchEnabled) && !this.manualMode;
+        },
+
+        /**
+         * Recompute the company-number field's locked state.
+         *
+         * One derived state, one writer — the same shape as the payment tile's,
+         * because the two fields mean the same thing and drifting apart is how
+         * one of them ends up empty, required and uneditable.
+         *
+         * Locked exactly when a registry-supplied identifier has been written
+         * for the name currently in the field. Unlocked otherwise, and
+         * unconditionally unlocked on a store with the lookup off, where
+         * nothing can ever vouch for a number.
+         */
+        applyCompanyIdEditability() {
+            this.companyIdDisabled = !(
+                !this.isCompanySearchEnabled
+                || this.manualMode
+                || this.companyIdEntryRequired
+            );
+        },
+
+        /**
+         * The buyer typed into the company-number field.
+         *
+         * Debounced by the template. Writes through the store-view-keyed
+         * accessor and re-announces the pair on the same event a registry pick
+         * uses, so the payment step sees a hand-typed identifier by exactly the
+         * route it already sees a searched one — there is no second path.
+         *
+         * No name is written here and nothing is cleared: an identifier edit
+         * says nothing about the name. Clearing the identifier when the NAME
+         * changes is a separate concern and a separate change.
+         */
+        onCompanyIdInput() {
+            const value = this.$el.value;
+            if (value === this.companyId) return;
+
+            this.companyId = value;
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            const companyData = twoAddressWriteSelection({ company_id: value });
+
+            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
+                detail: companyData
+            }));
         },
 
         // Bound as the dropdown's `x-for :key`, so it must be UNIQUE per row.
@@ -147,6 +267,35 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isSearching = false;
         },
 
+        /**
+         * Record the typed company name when it no longer describes the
+         * company a stored identifier was written for.
+         *
+         * Deliberately does NOT announce itself on `shipping-company-selected`.
+         * A name edit leaves any previously stored identifier in place — that
+         * clear is a separate change — so announcing here would push the new
+         * name beside the OLD number to the payment step and, worse, arm an
+         * order intent for that mismatched pair. The identifier handler
+         * announces instead, by which point the name in the blob is already
+         * this one.
+         *
+         * Nothing is written while the text still matches, so an intact
+         * registry pick is never overwritten by its own field.
+         *
+         * `companyName` is deliberately NOT reassigned here. It records the
+         * name the current identifier belongs to, and moving it to the typed
+         * text would make the editability comparison match again on the very
+         * next keystroke — re-locking a number field the edit had just
+         * unlocked, one character later.
+         */
+        commitCompanyName() {
+            if (this.search === this.companyName) return;
+
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            twoAddressWriteSelection({ company_name: this.search });
+        },
+
         async getItems() {
             // Every early return must leave the spinner down and nothing on
             // the wire, or `isSearching` latches true.
@@ -155,12 +304,42 @@ function <?= $gwBase ?>CompanySearchField() {
                 this.abortCompanySearch();
                 return;
             }
-            if (this.manualMode) {
+
+            /*
+             * Read the field BEFORE the mode guards, not after.
+             *
+             * The manual-mode guard used to return first, so in manual mode —
+             * the only route on this surface for a company the registry has no
+             * identifier for — the component never learned the name the buyer
+             * had typed, and nothing recorded it. Placement needs a name
+             * alongside the number, so that name has to be captured on the
+             * manual path too.
+             */
+            this.search = this.$el.value;
+
+            if (this.manualMode || !this.isCompanySearchEnabled) {
                 this.abortCompanySearch();
+                this.commitCompanyName();
+                this.applyCompanyIdEditability();
                 return;
             }
-            this.search = this.$el.value;
+
             this.selectedIndex = -1;
+            /*
+             * The buyer has EDITED the name, so re-derive whether they have to
+             * be able to type the number in themselves. An identifier belongs
+             * to the name it arrived with: unless the text still matches the
+             * name the current number was written for, nothing has vouched for
+             * a number for what is in the field now.
+             *
+             * Deliberately not a blanket unlock — while the text still matches,
+             * the field stays locked, which is what stops a registry-supplied
+             * number being typed over.
+             */
+            this.companyIdEntryRequired =
+                !(this.companyId && this.search === this.companyName);
+            this.applyCompanyIdEditability();
+            this.commitCompanyName();
             this.isSearchUnavailable = false;
             if (this.search.length < 3) {
                 this.abortCompanySearch();
@@ -276,6 +455,18 @@ function <?= $gwBase ?>CompanySearchField() {
             this.search = item.companyName;
             this.manualMode = false;
 
+            /*
+             * The hit may carry no national identifier — the search response is
+             * allowed to omit it — so record the pair as it arrived and derive
+             * the lock from it. Written BEFORE the storage write and the event
+             * below, so both carry the identifier this pick actually has rather
+             * than the previous pick's.
+             */
+            this.companyName = item.companyName;
+            this.companyId = item.companyId || '';
+            this.companyIdEntryRequired = !this.companyId;
+            this.applyCompanyIdEditability();
+
             const input = this.$root.querySelector('input[type="text"]');
             if (input) {
                 input.value = item.companyName;
@@ -363,6 +554,9 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isOpen = false;
             this.items = [];
             this.saveManualModeToStorage(true);
+            // Manual entry is one of the reasons the number field has to be
+            // typeable; no separate unlock, the same single writer decides.
+            this.applyCompanyIdEditability();
             const input = this.$root.querySelector('input[type="text"]');
             if (input) input.focus();
         },
@@ -376,6 +570,11 @@ function <?= $gwBase ?>CompanySearchField() {
 
             this.manualMode = false;
             this.saveManualModeToStorage(false);
+            // Goes through the single writer rather than assigning a lock
+            // directly: leaving manual mode must not re-lock a number the buyer
+            // still has to fill in, because the name in the field has no
+            // registry-supplied identifier either way.
+            this.applyCompanyIdEditability();
             const input = this.$root.querySelector('input[type="text"]');
             if (input) input.focus();
         },

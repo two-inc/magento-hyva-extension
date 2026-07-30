@@ -24,8 +24,6 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 $brandedViewModel = $block->getData('branded_view_model');
 $gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
-$configModel = $viewModels->require(CheckoutConfig::class);
-$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 /** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
 $element = $block->getData("element");
 $attributes = $element->getAttributes();
@@ -63,10 +61,45 @@ $form = $block->getData("form");
             autocomplete="off"
             @input.debounce.500ms="getItems"
             />
+            <?php
+            /*
+             * Both mode links carry a term for the company-search flag, in the
+             * getter rather than in a PHP branch around the markup. With the
+             * lookup switched off there is no search to go back to and nothing
+             * for "manual" to be the opposite of, so neither link should
+             * render — but keeping that fact in component state means the
+             * suite can exercise both configurations against the real shipped
+             * markup, which a PHP branch would hide from it.
+             */
+            ?>
             <!-- Search for company link (shows in manual mode) -->
-            <div x-show="manualMode" class="mt-1 text-right">
+            <div x-show="manualModeActive" class="mt-1 text-right">
                 <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
                     <?= $escaper->escapeHtml(__("Search for company")) ?>
+                </span>
+            </div>
+            <?php
+            /*
+             * Persistent route into manual entry.
+             *
+             * The other one lives inside the results dropdown, whose
+             * `showDropdown` term requires `items.length > 0` — so a buyer
+             * whose search returned nothing, failed or was never run had no
+             * way into manual entry at all. That is the only path on this
+             * surface that lets a company with no registry identifier be
+             * entered, so it cannot depend on the search having succeeded.
+             *
+             * Bound to a bare `searchModeActive` getter rather than to
+             * `!manualMode`: CSP-friendly Alpine looks the WHOLE attribute
+             * string up as a key on the component, so a negation needs a
+             * getter of its own either way, and a bare name is also what the
+             * suite's binding reader resolves.
+             */
+            ?>
+            <div x-show="searchModeActive" class="mt-1 text-right">
+                <span @click.stop="enterManually" @mousedown.stop
+                      class="two-company-manual-entry text-blue-600 text-sm cursor-pointer">
+                    <?= $escaper->escapeHtml(__("Enter details manually")) ?>
                 </span>
             </div>
             <!-- Search Results Dropdown -->
@@ -106,6 +139,44 @@ $form = $block->getData("form");
                         ) ?>
                     </span>
                 </div>
+            </div>
+            <?php
+            /*
+             * Company Number, on the address step.
+             *
+             * Semantics are the payment tile's, deliberately unchanged rather
+             * than reinvented: the field is always rendered and `:disabled` is
+             * the ONLY thing that locks it, derived by
+             * applyCompanyIdEditability() from "is there a registry-supplied
+             * identifier for the name this field currently sits beside".
+             * Unlocked when there is not — a hit that arrived without a
+             * national identifier, a name typed without picking a hit, manual
+             * entry, or a store with the lookup switched off — and locked when
+             * one has been written, so a registry number cannot be typed over.
+             *
+             * `company_id` in the class list is load-bearing: the greyed-out
+             * look for the locked state is `input.company_id:disabled` in
+             * custom.css, which both surfaces share.
+             *
+             * It carries NO `name`, so nothing about the address entity's own
+             * submission changes — the value is client-side state that reaches
+             * placement through the company-selection blob and the payment
+             * step, exactly as the company NAME chosen here already does.
+             */
+            ?>
+            <div class="field two-company-id mt-2">
+                <label class="block font-semibold text-gray-700">
+                    <?= $escaper->escapeHtml(__("Company Number")) ?>
+                </label>
+                <input
+                    type="text"
+                    class="company_id block w-full form-input grow renderer-text"
+                    autocomplete="off"
+                    data-two-company-id="true"
+                    :disabled="companyIdDisabled"
+                    :value="companyId"
+                    @input.debounce.300ms="onCompanyIdInput"
+                />
             </div>
         </div>
         <?php if ($element->hasTooltip()): ?>
