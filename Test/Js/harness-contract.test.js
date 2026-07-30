@@ -149,7 +149,7 @@ describe("template renderer contract", () => {
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,
           "input#nothing-like-this",
-          ":disabled",
+          ":readonly",
         ),
       ).toThrow(/no element matching/);
     });

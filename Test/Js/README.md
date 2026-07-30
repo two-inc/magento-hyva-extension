@@ -163,7 +163,7 @@ fix changes what the field's state is at mount:
 
 | Mutation                                                                        | Tests failing                                                                    |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Delete `:disabled="companyIdDisabled"` from `gateway_method.phtml`              | `payment-company-selection.test.js` fails to run at all — 28 tests never execute |
+| Delete `:readonly="companyIdDisabled"` from `gateway_method.phtml` (TWO-25288)  | `payment-company-selection.test.js` fails to run at all — 0 of its 37 tests execute |
 | Drop the editability recompute from `getItems()`                                | 2                                                                                |
 | `getItems()` recompute always `true` (blanket unlock)                           | 1                                                                                |
 | `getItems()` recompute always `false` (blanket lock)                            | 6                                                                                |
@@ -196,8 +196,11 @@ It is now pinned by mounting the factory without calling `initialize()`. Nothing
 re-verified table above starts green.
 
 Two things here have **no automated coverage** and are called out rather than implied: the
-`input.company_id:disabled` rule in `custom.css` (no test asserts that rule), and Alpine's own
-evaluation of the binding. What the suite does assert is that the attribute exists on the
+`input.company_id[readonly], input.company_id:disabled` rule in `custom.css` (no test asserts
+that rule; the second selector is deliberate rather than stale — the address-step field in
+`form/field/companyName.phtml` is still locked with `:disabled`, correctly, because it has no
+`name` attribute and so submits nothing either way), and Alpine's own evaluation of the
+binding. What the suite does assert is that the attribute exists on the
 right element and holds a bare property name, and that no second
 `:style` binding carries the same fact — a string `:style` would set the whole style
 attribute, which is where the element's `x-show` writes `display: none`.
@@ -269,6 +272,16 @@ bound to `companyId`, and Alpine renders one row per distinct key, so a collisio
 silently cost the buyer a company that matched; both surfaces bind a getter with a positional
 fallback now — the address form's arrived later than the tile's).
 
+TWO-25288 moved the field's lock from `:disabled` to `:readonly` — a `disabled` control is
+dropped from a form submission outright, and `payment[company_id]` has to reach place-order
+regardless of lock state. The load-bearing new proof is a `FormData` serialization of the
+tile's form: `FormData` omits disabled controls but includes readonly ones, so it is the one
+assertion that would have caught the old behaviour actually failing to submit. It is pinned
+both locked and unlocked. Alongside it, a read-only company-name display: a `p` with
+`data-name="company_name_display"`, shown via `x-show="companyNameDisplayVisible"` and its
+text via `x-text="companyNameDisplayText"`, gated on the picked company having a name at all
+and carrying no `name` attribute, so it contributes nothing to the payload either way.
+
 `company-selection-scoping.test.js` — what scopes the company-selection browser-storage key.
 It used to be one global `shipping_company_selection`, and both of the things that clear it
 compare QUOTE ids only; the quote is shared across store views by design, so a store excursion
@@ -328,7 +341,7 @@ indistinguishable from the hardcoded literal. Covered on both entry points (page
 rendered JS contains no `two_payment` at all.
 
 Also covered in `payment-company-selection.test.js`, and the reason that binding needed a
-second round: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
+second round: a name **typed without picking a dropdown hit**. Landing `:readonly="companyIdDisabled"` with a declared
 default of `true` locked the field on first paint, where before the binding existed nothing
 locked it until a shipping sync did so imperatively. A buyer who typed a company name and
 never selected a hit was then facing a `company_id` that was empty AND disabled AND
@@ -364,13 +377,16 @@ binding closes. What is lost is the half-typed name, which is the restore's pre-
 property that costs money.
 
 Every editability assertion in that file lands on `document.getElementById('company_id')
-.disabled`, applied through the **real** `:disabled` expression read out of
+.readOnly`, applied through the **real** `:readonly` expression read out of
 `gateway_method.phtml`. That is not decoration. The first version of this suite asserted only
 on `companyIdDisabled`, which at the time was bound to nothing at all: the field was disabled
 imperatively elsewhere and never re-enabled, so the suite passed with the required field
 permanently uneditable — the exact condition the fix exists to prevent. Deleting the
-`:disabled` attribute from the template now fails the whole file at load. A test that cannot
-fail for the reason the fix exists is not a test of the fix.
+`:readonly` attribute from the template now fails the whole file at load. A test that cannot
+fail for the reason the fix exists is not a test of the fix. TWO-25288 moved the binding from
+`:disabled` to `:readonly` for the same field — the input still had to keep submitting
+`payment[company_id]` while locked, which a `disabled` control never does — and the assertion
+moved with it rather than being left checking an attribute the template no longer sets.
 
 `payment-fields-shipping-sync.test.js` — `company-name-payment.phtml`, the bridge that
 copies the shipping step's company onto the payment tile. It gated on name **and**
@@ -589,7 +605,7 @@ renderer.
   may override it. The one exception is deliberate and narrow — where
   component state has no effect at all unless a binding carries it to an element, the binding
   itself is read out of the template and applied (`readAlpineBinding()`, and the
-  `:disabled` assertions in `payment-company-selection.test.js`). That is not a chrome
+  `:readonly` assertions in `payment-company-selection.test.js`). That is not a chrome
   assertion; it is what stops the state being dead. CSS is still entirely uncovered.
 
 ## Known leak, and why it is left alone

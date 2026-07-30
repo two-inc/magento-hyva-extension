@@ -812,11 +812,16 @@ describe("address-step company number", () => {
       const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
 
       expect(markup).toContain('data-name="company_id"');
+      // The lock is bound as `:readonly` and never `:disabled` (TWO-25288) —
+      // this input carries the submitted `payment[company_id]`, and a disabled
+      // control is omitted from a form submission. The state property keeps its
+      // historical name. See payment-company-selection.test.js for the payload
+      // assertion that makes the distinction fail loudly.
       expect(
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,
           'input[data-name="company_id"]',
-          ":disabled",
+          ":readonly",
         ),
       ).toBe("companyIdDisabled");
     });

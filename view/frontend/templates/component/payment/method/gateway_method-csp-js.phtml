@@ -621,11 +621,19 @@ $quoteDetails = json_encode(
             // `payment[company_id]`, the hidden mirror submits as
             // `payment[manual_*]` (which Magento ignores).
             showManual: false,
-            // Bound by gateway_method.phtml as `:disabled` on the search-mode
-            // company-number input. It is the ONLY thing that locks that
-            // field; the greyed-out look derives from it in custom.css
-            // (`input.company_id:disabled`) rather than from a second piece of
-            // state saying the same thing.
+            // Bound by gateway_method.phtml as `:readonly` — NEVER `:disabled`
+            // (TWO-25288) — on the search-mode company-number input. That input
+            // is where the place-order path reads the submitted
+            // `payment[company_id]` from (see the `formRef.querySelector` map
+            // above), and a disabled control is dropped from a form submission
+            // entirely, so locking it with `disabled` would silently stop the
+            // captured number being submitted.
+            //
+            // It is the ONLY thing that locks that field; the greyed-out look
+            // derives from it in custom.css (`input.company_id[readonly]`)
+            // rather than from a second piece of state saying the same thing.
+            // The name is historical — read it as "locked" — and is kept rather
+            // than renamed so there stays exactly one writer of it.
             companyIdDisabled: true,
             // Set whenever there is no registry-supplied identifier for the
             // name currently in the name field: the selected company arrived
@@ -1149,7 +1157,7 @@ $quoteDetails = json_encode(
                 this.saveManualModeToStorage(true);
                 // No explicit unlock needed: the `manualMode` watcher runs
                 // applyCompanyIdEditability(), which writes the
-                // `companyIdDisabled` the field's `:disabled` is bound to.
+                // `companyIdDisabled` the field's `:readonly` is bound to.
             },
 
             enableSearch() {
@@ -1235,6 +1243,38 @@ $quoteDetails = json_encode(
                 this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
             },
 
+            /*
+             * Read-only company-name display (TWO-25288), additive and purely
+             * derived — no new writer, and nothing here participates in any
+             * payload. See the comment on the `company_name_display` paragraph
+             * in gateway_method.phtml for why the NAME gets a derived text
+             * display while the NUMBER gets a `:readonly` input: the search-mode
+             * name input is the search box itself, so it has to stay editable.
+             *
+             * Gated on `companyName`, NOT on `companyIdDisabled`: the name is
+             * the thing being displayed, so it is the thing that has to be
+             * present. `companyName` is written by fillCompanyData(), which
+             * returns early on an empty name, so a non-empty `companyName`
+             * means a company really has been picked (via the dropdown, a
+             * restored selection, or the shipping-step sync). That covers
+             * manual-entry mode too, where there is a name but no id and
+             * `companyIdDisabled` is false by construction.
+             */
+            get companyNameDisplayVisible() {
+                return Boolean((this.companyName || '').trim());
+            },
+
+            /*
+             * Additive (TWO-25288). A getter rather than a template expression
+             * because the CSP-friendly Alpine build only looks a bound
+             * expression up as a key on the component. Only rendered while
+             * `companyNameDisplayVisible` is true, so the name is non-empty
+             * here.
+             */
+            get companyNameDisplayText() {
+                return '<?= $escaper->escapeJs(__("Company:")) ?> ' + (this.companyName || '').trim();
+            },
+
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
@@ -1260,7 +1300,7 @@ $quoteDetails = json_encode(
                 if (companyNameInput) companyNameInput.value = companyName;
 
                 // Value only. The locked state is `companyIdDisabled`, which
-                // the field's `:disabled` is bound to and which
+                // the field's `:readonly` is bound to and which
                 // applyCompanyIdEditability() is the sole writer of — the
                 // callers above set `companyIdEntryRequired` and call it
                 // BEFORE getting here.

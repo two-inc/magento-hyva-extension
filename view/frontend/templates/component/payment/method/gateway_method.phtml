@@ -207,6 +207,35 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 <p class="text-xs text-gray-500 mt-1">
                                     <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
                                 </p>
+                                <!--
+                                    Read-only company-name display (TWO-25288).
+                                    Element 6's reversal asks for the selected
+                                    company's NAME and NUMBER to be visible but
+                                    read-only. The NUMBER is the `:readonly`
+                                    `company_id` input below. The NAME cannot be
+                                    the same thing: in search mode the name
+                                    input IS the search box (`@input` ->
+                                    getItems, `:value="search"`), so making it
+                                    read-only would kill company search outright.
+                                    So the read-only presentation of the name is
+                                    this derived text instead — display only, no
+                                    new writer, and it carries no `name`
+                                    attribute so it is not part of any payload.
+
+                                    `x-text` binds to a getter
+                                    (`companyNameDisplayText`) rather than an
+                                    expression: this file's CSP-friendly Alpine
+                                    build only looks a bound expression up as a
+                                    key on the component (see
+                                    `x-html="GetCompanyDisplayName"` elsewhere in
+                                    this file), it does not evaluate JS.
+                                -->
+                                <p
+                                    x-show="companyNameDisplayVisible"
+                                    data-name="company_name_display"
+                                    class="text-xs text-gray-500 mt-1"
+                                    x-text="companyNameDisplayText"
+                                ></p>
                             </div>
                         </div>
                         <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
@@ -340,7 +369,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>
               <!--
-                  `:disabled` is the ONLY thing that locks this field. It used
+                  `:readonly` is the ONLY thing that locks this field. It used
                   to be set imperatively from company-name-payment.phtml, which
                   disabled it on every shipping sync and never reversed it — so
                   a company whose national identifier the search response
@@ -349,7 +378,22 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                   (`manualMode || companyIdEntryRequired`, see
                   applyCompanyIdEditability()) with exactly one writer.
 
-                  The greyed-out look is `input.company_id:disabled` in
+                  READONLY, NEVER DISABLED (TWO-25288). The locked number must
+                  stay VISIBLE and READ-ONLY, and this input is the element the
+                  place-order path reads the submitted `payment[company_id]`
+                  off — `formRef.querySelector('[name="payment[company_id]"]')`
+                  in gateway_method-csp-js.phtml, plus the
+                  `document.getElementById("company_id")?.value` fallbacks
+                  around placeOrderIntent(). `readonly` keeps the value in a
+                  native form submission as well as in those DOM reads;
+                  `disabled` would drop it from the former entirely. Do not
+                  swap this attribute back. The state property is still called
+                  `companyIdDisabled` for the same reason its comment in
+                  gateway_method-csp-js.phtml gives: it is the ONE piece of
+                  lock state, and renaming it is not worth a second writer's
+                  worth of churn — read it as "locked".
+
+                  The greyed-out look is `input.company_id[readonly]` in
                   custom.css, NOT a `:style` binding. Two reasons: CSP-friendly
                   Alpine does not EVALUATE an attribute expression at all — it
                   looks the whole string up as a key on the component, so an
@@ -368,7 +412,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 x-show="!showManual"
                 :id="<?= $gwBase ?>GetCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetCompanyIdFieldName"
-                :disabled="companyIdDisabled"
+                :readonly="companyIdDisabled"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'

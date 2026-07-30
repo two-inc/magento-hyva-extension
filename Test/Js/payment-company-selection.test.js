@@ -12,8 +12,8 @@
  * beside the NEW company's name, and it must not be left empty and disabled —
  * an unfillable required field is a dead end at checkout.
  *
- * Every editability assertion here lands on `#company_id`.disabled, through the
- * REAL `:disabled` expression read out of `gateway_method.phtml` by
+ * Every editability assertion here lands on `#company_id`.readOnly, through the
+ * REAL `:readonly` expression read out of `gateway_method.phtml` by
  * `H.readAlpineBinding()`. Asserting on `companyIdDisabled` alone was the defect
  * a review round found in the first version of this suite: the state was bound
  * to nothing, so the whole apparatus had no effect on the page and the suite
@@ -35,7 +35,7 @@ const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
 
 /**
  * The property `gateway_method.phtml` binds to the company-number input's
- * `:disabled`, read from the shipped template.
+ * `:readonly`, read from the shipped template.
  *
  * Resolved once, at require time, and deliberately NOT wrapped in a try. Two
  * blast radii, both total, and they differ in WHEN they land:
@@ -52,10 +52,50 @@ const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
  * file must not be able to pass while the wire between markup and component is
  * broken at either end.
  */
-const COMPANY_ID_DISABLED_BINDING = H.readAlpineBinding(
+const COMPANY_ID_READONLY_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
   'input[data-name="company_id"]',
-  ":disabled",
+  ":readonly",
+);
+
+/**
+ * The company-number input must be locked with `readonly` and NEVER `disabled`
+ * (TWO-25288): it is the element the place-order path reads the submitted
+ * `payment[company_id]` off, and a `disabled` input is omitted from a native
+ * form submission entirely.
+ *
+ * `readAlpineBinding()` throws on a binding that is not there, so this is the
+ * assertion — resolved at require time, like the one above, so a template that
+ * has gone back to `:disabled` cannot load this file at all.
+ */
+const COMPANY_ID_DISABLED_BINDING_IS_ABSENT = (() => {
+  try {
+    H.readAlpineBinding(
+      H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+      'input[data-name="company_id"]',
+      ":disabled",
+    );
+  } catch (error) {
+    return /has no `:disabled` binding/.test(String(error.message));
+  }
+  return false;
+})();
+
+/**
+ * The bindings the read-only company-NAME display adds (TWO-25288). Resolved
+ * the same way and for the same reason as `COMPANY_ID_READONLY_BINDING` above:
+ * a test asserting on component state alone cannot fail when the markup binding
+ * is missing or renamed on one side only.
+ */
+const COMPANY_NAME_DISPLAY_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_name_display"]',
+  "x-show",
+);
+const COMPANY_NAME_DISPLAY_TEXT_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_name_display"]',
+  "x-text",
 );
 
 describe("payment component company selection", () => {
@@ -67,14 +107,22 @@ describe("payment component company selection", () => {
   beforeEach(() => {
     // fillCompanyData() and the order-intent guard both read these by id.
     //
-    // `#company_id` starts WITHOUT a `disabled` attribute: its locked state is
+    // `#company_id` starts WITHOUT a `readonly` attribute: its locked state is
     // Alpine's to apply, and hardcoding it here is how the earlier version of
-    // this fixture let the suite pass with the field permanently disabled.
+    // this fixture let the suite pass with the field permanently locked.
+    //
+    // It carries the real `name="payment[company_id]"` and sits inside a real
+    // `<form>`, because the payload assertions below serialize that form the way
+    // a browser would — the whole reason the lock is `readonly` and not
+    // `disabled` (TWO-25288).
     document.body.innerHTML = [
+      '<form id="payment-form">',
       '<div id="payment-root">',
-      '  <input type="text" id="company_name" value="" />',
-      '  <input type="text" id="company_id" data-name="company_id" value="" />',
+      '  <input type="text" id="company_name" name="payment[company_name]" value="" />',
+      '  <input type="text" id="company_id" data-name="company_id" name="payment[company_id]" value="" />',
+      '  <p data-name="company_name_display"></p>',
       "</div>",
+      "</form>",
     ].join("\n");
 
     // The template arms a 500ms debounce whenever `dispatch-order-intent`
@@ -127,7 +175,7 @@ describe("payment component company selection", () => {
   }
 
   /**
-   * Apply the template's `:disabled` binding to `#company_id`, the way
+   * Apply the template's `:readonly` binding to `#company_id`, the way
    * CSP-friendly Alpine does: resolve the bare property off the component and
    * write it to the element.
    *
@@ -139,14 +187,60 @@ describe("payment component company selection", () => {
    * @returns {void}
    */
   function syncCompanyIdField(instance) {
-    if (!(COMPANY_ID_DISABLED_BINDING in instance)) {
+    if (!(COMPANY_ID_READONLY_BINDING in instance)) {
       throw new Error(
-        "the template binds :disabled to `" +
-          COMPANY_ID_DISABLED_BINDING +
+        "the template binds :readonly to `" +
+          COMPANY_ID_READONLY_BINDING +
           "`, which the component does not define",
       );
     }
-    companyIdInput().disabled = Boolean(instance[COMPANY_ID_DISABLED_BINDING]);
+    companyIdInput().readOnly = Boolean(instance[COMPANY_ID_READONLY_BINDING]);
+  }
+
+  /**
+   * Apply the template's `x-show` / `x-text` bindings for the read-only
+   * company-name display (TWO-25288), the same by-hand way
+   * `syncCompanyIdField()` applies `:readonly`.
+   *
+   * @param {Object} instance the mounted component
+   * @returns {void}
+   */
+  function syncCompanyNameDisplay(instance) {
+    [COMPANY_NAME_DISPLAY_SHOW_BINDING, COMPANY_NAME_DISPLAY_TEXT_BINDING]
+      .filter((name) => !(name in instance))
+      .forEach((name) => {
+        throw new Error(
+          "the template binds the company-name display to `" +
+            name +
+            "`, which the component does not define",
+        );
+      });
+    const display = companyNameDisplay();
+    display.hidden = !instance[COMPANY_NAME_DISPLAY_SHOW_BINDING];
+    display.textContent = String(
+      instance[COMPANY_NAME_DISPLAY_TEXT_BINDING] || "",
+    );
+  }
+
+  /** @returns {HTMLElement} the read-only company-name display (TWO-25288) */
+  function companyNameDisplay() {
+    return document.querySelector('p[data-name="company_name_display"]');
+  }
+
+  /**
+   * Serialize the payment form the way a browser submitting it would.
+   *
+   * This is the assertion that matters for TWO-25288: `FormData` omits a
+   * DISABLED control and includes a READONLY one, so this is what tells a
+   * `readonly` lock apart from a `disabled` one — component state cannot, and
+   * neither can a `querySelector(...).value` read, which sees both.
+   *
+   * @returns {Object<string, string>} submitted name -> value
+   */
+  function submittedPayload() {
+    return Object.fromEntries(
+      new FormData(document.getElementById("payment-form")).entries(),
+    );
   }
 
   /**
@@ -183,13 +277,13 @@ describe("payment component company selection", () => {
       // The assertion the rest of this file rests on. `readAlpineBinding()`
       // throws if the attribute is absent or is not a bare property name, so
       // this pins BOTH that the wire exists and that the rest of the file can
-      // resolve it off the component. Deleting `:disabled="companyIdDisabled"` from
+      // resolve it off the component. Deleting `:readonly="companyIdDisabled"` from
       // gateway_method.phtml fails every test in this file at load.
-      expect(COMPANY_ID_DISABLED_BINDING).toBe("companyIdDisabled");
+      expect(COMPANY_ID_READONLY_BINDING).toBe("companyIdDisabled");
     });
 
     test("is the only Alpine binding carrying it — no second :style copy", () => {
-      // The greyed-out look derives from `input.company_id:disabled` in
+      // The greyed-out look derives from `input.company_id[readonly]` in
       // custom.css. A `:style` string binding here would set the whole style
       // attribute, which is where the element's own `x-show` writes
       // `display: none` — and the two bindings re-run on their own
@@ -214,7 +308,7 @@ describe("payment component company selection", () => {
       // paint, before initialize() has run; wrong, and the field flashes open.
       const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {});
 
-      expect(fresh[COMPANY_ID_DISABLED_BINDING]).toBe(true);
+      expect(fresh[COMPANY_ID_READONLY_BINDING]).toBe(true);
     });
 
     test("is open once the component has initialized with nothing stored", () => {
@@ -224,7 +318,7 @@ describe("payment component company selection", () => {
       // for whatever is in the name field — so the number field is fillable.
       // Nothing is at risk: locking exists to stop a registry number being
       // typed over, and empty storage has no registry number to protect.
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
   });
 
@@ -241,7 +335,7 @@ describe("payment component company selection", () => {
       expect(companyIdInput().value).toBe("12345678");
       // Locked because the buyer has nothing to add: the registry answered.
       expect(component.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
     });
   });
 
@@ -259,7 +353,7 @@ describe("payment component company selection", () => {
       // Empty AND disabled would be an unfillable required field — the buyer
       // has to be able to type the organisation number in themselves.
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
 
     test("stays editable after an identifier-bearing company locked it", () => {
@@ -268,13 +362,13 @@ describe("payment component company selection", () => {
       // so an identifier-less pick afterwards left it empty AND uneditable.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
 
       component.selectItem(pickerItem("Other Example Ltd", ""));
       syncCompanyIdField(component);
 
       expect(companyIdInput().value).toBe("");
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
 
     test("does not leave the previous company's id beside the new name", () => {
@@ -319,13 +413,13 @@ describe("payment component company selection", () => {
     test("selecting an identified company afterwards re-locks the field", () => {
       component.selectItem(pickerItem("Example Trading Ltd", ""));
       syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
 
       component.selectItem(pickerItem("Other Example Ltd", "12345678"));
       syncCompanyIdField(component);
 
       expect(component.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
       expect(companyIdInput().value).toBe("12345678");
     });
 
@@ -342,7 +436,7 @@ describe("payment component company selection", () => {
       watchers.manualMode(false);
       syncCompanyIdField(component);
 
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
   });
 
@@ -390,7 +484,7 @@ describe("payment component company selection", () => {
 
   describe("a name typed without picking a dropdown hit", () => {
     test("leaves the company-number field enabled and fillable", () => {
-      // The checkout blocker: `:disabled="companyIdDisabled"` with a declared
+      // The checkout blocker: `:readonly="companyIdDisabled"` with a declared
       // default of `true` means the field starts locked, and a buyer who types
       // a name and never picks a hit had no way out — the "Enter details
       // manually" link lives inside the dropdown's `x-show="isOpen"`, so it is
@@ -398,7 +492,7 @@ describe("payment component company selection", () => {
       typeCompanyName("Example Trading");
 
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
+      expect(document.getElementById("company_id").readOnly).toBe(false);
 
       // Fillable, not merely unlocked — the buyer can get a number in.
       companyIdInput().value = "12345678";
@@ -411,7 +505,7 @@ describe("payment component company selection", () => {
       // the buyer is still on their first two characters.
       typeCompanyName("Ex");
 
-      expect(document.getElementById("company_id").disabled).toBe(false);
+      expect(document.getElementById("company_id").readOnly).toBe(false);
     });
 
     test("re-enables it after an identified company had locked it", () => {
@@ -420,12 +514,12 @@ describe("payment component company selection", () => {
       // being locked in beside the new text.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
 
       typeCompanyName("Other Example");
 
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
+      expect(document.getElementById("company_id").readOnly).toBe(false);
     });
 
     test("keeps it locked while the text still matches the picked company", () => {
@@ -437,7 +531,7 @@ describe("payment component company selection", () => {
       typeCompanyName("Example Trading Ltd");
 
       expect(component.companyIdEntryRequired).toBe(false);
-      expect(document.getElementById("company_id").disabled).toBe(true);
+      expect(document.getElementById("company_id").readOnly).toBe(true);
     });
 
     test("keeps it enabled while the text matches an identifier-less pick", () => {
@@ -448,7 +542,7 @@ describe("payment component company selection", () => {
       typeCompanyName("Example Trading Ltd");
 
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
+      expect(document.getElementById("company_id").readOnly).toBe(false);
     });
 
     test("does not unlock the field on the selection keystroke itself", () => {
@@ -461,7 +555,7 @@ describe("payment component company selection", () => {
       typeCompanyName("Something Else Entirely", { keepSelecting: true });
 
       expect(component.companyIdEntryRequired).toBe(false);
-      expect(document.getElementById("company_id").disabled).toBe(true);
+      expect(document.getElementById("company_id").readOnly).toBe(true);
     });
   });
 
@@ -489,24 +583,24 @@ describe("payment component company selection", () => {
       // arrived, the buyer's pick lands in a field still locked from the
       // previous one.
       syncFromShipping("Example Trading Ltd", "12345678");
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
 
       syncFromShipping("Other Example Ltd", "");
 
       expect(component.companyName).toBe("Other Example Ltd");
       expect(component.companyId).toBe("");
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
 
     test("an identified shipping company re-locks it", () => {
       syncFromShipping("Example Trading Ltd", "");
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
 
       syncFromShipping("Other Example Ltd", "12345678");
 
       expect(component.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
     });
   });
 
@@ -527,7 +621,7 @@ describe("payment component company selection", () => {
       expect(restored.companyName).toBe("Example Trading Ltd");
       expect(restored.companyId).toBe("");
       expect(restored.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
 
     test("a stored name with an id comes back locked", () => {
@@ -545,7 +639,7 @@ describe("payment component company selection", () => {
 
       expect(restored.companyId).toBe("12345678");
       expect(restored.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
     });
 
     test("nothing stored leaves the field open", () => {
@@ -554,7 +648,7 @@ describe("payment component company selection", () => {
       // `selectItem()` writes storage, so "nothing stored" is also the state a
       // buyer who typed a name and never picked one is in.
       expect(component.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
   });
 
@@ -573,13 +667,13 @@ describe("payment component company selection", () => {
   describe("re-initialized by a Magewire re-render", () => {
     test("keeps the field open after a name typed without picking", () => {
       typeCompanyName("Example Trading");
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
       expect(storedSelection().company_name).toBeUndefined();
 
       const rebuilt = mountPaymentComponent().component;
 
       expect(rebuilt.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
 
     test("re-locks after editing a picked company's name, and restores that company", () => {
@@ -601,13 +695,13 @@ describe("payment component company selection", () => {
       // property that costs money.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       typeCompanyName("Other Example");
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
       expect(storedSelection().company_id).toBe("12345678");
 
       const rebuilt = mountPaymentComponent().component;
 
       expect(rebuilt.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
     });
 
     test("keeps the field locked after a pick that had an identifier", () => {
@@ -615,23 +709,23 @@ describe("payment component company selection", () => {
       // unlock: the registry answered, so the number stays untypeable.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
 
       const rebuilt = mountPaymentComponent().component;
 
       expect(rebuilt.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
+      expect(companyIdInput().readOnly).toBe(true);
     });
 
     test("keeps the field open after a pick that had no identifier", () => {
       component.selectItem(pickerItem("Example Trading Ltd", ""));
       syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
 
       const rebuilt = mountPaymentComponent().component;
 
       expect(rebuilt.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
+      expect(companyIdInput().readOnly).toBe(false);
     });
   });
 
@@ -664,6 +758,136 @@ describe("payment component company selection", () => {
       });
 
       expect(row.twoGatewayHyvaGetCompanyId()).toBe("12345678");
+    });
+  });
+
+  describe("the locked company-number field is readonly, never disabled (TWO-25288)", () => {
+    test("the template binds `:readonly` and does not bind `:disabled` at all", () => {
+      // Both halves matter. Binding `:readonly` while ALSO still binding
+      // `:disabled` would submit nothing and look identical on the page, so the
+      // absence is the load-bearing half.
+      expect(COMPANY_ID_READONLY_BINDING).toBe("companyIdDisabled");
+      expect(COMPANY_ID_DISABLED_BINDING_IS_ABSENT).toBe(true);
+    });
+
+    test("a locked field still submits the captured `payment[company_id]`", () => {
+      // THE regression this change exists to make impossible. Swap `:readonly`
+      // for `:disabled` in gateway_method.phtml and this is the assertion that
+      // goes red — every state assertion in this file keeps passing, because
+      // component state and `querySelector(...).value` both see a disabled
+      // input's value perfectly well. Only serialization does not.
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+
+      expect(companyIdInput().readOnly).toBe(true);
+      expect(companyIdInput().value).toBe("12345678");
+      expect(submittedPayload()["payment[company_id]"]).toBe("12345678");
+    });
+
+    test("locking the field never removes the key from the payload", () => {
+      // Pins the property rather than one scenario: whatever combination of
+      // manualMode / companyIdEntryRequired / companyId the component ends up
+      // in, a locked field must still carry its key. `disabled` would drop the
+      // key entirely for every row where the lock came out true.
+      [
+        [false, false, "12345678"],
+        [false, true, "12345678"],
+        [true, false, "12345678"],
+        [true, true, "12345678"],
+        [false, false, ""],
+        [true, true, ""],
+      ].forEach(([manualMode, companyIdEntryRequired, companyId]) => {
+        component.manualMode = manualMode;
+        component.companyIdEntryRequired = companyIdEntryRequired;
+        component.companyId = companyId;
+        component.applyCompanyIdEditability();
+        syncCompanyIdField(component);
+        companyIdInput().value = companyId;
+
+        // `Object.keys(...)).toContain(...)` and not `toHaveProperty`: jest
+        // reads `[...]` in a `toHaveProperty` path as an index accessor, so
+        // `payment[company_id]` resolves to the empty path and the assertion
+        // passes vacuously.
+        expect(Object.keys(submittedPayload())).toContain(
+          "payment[company_id]",
+        );
+        expect(submittedPayload()["payment[company_id]"]).toBe(companyId);
+      });
+    });
+
+    test("the unlocked field is editable and still submits", () => {
+      // The other direction, so the test cannot pass by pinning the field
+      // permanently locked — the failure mode this suite's own header warns
+      // about.
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+      syncCompanyIdField(component);
+      companyIdInput().value = "87654321";
+
+      expect(companyIdInput().readOnly).toBe(false);
+      expect(submittedPayload()["payment[company_id]"]).toBe("87654321");
+    });
+  });
+
+  describe("the read-only company-name display (TWO-25288)", () => {
+    test("stays hidden before any company is picked", () => {
+      syncCompanyNameDisplay(component);
+
+      expect(component[COMPANY_NAME_DISPLAY_SHOW_BINDING]).toBe(false);
+      expect(companyNameDisplay().hidden).toBe(true);
+    });
+
+    test("shows the selected company's name in search mode", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      syncCompanyNameDisplay(component);
+
+      expect(component[COMPANY_NAME_DISPLAY_SHOW_BINDING]).toBe(true);
+      expect(companyNameDisplay().hidden).toBe(false);
+      expect(companyNameDisplay().textContent).toContain("Example Trading Ltd");
+      // Name AND number are both visible and both read-only: the name here, the
+      // number in the field above it.
+      expect(companyIdInput().readOnly).toBe(true);
+      expect(companyIdInput().value).toBe("12345678");
+    });
+
+    test("shows the name with a blank number when the hit has no identifier", () => {
+      // Manual / no-identifier mode. The name display is gated on the NAME, not
+      // on the lock, so it still appears — and the number field stays editable,
+      // because the buyer is the only one who can fill it (see the
+      // `companyIdEntryRequired` tests above; that guard is untouched here).
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+      syncCompanyIdField(component);
+      syncCompanyNameDisplay(component);
+
+      expect(companyNameDisplay().hidden).toBe(false);
+      expect(companyNameDisplay().textContent).toContain("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("");
+      expect(submittedPayload()["payment[company_id]"]).toBe("");
+    });
+
+    test("is display only — it contributes nothing to the payload", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyNameDisplay(component);
+
+      expect(companyNameDisplay().getAttribute("name")).toBeNull();
+      expect(Object.keys(submittedPayload())).toEqual([
+        "payment[company_name]",
+        "payment[company_id]",
+      ]);
+    });
+
+    test("follows the name on a later pick", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyNameDisplay(component);
+      expect(companyNameDisplay().textContent).toContain("Example Trading Ltd");
+
+      component.selectItem(pickerItem("Other Example Ltd", "87654321"));
+      syncCompanyNameDisplay(component);
+
+      expect(companyNameDisplay().textContent).toContain("Other Example Ltd");
+      expect(companyNameDisplay().textContent).not.toContain(
+        "Example Trading Ltd",
+      );
     });
   });
 });

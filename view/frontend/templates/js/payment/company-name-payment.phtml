@@ -99,20 +99,22 @@ $methodCode = $brandedViewModel->getMethodCode();
 
         if (companyNameInput && companyIdInput) {
             /*
-             * Values only — this function does NOT touch `disabled` or the
+             * Values only — this function does NOT touch the locked state or the
              * background colour any more.
              *
              * It used to write `disabled = false; value = …; disabled = true`
              * plus a grey background, and never reverse it. That made every
              * shipping sync lock the field unconditionally, so once any
              * identifier-BEARING company had synced here, picking an
-             * identifier-LESS one left `company_id` empty AND disabled: a
+             * identifier-LESS one left `company_id` empty AND locked: a
              * required field the buyer had no way to fill. The lock is now
              * derived state in the Alpine component
-             * (`companyIdDisabled`, bound as `:disabled`), which the
-             * `update-company-data` event below recomputes from what actually
-             * arrived, and the grey comes from `input.company_id:disabled` in
-             * custom.css.
+             * (`companyIdDisabled`, bound as `:readonly` — never `:disabled`,
+             * because this input carries the submitted `payment[company_id]`
+             * and a disabled control is not submitted at all, see TWO-25288),
+             * which the `update-company-data` event below recomputes from what
+             * actually arrived, and the grey comes from
+             * `input.company_id[readonly]` in custom.css.
              */
             companyNameInput.value = companyName;
             companyIdInput.value = companyId;

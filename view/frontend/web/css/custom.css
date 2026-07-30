@@ -272,16 +272,32 @@ summary::marker {
 /*
  * Company-number field, locked state (TWO-25253).
  *
- * The field is greyed out exactly when it is disabled, by construction —
- * `:disabled` is the single piece of state gateway_method.phtml binds, and the
+ * The field is greyed out exactly when it is locked, by construction —
+ * `:readonly` is the single piece of state gateway_method.phtml binds, and the
  * look derives from it here rather than from a second Alpine `:style` binding
  * carrying the same fact. A string `:style` binding would also fight the
  * element's `x-show`, which writes `display: none` into the same attribute.
+ *
+ * TWO-25288 added the `[readonly]` half. There are TWO `input.company_id`
+ * fields on two different surfaces and they are locked by different attributes,
+ * on purpose — both need the same grey:
+ *
+ * - the payment tile's field (`gateway_method.phtml`) binds `:readonly`, never
+ *   `:disabled`, because it carries the submitted `payment[company_id]` and a
+ *   disabled control is omitted from a form submission;
+ * - the address step's field (`form/field/companyName.phtml`) binds `:disabled`
+ *   and is correct to: it has no `name` attribute at all, so it submits nothing
+ *   either way and writes through `onCompanyIdInput` instead.
+ *
+ * The attribute selector `[readonly]` rather than the `:read-only`
+ * pseudo-class, which for an `<input>` matches a DISABLED field too and would
+ * make the two rules indistinguishable.
  *
  * CSS rather than a Tailwind utility for the reason the positioning rules
  * above give: the module must not depend on the merchant's Tailwind build
  * having generated a class only this module uses.
  */
+input.company_id[readonly],
 input.company_id:disabled {
   background-color: #d3d3d3;
 }
