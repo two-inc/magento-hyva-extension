@@ -480,6 +480,99 @@ describe("address field — minimum-characters hint (element 4)", () => {
     }
   });
 
+  /**
+   * A mounted component over a root that carries its own input, which is what
+   * `selectItem()` and the manual-entry helpers reach for through `$root`.
+   *
+   * @returns {{component: Object, bound: string, field: HTMLElement, restore: Function}}
+   */
+  function mountOverField() {
+    document.body.innerHTML =
+      '<div id="root"><input type="text" id="field" value="" /></div>';
+    const field = document.getElementById("field");
+    const root = document.getElementById("root");
+
+    const bound = H.readAlpineBinding(
+      H.COMPANY_NAME_MARKUP_TEMPLATE,
+      MIN_CHARS_SELECTOR,
+      "x-show",
+    );
+    const mounted = mountWithInjectedThreshold(
+      H.COMPANY_NAME_TEMPLATE,
+      ADDRESS_COMPONENT,
+      { el: field, root: root },
+    );
+    mounted.component.init();
+
+    return {
+      component: mounted.component,
+      bound: bound,
+      field: field,
+      restore: mounted.restore,
+    };
+  }
+
+  test("choosing a company shorter than the threshold hides the hint", async () => {
+    // `selectItem()` writes the chosen name into `search`, so a registered name
+    // shorter than the threshold satisfied the length guard and left "please
+    // enter N or more characters" under a populated, CLOSED field — over a
+    // complete, valid answer the buyer cannot make any longer.
+    const mounted = mountOverField();
+    try {
+      const component = mounted.component;
+      const shortName = "Ab";
+      expect(shortName.length).toBeLessThan(INJECTED_MIN);
+
+      // Typed as a query, the same characters must still hint.
+      component.search = shortName;
+      expect(component[mounted.bound]()).toBe(true);
+
+      component.selectItem({ companyName: shortName, companyId: "1" });
+
+      expect(component.search).toBe(shortName);
+      expect(component[mounted.bound]()).toBe(false);
+
+      // Writing the name back into the field fires `input`, so the debounce
+      // tick straight after a selection runs getItems() — which returns at the
+      // `isSelecting` guard. The hint must still be down on the far side of it.
+      await component.getItems();
+      expect(component[mounted.bound]()).toBe(false);
+
+      // And editing the field is a query again, so the hint comes back — the
+      // assertion that the flag is cleared rather than latched.
+      mounted.field.value = shortName;
+      await component.getItems();
+      expect(component[mounted.bound]()).toBe(true);
+    } finally {
+      mounted.restore();
+    }
+  });
+
+  test("text typed by hand reaches the hint on switching back to search", async () => {
+    // getItems() used to return at the `manualMode` guard BEFORE reading the
+    // field, so `search` never saw hand-typed text; enableSearch() then cleared
+    // manualMode without refreshing it, and a field holding one or two
+    // characters showed no hint and ran no search until the next keystroke.
+    const mounted = mountOverField();
+    try {
+      const component = mounted.component;
+
+      component.enterManually();
+      mounted.field.value = "Ab";
+      await component.getItems();
+
+      expect(component.search).toBe("Ab");
+      // Still suppressed while manual entry is in effect: no search runs, so
+      // there is no threshold to satisfy.
+      expect(component[mounted.bound]()).toBe(false);
+
+      component.enableSearch();
+      expect(component[mounted.bound]()).toBe(true);
+    } finally {
+      mounted.restore();
+    }
+  });
+
   test("the hint is shown at exactly the lengths that issue no request", () => {
     // The claim and the enforcement, checked against each other rather than
     // each against a fixture. This is the drift the ticket is about: a hint
