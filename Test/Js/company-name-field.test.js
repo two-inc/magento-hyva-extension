@@ -657,6 +657,51 @@ describe("company-name field picker", () => {
       expect(component.showDropdown()).toBe(true);
     });
 
+    test("reads the field, not the clicked link, when reached from a mode link", async () => {
+      // The actual defect the resolver fixes, and the one thing the harness's
+      // static `$el` cannot reproduce on its own: Alpine resolves `$el` PER
+      // EXPRESSION, so a method reached from `@click.stop="enableSearch"` on the
+      // link sees the <span>, not the input. Reassigning `$el` here is what a
+      // real click does. With the resolver reduced to `return this.$el` this
+      // fails — `search` picks up the link's (absent) value instead of the term.
+      const link = document.createElement("span");
+      link.textContent = "Search for company";
+      root.appendChild(link);
+
+      component.enterManually();
+      field.value = "Delta Logistics";
+      await component.getItems();
+
+      component.$el = link;
+      component.enableSearch();
+      await H.flushPromises();
+
+      expect(component.search).toBe("Delta Logistics");
+      expect(fetchStub.last().url).toContain("q=Delta+Logistics");
+      fetchStub.last().respond({ items: [apiItem("Delta Logistics", "444")] });
+      await H.flushPromises();
+
+      expect(component.showDropdown()).toBe(true);
+    });
+
+    test("never mistakes the company-number input for the search field", () => {
+      // Both are `type="text"` inside one component root, so an unanchored
+      // selector is correct only by document order. Put the number input FIRST
+      // and the exclusion is the only thing left standing between the resolver
+      // and publishing an organisation number as the company name.
+      const number = document.createElement("input");
+      number.type = "text";
+      number.className =
+        "company_id block w-full form-input grow renderer-text";
+      number.value = "999999999";
+      root.insertBefore(number, field);
+      field.value = "Epsilon Foods";
+
+      component.$el = null;
+
+      expect(component.companyNameField()).toBe(field);
+    });
+
     test("a term too short to search opens nothing but still takes focus", async () => {
       component.enterManually();
       field.value = "Ab";

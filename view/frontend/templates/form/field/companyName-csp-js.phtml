@@ -364,17 +364,30 @@ function <?= $gwBase ?>CompanySearchField() {
          * on the typing path — everywhere else it reads `undefined` off an
          * element that has no value.
          *
+         * The fallback selector EXCLUDES `.company_id`, and that exclusion is
+         * load-bearing rather than defensive: the company-number input is a
+         * second `type="text"` inside this same component root, so an
+         * unanchored `input[type="text"]` is correct only by document order.
+         * This resolver decides what getItems() reads as the SEARCH TERM, and
+         * commitCompanyName() publishes that term as `company_name` in the
+         * shared selection blob the payment step and placement read — so a
+         * markup edit, or a `placeholder`/attribute reshuffle out of Hyvä's own
+         * field renderer, reordering the two would write an organisation number
+         * into the company-name field of an order. Naming the class the number
+         * input already carries for its `:disabled` styling is cheaper than a
+         * new hook and cannot silently stop matching.
+         *
          * @returns {HTMLInputElement|null}
          */
         companyNameField() {
             const el = this.$el;
             if (el && typeof el.matches === 'function'
-                && el.matches('input[type="text"]')) {
+                && el.matches('input[type="text"]:not(.company_id)')) {
                 return el;
             }
             const root = this.$root;
             return root && typeof root.querySelector === 'function'
-                ? root.querySelector('input[type="text"]')
+                ? root.querySelector('input[type="text"]:not(.company_id)')
                 : null;
         },
 
@@ -998,14 +1011,28 @@ function <?= $gwBase ?>CompanySearchField() {
              * and get no search at all. Clicking "search for company" is not
              * mid-selection by definition.
              *
-             * Not awaited: the request settles into component state, and no
-             * caller of this handler has anything to do afterwards.
+             * The cost of that, accepted knowingly: in exactly that
+             * inside-the-window sequence the still-pending debounced tick now
+             * also runs, supersedes this request mid-flight and re-issues it, so
+             * the dropdown arrives one round-trip late for one extra wire call.
+             * Suppressing the pending tick would need a second one-shot flag of
+             * its own, and the failure it would buy back is a slower dropdown
+             * rather than no dropdown — which is what the blanket clear fixes.
+             *
+             * Not awaited — the request settles into component state and no
+             * caller of this handler has anything to do afterwards — so the
+             * rejection has to be caught HERE. getItems() reaches
+             * `twoGatewayGetCountryCode` and `dispatchMessages` outside its own
+             * try/catch, and an absent global there would otherwise surface as
+             * an unhandled rejection off a click with nothing logged.
              */
             const term = input ? input.value : '';
             if (Boolean(this.isCompanySearchEnabled)
                 && term.length >= this.minSearchChars) {
                 this.isSelecting = false;
-                this.getItems();
+                this.getItems().catch(function(error) {
+                    console.error('Company re-search failed:', error);
+                });
             }
         },
 
