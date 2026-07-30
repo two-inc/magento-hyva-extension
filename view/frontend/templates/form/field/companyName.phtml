@@ -218,15 +218,19 @@ $form = $block->getData("form");
              * Manual entry, route one of two: the link below the field.
              *
              * Same action and the SAME wording as the row inside the dropdown,
-             * and never visible at the same time as it — `persistentManualEntryVisible`
-             * is `searchModeActive` minus the states the dropdown covers. The
-             * two split the state space rather than duplicating it: this link
-             * owns an untouched field and a query too short to search, the row
-             * owns everything from the threshold upwards, including a search
-             * that matched nothing or failed. Both are needed because neither
-             * state is reachable from the other one's affordance, and manual
-             * entry is the only route on this surface for a company the registry
-             * has no identifier for.
+             * and never visible at the same time as it. This link owns the
+             * states in which the panel is SHUT — an untouched field, a query
+             * too short to search, and a full-length query whose panel a click
+             * outside dismissed. The row owns the states in which it is open,
+             * including a search that matched nothing or failed. Both are needed
+             * because an untouched field is not reachable from the row, and
+             * manual entry is the only route on this surface for a company the
+             * registry has no identifier for.
+             *
+             * They do not cover `searchModeActive` between them: a completed
+             * selection offers neither, because the copy is a factual claim
+             * about the current state rather than a label.
+             * `persistentManualEntryVisible` carries the reasoning.
              *
              * Bound to a bare getter rather than to an expression:
              * CSP-friendly Alpine looks the WHOLE attribute string up as a key

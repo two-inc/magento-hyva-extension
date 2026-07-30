@@ -543,6 +543,98 @@ describe("address-step manual-entry affordance", () => {
       }
     });
 
+    /*
+     * The length sweep above cannot reach any of the following, and that is a
+     * property of the sweep rather than of the states: it drives a component
+     * that has never selected a company and never closed a dropdown, so every
+     * point it visits is one where exactly one route is right. A sweep unable
+     * to reach the failing state is not evidence about it. These walk in.
+     */
+    describe("states the length sweep cannot reach", () => {
+      const CHOSEN = { companyName: "Acme Widgets Ltd", companyId: "111" };
+
+      /**
+       * Pick a company the way the dropdown does, then let the `input` event
+       * selectItem() dispatches consume the selection flag — so what is
+       * asserted afterwards is the settled post-selection state and not the
+       * one-shot guard inside getItems().
+       *
+       * @returns {Promise<void>}
+       */
+      async function pickFromDropdown() {
+        component.items = [CHOSEN];
+        component.selectItem(CHOSEN);
+        await component.getItems();
+        expect(component.isSelecting).toBe(false);
+        // The precondition that makes these tests about the right thing: the
+        // panel is shut and the query is at FULL length, which is the only
+        // combination in which the length sweep would have expected the link.
+        expect(component.isCompanySelected).toBe(true);
+        expect(component.search.length).toBeGreaterThanOrEqual(INJECTED_MIN);
+        expect(component.showDropdown()).toBe(false);
+      }
+
+      test("a completed selection offers neither route", async () => {
+        // The bug this term exists for. The panel is shut and the query is long,
+        // so the link showed — telling a buyer their company is not on the list
+        // immediately after they picked it off that list. The copy is a claim
+        // about the current state, so being visible here is being wrong, not
+        // merely redundant.
+        await pickFromDropdown();
+
+        expect(persistentVisible()).toBe(false);
+      });
+
+      test("editing the chosen name brings the link back", async () => {
+        // So the state above is a resting place, not a dead end. Without this,
+        // hard-coding the gate to false would satisfy the test above — and the
+        // buyer who picked the wrong company would have no way back to manual
+        // entry at all.
+        await pickFromDropdown();
+
+        // Edited SHORT, so the panel stays down and the link is the only route
+        // that could answer. getItems() is what clears the selection flag.
+        field.value = "Jo";
+        component.noteCompanyQuery();
+        await component.getItems();
+
+        expect(component.isCompanySelected).toBe(false);
+        expect(component.showDropdown()).toBe(false);
+        expect(persistentVisible()).toBe(true);
+      });
+
+      test("retyping past the threshold offers the row, still not the link", async () => {
+        // The other half of the recovery: exactly one route again, and it is the
+        // in-dropdown one. A gate stuck true would put both on screen here.
+        await pickFromDropdown();
+
+        field.value = "y".repeat(INJECTED_MIN + 1);
+        component.noteCompanyQuery();
+
+        expect(component.showDropdown()).toBe(true);
+        expect(persistentVisible()).toBe(false);
+      });
+
+      test("a click outside hands a full-length query back to the link", async () => {
+        // Documented because it is easy to describe wrongly, and the comments
+        // beside both affordances did: the row does NOT own "everything from the
+        // threshold upwards". closeDropdown() is bound as `@click.outside` and
+        // lowers `isOpen` without touching `search`, so at full query length the
+        // row goes and the link takes over. Exactly one route either way, which
+        // is why the behaviour is left alone — but what the link actually owns is
+        // "the panel is shut", not "the query is too short to search".
+        type("x".repeat(INJECTED_MIN));
+        expect(component.showDropdown()).toBe(true);
+        expect(persistentVisible()).toBe(false);
+
+        component.closeDropdown();
+
+        expect(component.search.length).toBeGreaterThanOrEqual(INJECTED_MIN);
+        expect(component.showDropdown()).toBe(false);
+        expect(persistentVisible()).toBe(true);
+      });
+    });
+
     test("manual mode offers neither, and the way back instead", () => {
       // Once manual entry is in effect there is nothing left to enter manually
       // INTO, so both routes go and the reverse link takes over.
