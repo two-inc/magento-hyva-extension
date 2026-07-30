@@ -470,23 +470,29 @@ mouse-only would have built a trap that did not exist before.
 Mutation-checked, each revert confirmed red. Counts are failures within
 `company-manual-entry.test.js` (29 tests) unless another suite is named:
 
-| Mutation                                                                   | Tests failing            |
-| -------------------------------------------------------------------------- | ------------------------ |
-| Restore `items.length > 0` to `showDropdown()`                             | 6                        |
-| Revert both links to the `Enter details manually` wording                  | 2                        |
-| Reword only the in-dropdown row, leaving the other on the old string       | 2                        |
-| Drop the undebounced `@input="noteCompanyQuery"` binding                    | 1                        |
-| Let `noteCompanyQuery()` consume `isSelecting`                              | 1                        |
-| Read a literal `3` instead of `minSearchChars` in `noteCompanyQuery()`      | 3                        |
-| Drop `tabindex="0"` from the in-dropdown row                                | 1                        |
-| Drop `role="button"` from all three links                                   | 3                        |
-| Use `role="option"` on the in-dropdown row                                  | 1                        |
-| Drop `@keydown.space.stop.prevent` from all three                            | 6                        |
-| Drop `.prevent` from the Space handlers                                     | 3                        |
-| Delete the dropdown term from `persistentManualEntryVisible`                | 2 + 1 address-company-id |
-| `persistentManualEntryVisible` always true                                  | 4 + 1 address-company-id |
-| `persistentManualEntryVisible` always false                                 | 3 + 1 address-company-id |
-| Never register the Alpine component                                        | 29 (bootstrap guard)     |
+| Mutation                                                              | Tests failing                     |
+| --------------------------------------------------------------------- | --------------------------------- |
+| Restore `items.length > 0` to `showDropdown()`                         | 6 + 1 address-company-id          |
+| Revert both links to the `Enter details manually` wording              | 2                                 |
+| Reword only the in-dropdown row, leaving the other on the old string   | 2                                 |
+| Drop the undebounced `@input="noteCompanyQuery"` binding               | 1                                 |
+| Let `noteCompanyQuery()` consume `isSelecting`                         | 1                                 |
+| Read a literal `3` instead of `minSearchChars` in `noteCompanyQuery()` | 1 + 1 company-search-min-chars    |
+| Drop `tabindex="0"` from the in-dropdown row                           | 1                                 |
+| Drop `role="button"` from all three links                              | 3                                 |
+| Use `role="option"` on the in-dropdown row                             | 1                                 |
+| Drop `@keydown.space.stop.prevent` from all three                      | 4                                 |
+| Drop `.prevent` from the Space handlers                                | 4                                 |
+| Delete the dropdown term from `persistentManualEntryVisible`           | 2 + 1 address-company-id          |
+| `persistentManualEntryVisible` always true                             | 4 + 1 address-company-id          |
+| `persistentManualEntryVisible` always false                            | 3 + 1 address-company-id          |
+| Never register the Alpine component                                    | 110 repo-wide (bootstrap guards)  |
+
+The last three rows are the ones that matter for the retarget. `address-company-id.test.js`
+already pinned that link's gate before this change, as a bare search-mode term; it is
+retargeted here rather than relaxed, and it goes red under **all three** of those mutations —
+including the gate being deleted outright — which is what shows the retargeted version can
+still fail.
 
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
