@@ -226,7 +226,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                     evaluate arbitrary JS.
                                 -->
                                 <p
-                                    x-show="companyIdDisabled"
+                                    x-show="companyIdHintVisible"
                                     data-name="company_id_hint"
                                     class="text-xs text-gray-500 mt-1"
                                     x-text="companyIdHintText"
@@ -396,14 +396,17 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                   can only be true when NOT in manual mode (see
                   applyCompanyIdEditability()), so this never hides the field
                   while the buyer still needs to interact with it (empty,
-                  enabled, required). Does not touch the existing `x-show` or
-                  `:disabled` bindings. `:class` binds to a getter returning a
-                  plain class-name string (`companyIdHiddenClass`), matching
-                  this file's other `:class` bindings (`chipClasses`,
-                  GetItemClass) — the CSP-friendly Alpine build here does not
-                  evaluate object-literal expressions, only looks a bound
-                  string up as a key on the component (see the `:style` note
-                  below).
+                  enabled, required). `companyIdHiddenClass` additionally
+                  requires a non-empty `companyId` (see `companyIdHintVisible`
+                  in gateway_method-csp-js.phtml) so the field cannot be hidden
+                  a tick before its value has actually arrived. Does not touch
+                  the existing `x-show` or `:disabled` bindings. `:class` binds
+                  to a getter returning a plain class-name string
+                  (`companyIdHiddenClass`), matching this file's other `:class`
+                  bindings (`chipClasses`, GetItemClass) — the CSP-friendly
+                  Alpine build here does not evaluate object-literal
+                  expressions, only looks a bound string up as a key on the
+                  component (see the `:style` note below).
               -->
               <input
                 type="text"

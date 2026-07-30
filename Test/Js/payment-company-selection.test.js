@@ -770,26 +770,65 @@ describe("payment component company selection", () => {
       expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
     });
 
-    test("`companyIdHiddenClass` can only fire alongside `companyIdDisabled`", () => {
+    test("`companyIdHiddenClass` can never fire unless `companyIdDisabled` is also true", () => {
       // Pins the derivation itself, not just today's scenarios: the hidden
       // class must never be able to go true while the disabled binding is
-      // false, whatever manualMode or companyIdEntryRequired end up being —
-      // that combination is exactly the "buyer still needs this field" state
-      // the brief said must never be hidden.
+      // false, whatever manualMode, companyIdEntryRequired or companyId end
+      // up being — companyIdDisabled=false is exactly the "buyer still needs
+      // this field" state the brief said must never be hidden. This is a
+      // one-way implication, not an iff: see the next test for the case
+      // where companyIdDisabled is true but the hidden class must STILL not
+      // fire yet.
       [
-        [false, false],
-        [false, true],
-        [true, false],
-        [true, true],
-      ].forEach(([manualMode, companyIdEntryRequired]) => {
+        [false, false, ""],
+        [false, false, "12345678"],
+        [false, true, ""],
+        [false, true, "12345678"],
+        [true, false, ""],
+        [true, false, "12345678"],
+        [true, true, ""],
+        [true, true, "12345678"],
+      ].forEach(([manualMode, companyIdEntryRequired, companyId]) => {
         component.manualMode = manualMode;
         component.companyIdEntryRequired = companyIdEntryRequired;
+        component.companyId = companyId;
         component.applyCompanyIdEditability();
 
-        expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING] === "hidden").toBe(
-          component[COMPANY_ID_DISABLED_BINDING],
-        );
+        if (component[COMPANY_ID_HIDDEN_CLASS_BINDING] === "hidden") {
+          expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
+        }
       });
+    });
+
+    test("stays visible mid-initialize(), before fillCompanyData()'s $nextTick has run", () => {
+      // The review-round regression (TWO-25288): a restored selection derives
+      // `companyIdEntryRequired` — and so `companyIdDisabled` — synchronously
+      // in initialize(), straight from storage, while `this.companyId`
+      // itself is only written by the `$nextTick(() => fillCompanyData(...))`
+      // scheduled at the end of that same method. Between those two points
+      // `companyIdDisabled` can be true with `companyId` still empty; the
+      // hint and the hidden class must both wait for the real value rather
+      // than flashing "Company number: " with nothing after it.
+      component.companyIdEntryRequired = false;
+      component.companyId = "";
+      component.applyCompanyIdEditability();
+      syncCompanyIdHint(component);
+      syncCompanyIdField(component);
+
+      expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
+      expect(companyIdInput().disabled).toBe(true);
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
+
+      // The tick after: fillCompanyData() (or the $nextTick callback in
+      // initialize()) writes the real id, and only then does the hint take
+      // over from the (still-locked, still-visible) input.
+      component.companyId = "12345678";
+      syncCompanyIdHint(component);
+      syncCompanyIdField(component);
+
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
   });
 });
