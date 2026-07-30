@@ -235,6 +235,10 @@ summary::marker {
  * order; a compound selector, a descendant chain that reintroduces `color`, or
  * an `!important` here would out-specify it and silently break branded
  * recolouring with nothing failing in CI.
+ *
+ * Sizing follows the surrounding text (1em), so a surface needing a different
+ * size should set font-size on the spinner rather than width/height, keeping the
+ * mask geometry proportional.
  */
 .two-company-search__spinner {
   position: absolute;
@@ -289,12 +293,6 @@ summary::marker {
     animation-duration: 3s;
   }
 }
-
-/*
- * Sizing follows the surrounding text (1em), so a surface that needs a
- * different size should set font-size on the spinner rather than width/height,
- * keeping the mask geometry proportional.
- */
 
 .two-company-search__unavailable {
   border-radius: 3px;
