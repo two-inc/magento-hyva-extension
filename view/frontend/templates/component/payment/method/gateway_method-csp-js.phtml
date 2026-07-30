@@ -1235,6 +1235,26 @@ $quoteDetails = json_encode(
                 this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
             },
 
+            // Additive (TWO-25288): purely derived from `companyIdDisabled`,
+            // no new writer. Hides the now-redundant search-mode company_id
+            // input once its value is shown via the inline hint next to the
+            // company name field instead. Returns a class-NAME STRING, not an
+            // object literal — `:class` bindings in this CSP-friendly Alpine
+            // build only work as a key lookup (see chipClasses / GetItemClass
+            // above), not expression evaluation.
+            get companyIdHiddenClass() {
+                return this.companyIdDisabled ? 'hidden' : '';
+            },
+
+            // Additive (TWO-25288): text for the inline hint next to the
+            // company name field. Only rendered while `companyIdDisabled` is
+            // true (see x-show on the hint in gateway_method.phtml), so
+            // `companyId` is guaranteed non-empty here — see
+            // applyCompanyIdEditability()'s doc comment above.
+            get companyIdHintText() {
+                return '<?= $escaper->escapeJs(__("Company number:")) ?> ' + this.companyId;
+            },
+
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';

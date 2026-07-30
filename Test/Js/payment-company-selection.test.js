@@ -58,6 +58,28 @@ const COMPANY_ID_DISABLED_BINDING = H.readAlpineBinding(
   ":disabled",
 );
 
+/**
+ * The bindings TWO-25288's inline hint adds. Resolved the same way and for
+ * the same reason as `COMPANY_ID_DISABLED_BINDING` above: a test asserting on
+ * component state alone cannot fail when the markup binding is missing or
+ * renamed on one side only.
+ */
+const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'input[data-name="company_id"]',
+  ":class",
+);
+const COMPANY_ID_HINT_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_id_hint"]',
+  "x-show",
+);
+const COMPANY_ID_HINT_TEXT_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_id_hint"]',
+  "x-text",
+);
+
 describe("payment component company selection", () => {
   let env;
   let fetchStub;
@@ -70,10 +92,14 @@ describe("payment component company selection", () => {
     // `#company_id` starts WITHOUT a `disabled` attribute: its locked state is
     // Alpine's to apply, and hardcoding it here is how the earlier version of
     // this fixture let the suite pass with the field permanently disabled.
+    // The inline company-id hint (TWO-25288) starts with neither `hidden`
+    // (on the input) nor a rendered value, for the same reason `#company_id`
+    // starts without `disabled`: locked state is Alpine's to apply.
     document.body.innerHTML = [
       '<div id="payment-root">',
       '  <input type="text" id="company_name" value="" />',
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
+      '  <p data-name="company_id_hint"></p>',
       "</div>",
     ].join("\n");
 
@@ -123,6 +149,7 @@ describe("payment component company selection", () => {
     // Alpine applies a binding once on init and re-runs it whenever the bound
     // property changes. `syncCompanyIdField()` is that run, by hand.
     syncCompanyIdField(mounted);
+    syncCompanyIdHint(mounted);
     return { component: mounted, watchers: recorded, root: root };
   }
 
@@ -150,6 +177,25 @@ describe("payment component company selection", () => {
   }
 
   /**
+   * Apply the template's `:class`, `x-show` and `x-text` bindings for
+   * TWO-25288's inline hint, the same by-hand way `syncCompanyIdField()`
+   * applies `:disabled` — these mounted components are plain object
+   * literals, not Alpine proxies, so nothing re-runs the bindings on its own.
+   *
+   * @param {Object} instance the mounted component
+   * @returns {void}
+   */
+  function syncCompanyIdHint(instance) {
+    const input = companyIdInput();
+    const hiddenClass = String(instance[COMPANY_ID_HIDDEN_CLASS_BINDING] || "");
+    input.className = ["company_id", hiddenClass].filter(Boolean).join(" ");
+
+    const hint = companyIdHint();
+    hint.hidden = !instance[COMPANY_ID_HINT_SHOW_BINDING];
+    hint.textContent = String(instance[COMPANY_ID_HINT_TEXT_BINDING] || "");
+  }
+
+  /**
    * A dropdown item in the shape the shared helper's mapItems() produces.
    *
    * @param {string} name
@@ -164,6 +210,11 @@ describe("payment component company selection", () => {
       lookupId: "lookup-" + name,
       item: {},
     };
+  }
+
+  /** @returns {HTMLElement} the TWO-25288 inline company-id hint */
+  function companyIdHint() {
+    return document.querySelector('p[data-name="company_id_hint"]');
   }
 
   /** @returns {HTMLInputElement} */
@@ -664,6 +715,81 @@ describe("payment component company selection", () => {
       });
 
       expect(row.twoGatewayHyvaGetCompanyId()).toBe("12345678");
+    });
+  });
+
+  describe("the inline company-id hint (TWO-25288)", () => {
+    test("stays hidden with an empty class before any company is picked", () => {
+      // `companyIdDisabled` defaults locked, but with nothing stored
+      // `initialize()` derives it open (see the earlier "is open once the
+      // component has initialized" test) — so on first paint there is
+      // neither a locked field nor a hint to show.
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(companyIdInput().disabled).toBe(false);
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    test("shows the id and hides the redundant input once a company locks it", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      syncCompanyIdHint(component);
+
+      // Same invariant `companyIdDisabled` already asserts on above: locked
+      // exactly when the registry answered.
+      expect(companyIdInput().disabled).toBe(true);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_ID_HINT_TEXT_BINDING]).toContain("12345678");
+    });
+
+    test("never hides the input while it is still empty and editable", () => {
+      // The failure mode the scoped fix was explicitly told not to risk: a
+      // company found via search but with no registry identifier still needs
+      // the buyer to be able to see and type into the field.
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+      syncCompanyIdField(component);
+      syncCompanyIdHint(component);
+
+      expect(companyIdInput().disabled).toBe(false);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    test("re-reveals the input if a later pick has no identifier", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      syncCompanyIdHint(component);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
+
+      component.selectItem(pickerItem("Other Example Ltd", ""));
+      syncCompanyIdField(component);
+      syncCompanyIdHint(component);
+
+      expect(companyIdInput().disabled).toBe(false);
+      expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    test("`companyIdHiddenClass` can only fire alongside `companyIdDisabled`", () => {
+      // Pins the derivation itself, not just today's scenarios: the hidden
+      // class must never be able to go true while the disabled binding is
+      // false, whatever manualMode or companyIdEntryRequired end up being —
+      // that combination is exactly the "buyer still needs this field" state
+      // the brief said must never be hidden.
+      [
+        [false, false],
+        [false, true],
+        [true, false],
+        [true, true],
+      ].forEach(([manualMode, companyIdEntryRequired]) => {
+        component.manualMode = manualMode;
+        component.companyIdEntryRequired = companyIdEntryRequired;
+        component.applyCompanyIdEditability();
+
+        expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING] === "hidden").toBe(
+          component[COMPANY_ID_DISABLED_BINDING],
+        );
+      });
     });
   });
 });
