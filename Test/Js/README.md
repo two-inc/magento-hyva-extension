@@ -223,6 +223,34 @@ detail lookup filling the address fields, a failed lookup leaving a buyer-typed 
 alone, a company with no lookup id skipping the request, and the click handlers stopping
 propagation so the address-book modal does not close.
 
+Also here: taking the "Search for company" link back out of manual entry actually RETURNS the
+buyer to search rather than only unhiding the field — focus lands in the input
+(`document.activeElement`, asserted against the real DOM) and the dropdown for the term
+already in the field is open again. One case asserts a genuine request on the wire with a term
+the search helper's by-query cache has never seen, because a repeat of the SAME term is
+legitimately served from that cache and a wire-count assertion there would fail for the wrong
+reason. Two guards ride along: the re-search happens even inside the 500ms debounce window
+after a pick, where `isSelecting` is still armed and would otherwise swallow it whole, and it
+does NOT happen for a field holding less than the threshold — `getItems()` clears a stale
+identifier above its own min-characters guard, so driving it from an empty field on a restored
+step would drop an intact registry-supplied number and re-ask the buyer for it.
+
+Two of those cases are markup pins rather than behaviour — that the link's `@click` names
+`enableSearch` and that the results element's `x-show` names `showDropdown`, both read out of
+the rendered markup with the component asked whether it defines what they name. They stay
+green if the re-search is deleted, and are there for the CSP-Alpine failure mode where a
+binding naming a property the component lacks resolves to undefined and the element silently
+never shows. Do not read them as coverage of the re-search.
+
+And two cover `companyNameField()`, which the static `$el` a mounted component gets cannot
+exercise on its own: Alpine resolves `$el` PER EXPRESSION, so a method reached from a mode
+link's `@click` sees the `<span>`, not the input — the defect the resolver exists for. The test
+reassigns `component.$el` to a link element, which is what a real click does, and asserts the
+search term still comes off the field. The other puts the company-number input FIRST in the
+root: both are `type="text"`, so the `:not(.company_id)` exclusion is the only thing stopping
+the resolver from publishing an organisation number as `company_name`. Reducing the resolver to
+`return this.$el` fails the first; dropping the class exclusion fails the second.
+
 `payment-company-selection.test.js` — what the payment component
 (`twoGatewayHyvaPaymentMethodBase`) does with a selected company once `companyId` is
 allowed to be empty. Stopping the throw above is only half the fix; the half that costs

@@ -353,6 +353,44 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isOpen = this.search.length >= this.minSearchChars;
         },
 
+        /**
+         * The company-name input this component owns.
+         *
+         * `$el` FIRST, then a lookup under `$root`. The two are not
+         * interchangeable: Alpine resolves `$el` per expression, so it is the
+         * input when a method is reached from the field's own `@input` binding
+         * and the clicked link when the same method is reached from a mode
+         * link. Reading `$el.value` unconditionally is therefore only correct
+         * on the typing path — everywhere else it reads `undefined` off an
+         * element that has no value.
+         *
+         * The fallback selector EXCLUDES `.company_id`, and that exclusion is
+         * load-bearing rather than defensive: the company-number input is a
+         * second `type="text"` inside this same component root, so an
+         * unanchored `input[type="text"]` is correct only by document order.
+         * This resolver decides what getItems() reads as the SEARCH TERM, and
+         * commitCompanyName() publishes that term as `company_name` in the
+         * shared selection blob the payment step and placement read — so a
+         * markup edit, or a `placeholder`/attribute reshuffle out of Hyvä's own
+         * field renderer, reordering the two would write an organisation number
+         * into the company-name field of an order. Naming the class the number
+         * input already carries for its `:disabled` styling is cheaper than a
+         * new hook and cannot silently stop matching.
+         *
+         * @returns {HTMLInputElement|null}
+         */
+        companyNameField() {
+            const el = this.$el;
+            if (el && typeof el.matches === 'function'
+                && el.matches('input[type="text"]:not(.company_id)')) {
+                return el;
+            }
+            const root = this.$root;
+            return root && typeof root.querySelector === 'function'
+                ? root.querySelector('input[type="text"]:not(.company_id)')
+                : null;
+        },
+
         /*
          * Mode-link visibility. Bare getters because CSP-friendly Alpine looks
          * the whole attribute string up as a key on the component rather than
@@ -623,7 +661,8 @@ function <?= $gwBase ?>CompanySearchField() {
              * next keystroke. The `!manualMode` term on the hint is what keeps
              * it suppressed while manual entry is actually in effect.
              */
-            this.search = this.$el.value;
+            const field = this.companyNameField();
+            if (field) this.search = field.value;
             // Any edit ends the selection: the value in the field is a query
             // again, not a chosen company.
             this.isCompanySelected = false;
@@ -932,8 +971,69 @@ function <?= $gwBase ?>CompanySearchField() {
             // still has to fill in, because the name in the field has no
             // registry-supplied identifier either way.
             this.applyCompanyIdEditability();
-            const input = this.$root.querySelector('input[type="text"]');
+            const input = this.companyNameField();
             if (input) input.focus();
+
+            /*
+             * Returning to search RUNS the search, rather than only unhiding
+             * the field (TWO-25288).
+             *
+             * `showDropdown()` is gated on `items.length > 0`, and
+             * enterManually() emptied `items` on the way in — so unhiding
+             * alone left the buyer in front of a field holding the company
+             * name they had typed, no dropdown, no spinner and no hits, with
+             * nothing to tell them the registry was being consulted again
+             * until they happened to type another character. Re-running the
+             * lookup for the text ALREADY in the field is what makes the link
+             * a route back into search rather than a visibility toggle.
+             *
+             * Everything the search path needs is then recomputed by
+             * getItems() itself — the field is re-read, `isSearchUnavailable`
+             * is cleared, and `isOpen` is set only once hits actually arrive.
+             *
+             * Gated on the field ALREADY holding a searchable term rather than
+             * calling getItems() unconditionally, and the guard is a real one
+             * rather than a shortcut. getItems() runs forgetStaleCompanyId()
+             * above its own min-characters guard, so driving it from a field
+             * that does not currently hold the stored company's name — an
+             * empty one on a freshly restored step, most of all — would drop a
+             * registry-supplied identifier that is still perfectly intact,
+             * unlock the number field and re-ask the buyer for a number
+             * nothing was wrong with. Below the threshold there is no
+             * dropdown to open in any case: the min-characters hint is the
+             * whole of the correct response, and it is already shown.
+             *
+             * `isSelecting` is cleared first because it is a one-shot flag
+             * consumed by the NEXT getItems() tick, and that tick is a
+             * debounced one: a buyer who picked a company and then took both
+             * mode links inside the debounce window would otherwise arrive
+             * here with it still armed, hit the guard at the top of getItems()
+             * and get no search at all. Clicking "search for company" is not
+             * mid-selection by definition.
+             *
+             * The cost of that, accepted knowingly: in exactly that
+             * inside-the-window sequence the still-pending debounced tick now
+             * also runs, supersedes this request mid-flight and re-issues it, so
+             * the dropdown arrives one round-trip late for one extra wire call.
+             * Suppressing the pending tick would need a second one-shot flag of
+             * its own, and the failure it would buy back is a slower dropdown
+             * rather than no dropdown — which is what the blanket clear fixes.
+             *
+             * Not awaited — the request settles into component state and no
+             * caller of this handler has anything to do afterwards — so the
+             * rejection has to be caught HERE. getItems() reaches
+             * `twoGatewayGetCountryCode` and `dispatchMessages` outside its own
+             * try/catch, and an absent global there would otherwise surface as
+             * an unhandled rejection off a click with nothing logged.
+             */
+            const term = input ? input.value : '';
+            if (Boolean(this.isCompanySearchEnabled)
+                && term.length >= this.minSearchChars) {
+                this.isSelecting = false;
+                this.getItems().catch(function(error) {
+                    console.error('Company re-search failed:', error);
+                });
+            }
         },
 
         saveManualModeToStorage(manualMode) {
