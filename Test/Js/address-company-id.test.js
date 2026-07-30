@@ -226,7 +226,7 @@ describe("address-step company number", () => {
       expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
     });
 
-    test("the persistent manual-entry link is gated on search mode AND a closed dropdown", () => {
+    test("the persistent manual-entry link is gated on search mode, a closed dropdown AND no selection", () => {
       // RETARGETED by TWO-25288 element 5, not relaxed. The original gate was a
       // bare `searchModeActive`, which was right while the dropdown needed at
       // least one result to open: the only route into manual entry would
@@ -236,11 +236,17 @@ describe("address-step company number", () => {
       // The dropdown now opens on typed length alone and carries a manual-entry
       // row of its own with identical wording, so this link additionally has to
       // disappear while the panel is open — two identical links on screen at
-      // once is a defect. What it still owns is the states the panel does not:
-      // an untouched field, and a query too short to search.
+      // once is a defect. What it still owns is the states in which the panel is
+      // shut: an untouched field, a query too short to search, and a full-length
+      // query whose panel a click outside dismissed.
+      //
+      // And a third term, because the identical wording is a factual claim about
+      // the current state: a chosen company must not be told it is not on the
+      // list. That one is asserted here at the gate and exercised through the
+      // real selectItem() path by the element-5 suite.
       //
       // Both of the original halves are still pinned — outside the panel, and
-      // named by a property the component actually defines — plus the new term.
+      // named by a property the component actually defines — plus the new terms.
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
       const link = doc.querySelector(".two-company-manual-entry");
@@ -270,6 +276,15 @@ describe("address-step company number", () => {
       expect(component[bound]).toBe(true);
       component.isOpen = true;
       expect(component[bound]).toBe(false);
+
+      // The selection half, also in both directions from the same starting
+      // point: panel shut and search mode on, so the only thing deciding the
+      // gate here is whether a company has been chosen.
+      component.isOpen = false;
+      component.isCompanySelected = true;
+      expect(component[bound]).toBe(false);
+      component.isCompanySelected = false;
+      expect(component[bound]).toBe(true);
     });
 
     test("the mode links resolve both ways round the search flag", () => {
