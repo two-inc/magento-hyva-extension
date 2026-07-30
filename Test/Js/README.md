@@ -482,6 +482,7 @@ Mutation-checked, each revert confirmed red. Counts are failures within
 | Drop `role="button"` from all three links                              | 3                                 |
 | Use `role="option"` on the in-dropdown row                             | 1                                 |
 | Drop `@keydown.space.stop.prevent` from all three                      | 4                                 |
+| Rename the Space handler's event so Space stops being handled          | 3                                 |
 | Drop `.prevent` from the Space handlers                                | 4                                 |
 | Delete the dropdown term from `persistentManualEntryVisible`           | 2 + 1 address-company-id          |
 | `persistentManualEntryVisible` always true                             | 4 + 1 address-company-id          |
@@ -490,6 +491,16 @@ Mutation-checked, each revert confirmed red. Counts are failures within
 | `enterManually()` stops calling `stopPropagation`                      | 1 + 1 company-name-field          |
 | `getItems()` stops applying the response's `items`                     | 1 + 3 company-name-field          |
 | Never register the Alpine component                                    | 110 repo-wide (bootstrap guards)  |
+
+Two of the Space rows look redundant and are not. Deleting the attribute leaves one keydown
+handler where there should be two, which the attribute-name assertions catch; renaming its
+event keeps two well-formed handlers and only stops Space being one of them. The second is the
+sharper mutation, and it is the one that would survive a careless "fix".
+
+Every count above was produced by a harness that refuses to report a result unless
+`git diff --stat` shows the tree actually changed, and that prints the failing tests BY NAME.
+The names are the point: a mutation can go red while every named failure sits in a
+neighbouring suite, which means the local assertion is not what caught it.
 
 Three of those rows exist because of a vacuity audit rather than a design decision, and the
 class is worth knowing. An assertion that a collection is EMPTY after some call proves nothing
