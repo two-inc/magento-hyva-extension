@@ -385,9 +385,10 @@ describe("address field — minimum-characters hint (element 4)", () => {
   });
 
   test("the hint sits outside the results dropdown", () => {
-    // The payment tile nests its equivalent inside the dropdown, which on this
-    // surface is gated on `items.length > 0` — so a hint nested there could
-    // never appear at a length that has fetched nothing. This is the assertion
+    // The payment tile nests its equivalent inside the dropdown. On this
+    // surface the panel and this hint are mutually exclusive by construction —
+    // the panel opens at or above the threshold, the hint shows only below it —
+    // so a hint nested there could never appear at all. This is the assertion
     // that stops someone "aligning" the two surfaces and breaking this one.
     const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
     const doc = new DOMParser().parseFromString(markup, "text/html");

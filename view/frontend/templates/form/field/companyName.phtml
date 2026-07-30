@@ -100,6 +100,24 @@ $form = $block->getData("form");
              */
             ?>
             aria-describedby="two-company-search-min-chars"
+            <?php
+            /*
+             * TWO-25288 element 5. TWO `@input` handlers, undebounced first.
+             *
+             * The manual-entry row inside the dropdown must be reachable as
+             * soon as the query is long enough to search, which is BEFORE the
+             * debounced request fires and long before a result comes back.
+             * `noteCompanyQuery` opens the panel on typed length alone;
+             * `getItems` still owns the request, and its debounce has to stay
+             * where it is or every keystroke goes on the wire.
+             *
+             * Two attributes rather than one because the names differ —
+             * `@input` and `@input.debounce.500ms` — so Alpine registers a
+             * listener for each. Duplicate attribute names would not work: the
+             * HTML parser keeps only the first.
+             */
+            ?>
+            @input="noteCompanyQuery"
             @input.debounce.500ms="getItems"
             />
             <!--
@@ -139,9 +157,10 @@ $form = $block->getData("form");
              * failing repeatedly.
              *
              * Sits OUTSIDE the results dropdown, unlike the payment tile's
-             * equivalent. That dropdown is gated on `items.length > 0` here, so
-             * a hint nested inside it could never appear at a length that has
-             * fetched no items.
+             * equivalent. The two are mutually exclusive by construction — the
+             * panel opens at or above the threshold and this hint shows only
+             * below it — so nesting the hint inside the panel would put it
+             * somewhere it could never be seen.
              */
             ?>
             <div
@@ -169,35 +188,63 @@ $form = $block->getData("form");
              * from the suite entirely.
              */
             ?>
+            <?php
+            /*
+             * The way BACK from manual entry, and keyboard-operable for the
+             * same reason the two manual-entry affordances now are (TWO-25288
+             * element 5).
+             *
+             * Included in that change rather than left alone deliberately:
+             * making the route INTO manual entry reachable by keyboard while
+             * leaving the route out of it mouse-only would build a trap that did
+             * not exist before — a keyboard user could switch to manual entry
+             * and then have no way to switch back.
+             */
+            ?>
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualModeActive" class="mt-1 text-right">
-                <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                    <?= $escaper->escapeHtml(__("Search for company")) ?>
-                </span>
+                <span
+                    role="button"
+                    tabindex="0"
+                    @click.stop="enableSearch"
+                    @keydown.enter.stop.prevent="enableSearch"
+                    @keydown.space.stop.prevent="enableSearch"
+                    @mousedown.stop
+                    class="two-company-search-again text-blue-600 text-sm cursor-pointer"
+                ><?= $escaper->escapeHtml(__("Search for company")) ?></span>
             </div>
             <?php
             /*
-             * Persistent route into manual entry.
+             * Manual entry, route one of two: the link below the field.
              *
-             * The other one lives inside the results dropdown, whose
-             * `showDropdown` term requires `items.length > 0` — so a buyer
-             * whose search returned nothing, failed or was never run had no
-             * way into manual entry at all. That is the only path on this
-             * surface that lets a company with no registry identifier be
-             * entered, so it cannot depend on the search having succeeded.
+             * Same action and the SAME wording as the row inside the dropdown,
+             * and never visible at the same time as it — `persistentManualEntryVisible`
+             * is `searchModeActive` minus the states the dropdown covers. The
+             * two split the state space rather than duplicating it: this link
+             * owns an untouched field and a query too short to search, the row
+             * owns everything from the threshold upwards, including a search
+             * that matched nothing or failed. Both are needed because neither
+             * state is reachable from the other one's affordance, and manual
+             * entry is the only route on this surface for a company the registry
+             * has no identifier for.
              *
-             * Bound to a bare `searchModeActive` getter rather than to
-             * `!manualMode`: CSP-friendly Alpine looks the WHOLE attribute
-             * string up as a key on the component, so a negation needs a
-             * getter of its own either way, and a bare name is also what the
-             * suite's binding reader resolves.
+             * Bound to a bare getter rather than to an expression:
+             * CSP-friendly Alpine looks the WHOLE attribute string up as a key
+             * on the component, so a negation or a conjunction needs a getter of
+             * its own, and a bare name is also what the suite's binding reader
+             * resolves.
              */
             ?>
-            <div x-show="searchModeActive" class="mt-1 text-right">
-                <span @click.stop="enterManually" @mousedown.stop
-                      class="two-company-manual-entry text-blue-600 text-sm cursor-pointer">
-                    <?= $escaper->escapeHtml(__("Enter details manually")) ?>
-                </span>
+            <div x-show="persistentManualEntryVisible" class="mt-1 text-right">
+                <span
+                    role="button"
+                    tabindex="0"
+                    @click.stop="enterManually"
+                    @keydown.enter.stop.prevent="enterManually"
+                    @keydown.space.stop.prevent="enterManually"
+                    @mousedown.stop
+                    class="two-company-manual-entry text-blue-600 text-sm cursor-pointer"
+                ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
             </div>
             <!-- Search Results Dropdown -->
             <div
@@ -228,13 +275,45 @@ $form = $block->getData("form");
                         </div>
                     </template>
                 </div>
-                <!-- Enter manually link inside dropdown -->
+                <?php
+                /*
+                 * Manual entry, route two: the LAST row inside the dropdown
+                 * (TWO-25288 element 5). Deliberately the last child of the
+                 * panel and below the results scroller, so it reads as the
+                 * final option after the buyer has looked down the list and not
+                 * found themselves.
+                 *
+                 * `role="button"` with `tabindex="0"`, NOT `role="option"`.
+                 * This panel is not a listbox: the result rows are plain divs
+                 * with no `role="listbox"` on the container, no `role="option"`
+                 * on them and no `aria-activedescendant` on the input. A lone
+                 * `option` here would be an option with no owning list — invalid
+                 * ARIA, and announced worse than no role at all. A button is
+                 * also the honest description: this performs an action rather
+                 * than selecting a value from the list.
+                 *
+                 * Enter AND Space, because a `role="button"` is expected to
+                 * answer both. `.prevent` on each is load-bearing — without it
+                 * Space scrolls the page and Enter submits the address form.
+                 * `.stop`, and the `@mousedown.stop`, are what keep the
+                 * address-book modal from reading the interaction as a click
+                 * outside itself and closing; enterManually() stops propagation
+                 * again from inside for the same reason.
+                 *
+                 * The accessible name is the visible text, so there is no
+                 * `aria-label` that can drift out of step with it.
+                 */
+                ?>
                 <div class="px-2 py-3 border-t border-gray-200">
-                    <span @click.stop="enterManually" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                        <?= $escaper->escapeHtml(
-                            __("Enter details manually"),
-                        ) ?>
-                    </span>
+                    <span
+                        role="button"
+                        tabindex="0"
+                        @click.stop="enterManually"
+                        @keydown.enter.stop.prevent="enterManually"
+                        @keydown.space.stop.prevent="enterManually"
+                        @mousedown.stop
+                        class="two-company-manual-entry-row text-blue-600 text-sm cursor-pointer"
+                    ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
                 </div>
             </div>
             <?php

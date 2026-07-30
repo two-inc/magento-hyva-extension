@@ -443,6 +443,51 @@ stylesheet. Counts are failures within `company-search-spinner.test.js` (13 test
 | Make the spinner rule a descendant selector                   | 2             |
 | Add `!important` to the spinner's `background-image`          | 1             |
 
+`company-manual-entry.test.js` — the manual-entry affordance on the address step, TWO-25288
+element 5. The wording is the cheap part; three things had made the affordance not work.
+**Timing:** the row lives inside the results dropdown and the dropdown was gated on
+`items.length > 0`, so the one route into manual entry appeared only once a search had fired
+AND matched — absent in exactly the case it exists for, a company the registry does not have.
+It now opens on typed length alone, from an undebounced second `@input` handler
+(`noteCompanyQuery`) that runs alongside the debounced `getItems`; the debounce has to stay on
+the request half or every keystroke goes on the wire. **Keyboard:** all three links were bare
+`<span>`s with a click handler and no role, tabindex or keydown. They are now
+`role="button"` + `tabindex="0"` with Enter and Space handlers, and `role="button"` rather
+than `role="option"` deliberately — this panel is not a listbox, so a lone `option` would be
+an option with no owning list. `.prevent` is load-bearing (Space scrolls, Enter submits) and
+is only visible in the attribute NAME, so the tests read attribute names, not just values.
+**Duplication:** there are two routes into manual entry and they now carry identical copy, so
+`persistentManualEntryVisible` makes them mutually exclusive — the link below the field owns
+the untouched and sub-threshold states, the in-dropdown row owns everything from the threshold
+up, including a search that matched nothing or failed. The `never both, never neither`
+assertion sweeps the whole length range rather than sampling it. The threshold is injected as
+5 throughout, so a leftover literal 3 fails.
+
+The reverse link (`Search for company`) got the same keyboard treatment even though element 5
+does not name it: making the way INTO manual entry keyboard-operable while leaving the way out
+mouse-only would have built a trap that did not exist before.
+
+Mutation-checked, each revert confirmed red. Counts are failures within
+`company-manual-entry.test.js` (29 tests) unless another suite is named:
+
+| Mutation                                                                   | Tests failing            |
+| -------------------------------------------------------------------------- | ------------------------ |
+| Restore `items.length > 0` to `showDropdown()`                             | 6                        |
+| Revert both links to the `Enter details manually` wording                  | 2                        |
+| Reword only the in-dropdown row, leaving the other on the old string       | 2                        |
+| Drop the undebounced `@input="noteCompanyQuery"` binding                    | 1                        |
+| Let `noteCompanyQuery()` consume `isSelecting`                              | 1                        |
+| Read a literal `3` instead of `minSearchChars` in `noteCompanyQuery()`      | 3                        |
+| Drop `tabindex="0"` from the in-dropdown row                                | 1                        |
+| Drop `role="button"` from all three links                                   | 3                        |
+| Use `role="option"` on the in-dropdown row                                  | 1                        |
+| Drop `@keydown.space.stop.prevent` from all three                            | 6                        |
+| Drop `.prevent` from the Space handlers                                     | 3                        |
+| Delete the dropdown term from `persistentManualEntryVisible`                | 2 + 1 address-company-id |
+| `persistentManualEntryVisible` always true                                  | 4 + 1 address-company-id |
+| `persistentManualEntryVisible` always false                                 | 3 + 1 address-company-id |
+| Never register the Alpine component                                        | 29 (bootstrap guard)     |
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 

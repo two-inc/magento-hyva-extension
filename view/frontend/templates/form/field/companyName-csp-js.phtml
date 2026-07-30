@@ -227,8 +227,71 @@ function <?= $gwBase ?>CompanySearchField() {
             this.applyCompanyIdEditability();
         },
 
+        /*
+         * `items.length > 0` is deliberately NOT a term any more (TWO-25288
+         * element 5).
+         *
+         * The manual-entry row is this dropdown's last row, and it has to be
+         * there exactly when a buyer cannot find their company: a search that
+         * matched nothing, one that failed, or one that has not come back yet.
+         * Gating the panel on a non-empty result set made the row unreachable
+         * in precisely those cases — the only cases it exists for.
+         *
+         * `searchModeActive` carries the manual-mode and lookup-disabled terms,
+         * so the panel still cannot open over the manual-entry fields or on a
+         * store with the lookup switched off. That is a term the old expression
+         * did NOT have, and the reason it was safe without one was the results
+         * gate now being removed.
+         */
         showDropdown() {
-            return this.isOpen && this.items.length > 0;
+            return this.isOpen && this.searchModeActive;
+        },
+
+        /**
+         * Undebounced `input` handler, running alongside the debounced
+         * getItems() (TWO-25288 element 5).
+         *
+         * The manual-entry row has to be reachable as soon as the buyer has
+         * typed enough characters to search — BEFORE the debounce elapses and
+         * before any result exists. getItems() was the only thing that opened
+         * the dropdown, and only ever on a non-empty result set, so the row
+         * could not appear until a search had both fired and matched.
+         *
+         * Bound as a SECOND `@input` attribute rather than folded into
+         * getItems(): `@input` and `@input.debounce.500ms` are distinct
+         * attribute names, so Alpine registers both listeners, and the debounce
+         * has to stay on the request half — an undebounced search would put one
+         * request per keystroke on the wire.
+         *
+         * `isSelecting` is checked but deliberately NOT consumed. selectItem()
+         * sets that flag and then dispatches `input` on the field, so this
+         * handler runs first; clearing it here would let the debounced
+         * getItems() tick behind it fall straight through its own guard and
+         * search for the name the buyer has just chosen.
+         *
+         * Nothing is aborted, cleared or requested here. The debounced handler
+         * owns the whole request lifecycle, and duplicating any part of it is
+         * how `isSearching` ends up latched on.
+         */
+        noteCompanyQuery() {
+            if (this.isSelecting) return;
+
+            this.search = this.$el.value;
+            // Any edit ends the selection, exactly as in getItems(). Written
+            // here as well so the min-characters hint answers the keystroke
+            // rather than the debounce half a second behind it.
+            this.isCompanySelected = false;
+
+            if (!this.searchModeActive) return;
+
+            /*
+             * Length alone, with an empty result list. Closing again below the
+             * threshold is deliberate rather than a one-way latch: the
+             * min-characters hint owns that range, and an empty panel floating
+             * under a two-character query reads as a search that came back with
+             * nothing.
+             */
+            this.isOpen = this.search.length >= this.minSearchChars;
         },
 
         /*
@@ -243,6 +306,25 @@ function <?= $gwBase ?>CompanySearchField() {
 
         get searchModeActive() {
             return Boolean(this.isCompanySearchEnabled) && !this.manualMode;
+        },
+
+        /*
+         * Visibility of the manual-entry link that sits BELOW the field, as
+         * opposed to the row inside the dropdown (TWO-25288 element 5).
+         *
+         * The two carry the same wording and perform the same action, so
+         * exactly one may be visible at a time. They cover disjoint states and
+         * mutual exclusion is what encodes that rather than hiding it: the row
+         * inside the dropdown covers every state in which the dropdown is open,
+         * and this link covers the states in which it is not — an untouched
+         * field, and a query too short to search. Neither state can be reached
+         * from the other one's affordance, which is why both still exist.
+         *
+         * `showDropdown` is called rather than re-deriving its terms, so this
+         * cannot drift away from what the panel actually does.
+         */
+        get persistentManualEntryVisible() {
+            return this.searchModeActive && !this.showDropdown();
         },
 
         /**
@@ -563,9 +645,13 @@ function <?= $gwBase ?>CompanySearchField() {
             // request was in flight. Writing anything now would fight the
             // newer search — stay silent.
             if (result.status === 'aborted' || this.searchAbortController !== controller) return;
-            // enterManually() may have fired while this was in flight.
-            // showDropdown() has no manualMode term, so writing items here
-            // would reopen the dropdown over the manual-entry fields.
+            // enterManually() may have fired while this was in flight. Writing
+            // `items` now would leave a populated result list behind the
+            // manual-entry fields, ready to appear the moment the buyer goes
+            // back to searching — and `isOpen` would still be set from the
+            // keystroke that started this search. showDropdown() does now carry
+            // a manual-mode term, so nothing is rendered over those fields, but
+            // the stale list is still wrong to keep.
             if (this.manualMode) {
                 this.isSearching = false;
                 this.searchAbortController = null;

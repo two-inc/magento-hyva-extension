@@ -226,20 +226,50 @@ describe("address-step company number", () => {
       expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
     });
 
-    test("the persistent manual-entry link is gated on searchModeActive", () => {
-      // It has to live OUTSIDE the results dropdown: the dropdown's own
-      // `showDropdown` term requires at least one result, so the only route
-      // into manual entry used to disappear exactly when the search found
-      // nothing — which is the case a company with no registry identifier is
-      // in. Both halves are checked, binding and property.
+    test("the persistent manual-entry link is gated on search mode AND a closed dropdown", () => {
+      // RETARGETED by TWO-25288 element 5, not relaxed. The original gate was a
+      // bare `searchModeActive`, which was right while the dropdown needed at
+      // least one result to open: the only route into manual entry would
+      // otherwise have vanished exactly when the search found nothing, which is
+      // the case a company with no registry identifier is in.
+      //
+      // The dropdown now opens on typed length alone and carries a manual-entry
+      // row of its own with identical wording, so this link additionally has to
+      // disappear while the panel is open — two identical links on screen at
+      // once is a defect. What it still owns is the states the panel does not:
+      // an untouched field, and a query too short to search.
+      //
+      // Both of the original halves are still pinned — outside the panel, and
+      // named by a property the component actually defines — plus the new term.
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
       const link = doc.querySelector(".two-company-manual-entry");
       const gate = link.closest("[x-show]");
+      const bound = gate.getAttribute("x-show");
 
-      expect(gate.getAttribute("x-show")).toBe("searchModeActive");
       expect(gate.closest("[x-show='showDropdown']")).toBeNull();
-      expect("searchModeActive" in mount()).toBe(true);
+      expect(bound).toBeTruthy();
+
+      component = mount();
+      expect(bound in component).toBe(true);
+
+      // The search-mode half, unchanged: nothing to switch between with no
+      // lookup, and nothing for "manual" to be the opposite of once it is on.
+      component.isCompanySearchEnabled = "";
+      expect(component[bound]).toBe(false);
+      component.isCompanySearchEnabled = "1";
+      component.manualMode = true;
+      expect(component[bound]).toBe(false);
+
+      // The new half. Deliberately asserted in BOTH directions: a gate stuck
+      // false would hide the link from the empty field it is the only
+      // affordance for, and a gate stuck true would put it beside the panel's
+      // own copy.
+      component.manualMode = false;
+      component.isOpen = false;
+      expect(component[bound]).toBe(true);
+      component.isOpen = true;
+      expect(component[bound]).toBe(false);
     });
 
     test("the mode links resolve both ways round the search flag", () => {
