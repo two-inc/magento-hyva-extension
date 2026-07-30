@@ -207,6 +207,11 @@ describe("company-search threshold provenance", () => {
     const viewModel = templateSource("ViewModel/CheckoutConfig.php");
     expect(viewModel).toMatch(/COMPANY_SEARCH_MIN_CHARS = \d+;/);
     expect(viewModel).toContain("getCompanySearchMinChars");
+    // The getter must RETURN the constant, not a number of its own. Returning a
+    // literal that currently agrees with the constant reopens exactly the drift
+    // this whole change closes, and no value-based assertion can see it — the
+    // two numbers agree until the day someone changes one.
+    expect(viewModel).toContain("return self::COMPANY_SEARCH_MIN_CHARS;");
   });
 
   test("both hint strings use the exact English source text", () => {
