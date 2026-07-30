@@ -400,6 +400,32 @@ cannot be resolved at all — the key staying empty rather than collapsing to
 
 Its own file, like the quote-id one, because of the unremovable `alpine:init` listener.
 
+`company-search-spinner.test.js` — the in-field searching indicator, on BOTH surfaces that
+run a company search. The spinner is an animated GIF the stylesheet paints as a
+`background-image` on one childless element, so what the templates have to get right is a
+small set of things no other suite can see. Above all that it exists: the shipping-address
+field carried `isSearching` in component state, driven correctly on every exit path, and
+bound it to nothing — that form searched with no feedback at all, and a state property bound
+to nothing fails no existing test. So the `x-show` binding is read out of the shipped markup
+and the named property is then looked up on the real mounted component, because under CSP
+Alpine a binding the component does not define resolves to `undefined` and the spinner simply
+never shows. Also pinned: exactly one spinner per surface, no child nodes (the abandoned
+pure-CSS revision carried three dot spans, which would paint stray dots over the GIF, and a
+stray text `.` survives an element-count check), `aria-hidden` since it is decorative, and
+both classes spelled exactly — the positioning class that paints it and the chip-loading
+class, which is inert here but kept as the shared hook merchant and brand overlays style.
+
+The stylesheet half reads the real declarations back through jsdom's cascade rather than
+regex-matching the file, so a rule that parses differently from how it reads fails: the
+background image, `background-repeat` and `background-size`. jsdom does **not** resolve the
+multi-value `background-position` shorthand (it reports empty), so that one is deliberately
+not asserted. The `url()` is additionally resolved against the stylesheet's own directory and
+checked on disk, because a correct-looking URL pointing at a file nobody committed otherwise
+passes. And the selector is pinned to a single flat class with no `!important`: a compound or
+descendant selector here would out-specify any flat rule targeting the shared class and break
+it with nothing else failing. Nothing asserts a CSS animation — the motion is in the GIF, and
+for the same reason there is no reduced-motion rule to assert, since CSS cannot pause a GIF.
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
