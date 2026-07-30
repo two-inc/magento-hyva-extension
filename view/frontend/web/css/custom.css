@@ -158,10 +158,12 @@ summary::marker {
 /*
  * The payment-term chips' three-dot loader. This is also the shared loading
  * hook the company-search spinner further down has always carried alongside its
- * own class; the spinner is painted by a background image, so only the box-level
- * declarations here reach it and its own rule overrides those it cares about.
- * The `> span` dot rules below apply only to the chips, which are the only
- * markup with dot children.
+ * own class. Every declaration here does reach the spinner through the cascade;
+ * they are simply inert on it — the spinner is a childless element with a fixed
+ * box and a background image, so the text-level declarations have nothing to
+ * affect, and `display` is redeclared by the spinner's own rule. The `> span`
+ * dot rules below apply only to the chips, which are the only markup with dot
+ * children.
  */
 .two-term-chip__loading {
   display: inline-block;
@@ -242,8 +244,9 @@ summary::marker {
  *
  * The element carries both `two-company-search__spinner` (this rule) and
  * `two-term-chip__loading` (the shared loading hook this markup has always
- * carried). This rule comes later in the file and matches on a single class
- * apiece, so it wins the box properties it declares.
+ * carried, kept as a legacy/overlay hook and inert here). This rule comes later
+ * in the file and matches on a single class apiece, so it wins `display`, the
+ * one property both rules declare.
  */
 .two-company-search__spinner {
   position: absolute;

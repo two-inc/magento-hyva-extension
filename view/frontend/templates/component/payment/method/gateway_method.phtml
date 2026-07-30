@@ -244,12 +244,15 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 needs no asset-helper plumbing here; childless
                                 because a background image needs no child nodes.
 
-                                BOTH classes are load-bearing and neither may
-                                be dropped: `two-company-search__spinner` carries
-                                position, size and the image, while
-                                `two-term-chip__loading` is the shared loading
-                                hook this markup has always carried and which the
-                                payment-term chips also use.
+                                `two-company-search__spinner` is the class that
+                                does the work — position, size and the image.
+                                `two-term-chip__loading` paints nothing here: it
+                                is the shared loading hook this markup has always
+                                carried, kept as a legacy/overlay hook so a
+                                merchant or brand overlay styling that class
+                                still reaches this element. Its own declarations
+                                are inert on a childless element with a fixed box
+                                and a background image.
 
                                 Deliberately NOT the global magewire loader —
                                 a full-screen overlay on every keystroke is

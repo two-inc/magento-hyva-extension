@@ -14,9 +14,10 @@
  *    property bound to nothing has no user-visible effect, which is why the
  *    binding is read out of the shipped markup here rather than assumed.
  *  - it keeps BOTH classes, spelled exactly. The positioning class carries
- *    position, size and the background image; the chip-loading class is the
- *    shared loading hook this markup has always carried and which the
- *    payment-term chips also use. Drop either and nothing else in CI notices.
+ *    position, size and the background image. The chip-loading class paints
+ *    nothing here — it is the shared loading hook this markup has always
+ *    carried, kept for merchant and brand overlays that style it. Drop either
+ *    and nothing else in CI notices.
  *  - it has NO children. The old markup carried three dot spans. Leaving them in
  *    would paint three stray dots on top of the GIF.
  *  - it stays `aria-hidden`. It is decorative; the search result is what gets
@@ -36,9 +37,18 @@ const H = require("./hyva-harness");
 /** The one stylesheet the Hyva checkout loads for this module. */
 const STYLESHEET = "view/frontend/web/css/custom.css";
 
-/** Both classes, in the order the templates spell them. */
+/**
+ * Both classes, in the order the templates spell them.
+ *
+ * `POSITION_CLASS` is what paints the spinner: position, box and background
+ * image. `LEGACY_HOOK_CLASS` paints nothing on this element — its declarations
+ * are text-level and inert on a childless fixed-size box — but it is carried
+ * deliberately, as the shared loading hook a merchant or brand overlay may
+ * style. It is asserted below because dropping it is a silent behaviour change
+ * for those overlays, not because the spinner needs it to render.
+ */
 const POSITION_CLASS = "two-company-search__spinner";
-const PAINT_CLASS = "two-term-chip__loading";
+const LEGACY_HOOK_CLASS = "two-term-chip__loading";
 
 const SPINNER_SELECTOR = "." + POSITION_CLASS;
 
@@ -87,11 +97,13 @@ describe.each(SURFACES)("company-search spinner — $label", (surface) => {
     expect(spinnerFrom(surface.markup)).not.toBeNull();
   });
 
-  test("carries both the positioning and the paint class", () => {
+  // The legacy hook is inert on the spinner, so this is not a rendering
+  // assertion — it pins the class on the element for overlays that style it.
+  test("carries both the positioning and the legacy hook class", () => {
     const spinner = spinnerFrom(surface.markup);
 
     expect(spinner.classList.contains(POSITION_CLASS)).toBe(true);
-    expect(spinner.classList.contains(PAINT_CLASS)).toBe(true);
+    expect(spinner.classList.contains(LEGACY_HOOK_CLASS)).toBe(true);
   });
 
   test("has no child nodes for the CSS to fight with", () => {
@@ -202,7 +214,7 @@ describe("company-search spinner stylesheet", () => {
     document.head.appendChild(style);
 
     const el = document.createElement("span");
-    el.className = POSITION_CLASS + " " + PAINT_CLASS;
+    el.className = POSITION_CLASS + " " + LEGACY_HOOK_CLASS;
     document.body.appendChild(el);
 
     return getComputedStyle(el);
