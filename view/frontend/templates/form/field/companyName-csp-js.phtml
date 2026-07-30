@@ -31,6 +31,7 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 $quoteDetails = $quoteModel->getQuoteDetails();
 // Same flag set as gateway_method-csp-js.phtml, for the same reason: this
 // lands in an inline script and carries buyer-supplied values (email,
@@ -99,6 +100,14 @@ function <?= $gwBase ?>CompanySearchField() {
         items: [],
         selectedIndex: -1,
         isSelecting: false,
+        // True from the moment a company is chosen from the dropdown until the
+        // buyer edits the field again. Distinct from `isSelecting`, which is a
+        // one-shot flag consumed by the very next getItems() tick: this one has
+        // to OUTLIVE that tick, because `selectItem()` writes the chosen name
+        // into `search` and a company whose name is shorter than the threshold
+        // would otherwise leave the min-characters hint under a populated,
+        // closed field.
+        isCompanySelected: false,
         manualMode: false,
         /*
          * The company the identifier below currently belongs to, and that
@@ -161,6 +170,17 @@ function <?= $gwBase ?>CompanySearchField() {
          */
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         quoteData: <?= $quoteDetailsJson ?>,
+        // The one threshold for this repo, emitted from PHP
+        // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as a
+        // literal here — the guard below and the hint that claims the number
+        // must be unable to disagree (TWO-25288). Cast to an int so the
+        // comparison stays numeric; a quoted value would compare a string.
+        minSearchChars: <?= (int) $companySearchMinChars ?>,
+        // Placeholder copy (TWO-25288). Held as state, not written inline in
+        // the markup only, because the manual-entry mode has to be able to
+        // blank it: "Enter company name to search" over a field the buyer is
+        // typing into by hand is wrong.
+        companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
         countrySelectionShown: false,
         // Company-search request state. `isSearching` drives an in-field
         // spinner and `isSearchUnavailable` a "try again / enter manually"
@@ -328,6 +348,41 @@ function <?= $gwBase ?>CompanySearchField() {
             }));
         },
 
+        /**
+         * Bound as `:placeholder` (TWO-25288). The markup also carries a static
+         * `placeholder` attribute with the same source string, so the hint is
+         * present in the server-rendered HTML before Alpine boots; this getter
+         * is what lets manual mode clear it afterwards.
+         */
+        <?= $gwBase ?>GetCompanyNamePlaceholder() {
+            return this.manualMode ? '' : this.companyNamePlaceholder;
+        },
+
+        /**
+         * Bound as `x-show` on the min-characters hint (TWO-25288).
+         *
+         * Below the threshold getItems() returns early and this surface used to
+         * render nothing at all, so a buyer typing one or two characters got
+         * silence and no way to tell a too-short query from a broken search.
+         *
+         * NOT rendered at zero length: an empty field is the placeholder's job,
+         * and stacking both reads as an error on a field nobody has touched.
+         * Suppressed in manual mode, where no search runs at all, and after a
+         * selection: a chosen company whose registered name is shorter than the
+         * threshold is a complete, valid answer, so instructing the buyer to
+         * type more over a field they have just finished with is wrong.
+         *
+         * A bare method rather than an inline expression because Hyvä's
+         * CSP-friendly Alpine build resolves an attribute expression as a
+         * property lookup and cannot evaluate operators.
+         */
+        <?= $gwBase ?>ShouldShowMinCharsMessage() {
+            return !this.manualMode
+                && !this.isCompanySelected
+                && this.search.length > 0
+                && this.search.length < this.minSearchChars;
+        },
+
         // Bound as the dropdown's `x-for :key`, so it must be UNIQUE per row.
         // `companyId` is '' for every hit whose national identifier the search
         // response omitted — which it is allowed to do — so two such hits in
@@ -389,7 +444,8 @@ function <?= $gwBase ?>CompanySearchField() {
             }
 
             /*
-             * Read the field BEFORE the mode guards, not after.
+             * Read the field BEFORE the mode guards, not after. Two independent
+             * reasons, both load-bearing:
              *
              * The manual-mode guard used to return first, so in manual mode —
              * the only route on this surface for a company the registry has no
@@ -397,8 +453,18 @@ function <?= $gwBase ?>CompanySearchField() {
              * had typed, and nothing recorded it. Placement needs a name
              * alongside the number, so that name has to be captured on the
              * manual path too.
+             *
+             * `search` is also what the min-characters hint measures, so leaving
+             * it stale while in manual mode meant a field holding hand-typed
+             * text carried whatever the last search was: switching back with
+             * enableSearch() then showed no hint and ran no search until the
+             * next keystroke. The `!manualMode` term on the hint is what keeps
+             * it suppressed while manual entry is actually in effect.
              */
             this.search = this.$el.value;
+            // Any edit ends the selection: the value in the field is a query
+            // again, not a chosen company.
+            this.isCompanySelected = false;
 
             if (this.manualMode || !this.isCompanySearchEnabled) {
                 this.abortCompanySearch();
@@ -432,7 +498,7 @@ function <?= $gwBase ?>CompanySearchField() {
                 !(this.hasVouchedCompanyId() && this.search === this.companyName);
             this.applyCompanyIdEditability();
             this.isSearchUnavailable = false;
-            if (this.search.length < 3) {
+            if (this.search.length < this.minSearchChars) {
                 this.abortCompanySearch();
                 this.items = [];
                 return;
@@ -557,6 +623,7 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isOpen = false;
             this.items = [];
             this.search = item.companyName;
+            this.isCompanySelected = true;
             this.manualMode = false;
 
             /*

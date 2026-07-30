@@ -75,6 +75,12 @@ const PHP_VALUE_RULES = [
   ],
   [/^\$checkoutApiUrl$/, "https://checkout-api.test.invalid"],
   [/^\$companySearchLimit$/, "10"],
+  // The min-characters threshold, emitted bare as an int rather than quoted.
+  // Its default here matches production so the existing suites' queries keep
+  // the same meaning; the min-chars suite overrides it via `extraRules` with a
+  // DIFFERENT number, which is what proves the guards read the injected value
+  // instead of a literal that happened to agree with it.
+  [/^\(int\) \$companySearchMinChars$/, "3"],
   [/^\$isOrderIntentEnabled$/, "1"],
   [/^\$isAddressSearchEnabled$/, "1"],
   [/^\$isCompanySearchEnabled$/, "1"],
