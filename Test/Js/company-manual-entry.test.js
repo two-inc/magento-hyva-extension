@@ -585,21 +585,32 @@ describe("address-step manual-entry affordance", () => {
         expect(persistentVisible()).toBe(false);
       });
 
-      test("editing the chosen name brings the link back", async () => {
+      test("editing the chosen name brings the link back on the keystroke", async () => {
         // So the state above is a resting place, not a dead end. Without this,
         // hard-coding the gate to false would satisfy the test above — and the
         // buyer who picked the wrong company would have no way back to manual
         // entry at all.
+        //
+        // Driven by the UNDEBOUNCED handler alone, with no getItems() await, and
+        // that is the point of the test rather than a shortcut. Both handlers
+        // clear the flag, so a version that awaited the debounced one passed with
+        // either clear present and pinned neither — mutating away the undebounced
+        // one left the whole suite green. The affordance has to return on the
+        // keystroke: half a second of a buyer being told nothing offers manual
+        // entry is the same defect as never being told, only briefer.
         await pickFromDropdown();
 
         // Edited SHORT, so the panel stays down and the link is the only route
-        // that could answer. getItems() is what clears the selection flag.
+        // that could answer.
         field.value = "Jo";
         component.noteCompanyQuery();
-        await component.getItems();
 
         expect(component.isCompanySelected).toBe(false);
         expect(component.showDropdown()).toBe(false);
+        expect(persistentVisible()).toBe(true);
+
+        // And the debounced handler behind it does not take it away again.
+        await component.getItems();
         expect(persistentVisible()).toBe(true);
       });
 
