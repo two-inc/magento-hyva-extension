@@ -47,7 +47,17 @@ $form = $block->getData("form");
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
     <div class="group input-group flex gap-4">
-        <div x-data="<?= $gwBase ?>CompanySearchField" class="relative w-full" @click.outside="closeDropdown">
+        <?php
+        /*
+         * `two-company-search` is what reserves the trailing padding on the
+         * input so the spinner never sits on top of a long company name. It
+         * also supplies `position: relative`, which this wrapper already had
+         * as a Tailwind utility — the duplicate is deliberate, so the CSS
+         * class alone is sufficient and does not depend on the merchant's
+         * Tailwind build having emitted `relative`.
+         */
+        ?>
+        <div x-data="<?= $gwBase ?>CompanySearchField" class="two-company-search relative w-full" @click.outside="closeDropdown">
             <input type="text" class="<?= $escaper->escapeHtmlAttr(
                 $element->renderClass([
                     "block w-full form-input grow renderer-text",
@@ -63,6 +73,23 @@ $form = $block->getData("form");
             autocomplete="off"
             @input.debounce.500ms="getItems"
             />
+            <!--
+                In-field searching indicator (TWO-25288). `isSearching` has
+                existed in this component's state and been driven correctly for
+                some time, but nothing on this surface bound it, so the address
+                form searched with no visible feedback at all.
+
+                Same element and same two classes as the payment tile, so one
+                stylesheet rule serves both surfaces: the positioning class
+                carries the spokes geometry, the chip-loading class carries the
+                paint a brand overlay recolours. Childless by design — the
+                spokes are drawn by CSS.
+            -->
+            <span
+                x-show="isSearching"
+                class="two-company-search__spinner two-term-chip__loading"
+                aria-hidden="true"
+            ></span>
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualMode" class="mt-1 text-right">
                 <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">

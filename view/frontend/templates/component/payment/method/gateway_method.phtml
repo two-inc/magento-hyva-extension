@@ -236,12 +236,21 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 data-validate='{"required": true}'
                                 >
                             <!--
-                                In-field searching indicator. Reuses the
-                                payment-term chips' three-dot loader
-                                (`two-term-chip__loading`, styled and animated
-                                by Two_Gateway) rather than introducing a
-                                second loading idiom; custom.css only supplies
-                                the positioning that puts it inside the field.
+                                In-field searching indicator (TWO-25288): a
+                                pure-CSS radial-spokes spinner, drawn entirely
+                                by custom.css from this one childless element —
+                                no image asset and no child nodes to keep in
+                                step with the CSS.
+
+                                BOTH classes are load-bearing and neither may
+                                be dropped or merged into a compound selector:
+                                `two-company-search__spinner` carries position
+                                and the spokes geometry, `two-term-chip__loading`
+                                carries paint. A brand overlay recolours the
+                                paint class with a flat single-class `color`
+                                rule and wins on load order; the geometry reads
+                                that colour back through `currentColor`.
+
                                 Deliberately NOT the global magewire loader —
                                 a full-screen overlay on every keystroke is
                                 the bug that pattern replaced.
@@ -250,7 +259,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 x-show="isSearching"
                                 class="two-company-search__spinner two-term-chip__loading"
                                 aria-hidden="true"
-                            ><span>.</span><span>.</span><span>.</span></span>
+                            ></span>
                             </span>
                             <!-- Search Results Dropdown -->
                             <div

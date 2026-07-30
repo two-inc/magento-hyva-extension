@@ -155,6 +155,12 @@ summary::marker {
   opacity: 0.75;
 }
 
+/*
+ * The payment-term chips' three-dot loader. Also the PAINT hook for the
+ * company-search spinner further down, which carries this class alongside its
+ * own: `color` here is what a brand overlay recolours. The `> span` dot rules
+ * below apply only to the chips, which are the only markup with dot children.
+ */
 .two-term-chip__loading {
   display: inline-block;
   letter-spacing: 2px;
@@ -195,21 +201,22 @@ summary::marker {
 }
 
 /*
- * Company-search chrome (TWO-25233).
+ * Company-search chrome (TWO-25233, spinner reworked under TWO-25288).
  *
- * Only positioning and the notice's colours live here. The spinner's dots
- * and their animation are the payment-term chips' `two-term-chip__loading`
- * rules, shipped by Two_Gateway — one loading idiom in the checkout, not
- * two. Positioning is CSS rather than Tailwind utilities so the module does
- * not depend on the merchant's Tailwind build having generated a specific
- * set of inset classes.
+ * This is the ONLY stylesheet the Hyva checkout loads for this module, so
+ * everything the company-search spinner needs — geometry, animation and
+ * positioning — is here. An earlier version of this comment said the dots and
+ * their animation came from the base module and only positioning lived here;
+ * that was never true on this surface. Positioning is CSS rather than Tailwind
+ * utilities so the module does not depend on the merchant's Tailwind build
+ * having generated a specific set of inset classes.
  */
 .two-company-search {
   position: relative;
 }
 
 /*
- * Reserve room for the dots unconditionally rather than only while
+ * Reserve room for the spinner unconditionally rather than only while
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  */
@@ -217,13 +224,77 @@ summary::marker {
   padding-right: 34px;
 }
 
+/*
+ * The company-search spinner: radial spokes, pure CSS, no image asset and no
+ * DOM children.
+ *
+ * THE SELECTOR MUST STAY A SINGLE FLAT CLASS, and the element must keep BOTH
+ * `two-company-search__spinner` (this rule — position and geometry) and
+ * `two-term-chip__loading` (paint). A brand overlay recolours the paint class
+ * with a flat single-class `color` rule and wins purely on stylesheet load
+ * order; a compound selector, a descendant chain that reintroduces `color`, or
+ * an `!important` here would out-specify it and silently break branded
+ * recolouring with nothing failing in CI.
+ */
 .two-company-search__spinner {
   position: absolute;
-  top: 50%;
   right: 12px;
-  transform: translateY(-50%);
   pointer-events: none;
+
+  /*
+   * Centred with a negative margin rather than `translateY(-50%)`: `transform`
+   * belongs to the spin animation, and a translate here would be interpolated
+   * away to the rotation over the first cycle and drop the spinner out of the
+   * field.
+   */
+  top: 50%;
+  margin-top: -0.5em;
+
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+  border-radius: 50%;
+
+  /* An overlay sets --two-spinner-color once and is done. The fallback is the
+     inherited text colour, which is what the existing overlay `color:`
+     overrides already set. */
+  color: var(--two-spinner-color, currentColor);
+
+  /* 12 spokes: 30deg period, 10deg of ink each. */
+  background: repeating-conic-gradient(
+    from 0deg,
+    currentColor 0deg 10deg,
+    transparent 10deg 30deg
+  );
+
+  /* Punch out the middle so the spokes read as spokes, not a pie. */
+  -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+          mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+
+  /* steps() gives the classic mechanical spoke-stepping tick. */
+  animation: two-spinner-spin 1s steps(12, end) infinite;
 }
+
+@keyframes two-spinner-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* A loading indicator must keep indicating, so slow it rather than stopping
+   it — a frozen spinner reads as a hung page. */
+@media (prefers-reduced-motion: reduce) {
+  .two-company-search__spinner {
+    animation-duration: 3s;
+  }
+}
+
+/*
+ * Sizing follows the surrounding text (1em), so a surface that needs a
+ * different size should set font-size on the spinner rather than width/height,
+ * keeping the mask geometry proportional.
+ */
 
 .two-company-search__unavailable {
   border-radius: 3px;
