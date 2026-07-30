@@ -29,7 +29,13 @@
 
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
+
 const H = require("./hyva-harness");
+
+/** The one stylesheet the Hyva checkout loads for this module. */
+const STYLESHEET = "view/frontend/web/css/custom.css";
 
 /** Both classes, in the order the templates spell them. */
 const POSITION_CLASS = "two-company-search__spinner";
@@ -135,5 +141,71 @@ describe.each(SURFACES)("company-search spinner — $label", (surface) => {
       fetchStub.restore();
       env.restore();
     }
+  });
+});
+
+/**
+ * The stylesheet is the entire spinner, so the two properties that decide
+ * whether it visibly spins at all get pinned here.
+ *
+ * jsdom does not lay out or animate, so this reads the shipped CSS as text. A
+ * blunt check, but it is the axis that nearly shipped broken: `steps(12, end)`
+ * over a full turn advances in 30deg increments and the spokes repeat every
+ * 30deg, so every rendered state maps the pattern onto itself and the spinner
+ * stands dead still while the animation runs. A test asserting only the
+ * animation NAME would have passed a motionless spinner.
+ */
+describe("company-search spinner stylesheet", () => {
+  /**
+   * The stylesheet with its comments stripped.
+   *
+   * Load-bearing: the rules below forbid constructs the comments explaining
+   * those very rules necessarily name, so matching against the raw file makes
+   * every one of them a guaranteed false positive.
+   *
+   * @returns {string}
+   */
+  function declarations() {
+    return fs
+      .readFileSync(path.join(H.REPO_ROOT, STYLESHEET), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+  }
+
+  /** @returns {string} */
+  function spinnerRule() {
+    const match = declarations().match(
+      /\.two-company-search__spinner\s*\{([\s\S]*?)\}/,
+    );
+    if (match === null) {
+      throw new Error("no .two-company-search__spinner rule in " + STYLESHEET);
+    }
+    return match[1];
+  }
+
+  test("spins linearly, never in spoke-period steps", () => {
+    const rule = spinnerRule();
+
+    expect(rule).toMatch(
+      /animation:\s*two-spinner-spin\s+[\d.]+m?s\s+linear\s+infinite\s*;/,
+    );
+    expect(rule).not.toMatch(/steps\s*\(/);
+  });
+
+  test("does not centre itself with a transform the animation owns", () => {
+    // `transform` belongs to the keyframes. A transform in the positioning
+    // block is interpolated away to the rotation over the first cycle and drops
+    // the spinner out of the field.
+    expect(spinnerRule()).not.toMatch(/(^|[\s;])transform\s*:/);
+  });
+
+  test("keeps the selector a single flat class, with no !important", () => {
+    const css = declarations();
+
+    // A compound selector or a descendant chain would out-specify the flat
+    // single-class `color` rule a brand overlay uses on the paint class, and
+    // silently break branded recolouring with nothing else failing.
+    expect(css).not.toMatch(/\.two-company-search__spinner\s*\./);
+    expect(css).not.toMatch(/\.\S+\s+\.two-company-search__spinner/);
+    expect(spinnerRule()).not.toMatch(/!important/);
   });
 });

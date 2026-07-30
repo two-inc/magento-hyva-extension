@@ -276,8 +276,14 @@ summary::marker {
   -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
           mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
 
-  /* steps() gives the classic mechanical spoke-stepping tick. */
-  animation: two-spinner-spin 1s steps(12, end) infinite;
+  /*
+   * MUST stay `linear`. A stepped timing function looks tempting for the
+   * mechanical spoke-by-spoke tick, but the spokes repeat every 30deg, so any
+   * step whose increment is a multiple of 30deg — `steps(12, end)` over a full
+   * turn being exactly that — maps the pattern onto itself at every rendered
+   * state and the spinner stands dead still while claiming to animate.
+   */
+  animation: two-spinner-spin 1s linear infinite;
 }
 
 @keyframes two-spinner-spin {
