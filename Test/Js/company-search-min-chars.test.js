@@ -199,8 +199,13 @@ describe("company-search threshold provenance", () => {
     });
 
     // And it originates in the view model, not in a template local.
+    //
+    // Deliberately NOT pinning the shipped value here. Changing the threshold is
+    // a legitimate change, and it is pinned in exactly one place — the PHP unit
+    // test on the view model — so that it takes one edit rather than turning this
+    // suite red for a reason that has nothing to do with drift.
     const viewModel = templateSource("ViewModel/CheckoutConfig.php");
-    expect(viewModel).toContain("COMPANY_SEARCH_MIN_CHARS = 3");
+    expect(viewModel).toMatch(/COMPANY_SEARCH_MIN_CHARS = \d+;/);
     expect(viewModel).toContain("getCompanySearchMinChars");
   });
 
