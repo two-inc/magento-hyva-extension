@@ -458,17 +458,37 @@ an option with no owning list. `.prevent` is load-bearing (Space scrolls, Enter 
 is only visible in the attribute NAME, so the tests read attribute names, not just values.
 **Duplication:** there are two routes into manual entry and they now carry identical copy, so
 `persistentManualEntryVisible` makes them mutually exclusive — the link below the field owns
-the untouched and sub-threshold states, the in-dropdown row owns everything from the threshold
-up, including a search that matched nothing or failed. The `never both, never neither`
-assertion sweeps the whole length range rather than sampling it. The threshold is injected as
-5 throughout, so a leftover literal 3 fails.
+the states in which the panel is SHUT, the in-dropdown row owns the states in which it is open,
+including a search that matched nothing or failed. The `never both, never neither` assertion
+sweeps the whole length range rather than sampling it. The threshold is injected as 5
+throughout, so a leftover literal 3 fails.
+
+The two do not cover the searching mode between them, and the wording is why. The copy is a
+factual claim about the current state rather than a label, so a **completed selection** offers
+neither route: `selectItem()` lowers `isOpen`, which left the link showing "my company is not
+on the list" to a buyer who had just picked their company off that list. `isCompanySelected` is
+the term that excludes it, and editing the name clears the flag so the link returns.
+
+That bug is the reason for the `states the length sweep cannot reach` group, and the lesson
+generalises past this suite. The length sweep drives a component that has never selected a
+company nor closed a dropdown, so every point it visits is one where exactly one route is
+correct — it could not have reached the failing state, and a sweep unable to reach a state is
+not evidence about it. A wide-looking loop reads as strong coverage and was worth none here.
+The group walks in deliberately: through the real `selectItem()` path, both halves of the
+recovery, and an outside click.
+
+The outside click is also why the descriptions above changed. `closeDropdown()` is bound as
+`@click.outside` and lowers `isOpen` without touching `search`, so at full query length the row
+goes and the link takes back over — the row does not own "everything from the threshold
+upwards", as three comments here and in the templates used to say. Exactly one route shows
+either way, so only the description was wrong; the behaviour is left alone and now pinned.
 
 The reverse link (`Search for company`) got the same keyboard treatment even though element 5
 does not name it: making the way INTO manual entry keyboard-operable while leaving the way out
 mouse-only would have built a trap that did not exist before.
 
 Mutation-checked, each revert confirmed red. Counts are failures within
-`company-manual-entry.test.js` (29 tests) unless another suite is named:
+`company-manual-entry.test.js` (33 tests) unless another suite is named:
 
 | Mutation                                                              | Tests failing                     |
 | --------------------------------------------------------------------- | --------------------------------- |
@@ -484,9 +504,10 @@ Mutation-checked, each revert confirmed red. Counts are failures within
 | Drop `@keydown.space.stop.prevent` from all three                      | 4                                 |
 | Rename the Space handler's event so Space stops being handled          | 3                                 |
 | Drop `.prevent` from the Space handlers                                | 4                                 |
-| Delete the dropdown term from `persistentManualEntryVisible`           | 2 + 1 address-company-id          |
-| `persistentManualEntryVisible` always true                             | 4 + 1 address-company-id          |
-| `persistentManualEntryVisible` always false                            | 3 + 1 address-company-id          |
+| Delete the dropdown term from `persistentManualEntryVisible`           | 4 + 1 address-company-id          |
+| Delete the selection term from `persistentManualEntryVisible`          | 1 + 1 address-company-id          |
+| `persistentManualEntryVisible` always true                             | 7 + 1 address-company-id          |
+| `persistentManualEntryVisible` always false                            | 5 + 1 address-company-id          |
 | `enterManually()` stops clearing `items`                               | 1 + 1 company-name-field          |
 | `enterManually()` stops calling `stopPropagation`                      | 1 + 1 company-name-field          |
 | `getItems()` stops applying the response's `items`                     | 1 + 3 company-name-field          |
