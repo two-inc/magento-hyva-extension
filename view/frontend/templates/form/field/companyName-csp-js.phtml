@@ -113,6 +113,23 @@ function <?= $gwBase ?>CompanySearchField() {
         companyName: '',
         companyId: '',
         /*
+         * Where the identifier in `companyId` came from: `'registry'` for one a
+         * search hit supplied, `'manual'` for one the buyer typed, `''` for
+         * none.
+         *
+         * Load-bearing because both values live under the same storage key, and
+         * the two have opposite editability rules — a registry number must not
+         * be typed over, a hand-typed one must always be correctable. Without
+         * the provenance the restore path could only ask "is there a number",
+         * so the first Magewire re-render after the buyer typed one locked the
+         * field over their own value and a typo could never be fixed.
+         *
+         * It is also what makes the stale-identifier clear below safe: only a
+         * registry number is dropped when the name stops matching, because only
+         * a registry number belongs to a name at all.
+         */
+        companyIdSource: '',
+        /*
          * Bound by companyName.phtml as `:disabled` on the company-number
          * input, and the ONLY thing that locks that field — the greyed look
          * derives from it in custom.css (`input.company_id:disabled`), shared
@@ -173,10 +190,20 @@ function <?= $gwBase ?>CompanySearchField() {
              * editability rule compares the field text against it, and
              * restoring one without the other would make a restored pick look
              * like an edited name and unlock a registry-supplied number.
+             *
+             * The provenance is restored with them and the lock derives from it,
+             * NOT from "is there a number". Both a registry pick and a
+             * hand-typed number land under the same key, so an unqualified
+             * `!this.companyId` re-locked the field over the buyer's own value
+             * on the next re-render and made a typo uncorrectable. An absent or
+             * unrecognised source leaves the field typeable: nothing has vouched
+             * for that number, and the failure that direction is recoverable
+             * while the other one is a dead end.
              */
             this.companyName = data.company_name || '';
             this.companyId = data.company_id || '';
-            this.companyIdEntryRequired = !this.companyId;
+            this.companyIdSource = data.company_id_source || '';
+            this.companyIdEntryRequired = !this.hasVouchedCompanyId();
             this.applyCompanyIdEditability();
         },
 
@@ -196,6 +223,52 @@ function <?= $gwBase ?>CompanySearchField() {
 
         get searchModeActive() {
             return Boolean(this.isCompanySearchEnabled) && !this.manualMode;
+        },
+
+        /**
+         * Is there an identifier that something other than the buyer vouched
+         * for? Only a registry hit can; a hand-typed number is the buyer's own
+         * and stays theirs to correct.
+         *
+         * @returns {boolean}
+         */
+        hasVouchedCompanyId() {
+            return Boolean(this.companyId) && this.companyIdSource === 'registry';
+        },
+
+        /**
+         * Drop a registry-supplied identifier that no longer belongs to the name
+         * in the field, from component state AND from storage together.
+         *
+         * The two have to move as one. The blob is what the payment step reads,
+         * and it derives its own editability from the presence of `company_id`
+         * there — so a name written beside a previous company's number produced a
+         * payment step showing the new name with the old number, LOCKED, with
+         * nothing forcing the buyer to touch it, and sent the old organisation
+         * number onward. Clearing state alone would only fix the address step's
+         * display and leave the wrong number in the blob.
+         *
+         * Scoped to registry-supplied numbers on purpose: clearing a hand-typed
+         * one here would delete the buyer's own entry every time they went back
+         * and adjusted the name.
+         */
+        forgetStaleCompanyId() {
+            if (!this.hasVouchedCompanyId()) return;
+            if (this.search === this.companyName) return;
+
+            this.companyId = '';
+            this.companyIdSource = '';
+            /*
+             * Set here, not left to the caller. Dropping the number makes typing
+             * one mandatory by definition, and the manual-mode caller below does
+             * not recompute this flag — so without it, leaving manual mode
+             * re-locked a field this had just emptied, which is the empty AND
+             * locked AND required dead end.
+             */
+            this.companyIdEntryRequired = true;
+            // A merging write, never a rebuild from a key list: dropping
+            // `quote_id` that way is what silently disarmed the new-order clear.
+            twoAddressWriteSelection({ company_id: '', company_id_source: '' });
         },
 
         /**
@@ -228,16 +301,27 @@ function <?= $gwBase ?>CompanySearchField() {
          *
          * No name is written here and nothing is cleared: an identifier edit
          * says nothing about the name. Clearing the identifier when the NAME
-         * changes is a separate concern and a separate change.
+         * changes is forgetStaleCompanyId()'s job, and only for registry ones.
+         *
+         * The provenance is written WITH the value, not derived from it later.
+         * Both surfaces read one key, so without it the restore path cannot tell
+         * this number from a registry pick's and locks the field over the
+         * buyer's own value on the next re-render — at which point a typo is
+         * uncorrectable, because this field is the only company-number input on
+         * the address step.
          */
         onCompanyIdInput() {
             const value = this.$el.value;
             if (value === this.companyId) return;
 
             this.companyId = value;
+            this.companyIdSource = 'manual';
             // A merging write, never a rebuild from a key list: dropping
             // `quote_id` that way is what silently disarmed the new-order clear.
-            const companyData = twoAddressWriteSelection({ company_id: value });
+            const companyData = twoAddressWriteSelection({
+                company_id: value,
+                company_id_source: 'manual'
+            });
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: companyData
@@ -272,12 +356,11 @@ function <?= $gwBase ?>CompanySearchField() {
          * company a stored identifier was written for.
          *
          * Deliberately does NOT announce itself on `shipping-company-selected`.
-         * A name edit leaves any previously stored identifier in place — that
-         * clear is a separate change — so announcing here would push the new
-         * name beside the OLD number to the payment step and, worse, arm an
-         * order intent for that mismatched pair. The identifier handler
-         * announces instead, by which point the name in the blob is already
-         * this one.
+         * The name is now written with no identifier beside it — the callers run
+         * forgetStaleCompanyId() first, which drops a registry number the name no
+         * longer describes — so announcing here would arm an order intent for a
+         * company with no number at all. The identifier handler announces
+         * instead, by which point the name in the blob is already this one.
          *
          * Nothing is written while the text still matches, so an intact
          * registry pick is never overwritten by its own field.
@@ -319,6 +402,11 @@ function <?= $gwBase ?>CompanySearchField() {
 
             if (this.manualMode || !this.isCompanySearchEnabled) {
                 this.abortCompanySearch();
+                // Same stale-pair clear as the search path below. A buyer who
+                // picked a company and then switched to manual entry is editing
+                // the name of a DIFFERENT company, so the picked number must not
+                // travel with the new name either.
+                this.forgetStaleCompanyId();
                 this.commitCompanyName();
                 this.applyCompanyIdEditability();
                 return;
@@ -335,17 +423,33 @@ function <?= $gwBase ?>CompanySearchField() {
              * Deliberately not a blanket unlock — while the text still matches,
              * the field stays locked, which is what stops a registry-supplied
              * number being typed over.
+             *
+             * The clear runs FIRST, so the flag is computed against the pair as
+             * it now stands rather than against the number just dropped.
              */
+            this.forgetStaleCompanyId();
             this.companyIdEntryRequired =
-                !(this.companyId && this.search === this.companyName);
+                !(this.hasVouchedCompanyId() && this.search === this.companyName);
             this.applyCompanyIdEditability();
-            this.commitCompanyName();
             this.isSearchUnavailable = false;
             if (this.search.length < 3) {
                 this.abortCompanySearch();
                 this.items = [];
                 return;
             }
+            /*
+             * Recorded only once the text is long enough to be a company name —
+             * BELOW the guard, not above it.
+             *
+             * The payment step reads this key, so committing above the guard
+             * published every keystroke fragment as the company name, the empty
+             * string included: a buyer who cleared the field left `company_name`
+             * empty in the blob and the payment step showed no company at all.
+             * The manual and lookup-off paths above commit unguarded on purpose —
+             * there is no search there for a length to be a threshold FOR, and
+             * the name the buyer types is the only one that will ever exist.
+             */
+            this.commitCompanyName();
 
             // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
             const countryCode = window.twoGatewayGetCountryCode(this.quoteData);
@@ -464,7 +568,11 @@ function <?= $gwBase ?>CompanySearchField() {
              */
             this.companyName = item.companyName;
             this.companyId = item.companyId || '';
-            this.companyIdEntryRequired = !this.companyId;
+            // The one place that may claim registry provenance, and only when the
+            // hit actually carried an identifier — a hit that arrived without one
+            // has vouched for nothing.
+            this.companyIdSource = this.companyId ? 'registry' : '';
+            this.companyIdEntryRequired = !this.hasVouchedCompanyId();
             this.applyCompanyIdEditability();
 
             const input = this.$root.querySelector('input[type="text"]');
@@ -479,6 +587,7 @@ function <?= $gwBase ?>CompanySearchField() {
             const companyData = twoAddressWriteSelection({
                 company_name: item.companyName,
                 company_id: item.companyId,
+                company_id_source: this.companyIdSource,
                 manual_mode: false
             });
 

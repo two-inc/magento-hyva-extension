@@ -9,23 +9,32 @@
     <body>
         <referenceBlock name="entity-form.field-renderers">
             <!--
-                Deliberately NOT gated on the company-search flag any more.
+                Gated on the payment method being ACTIVE, not on the
+                company-search flag.
 
-                The address step is the checkout's single company field, so it
-                has to be able to supply a company identifier on every store —
-                and the identifier input lives in this renderer. Leaving the
-                flag on the block meant a store with company search switched
-                off got Hyvä's plain text field and no identifier input
-                anywhere in the address step.
+                Two conditions, two different jobs. The address step is the
+                checkout's single company field, so it has to be able to supply a
+                company identifier on every store that offers this payment
+                method — gating on the search flag meant a store with company
+                search switched off got Hyvä's plain text field and no identifier
+                input anywhere in the address step. But a store with the method
+                switched off must not have its address form replaced at all: it
+                gets an unexplained company-number input for a payment method it
+                does not offer.
 
-                The flag still decides everything it decided before: the
-                lookup itself, the results dropdown and the mode links are all
-                conditional inside the template, and the component refuses to
-                search when it is off. What is unconditional now is the field
-                pair — name plus identifier — because that pair is what
-                placement needs.
+                Same condition the payment tile uses in
+                hyva_checkout_components.xml, for the same reason: nothing this
+                module renders into the checkout should appear when the method is
+                off.
+
+                The search flag still decides everything it decided before — the
+                lookup, the results dropdown and the mode links are conditional
+                inside the template, and the component refuses to search when it
+                is off. What is unconditional within an active store is the field
+                pair, name plus identifier, because that pair is what placement
+                needs.
             -->
-            <block name="form-field.company" as="company" template="Two_GatewayHyva::form/field/companyName.phtml">
+            <block name="form-field.company" as="company" ifconfig="payment/two_payment/active" template="Two_GatewayHyva::form/field/companyName.phtml">
                 <arguments>
                     <argument name="branded_view_model" xsi:type="object">
                         Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface

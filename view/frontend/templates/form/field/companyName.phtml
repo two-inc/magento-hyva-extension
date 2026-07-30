@@ -6,19 +6,15 @@
 declare(strict_types=1);
 
 use Hyva\Checkout\Model\Form\EntityFieldInterface;
-use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\Escaper;
 use Magento\Framework\View\Element\Template;
 use Magewirephp\Magewire\Component\Form as MagewireFormComponent;
 use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
-use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /** @var Template $block */
 /** @var EntityFieldInterface $element */
-/** @var ViewModelRegistry $viewModels */
 /** @var Escaper $escaper */
 /** @var MagewireFormComponent $magewire */
-/** @var CheckoutConfig $viewModel */
 
 /** @var BrandedHyvaViewModelInterface $brandedViewModel */
 $brandedViewModel = $block->getData('branded_view_model');
@@ -67,9 +63,16 @@ $form = $block->getData("form");
              * getter rather than in a PHP branch around the markup. With the
              * lookup switched off there is no search to go back to and nothing
              * for "manual" to be the opposite of, so neither link should
-             * render — but keeping that fact in component state means the
-             * suite can exercise both configurations against the real shipped
-             * markup, which a PHP branch would hide from it.
+             * render.
+             *
+             * Keeping the fact in component state rather than in PHP means the
+             * markup is the same on both configurations, so the flag can be
+             * exercised at runtime — the suite mounts the shipped markup and
+             * flips `isCompanySearchEnabled` on the component. That is a weaker
+             * check than rendering the off-configuration's own markup, which the
+             * harness does not do: it renders the template with the flag on.
+             * What it does buy is that a PHP branch cannot hide the off state
+             * from the suite entirely.
              */
             ?>
             <!-- Search for company link (shows in manual mode) -->
@@ -164,12 +167,27 @@ $form = $block->getData("form");
              * step, exactly as the company NAME chosen here already does.
              */
             ?>
+            <?php
+            /*
+             * `two_address_company_id`, NOT `company_id`.
+             *
+             * The payment tile's own number inputs already claim `company_id`
+             * and `manual_company_id`, and its bridge resolves that field by
+             * `document.getElementById("company_id")`. Both steps can be in the
+             * document at once, and a duplicate id makes that lookup return
+             * whichever came first in document order — the address step's — so
+             * the tile would write its value into this field instead of its own.
+             * A distinct id keeps the label association without touching the
+             * tile's lookup.
+             */
+            ?>
             <div class="field two-company-id mt-2">
-                <label class="block font-semibold text-gray-700">
+                <label for="two_address_company_id" class="block font-semibold text-gray-700">
                     <?= $escaper->escapeHtml(__("Company Number")) ?>
                 </label>
                 <input
                     type="text"
+                    id="two_address_company_id"
                     class="company_id block w-full form-input grow renderer-text"
                     autocomplete="off"
                     data-two-company-id="true"
