@@ -35,6 +35,3 @@ CLAUDE.local.md
 
 # Adversarial-review scratch diffs — never committed.
 .review/
-
-# Git worktrees
-.worktrees/
