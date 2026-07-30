@@ -34,6 +34,22 @@ class CheckoutConfig implements ArgumentInterface
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
     /**
+     * Characters a buyer must type before a company search is issued.
+     *
+     * The single source of truth for this repo (TWO-25288). Every company-search
+     * surface reads it through getCompanySearchMinChars() — the enforcing guard
+     * AND the "please enter N or more characters" hint that claims it. They used
+     * to be independent literals in five places across three templates, which
+     * meant the number a buyer was told and the number actually enforced could
+     * drift silently; that drift is the defect this constant closes, not the
+     * copy. Interpolate it into the hint, never restate it.
+     *
+     * Not a merchant config field on purpose: there is no admin setting for it,
+     * and inventing one would make the two numbers diverge per store view.
+     */
+    public const COMPANY_SEARCH_MIN_CHARS = 3;
+
+    /**
      * @var ConfigRepository
      */
     private $configRepository;
@@ -169,6 +185,14 @@ class CheckoutConfig implements ArgumentInterface
     public function getCompanySearchLimit()
     {
         return 50;
+    }
+
+    /**
+     * @see self::COMPANY_SEARCH_MIN_CHARS
+     */
+    public function getCompanySearchMinChars(): int
+    {
+        return self::COMPANY_SEARCH_MIN_CHARS;
     }
 
     public function getSupportedCountryCodes()

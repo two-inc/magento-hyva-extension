@@ -26,6 +26,7 @@ $gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 /** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
 $element = $block->getData("element");
 $attributes = $element->getAttributes();
@@ -63,6 +64,26 @@ $form = $block->getData("form");
                     "block w-full form-input grow renderer-text",
                 ]),
             ) ?>"
+            <?php
+            /*
+             * Empty-field hint (TWO-25288). The address step had none, so an
+             * empty company field gave no clue that typing into it searches a
+             * company registry rather than just recording free text.
+             *
+             * Emitted BEFORE renderAttributes() deliberately: duplicate
+             * attributes are resolved first-occurrence-wins, and Hyvä's field
+             * renderer is free to emit a `placeholder` of its own from the
+             * customer attribute's frontend config. Ours has to win, or the hint
+             * is silently absent on any install where it does.
+             *
+             * Static attribute AND an Alpine binding, not either alone: the
+             * static one is in the server-rendered HTML so the hint is there
+             * before Alpine boots, and the binding is what blanks it once the
+             * buyer switches to manual entry.
+             */
+            ?>
+            placeholder="<?= $escaper->escapeHtmlAttr(__('Enter company name to search')) ?>"
+            :placeholder="<?= $gwBase ?>GetCompanyNamePlaceholder"
             <?php if ($element->hasAttributes()): ?>
                 <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
             <?php endif; ?>
@@ -93,6 +114,34 @@ $form = $block->getData("form");
                 class="two-company-search__spinner two-term-chip__loading"
                 aria-hidden="true"
             ></span>
+            <?php
+            /*
+             * Minimum-characters hint (TWO-25288). Below the threshold the
+             * component returns early from getItems() and this surface rendered
+             * nothing whatsoever, so one or two characters produced silence
+             * indistinguishable from a search that had failed.
+             *
+             * The number is INTERPOLATED from the same value the guard compares
+             * against — never restated as a literal — so the count a buyer is
+             * told and the count enforced cannot drift. That drift is the actual
+             * defect; the wording is incidental.
+             *
+             * A FIXED count, not a remaining-count: a message that counts down
+             * as you type re-renders on every keystroke and reads as validation
+             * failing repeatedly.
+             *
+             * Sits OUTSIDE the results dropdown, unlike the payment tile's
+             * equivalent. That dropdown is gated on `items.length > 0` here, so
+             * a hint nested inside it could never appear at a length that has
+             * fetched no items.
+             */
+            ?>
+            <div
+                x-show="<?= $gwBase ?>ShouldShowMinCharsMessage"
+                class="two-company-search__min-chars mt-1 text-sm text-gray-700"
+            ><?= $escaper->escapeHtml(
+                __('Please enter %1 or more characters', $companySearchMinChars),
+            ) ?></div>
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualMode" class="mt-1 text-right">
                 <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">

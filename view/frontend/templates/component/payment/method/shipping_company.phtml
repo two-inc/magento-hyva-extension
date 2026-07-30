@@ -24,6 +24,7 @@ $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 // Same flag set as gateway_method-csp-js.phtml, for the same reason: this
@@ -151,6 +152,15 @@ document.addEventListener('alpine:init', () => {
         quote : <?= $quoteDetailsJson ?>,
         countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
         searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
+        // The one threshold for this repo, emitted from PHP
+        // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as a
+        // literal here (TWO-25288). This picker renders no min-characters hint
+        // of its own — its markup lives outside this module, see the note on
+        // isSearchUnavailable below — so only the guards change here; it reads
+        // the shared value so it cannot enforce a different number from the
+        // surfaces that do claim one. Cast to an int so the comparison stays
+        // numeric.
+        minSearchChars: <?= (int) $companySearchMinChars ?>,
         countrySelectionShown: false,
         searchUnavailableShown: false,
         selectedIndex: -1,
@@ -216,7 +226,7 @@ document.addEventListener('alpine:init', () => {
             this.isSearchUnavailable = false;
 
             if (this.countryCode) {
-                if (this.search.length < 3) {
+                if (this.search.length < this.minSearchChars) {
                     this.abortCompanySearch();
                     this.endSearchInteraction();
                     this.items = [];
@@ -354,7 +364,7 @@ document.addEventListener('alpine:init', () => {
                 this.abortCompanySearch();
                 this.endSearchInteraction();
                 // Only show the message once per interaction to avoid spamming
-                if (!this.countrySelectionShown && this.search.length >= 3) {
+                if (!this.countrySelectionShown && this.search.length >= this.minSearchChars) {
                     this.countrySelectionShown = true;
                     window.dispatchMessages([{
                         type: 'warning',
