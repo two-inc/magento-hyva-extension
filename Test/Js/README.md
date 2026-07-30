@@ -223,6 +223,20 @@ detail lookup filling the address fields, a failed lookup leaving a buyer-typed 
 alone, a company with no lookup id skipping the request, and the click handlers stopping
 propagation so the address-book modal does not close.
 
+Also here: taking the "Search for company" link back out of manual entry actually RETURNS the
+buyer to search rather than only unhiding the field — focus lands in the input
+(`document.activeElement`, asserted against the real DOM) and the dropdown for the term
+already in the field is open again (`showDropdown()`, whose binding on the results element is
+read out of the markup so the state and the visible element cannot drift apart). One case
+asserts a genuine request on the wire with a term the search helper's by-query cache has never
+seen, because a repeat of the SAME term is legitimately served from that cache and a
+wire-count assertion there would fail for the wrong reason. Two guards ride along: the
+re-search happens even inside the 500ms debounce window after a pick, where `isSelecting` is
+still armed and would otherwise swallow it whole, and it does NOT happen for a field holding
+less than the threshold — `getItems()` clears a stale identifier above its own
+min-characters guard, so driving it from an empty field on a restored step would drop an
+intact registry-supplied number and re-ask the buyer for it.
+
 `payment-company-selection.test.js` — what the payment component
 (`twoGatewayHyvaPaymentMethodBase`) does with a selected company once `companyId` is
 allowed to be empty. Stopping the throw above is only half the fix; the half that costs

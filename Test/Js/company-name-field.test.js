@@ -529,4 +529,178 @@ describe("company-name field picker", () => {
       expect(component.isOpen).toBe(true);
     });
   });
+
+  describe("returning to search from manual entry", () => {
+    /**
+     * The "Search for company" link is a route back INTO search, not a
+     * visibility toggle: taking it has to leave the buyer with the caret in the
+     * field and the dropdown for the term already in it open. Both halves used
+     * to be missing — enterManually() empties `items`, and `showDropdown()` is
+     * gated on `items.length > 0`, so unhiding the search section alone
+     * produced a populated, closed, unexplained field.
+     *
+     * Asserted against the real DOM (`document.activeElement`) and the real
+     * wire (a recorded fetch), never against a spy on the handler: a
+     * `toHaveBeenCalledWith` on getItems would pass over a getItems that
+     * returned at its first guard and searched nothing.
+     */
+
+    /** Move focus off the field so a focus assertion cannot pass vacuously. */
+    function blurField() {
+      field.blur();
+      expect(document.activeElement).not.toBe(field);
+    }
+
+    test("the link the buyer clicks is bound to enableSearch", () => {
+      // Under Hyvä's CSP-friendly Alpine the attribute is a key lookup, so a
+      // handler the markup does not name is dead code and a name the component
+      // does not define is a silently inert link.
+      const bound = H.readAlpineBinding(
+        H.COMPANY_NAME_MARKUP_TEMPLATE,
+        '[x-show="manualModeActive"] span',
+        "@click.stop",
+      );
+
+      expect(bound).toBe("enableSearch");
+      expect(typeof component[bound]).toBe("function");
+    });
+
+    test("the results dropdown is driven by showDropdown", () => {
+      // Ties the state the tests below assert to the element that actually
+      // appears; asserting `isOpen` alone would not.
+      const bound = H.readAlpineBinding(
+        H.COMPANY_NAME_MARKUP_TEMPLATE,
+        "div.z-40",
+        "x-show",
+      );
+
+      expect(bound).toBe("showDropdown");
+      expect(typeof component[bound]).toBe("function");
+    });
+
+    test("focuses the field and re-opens the dropdown for the term in it", async () => {
+      const started = await startSearch("Alpha Widgets");
+      fetchStub.last().respond({ items: [apiItem("Alpha Widgets", "111")] });
+      await started.pending;
+      expect(component.showDropdown()).toBe(true);
+
+      component.enterManually();
+      expect(component.items).toEqual([]);
+      expect(component.showDropdown()).toBe(false);
+      blurField();
+
+      component.enableSearch();
+
+      // (b) keyboard focus, in the document, synchronously — not on a tick the
+      // buyer's next keystroke could beat.
+      expect(document.activeElement).toBe(field);
+
+      // (a) and a dropdown that is genuinely open again, with the hits in it.
+      // No new request is asserted here on purpose: the helper caches by
+      // query, so re-running the SAME term is legitimately served without one
+      // — the outcome the buyer sees is the assertion, not the mechanism.
+      await H.flushPromises();
+
+      expect(component.manualMode).toBe(false);
+      expect(component.items).toHaveLength(1);
+      expect(component.isOpen).toBe(true);
+      expect(component.showDropdown()).toBe(true);
+    });
+
+    test("puts a real request on the wire for a name typed while in manual mode", async () => {
+      // The cache cannot mask this one: the term has never been searched. Proof
+      // that the link runs an actual lookup rather than replaying state.
+      component.enterManually();
+      field.value = "Beta Holdings";
+      await component.getItems();
+      const before = fetchStub.calls.length;
+      blurField();
+
+      component.enableSearch();
+      await H.flushPromises();
+
+      expect(fetchStub.calls).toHaveLength(before + 1);
+      expect(fetchStub.last().url).toContain("q=Beta+Holdings");
+      fetchStub.last().respond({ items: [apiItem("Beta Holdings", "222")] });
+      await H.flushPromises();
+
+      expect(document.activeElement).toBe(field);
+      expect(component.items).toHaveLength(1);
+      expect(component.showDropdown()).toBe(true);
+    });
+
+    test("re-searches even inside the debounce window after a pick", async () => {
+      // selectItem() arms `isSelecting` for the next getItems() tick, and that
+      // tick is debounced 500ms. A buyer who picked a hit and then took both
+      // mode links inside that window arrives here with the flag still set, and
+      // the guard at the top of getItems() would swallow the whole search.
+      const started = await startSearch("Gamma Trading");
+      fetchStub.last().respond({ items: [apiItem("Gamma Trading", "333")] });
+      await started.pending;
+
+      component.selectItem({
+        companyName: "Gamma Trading",
+        companyId: "333",
+        lookupId: "",
+      });
+      expect(component.isSelecting).toBe(true);
+
+      component.enterManually();
+      blurField();
+
+      component.enableSearch();
+      await H.flushPromises();
+
+      expect(document.activeElement).toBe(field);
+      expect(component.isSelecting).toBe(false);
+      expect(component.items).toHaveLength(1);
+      expect(component.showDropdown()).toBe(true);
+    });
+
+    test("a term too short to search opens nothing but still takes focus", async () => {
+      component.enterManually();
+      field.value = "Ab";
+      await component.getItems();
+      blurField();
+      const before = fetchStub.calls.length;
+
+      component.enableSearch();
+      await H.flushPromises();
+
+      expect(document.activeElement).toBe(field);
+      expect(fetchStub.calls).toHaveLength(before);
+      expect(component.isOpen).toBe(false);
+      expect(component.showDropdown()).toBe(false);
+    });
+
+    test("does not disturb an intact registry pick whose field is not re-read", () => {
+      // The field is empty on a freshly restored step while state holds the
+      // stored company. getItems() clears a stale identifier ABOVE its own
+      // min-characters guard, so driving it from that field would drop a
+      // registry number nothing was wrong with and re-ask for it.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          company_name: "Acme Ltd",
+          company_id: "111",
+          company_id_source: "registry",
+          manual_mode: true,
+        }),
+      );
+      const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: field,
+        root: root,
+      });
+      restored.init();
+      field.value = "";
+      const before = fetchStub.calls.length;
+
+      restored.enableSearch();
+
+      expect(fetchStub.calls).toHaveLength(before);
+      expect(restored.companyId).toBe("111");
+      expect(restored.companyIdSource).toBe("registry");
+      expect(restored.companyIdDisabled).toBe(true);
+    });
+  });
 });
