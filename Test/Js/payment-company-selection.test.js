@@ -571,6 +571,7 @@ describe("payment component company selection", () => {
         }),
       );
       syncCompanyIdField(component);
+      syncCompanyNameHint(component);
     }
 
     test("an identifier-less shipping company unlocks the field", () => {
@@ -587,16 +588,26 @@ describe("payment component company selection", () => {
       expect(component.companyId).toBe("");
       expect(component.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
+      // The exact case companyNameHintText's own doc comment calls out: a
+      // shipping sync can hand over a company with no identifier, and the
+      // name hint must drop with the number hint rather than keep showing
+      // the PREVIOUS locked company's name.
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
     });
 
     test("an identified shipping company re-locks it", () => {
       syncFromShipping("Example Trading Ltd", "");
       expect(companyIdInput().disabled).toBe(false);
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
 
       syncFromShipping("Other Example Ltd", "12345678");
 
       expect(component.companyIdEntryRequired).toBe(false);
       expect(companyIdInput().disabled).toBe(true);
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+        "Other Example Ltd",
+      );
     });
   });
 
@@ -618,6 +629,8 @@ describe("payment component company selection", () => {
       expect(restored.companyId).toBe("");
       expect(restored.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
+      // No registry number to lock, so no read-only name to show either.
+      expect(restored[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
     });
 
     test("a stored name with an id comes back locked", () => {
@@ -636,6 +649,14 @@ describe("payment component company selection", () => {
       expect(restored.companyId).toBe("12345678");
       expect(restored.companyIdEntryRequired).toBe(false);
       expect(companyIdInput().disabled).toBe(true);
+      // The other path companyNameHintText's doc comment calls out: the
+      // restore happens through initialize()'s pre-$nextTick synchronous
+      // derivation, same as the id hint, so the name hint must land already
+      // showing the restored company -- not empty, not the wrong company.
+      expect(restored[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
+      expect(restored[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+        "Example Trading Ltd",
+      );
     });
 
     test("nothing stored leaves the field open", () => {
@@ -940,10 +961,15 @@ describe("payment component company selection", () => {
       );
     });
 
-    test("never shows while companyIdDisabled is false, whatever companyName holds", () => {
-      // Same one-way-implication shape as the id hint's own binding test:
-      // the name hint must never be able to fire while the field is still
-      // editable, regardless of manualMode / companyIdEntryRequired / companyId.
+    test("shows/hides in exact lockstep with the id hint across every editability combination", () => {
+      // Pins the gate itself, not a one-way implication that a boolean AND
+      // (companyIdHintVisible = companyIdDisabled && Boolean(companyId))
+      // satisfies by construction regardless of wiring. Both hints read the
+      // SAME getter, so this asserts direct equality against
+      // COMPANY_ID_HINT_SHOW_BINDING -- which fails if the name hint were
+      // ever rewired to a different property (e.g. `companyName` truthiness),
+      // unlike a check that only re-derives `companyIdHintVisible`'s own
+      // definition.
       [
         [false, false, ""],
         [false, false, "12345678"],
@@ -960,9 +986,9 @@ describe("payment component company selection", () => {
         component.companyName = "Some Company Ltd";
         component.applyCompanyIdEditability();
 
-        if (component[COMPANY_NAME_HINT_SHOW_BINDING]) {
-          expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
-        }
+        expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(
+          component[COMPANY_ID_HINT_SHOW_BINDING],
+        );
       });
     });
   });
