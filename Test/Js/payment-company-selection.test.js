@@ -80,6 +80,23 @@ const COMPANY_ID_HINT_TEXT_BINDING = H.readAlpineBinding(
   "x-text",
 );
 
+/**
+ * The bindings the TWO-25288 follow-up's company-NAME hint adds. Same
+ * reasoning as the id-hint bindings above: resolved from the shipped markup,
+ * not just declared on the component, so this file cannot pass with the wire
+ * missing or renamed on one side only.
+ */
+const COMPANY_NAME_HINT_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_name_hint"]',
+  "x-show",
+);
+const COMPANY_NAME_HINT_TEXT_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  'p[data-name="company_name_hint"]',
+  "x-text",
+);
+
 describe("payment component company selection", () => {
   let env;
   let fetchStub;
@@ -99,6 +116,7 @@ describe("payment component company selection", () => {
       '<div id="payment-root">',
       '  <input type="text" id="company_name" value="" />',
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
+      '  <p data-name="company_name_hint"></p>',
       '  <p data-name="company_id_hint"></p>',
       "</div>",
     ].join("\n");
@@ -150,6 +168,7 @@ describe("payment component company selection", () => {
     // property changes. `syncCompanyIdField()` is that run, by hand.
     syncCompanyIdField(mounted);
     syncCompanyIdHint(mounted);
+    syncCompanyNameHint(mounted);
     return { component: mounted, watchers: recorded, root: root };
   }
 
@@ -196,6 +215,20 @@ describe("payment component company selection", () => {
   }
 
   /**
+   * Apply the template's `x-show` / `x-text` bindings for the follow-up's
+   * company-NAME hint, the same by-hand way `syncCompanyIdHint()` applies the
+   * id hint's.
+   *
+   * @param {Object} instance the mounted component
+   * @returns {void}
+   */
+  function syncCompanyNameHint(instance) {
+    const hint = companyNameHint();
+    hint.hidden = !instance[COMPANY_NAME_HINT_SHOW_BINDING];
+    hint.textContent = String(instance[COMPANY_NAME_HINT_TEXT_BINDING] || "");
+  }
+
+  /**
    * A dropdown item in the shape the shared helper's mapItems() produces.
    *
    * @param {string} name
@@ -215,6 +248,11 @@ describe("payment component company selection", () => {
   /** @returns {HTMLElement} the TWO-25288 inline company-id hint */
   function companyIdHint() {
     return document.querySelector('p[data-name="company_id_hint"]');
+  }
+
+  /** @returns {HTMLElement} the TWO-25288 follow-up's inline company-name hint */
+  function companyNameHint() {
+    return document.querySelector('p[data-name="company_name_hint"]');
   }
 
   /** @returns {HTMLInputElement} */
@@ -437,6 +475,7 @@ describe("payment component company selection", () => {
       component.abortCompanySearch();
     }
     syncCompanyIdField(component);
+    syncCompanyNameHint(component);
   }
 
   describe("a name typed without picking a dropdown hit", () => {
@@ -829,6 +868,102 @@ describe("payment component company selection", () => {
 
       expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(true);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
+    });
+  });
+
+  describe("the inline company-name hint (TWO-25288 follow-up)", () => {
+    test("stays hidden before any company is picked", () => {
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    test("shows the captured name once a company locks the id field", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      syncCompanyNameHint(component);
+
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+        "Example Trading Ltd",
+      );
+    });
+
+    test("stays hidden for a pick with no identifier — nothing is locked", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+      syncCompanyIdField(component);
+      syncCompanyNameHint(component);
+
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    /**
+     * The stale-safety property the brief exists to prove: a name hint keyed
+     * on `companyName` directly would still show the OLD company here, because
+     * `companyName` has no clearing writer. Gated on `companyIdHintVisible`
+     * instead, it must disappear the instant the buyer's edit reopens the
+     * id field — same tick `getItems()` recomputes `companyIdEntryRequired`
+     * for text that no longer matches the locked pick.
+     */
+    test("goes stale-safe: disappears when the buyer types after a pick, before any new pick exists", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      syncCompanyNameHint(component);
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+        "Example Trading Ltd",
+      );
+
+      typeCompanyName("Other Example");
+
+      // The field is open again (companyIdEntryRequired recomputed true), and
+      // the name hint — still reading `this.companyName`, which typing alone
+      // never clears — must have gone with it rather than keep showing
+      // "Example Trading Ltd" beside a field the buyer can now edit freely.
+      expect(component.companyIdEntryRequired).toBe(true);
+      expect(companyIdInput().disabled).toBe(false);
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+    });
+
+    test("re-appears with the new name once the buyer picks a new identified company", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      typeCompanyName("Other Example");
+      syncCompanyIdField(component);
+      syncCompanyNameHint(component);
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+
+      component.selectItem(pickerItem("Other Example Ltd", "87654321"));
+      syncCompanyIdField(component);
+      syncCompanyNameHint(component);
+
+      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+        "Other Example Ltd",
+      );
+    });
+
+    test("never shows while companyIdDisabled is false, whatever companyName holds", () => {
+      // Same one-way-implication shape as the id hint's own binding test:
+      // the name hint must never be able to fire while the field is still
+      // editable, regardless of manualMode / companyIdEntryRequired / companyId.
+      [
+        [false, false, ""],
+        [false, false, "12345678"],
+        [false, true, ""],
+        [false, true, "12345678"],
+        [true, false, ""],
+        [true, false, "12345678"],
+        [true, true, ""],
+        [true, true, "12345678"],
+      ].forEach(([manualMode, companyIdEntryRequired, companyId]) => {
+        component.manualMode = manualMode;
+        component.companyIdEntryRequired = companyIdEntryRequired;
+        component.companyId = companyId;
+        component.companyName = "Some Company Ltd";
+        component.applyCompanyIdEditability();
+
+        if (component[COMPANY_NAME_HINT_SHOW_BINDING]) {
+          expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
+        }
+      });
     });
   });
 });

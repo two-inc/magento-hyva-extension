@@ -225,6 +225,20 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                     elsewhere in this file), it does not
                                     evaluate arbitrary JS.
                                 -->
+                                <!--
+                                    Additive inline hint (TWO-25288 follow-up):
+                                    read-only display of the captured company
+                                    NAME, same gate and same reasoning as the
+                                    number hint above — reused rather than
+                                    keyed off `companyName` directly, which has
+                                    no clearing writer and can go stale.
+                                -->
+                                <p
+                                    x-show="companyIdHintVisible"
+                                    data-name="company_name_hint"
+                                    class="text-xs text-gray-500 mt-1"
+                                    x-text="companyNameHintText"
+                                ></p>
                                 <p
                                     x-show="companyIdHintVisible"
                                     data-name="company_id_hint"

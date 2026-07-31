@@ -1270,6 +1270,20 @@ $quoteDetails = json_encode(
                 return '<?= $escaper->escapeJs(__("Company number:")) ?> ' + this.companyId;
             },
 
+            // Additive (TWO-25288 follow-up): read-only display of the
+            // captured company NAME, alongside the number hint above. Gated
+            // on `companyIdHintVisible` rather than on `companyName` directly
+            // — `companyName` has no clearing writer (a later shipping sync
+            // or re-render can leave it holding a PREVIOUS pick with nothing
+            // to blank it), while `companyIdHintVisible` is fully derived and
+            // already proven stale-safe: it drops the moment `getItems()`
+            // recomputes `companyIdEntryRequired` for a name that no longer
+            // matches the locked pick, which is exactly the "buyer typed in
+            // the search box after selecting" case this must not go stale on.
+            get companyNameHintText() {
+                return '<?= $escaper->escapeJs(__("Company name:")) ?> ' + this.companyName;
+            },
+
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
