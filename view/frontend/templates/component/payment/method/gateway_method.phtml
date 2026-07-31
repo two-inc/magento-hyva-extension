@@ -207,6 +207,30 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 <p class="text-xs text-gray-500 mt-1">
                                     <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
                                 </p>
+                                <!--
+                                    Additive inline hint (TWO-25288): once a
+                                    company has been found via search and its
+                                    registry-supplied identifier locked in
+                                    (`companyIdDisabled`, see
+                                    applyCompanyIdEditability() below), surface
+                                    the number here instead of only in the now
+                                    hidden company_id input. Reuses the same
+                                    muted-text class as the helper text above.
+                                    `x-text` binds to a getter
+                                    (`companyIdHintText`) rather than a
+                                    concatenation expression — this file's
+                                    CSP-friendly Alpine build only does a key
+                                    lookup for bound expressions (see
+                                    `x-text="label"` / `x-html="GetCompanyDisplayName"`
+                                    elsewhere in this file), it does not
+                                    evaluate arbitrary JS.
+                                -->
+                                <p
+                                    x-show="companyIdHintVisible"
+                                    data-name="company_id_hint"
+                                    class="text-xs text-gray-500 mt-1"
+                                    x-text="companyIdHintText"
+                                ></p>
                             </div>
                         </div>
                         <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
@@ -363,9 +387,31 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                   that re-ran only `:style` would drop the hidden mirror
                   input's `display: none` and reveal it.
               -->
+              <!--
+                  Additive (TWO-25288): once `companyIdDisabled` is true the
+                  number is locked AND now shown via the inline hint next to
+                  the company name field above, so the input itself is
+                  redundant — hide it with a class layered on top of the
+                  existing `x-show="!showManual"` mechanism. `companyIdDisabled`
+                  can only be true when NOT in manual mode (see
+                  applyCompanyIdEditability()), so this never hides the field
+                  while the buyer still needs to interact with it (empty,
+                  enabled, required). `companyIdHiddenClass` additionally
+                  requires a non-empty `companyId` (see `companyIdHintVisible`
+                  in gateway_method-csp-js.phtml) so the field cannot be hidden
+                  a tick before its value has actually arrived. Does not touch
+                  the existing `x-show` or `:disabled` bindings. `:class` binds
+                  to a getter returning a plain class-name string
+                  (`companyIdHiddenClass`), matching this file's other `:class`
+                  bindings (`chipClasses`, GetItemClass) — the CSP-friendly
+                  Alpine build here does not evaluate object-literal
+                  expressions, only looks a bound string up as a key on the
+                  component (see the `:style` note below).
+              -->
               <input
                 type="text"
                 x-show="!showManual"
+                :class="companyIdHiddenClass"
                 :id="<?= $gwBase ?>GetCompanyIdFieldId"
                 :name="<?= $gwBase ?>GetCompanyIdFieldName"
                 :disabled="companyIdDisabled"

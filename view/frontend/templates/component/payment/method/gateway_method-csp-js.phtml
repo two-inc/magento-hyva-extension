@@ -1235,6 +1235,41 @@ $quoteDetails = json_encode(
                 this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
             },
 
+            // Additive (TWO-25288): whether there is an actual registry id to
+            // show. Deliberately NOT just `companyIdDisabled` — on
+            // initialize() with a restored selection, `companyIdEntryRequired`
+            // (and so `companyIdDisabled`) is derived synchronously from
+            // storage, while `this.companyId` itself is only populated by the
+            // `$nextTick(() => fillCompanyData(...))` below, one tick later.
+            // Gating on `companyIdDisabled` alone would paint the hint/hide
+            // the input for that first tick with no number behind it yet —
+            // the same flash-of-wrong-state class `initialize()`'s own doc
+            // comment above already guards the `:disabled` binding against.
+            // Requiring `companyId` too makes both derived getters below wait
+            // for the real value, same tick it arrives.
+            get companyIdHintVisible() {
+                return this.companyIdDisabled && Boolean(this.companyId);
+            },
+
+            // Additive (TWO-25288): purely derived, no new writer. Hides the
+            // now-redundant search-mode company_id input once its value is
+            // shown via the inline hint next to the company name field
+            // instead. Returns a class-NAME STRING, not an object literal —
+            // `:class` bindings in this CSP-friendly Alpine build only work
+            // as a key lookup (see chipClasses / GetItemClass above), not
+            // expression evaluation.
+            get companyIdHiddenClass() {
+                return this.companyIdHintVisible ? 'hidden' : '';
+            },
+
+            // Additive (TWO-25288): text for the inline hint next to the
+            // company name field. Only rendered while `companyIdHintVisible`
+            // is true (see x-show on the hint in gateway_method.phtml), so
+            // `companyId` is guaranteed non-empty here.
+            get companyIdHintText() {
+                return '<?= $escaper->escapeJs(__("Company number:")) ?> ' + this.companyId;
+            },
+
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
