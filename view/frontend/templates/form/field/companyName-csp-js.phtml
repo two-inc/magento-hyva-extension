@@ -406,37 +406,14 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         /*
-         * Visibility of the manual-entry link that sits BELOW the field, as
-         * opposed to the row inside the dropdown (TWO-25288 element 5).
-         *
-         * The two carry the same wording and perform the same action, so they
-         * are never on screen together. What this link owns is "the panel is
-         * SHUT" — an untouched field and a query too short to search, but also a
-         * full-length query whose panel a click outside dismissed, because
-         * closeDropdown() lowers `isOpen` without touching `search`. The row
-         * owns the states in which the panel is open. Both are needed: an
-         * untouched field is not reachable from the row's affordance.
-         *
-         * The two do NOT cover `searchModeActive` between them, and the third
-         * term is why. The copy is a factual claim about the current state
-         * rather than a label, so a completed selection has to offer neither:
-         * the panel is shut and the query is at full length, so without
-         * `isCompanySelected` this link told a buyer their company was not on
-         * the list immediately after they picked it off that list. Not a dead
-         * end — editing the name clears the flag in noteCompanyQuery(), on the
-         * keystroke rather than half a second behind it, and the link returns to
-         * the state the copy is true for again. (Manual entry
-         * already being in effect offers neither too, via `searchModeActive`,
-         * where the reverse link takes over.)
-         *
-         * `showDropdown` is called rather than re-deriving its terms, so this
-         * cannot drift away from what the panel actually does.
+         * `persistentManualEntryVisible` — the second, below-the-field copy of
+         * the manual-entry affordance — was removed 2026-07-28 (bug 4.2). It
+         * showed "My company is not on the list" whenever the panel was shut,
+         * which included an untouched field and a completed selection: exactly
+         * the two states in which that claim is not true. The in-dropdown row
+         * (gated on `showDropdown`, see companyName.phtml) is now the sole
+         * route into manual entry, live only while a search is actually open.
          */
-        get persistentManualEntryVisible() {
-            return this.searchModeActive
-                && !this.showDropdown()
-                && !this.isCompanySelected;
-        },
 
         /**
          * Is there an identifier that something other than the buyer vouched
@@ -447,6 +424,31 @@ function <?= $gwBase ?>CompanySearchField() {
          */
         hasVouchedCompanyId() {
             return Boolean(this.companyId) && this.companyIdSource === 'registry';
+        },
+
+        /**
+         * Bug 4.3 (2026-07-28): gates the plain-text company-number display
+         * in companyName.phtml. A registry-vouched number is what "a result
+         * is selected" means on this surface — a hand-typed one is not a
+         * selection at all, so it keeps the real editable input rather than
+         * being read out as text. Delegates to `hasVouchedCompanyId()`
+         * rather than restating its terms so the two cannot drift apart: the
+         * display and the input it replaces must never both be visible, and
+         * must never both be hidden.
+         *
+         * @returns {boolean}
+         */
+        get companyIdDisplayVisible() {
+            return this.hasVouchedCompanyId();
+        },
+
+        // CSP-friendly Alpine forbids the `!` operator in attribute
+        // expressions. `x-show="!companyIdDisplayVisible"` on the real
+        // input resolves this magic getter (bare identifier
+        // `!companyIdDisplayVisible`) instead of evaluating the negation
+        // inline — same pattern as `['!showManual']` on the payment tile.
+        ['!companyIdDisplayVisible']() {
+            return !this.companyIdDisplayVisible;
         },
 
         /**

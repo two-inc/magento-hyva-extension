@@ -240,65 +240,19 @@ describe("address-step company number", () => {
       expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
     });
 
-    test("the persistent manual-entry link is gated on search mode, a closed dropdown AND no selection", () => {
-      // RETARGETED by TWO-25288 element 5, not relaxed. The original gate was a
-      // bare `searchModeActive`, which was right while the dropdown needed at
-      // least one result to open: the only route into manual entry would
-      // otherwise have vanished exactly when the search found nothing, which is
-      // the case a company with no registry identifier is in.
-      //
-      // The dropdown now opens on typed length alone and carries a manual-entry
-      // row of its own with identical wording, so this link additionally has to
-      // disappear while the panel is open — two identical links on screen at
-      // once is a defect. What it still owns is the states in which the panel is
-      // shut: an untouched field, a query too short to search, and a full-length
-      // query whose panel a click outside dismissed.
-      //
-      // And a third term, because the identical wording is a factual claim about
-      // the current state: a chosen company must not be told it is not on the
-      // list. That one is asserted here at the gate and exercised through the
-      // real selectItem() path by the element-5 suite.
-      //
-      // Both of the original halves are still pinned — outside the panel, and
-      // named by a property the component actually defines — plus the new terms.
+    test("the below-the-field manual-entry link is gone (bug 4.2)", () => {
+      // Removed 2026-07-28: it was gated to show whenever the panel was shut,
+      // which included an untouched field and a completed selection — both
+      // states its wording ("My company is not on the list") is false in.
+      // The in-dropdown row (see company-manual-entry.test.js) is the sole
+      // remaining route and is live only while the dropdown is genuinely
+      // open. Asserted here at the markup level, on the same fixture this
+      // file's other tests mount from, so a re-add of the link in ANY gated
+      // form fails this test regardless of what it is gated on.
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
-      const link = doc.querySelector(".two-company-manual-entry");
-      const gate = link.closest("[x-show]");
-      const bound = gate.getAttribute("x-show");
 
-      expect(gate.closest("[x-show='showDropdown']")).toBeNull();
-      expect(bound).toBeTruthy();
-
-      component = mount();
-      expect(bound in component).toBe(true);
-
-      // The search-mode half, unchanged: nothing to switch between with no
-      // lookup, and nothing for "manual" to be the opposite of once it is on.
-      component.isCompanySearchEnabled = "";
-      expect(component[bound]).toBe(false);
-      component.isCompanySearchEnabled = "1";
-      component.manualMode = true;
-      expect(component[bound]).toBe(false);
-
-      // The new half. Deliberately asserted in BOTH directions: a gate stuck
-      // false would hide the link from the empty field it is the only
-      // affordance for, and a gate stuck true would put it beside the panel's
-      // own copy.
-      component.manualMode = false;
-      component.isOpen = false;
-      expect(component[bound]).toBe(true);
-      component.isOpen = true;
-      expect(component[bound]).toBe(false);
-
-      // The selection half, also in both directions from the same starting
-      // point: panel shut and search mode on, so the only thing deciding the
-      // gate here is whether a company has been chosen.
-      component.isOpen = false;
-      component.isCompanySelected = true;
-      expect(component[bound]).toBe(false);
-      component.isCompanySelected = false;
-      expect(component[bound]).toBe(true);
+      expect(doc.querySelector(".two-company-manual-entry")).toBeNull();
     });
 
     test("the mode links resolve both ways round the search flag", () => {
@@ -800,6 +754,136 @@ describe("address-step company number", () => {
 
       expect(storedSelection().company_id).toBe("87654321");
       expect(selectedEvents).toHaveLength(1);
+    });
+  });
+
+  describe("the company-number display (bug 4.3)", () => {
+    /**
+     * The `x-show`/`x-text` bindings read out of the shipped markup, so a
+     * renamed getter that forgets to repoint either binding fails here
+     * instead of silently passing.
+     *
+     * @returns {{ displayVisible: boolean, displayText: string, inputVisible: boolean }}
+     */
+    function readDisplayState() {
+      const DISPLAY_SELECTOR = ".two-company-id-display";
+      const showBound = H.readAlpineBinding(
+        H.COMPANY_NAME_MARKUP_TEMPLATE,
+        DISPLAY_SELECTOR,
+        "x-show",
+      );
+      const textBound = H.readAlpineBinding(
+        H.COMPANY_NAME_MARKUP_TEMPLATE,
+        DISPLAY_SELECTOR,
+        "x-text",
+      );
+
+      // The input's own gate is a negation (`!companyIdDisplayVisible`), which
+      // the harness's `readAlpineBinding()` deliberately refuses to resolve
+      // as a bare property (see its own doc comment on `!showManual`) — CSP
+      // Alpine looks such names up directly on the component instead, via the
+      // `['!companyIdDisplayVisible']()` magic getter, so this reads the raw
+      // attribute and calls it that way.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const inputWrapper = doc.querySelector(".field.two-company-id");
+      const inputShowBound = inputWrapper.getAttribute("x-show");
+
+      expect(showBound in component).toBe(true);
+      expect(textBound in component).toBe(true);
+      expect(typeof component[inputShowBound]).toBe("function");
+
+      return {
+        displayVisible: Boolean(component[showBound]),
+        displayText: component[textBound],
+        inputVisible: Boolean(component[inputShowBound]()),
+      };
+    }
+
+    test("the display element and the input are never both visible, and never both hidden", () => {
+      component = mount({ quote_id: "test-quote-1" });
+
+      // Nothing selected yet: the real, editable input is what the buyer
+      // needs.
+      let state = readDisplayState();
+      expect(state.displayVisible).toBe(false);
+      expect(state.inputVisible).toBe(true);
+    });
+
+    test("a registry-vouched pick shows the plain-text display, not the input", async () => {
+      component = mount({ quote_id: "test-quote-1" });
+      await pick(hit("Acme Ltd", "111"));
+
+      const state = readDisplayState();
+      expect(state.displayVisible).toBe(true);
+      expect(state.displayText).toBe("111");
+      expect(state.inputVisible).toBe(false);
+    });
+
+    test("a pick with no registry identifier keeps the real input, not the display", async () => {
+      // Nothing was "selected" in the sense this bug's design turns on — the
+      // registry gave no number, so there is nothing to read out as text, and
+      // the buyer still has to type one.
+      component = mount({ quote_id: "test-quote-1" });
+      await pick(hit("Example Trading Ltd", ""));
+
+      const state = readDisplayState();
+      expect(state.displayVisible).toBe(false);
+      expect(state.inputVisible).toBe(true);
+    });
+
+    test("a hand-typed number keeps the real input, not the display", () => {
+      // Manual entry has no "selected result" at all — the buyer is
+      // transcribing their own number, which must stay editable.
+      component = mount({ quote_id: "test-quote-1" });
+      component.enterManually();
+      typeNumber("1234567");
+
+      const state = readDisplayState();
+      expect(state.displayVisible).toBe(false);
+      expect(state.inputVisible).toBe(true);
+    });
+
+    test("editing the name after a registry pick returns to the real input", async () => {
+      // The lock reverses (`companyIdDisabled` suite above already pins
+      // this); the display must track the same reversal, or the buyer would
+      // see inert text over a number they can no longer correct.
+      component = mount({ quote_id: "test-quote-1" });
+      await pick(hit("Acme Ltd", "111"));
+      expect(readDisplayState().displayVisible).toBe(true);
+
+      await typeName("Acme Limited");
+
+      const state = readDisplayState();
+      expect(state.displayVisible).toBe(false);
+      expect(state.inputVisible).toBe(true);
+    });
+
+    test("a restored registry pick shows the display on the very first render", () => {
+      // No flash of the real input before init() settles: the gate is
+      // `hasVouchedCompanyId()`, computed straight from restored state.
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+
+      const state = readDisplayState();
+      expect(state.displayVisible).toBe(true);
+      expect(state.inputVisible).toBe(false);
+    });
+
+    test("the display carries no input semantics of its own", () => {
+      // It is text, not a control masquerading as one — no label pointing at
+      // it, no name, nothing for a form or a screen reader to treat as an
+      // input.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const display = doc.querySelector(".two-company-id-display");
+
+      expect(display).not.toBeNull();
+      expect(display.tagName).not.toBe("INPUT");
+      expect(display.hasAttribute("name")).toBe(false);
     });
   });
 

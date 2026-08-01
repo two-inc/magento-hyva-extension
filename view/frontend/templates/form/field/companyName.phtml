@@ -250,41 +250,31 @@ $form = $block->getData("form");
             </div>
             <?php
             /*
-             * Manual entry, route one of two: the link below the field.
+             * Manual entry has exactly ONE route on this surface: the row
+             * inside the results dropdown, below (TWO-25288 / 4.2 follow-up).
              *
-             * Same action and the SAME wording as the row inside the dropdown,
-             * and never visible at the same time as it. This link owns the
-             * states in which the panel is SHUT — an untouched field, a query
-             * too short to search, and a full-length query whose panel a click
-             * outside dismissed. The row owns the states in which it is open,
-             * including a search that matched nothing or failed. Both are needed
-             * because an untouched field is not reachable from the row, and
-             * manual entry is the only route on this surface for a company the
-             * registry has no identifier for.
+             * A second copy used to live here, below the field, gated on
+             * `persistentManualEntryVisible` so it could stand in for the row
+             * while the panel was shut — an untouched field, a query too short
+             * to search, a full-length query a click outside had dismissed.
+             * That is exactly the set of states in which this affordance must
+             * NOT be visible per the design set 2026-07-28: it is meant to
+             * read as "nothing on this registry matches what you're currently
+             * searching for", which is only true while a search is actually
+             * live. Shown before any query, or beside a company the buyer had
+             * already picked, it reads as a claim about the buyer's own
+             * company rather than about the current search — wrong in both
+             * cases, not merely redundant with the row.
              *
-             * They do not cover `searchModeActive` between them: a completed
-             * selection offers neither, because the copy is a factual claim
-             * about the current state rather than a label.
-             * `persistentManualEntryVisible` carries the reasoning.
-             *
-             * Bound to a bare getter rather than to an expression:
-             * CSP-friendly Alpine looks the WHOLE attribute string up as a key
-             * on the component, so a negation or a conjunction needs a getter of
-             * its own, and a bare name is also what the suite's binding reader
-             * resolves.
+             * Deleted rather than re-gated onto `showDropdown` directly:
+             * binding the SAME condition here as the row already uses would
+             * put two identical links on screen at once whenever the panel is
+             * open, which the pre-existing dropdown-open test in
+             * `company-manual-entry.test.js` already called out as a defect in
+             * its own right. The row is the sole surviving affordance and it
+             * already carries the correct gate.
              */
             ?>
-            <div x-show="persistentManualEntryVisible" class="mt-1 text-right">
-                <span
-                    role="button"
-                    tabindex="0"
-                    @click.stop="enterManually"
-                    @keydown.enter.stop.prevent="enterManually"
-                    @keydown.space.stop.prevent="enterManually"
-                    @mousedown.stop
-                    class="two-company-manual-entry text-blue-600 text-sm cursor-pointer"
-                ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
-            </div>
             <!-- Search Results Dropdown -->
             <div
                 x-show="showDropdown"
@@ -407,7 +397,30 @@ $form = $block->getData("form");
              * tile's lookup.
              */
             ?>
-            <div class="field two-company-id mt-2">
+            <?php
+            /*
+             * Bug 4.3 (2026-07-28) — canonical cross-platform design: once a
+             * search result is selected, the company number is NOT its own
+             * field. It renders as plain text immediately below the company
+             * NAME field, right-aligned to that field's edge. Same visual
+             * pattern as 1.1/2.3/3.2 on WooCommerce/PrestaShop/Luma; Hyvä's
+             * own mechanism (Alpine + this CSP-nonce build) differs, but the
+             * rendered result matches.
+             *
+             * Gated on `companyIdDisplayVisible` (== hasVouchedCompanyId()):
+             * a REGISTRY-supplied number is what "a result is selected" means
+             * here. A hand-typed number — no registry hit backs it, so
+             * nothing was "selected" — still needs the real editable input
+             * below, unchanged: manual entry and a store with the lookup
+             * switched off both depend on it staying typeable.
+             */
+            ?>
+            <div
+                x-show="companyIdDisplayVisible"
+                class="two-company-id-display mt-1 text-right text-sm text-gray-700"
+                x-text="companyId"
+            ></div>
+            <div class="field two-company-id mt-2" x-show="!companyIdDisplayVisible">
                 <label for="two_address_company_id" class="block font-semibold text-gray-700">
                     <?= $escaper->escapeHtml(__("Company Number")) ?>
                 </label>
