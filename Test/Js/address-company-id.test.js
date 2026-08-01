@@ -453,7 +453,7 @@ describe("address-step company number", () => {
   });
 
   describe("init restores the completed-selection flag (TWO-25288 element 5 round 2)", () => {
-    // `isCompanySelected` gates `persistentManualEntryVisible` — the
+    // `isCompanySelected` gates `belowFieldManualEntryVisible` — the
     // manual-entry link below the field. init() restores `companyName` and
     // `companyId` from storage but, pre-fix, left `isCompanySelected` at its
     // `false` default: a page reload after a completed pick showed the
