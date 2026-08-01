@@ -830,6 +830,7 @@ function <?= $gwBase ?>CompanySearchField() {
             this.awaitingSelectionEcho = true;
             this.isOpen = false;
             this.items = [];
+            this.selectedIndex = -1;
             this.search = item.companyName;
             this.isCompanySelected = true;
             this.manualMode = false;
@@ -949,6 +950,7 @@ function <?= $gwBase ?>CompanySearchField() {
             this.manualMode = true;
             this.isOpen = false;
             this.items = [];
+            this.selectedIndex = -1;
             this.saveManualModeToStorage(true);
             // Manual entry is one of the reasons the number field has to be
             // typeable; no separate unlock, the same single writer decides.
@@ -1045,6 +1047,97 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isSearchUnavailable = false;
             this.isOpen = false;
             this.items = [];
+        },
+
+        // Arrow-key result navigation. Mirrors the payment tile's
+        // nextItem()/prevItem()/adjustScroll()/selectHighlightedItem() —
+        // this surface never had them, so keyboard users could open the
+        // dropdown but never move through it without a mouse. Clamped, not
+        // wrapping: arriving at either end and pressing the same direction
+        // again is a no-op, matching the payment tile.
+        <?= $gwBase ?>OnArrowDown() {
+            this.nextItem();
+        },
+        <?= $gwBase ?>OnArrowUp() {
+            this.prevItem();
+        },
+        <?= $gwBase ?>OnEnterSelect(event) {
+            // This input is shared between search AND manual-entry mode —
+            // unlike the payment tile, where the two modes are separate
+            // elements — so Enter has to keep submitting the address form
+            // exactly as it always did, EXCEPT when there is a highlighted
+            // row VISIBLY on offer to select. Only that one case calls
+            // `preventDefault()`; every other Enter press falls through to
+            // the native submit unchanged.
+            //
+            // `showDropdown()` is the gate, not a bare `manualMode` check —
+            // it already folds that in via `searchModeActive`, AND it is
+            // what actually catches a real race: `noteCompanyQuery()` closes
+            // the panel (`isOpen = false`) SYNCHRONOUSLY on every keystroke
+            // once the query drops below `minSearchChars`, but
+            // `items`/`selectedIndex` are only cleared/reset inside the
+            // DEBOUNCED getItems(), 500ms behind it. Gating on
+            // `selectedIndex`/`items.length` alone left a real window, up to
+            // that whole 500ms, where the panel was already closed on screen
+            // but state still pointed at the previous search's stale
+            // highlight — an Enter press in that window would silently
+            // swallow the native submit for a row the buyer could no longer
+            // even see.
+            if (!this.showDropdown() || this.selectedIndex < 0 || this.items.length === 0) {
+                return;
+            }
+            event.preventDefault();
+            this.selectHighlightedItem();
+        },
+        <?= $gwBase ?>OnItemMouseover(event) {
+            this.selectedIndex = parseInt(event.currentTarget.dataset.index, 10);
+        },
+        <?= $gwBase ?>GetItemClass() {
+            return this.selectedIndex === this.index
+                ? 'bg-gray-100'
+                : '';
+        },
+
+        nextItem() {
+            if (this.selectedIndex < this.items.length - 1) {
+                this.selectedIndex++;
+                this.adjustScroll();
+            }
+        },
+
+        prevItem() {
+            if (this.selectedIndex > 0) {
+                this.selectedIndex--;
+                this.adjustScroll();
+            }
+        },
+
+        adjustScroll() {
+            this.$nextTick(() => {
+                // The actual dropdown scroll container in THIS component's
+                // markup (companyName.phtml) — not `.two-company-search-results`,
+                // which is a payment-tile-only class name that does not exist
+                // here and would silently never match.
+                const dropdown = this.$root.querySelector('.flex.flex-col.w-full.max-h-\\[250px\\]');
+                const highlighted = this.$root.querySelectorAll('[data-index]')[this.selectedIndex];
+
+                if (dropdown && highlighted) {
+                    const dropdownRect = dropdown.getBoundingClientRect();
+                    const itemRect = highlighted.getBoundingClientRect();
+
+                    if (itemRect.bottom > dropdownRect.bottom) {
+                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
+                    } else if (itemRect.top < dropdownRect.top) {
+                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
+                    }
+                }
+            });
+        },
+
+        selectHighlightedItem() {
+            if (this.selectedIndex >= 0 && this.items.length > 0 && this.items[this.selectedIndex]) {
+                this.selectItem(this.items[this.selectedIndex]);
+            }
         },
     }
 }

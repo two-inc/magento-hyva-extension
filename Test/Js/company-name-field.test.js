@@ -748,4 +748,219 @@ describe("company-name field picker", () => {
       expect(restored.companyIdDisabled).toBe(true);
     });
   });
+
+  /**
+   * Arrow-key navigation through the results dropdown. This surface used to
+   * have none: the dropdown was reachable and openable by keyboard (the
+   * "Search for company" affordance and the field itself), but once open
+   * there was no way to move through `items` other than a mouse — no
+   * `role="listbox"`/`role="option"` here (this dropdown is plain divs, see
+   * the manual-entry-row comment in companyName.phtml), so Tab visits the
+   * whole page, not just the rows. Mirrors the payment tile's
+   * `OnArrowDown`/`OnArrowUp`/`OnEnterSelect`/`OnItemMouseover`/`GetItemClass`.
+   */
+  describe("keyboard navigation of the results dropdown", () => {
+    /** A row's scope the way `x-for` supplies it, matching the `row()` helper above. */
+    function row(index) {
+      return Object.assign(Object.create(component), { index: index });
+    }
+
+    beforeEach(() => {
+      component.items = [
+        { companyName: "Acme Ltd", companyDisplayName: "Acme Ltd", companyId: "1" },
+        { companyName: "Beta Ltd", companyDisplayName: "Beta Ltd", companyId: "2" },
+        { companyName: "Gamma Ltd", companyDisplayName: "Gamma Ltd", companyId: "3" },
+      ];
+      // The panel has to be genuinely open for `showDropdown()` to read true —
+      // OnEnterSelect() gates on it, not just on `items`/`selectedIndex`.
+      component.isOpen = true;
+    });
+
+    test("starts with nothing highlighted", () => {
+      expect(component.selectedIndex).toBe(-1);
+      expect(row(0).twoGatewayHyvaGetItemClass()).toBe("");
+    });
+
+    test("ArrowDown moves the highlight forward one row at a time", () => {
+      component.twoGatewayHyvaOnArrowDown();
+      expect(component.selectedIndex).toBe(0);
+
+      component.twoGatewayHyvaOnArrowDown();
+      expect(component.selectedIndex).toBe(1);
+    });
+
+    test("ArrowDown clamps at the last row rather than wrapping", () => {
+      component.selectedIndex = 2;
+
+      component.twoGatewayHyvaOnArrowDown();
+
+      expect(component.selectedIndex).toBe(2);
+    });
+
+    test("ArrowUp moves the highlight backward one row at a time", () => {
+      component.selectedIndex = 2;
+
+      component.twoGatewayHyvaOnArrowUp();
+      expect(component.selectedIndex).toBe(1);
+    });
+
+    test("ArrowUp clamps at the first row rather than going negative", () => {
+      component.selectedIndex = 0;
+
+      component.twoGatewayHyvaOnArrowUp();
+
+      expect(component.selectedIndex).toBe(0);
+    });
+
+    test("hovering a row highlights it, so mouse and keyboard share one piece of state", () => {
+      component.twoGatewayHyvaOnItemMouseover({
+        currentTarget: { dataset: { index: "2" } },
+      });
+
+      expect(component.selectedIndex).toBe(2);
+    });
+
+    test("GetItemClass marks only the highlighted row", () => {
+      component.selectedIndex = 1;
+
+      expect(row(0).twoGatewayHyvaGetItemClass()).toBe("");
+      expect(row(1).twoGatewayHyvaGetItemClass()).not.toBe("");
+      expect(row(2).twoGatewayHyvaGetItemClass()).toBe("");
+    });
+
+    test("Enter selects the highlighted row — the same effect as clicking it", async () => {
+      component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+      await H.flushPromises();
+
+      expect(component.search).toBe("Beta Ltd");
+      expect(component.isOpen).toBe(false);
+      expect(event.preventDefault).toHaveBeenCalled();
+    });
+
+    test("Enter with nothing highlighted selects nothing and does not prevent the native submit", () => {
+      const before = component.search;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+
+      expect(component.search).toBe(before);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test("Enter falls through to the native submit once the panel has closed, even with a stale highlight", () => {
+      // The race Han's round-2 review caught: noteCompanyQuery() closes the
+      // panel (isOpen = false) SYNCHRONOUSLY on every keystroke once the
+      // query drops below the minimum length, but items/selectedIndex are
+      // only reset inside the DEBOUNCED getItems(), up to 500ms behind it.
+      // A buyer who shrinks the query and hits Enter in that window must not
+      // have it swallowed for a row they can no longer even see.
+      component.isOpen = false;
+      component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test("Enter in manual mode falls through to the native form submit, even with a stale highlight", () => {
+      // The regression this guards: this input is shared between search and
+      // manual-entry mode (unlike the payment tile, which uses two separate
+      // elements), so binding Enter here at all risks swallowing the manual
+      // form's submit. `selectedIndex` being left over from search mode must
+      // not resurrect that behaviour once manual mode is active.
+      component.manualMode = true;
+      component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test("selecting a row resets the highlight", async () => {
+      component.selectedIndex = 1;
+
+      component.selectItem(component.items[1]);
+      await H.flushPromises();
+
+      expect(component.selectedIndex).toBe(-1);
+    });
+
+    test("switching to manual entry resets the highlight too", () => {
+      component.selectedIndex = 1;
+
+      component.enterManually();
+
+      expect(component.selectedIndex).toBe(-1);
+    });
+
+    test("a fresh query resets the highlight", async () => {
+      // The reset lives in getItems() (the debounced search), not
+      // noteCompanyQuery() (the undebounced one that only opens/closes the
+      // panel by length) — it runs synchronously before the request goes out,
+      // so it is there even for a query still in flight.
+      component.selectedIndex = 2;
+
+      await startSearch("New search term");
+
+      expect(component.selectedIndex).toBe(-1);
+    });
+
+    test("the field wires ArrowDown/ArrowUp/Enter to the navigation handlers, with no .prevent modifier", () => {
+      // No `.prevent` on any of the three: this input is shared between
+      // search and manual-entry mode, and a modifier-level `.prevent` fires
+      // before Alpine calls the handler — it cannot be made conditional on
+      // mode from the template. OnEnterSelect() calls `preventDefault()`
+      // itself, only when there is a row to select (see the dedicated tests
+      // above); arrow keys never prevent the native caret move, matching the
+      // payment tile.
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "input[type=text]",
+          "@keydown.arrow-down",
+        ),
+      ).toBe("twoGatewayHyvaOnArrowDown");
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "input[type=text]",
+          "@keydown.arrow-up",
+        ),
+      ).toBe("twoGatewayHyvaOnArrowUp");
+      expect(
+        H.readAlpineBinding(
+          H.COMPANY_NAME_MARKUP_TEMPLATE,
+          "input[type=text]",
+          "@keydown.enter",
+        ),
+      ).toBe("twoGatewayHyvaOnEnterSelect");
+    });
+
+    test("each result row wires mouseover and the highlight class", () => {
+      // `<template>` content lives in `.content`, a separate DocumentFragment
+      // — not reachable through the parsed document's own querySelector, so
+      // this reads the row out of the template's content directly rather than
+      // going through `H.readAlpineBinding()`, which only resolves elements in
+      // the light DOM.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const template = doc.querySelector("template[x-for]");
+      expect(template).not.toBeNull();
+      // The index is bound dynamically (`:data-index`), not a static
+      // attribute, so there is nothing literal to select on — this template
+      // has exactly one row element.
+      const rowEl = template.content.querySelector("div");
+      expect(rowEl).not.toBeNull();
+
+      expect(rowEl.getAttribute("@mouseover")).toBe(
+        "twoGatewayHyvaOnItemMouseover",
+      );
+      expect(rowEl.getAttribute(":class")).toBe("twoGatewayHyvaGetItemClass");
+    });
+  });
 });
