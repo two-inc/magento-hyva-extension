@@ -1066,11 +1066,24 @@ function <?= $gwBase ?>CompanySearchField() {
             // unlike the payment tile, where the two modes are separate
             // elements — so Enter has to keep submitting the address form
             // exactly as it always did, EXCEPT when there is a highlighted
-            // row to select. Only that one case calls `preventDefault()`;
-            // every other Enter press (manual mode, or search mode with
-            // nothing highlighted) falls through to the native submit
-            // unchanged.
-            if (this.manualMode || this.selectedIndex < 0 || this.items.length === 0) {
+            // row VISIBLY on offer to select. Only that one case calls
+            // `preventDefault()`; every other Enter press falls through to
+            // the native submit unchanged.
+            //
+            // `showDropdown()` is the gate, not a bare `manualMode` check —
+            // it already folds that in via `searchModeActive`, AND it is
+            // what actually catches a real race: `noteCompanyQuery()` closes
+            // the panel (`isOpen = false`) SYNCHRONOUSLY on every keystroke
+            // once the query drops below `minSearchChars`, but
+            // `items`/`selectedIndex` are only cleared/reset inside the
+            // DEBOUNCED getItems(), 500ms behind it. Gating on
+            // `selectedIndex`/`items.length` alone left a real window, up to
+            // that whole 500ms, where the panel was already closed on screen
+            // but state still pointed at the previous search's stale
+            // highlight — an Enter press in that window would silently
+            // swallow the native submit for a row the buyer could no longer
+            // even see.
+            if (!this.showDropdown() || this.selectedIndex < 0 || this.items.length === 0) {
                 return;
             }
             event.preventDefault();

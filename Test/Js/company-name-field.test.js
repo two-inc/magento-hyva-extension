@@ -771,6 +771,9 @@ describe("company-name field picker", () => {
         { companyName: "Beta Ltd", companyDisplayName: "Beta Ltd", companyId: "2" },
         { companyName: "Gamma Ltd", companyDisplayName: "Gamma Ltd", companyId: "3" },
       ];
+      // The panel has to be genuinely open for `showDropdown()` to read true —
+      // OnEnterSelect() gates on it, not just on `items`/`selectedIndex`.
+      component.isOpen = true;
     });
 
     test("starts with nothing highlighted", () => {
@@ -844,6 +847,22 @@ describe("company-name field picker", () => {
       component.twoGatewayHyvaOnEnterSelect(event);
 
       expect(component.search).toBe(before);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test("Enter falls through to the native submit once the panel has closed, even with a stale highlight", () => {
+      // The race Han's round-2 review caught: noteCompanyQuery() closes the
+      // panel (isOpen = false) SYNCHRONOUSLY on every keystroke once the
+      // query drops below the minimum length, but items/selectedIndex are
+      // only reset inside the DEBOUNCED getItems(), up to 500ms behind it.
+      // A buyer who shrinks the query and hits Enter in that window must not
+      // have it swallowed for a row they can no longer even see.
+      component.isOpen = false;
+      component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
