@@ -827,20 +827,39 @@ describe("company-name field picker", () => {
 
     test("Enter selects the highlighted row — the same effect as clicking it", async () => {
       component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
 
-      component.twoGatewayHyvaOnEnterSelect();
+      component.twoGatewayHyvaOnEnterSelect(event);
       await H.flushPromises();
 
       expect(component.search).toBe("Beta Ltd");
       expect(component.isOpen).toBe(false);
+      expect(event.preventDefault).toHaveBeenCalled();
     });
 
-    test("Enter with nothing highlighted selects nothing", () => {
+    test("Enter with nothing highlighted selects nothing and does not prevent the native submit", () => {
       const before = component.search;
+      const event = { preventDefault: jest.fn() };
 
-      component.twoGatewayHyvaOnEnterSelect();
+      component.twoGatewayHyvaOnEnterSelect(event);
 
       expect(component.search).toBe(before);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    test("Enter in manual mode falls through to the native form submit, even with a stale highlight", () => {
+      // The regression this guards: this input is shared between search and
+      // manual-entry mode (unlike the payment tile, which uses two separate
+      // elements), so binding Enter here at all risks swallowing the manual
+      // form's submit. `selectedIndex` being left over from search mode must
+      // not resurrect that behaviour once manual mode is active.
+      component.manualMode = true;
+      component.selectedIndex = 1;
+      const event = { preventDefault: jest.fn() };
+
+      component.twoGatewayHyvaOnEnterSelect(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
     test("selecting a row resets the highlight", async () => {
@@ -848,6 +867,14 @@ describe("company-name field picker", () => {
 
       component.selectItem(component.items[1]);
       await H.flushPromises();
+
+      expect(component.selectedIndex).toBe(-1);
+    });
+
+    test("switching to manual entry resets the highlight too", () => {
+      component.selectedIndex = 1;
+
+      component.enterManually();
 
       expect(component.selectedIndex).toBe(-1);
     });
@@ -864,26 +891,33 @@ describe("company-name field picker", () => {
       expect(component.selectedIndex).toBe(-1);
     });
 
-    test("the field wires ArrowDown/ArrowUp/Enter to the navigation handlers", () => {
+    test("the field wires ArrowDown/ArrowUp/Enter to the navigation handlers, with no .prevent modifier", () => {
+      // No `.prevent` on any of the three: this input is shared between
+      // search and manual-entry mode, and a modifier-level `.prevent` fires
+      // before Alpine calls the handler — it cannot be made conditional on
+      // mode from the template. OnEnterSelect() calls `preventDefault()`
+      // itself, only when there is a row to select (see the dedicated tests
+      // above); arrow keys never prevent the native caret move, matching the
+      // payment tile.
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
           "input[type=text]",
-          "@keydown.arrow-down.prevent",
+          "@keydown.arrow-down",
         ),
       ).toBe("twoGatewayHyvaOnArrowDown");
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
           "input[type=text]",
-          "@keydown.arrow-up.prevent",
+          "@keydown.arrow-up",
         ),
       ).toBe("twoGatewayHyvaOnArrowUp");
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
           "input[type=text]",
-          "@keydown.enter.prevent",
+          "@keydown.enter",
         ),
       ).toBe("twoGatewayHyvaOnEnterSelect");
     });

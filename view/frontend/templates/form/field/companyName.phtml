@@ -133,9 +133,27 @@ $form = $block->getData("form");
              * the arrow keys moving the caret in the input.
              */
             ?>
-            @keydown.arrow-down.prevent="<?= $gwBase ?>OnArrowDown"
-            @keydown.arrow-up.prevent="<?= $gwBase ?>OnArrowUp"
-            @keydown.enter.prevent="<?= $gwBase ?>OnEnterSelect"
+            <?php
+            /*
+             * No `.prevent` modifier on any of these three — deliberately,
+             * and different from how this looks on the payment tile.
+             *
+             * This one input is shared between search AND manual-entry mode
+             * (the payment tile's equivalent is two separate elements, one
+             * per mode), and a modifier-level `.prevent` fires before Alpine
+             * ever calls the handler — it cannot be made conditional on
+             * `manualMode` from here. Arrow keys never need to prevent the
+             * native caret move (matching the payment tile, which does not
+             * prevent them either); Enter DOES need to keep submitting the
+             * address form in every case except "a row is highlighted", so
+             * that one case is handled inside OnEnterSelect() itself, which
+             * receives the real `$event` Alpine passes to a bare handler
+             * name and calls `preventDefault()` only then.
+             */
+            ?>
+            @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
+            @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
+            @keydown.enter="<?= $gwBase ?>OnEnterSelect"
             />
             <!--
                 In-field searching indicator (TWO-25288). `isSearching` has
