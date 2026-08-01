@@ -885,6 +885,22 @@ describe("address-step company number", () => {
       expect(display.tagName).not.toBe("INPUT");
       expect(display.hasAttribute("name")).toBe(false);
     });
+
+    test("the display names itself for screen readers", () => {
+      // The visible "Company Number" label div is hidden once this display
+      // is showing (it belongs to the input branch), so without an
+      // aria-label of its own a screen-reader user hears only the bare
+      // registry number, with nothing announcing what it is. The harness
+      // resolves every `__()` call to one placeholder string (see
+      // `ESCAPED_STRING` in hyva-harness.js), so this asserts the attribute
+      // is present and non-empty rather than pinning exact wording.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const display = doc.querySelector(".two-company-id-display");
+
+      expect(display.hasAttribute("aria-label")).toBe(true);
+      expect(display.getAttribute("aria-label")).toBe(H.ESCAPED_STRING);
+    });
   });
 
   describe("per-surface isolation", () => {

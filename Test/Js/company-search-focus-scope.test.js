@@ -102,6 +102,15 @@ describe("company-search focus scope (bug 4.1)", () => {
       );
     }
     expect(body).toMatch(/box-shadow:\s*(?!none)\S/);
+
+    // The colour must be Tailwind's actual `indigo-300` (`#A5B4FC` ==
+    // `rgb(165, 180, 252)`) — the same token gateway_method.phtml's input
+    // carries via `focus:ring-indigo-300` — not `indigo-400`
+    // (`rgb(129, 140, 248)`), which a prior revision of this rule used by
+    // mistake. Asserting the exact channel values, not just "some colour",
+    // is what catches that one-shade drift.
+    expect(body).toMatch(/rgba?\(\s*165,\s*180,\s*252/);
+    expect(body).not.toMatch(/129,\s*140,\s*248/);
   });
 
   test("the Company Number input is never matched by the direct-child input rule", () => {

@@ -237,8 +237,14 @@ summary::marker {
  *
  * The ring itself is NOT lost — it moves onto the search input directly
  * below, the same way gateway_method.phtml's equivalent input already
- * carries its own explicit `focus:ring focus:ring-indigo-300` rather than
- * relying on a container-level style.
+ * carries its own explicit `focus:ring focus:ring-indigo-300`. This rule
+ * cannot use that utility class directly — the input sits inside an
+ * Alpine/CSP-nonce component and the `:focus-within` suppression above
+ * needs a scoped `>`-combinator rule of its own regardless — so the colour
+ * is restated as its literal RGB. `rgb(165, 180, 252)` is Tailwind's actual
+ * `indigo-300` (`#A5B4FC`); a prior revision of this rule used
+ * `rgba(129, 140, 248, 0.5)`, which is `indigo-400`, not `indigo-300` —
+ * a one-shade drift from the token this rule is supposed to mirror.
  */
 .two-company-search:focus-within {
   outline: none;
@@ -247,7 +253,7 @@ summary::marker {
 
 .two-company-search > input:focus {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.5);
+  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
 }
 
 /*

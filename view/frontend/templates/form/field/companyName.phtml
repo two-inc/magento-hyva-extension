@@ -419,6 +419,7 @@ $form = $block->getData("form");
                 x-show="companyIdDisplayVisible"
                 class="two-company-id-display mt-1 text-right text-sm text-gray-700"
                 x-text="companyId"
+                aria-label="<?= $escaper->escapeHtmlAttr(__("Company Number")) ?>"
             ></div>
             <div class="field two-company-id mt-2" x-show="!companyIdDisplayVisible">
                 <label for="two_address_company_id" class="block font-semibold text-gray-700">
