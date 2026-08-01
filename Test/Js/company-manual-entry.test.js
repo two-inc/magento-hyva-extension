@@ -69,9 +69,17 @@ const INJECT_RULE = [
   [/^\(int\) \$companySearchMinChars$/, String(INJECTED_MIN)],
 ];
 
-/** The in-dropdown row, the link below the field, and the way back. */
+/**
+ * The in-dropdown row and the way back.
+ *
+ * `.two-company-manual-entry` (the second, below-the-field copy of this
+ * affordance) was REMOVED 2026-07-28 (bug 4.2) — it stayed visible whenever
+ * the panel was shut, including an untouched field and a completed
+ * selection, both states its own wording is false in. The row is now the
+ * sole route into manual entry, and it is asserted absent below.
+ */
 const ROW_SELECTOR = ".two-company-manual-entry-row";
-const PERSISTENT_SELECTOR = ".two-company-manual-entry";
+const REMOVED_PERSISTENT_SELECTOR = ".two-company-manual-entry";
 const SEARCH_AGAIN_SELECTOR = ".two-company-search-again";
 
 /** The min-characters hint (TWO-25288 element 4), reused for the round-2 gap. */
@@ -80,11 +88,6 @@ const MIN_CHARS_SELECTOR = ".two-company-search__min-chars";
 /** Every affordance that must answer the keyboard, with the action it runs. */
 const KEYBOARD_AFFORDANCES = [
   { label: "in-dropdown row", selector: ROW_SELECTOR, action: "enterManually" },
-  {
-    label: "link below the field",
-    selector: PERSISTENT_SELECTOR,
-    action: "enterManually",
-  },
   {
     label: "search-again link",
     selector: SEARCH_AGAIN_SELECTOR,
@@ -188,8 +191,9 @@ describe("address-step manual-entry affordance", () => {
       const source = templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const occurrences = source.split('__("' + MANUAL_ENTRY_MSGID + '")');
 
-      // Exactly twice — the in-dropdown row and the link below the field. One
-      // would mean a route left on the old copy.
+      // Exactly twice — the in-dropdown row AND the restored below-the-field
+      // link (bug 4.2 round 2). One occurrence would mean the below-field
+      // copy is missing again; three would mean a genuine duplicate.
       expect(occurrences).toHaveLength(3);
     });
 
@@ -237,15 +241,22 @@ describe("address-step manual-entry affordance", () => {
       expect(results.contains(row)).toBe(false);
     });
 
-    test("the link below the field is outside the dropdown", () => {
+    test("the below-the-field copy is restored, gated on the complement of showDropdown (bug 4.2 round 2)", () => {
+      // The mutation this guards against: gating the restored link on the
+      // SAME condition as the row (`showDropdown`) would put two identical
+      // links on screen whenever the dropdown is open — the exact defect the
+      // 2026-07-28 first-pass deletion was (rightly) avoiding. Asserting the
+      // literal `x-show` attribute string, not just "it exists" or "it's
+      // sometimes hidden", is what catches that mutation.
       const doc = renderDoc();
-      const link = doc.querySelector(PERSISTENT_SELECTOR);
+      const link = doc.querySelector(REMOVED_PERSISTENT_SELECTOR);
 
       expect(link).not.toBeNull();
-      expect(link.closest("[x-show='showDropdown']")).toBeNull();
-      // And it is a different element from the row, not the same node matched
-      // twice by a class that happens to be a prefix of the other.
-      expect(link).not.toBe(doc.querySelector(ROW_SELECTOR));
+      // The gate lives on the wrapping `<div>`, not the `<span>` itself —
+      // same structure as the "Search for company" reverse link above it.
+      const wrapper = link.closest("[x-show]");
+      expect(wrapper.getAttribute("x-show")).toBe("belowFieldManualEntryVisible");
+      expect(wrapper.getAttribute("x-show")).not.toBe("showDropdown");
     });
   });
 
@@ -516,38 +527,12 @@ describe("address-step manual-entry affordance", () => {
     });
   });
 
-  describe("exactly one manual-entry affordance is visible", () => {
-    /**
-     * Is the link below the field showing, as the shipped binding decides it?
-     *
-     * Read out of the markup rather than named here, so renaming the getter
-     * without repointing the binding fails instead of silently passing.
-     *
-     * @returns {boolean}
-     */
-    function persistentVisible() {
-      // The `x-show` sits on the wrapper, not on the link itself, so this walks
-      // up the way the shipped markup nests it rather than assuming a selector
-      // that would silently match the wrong node.
-      const link = renderDoc().querySelector(PERSISTENT_SELECTOR);
-      expect(link).not.toBeNull();
-      const gate = link.closest("[x-show]");
-      if (gate === null) {
-        throw new Error(
-          "the manual-entry link below the field has no `x-show` ancestor. " +
-            "Unconditional, it would sit beside the dropdown's own copy of the " +
-            "same wording — which is the whole thing these tests pin.",
-        );
-      }
-      const bound = gate.getAttribute("x-show");
-      expect(bound in component).toBe(true);
-      return component[bound];
-    }
-
+  describe("manual entry is reachable in every non-selected search state, exactly once (bug 4.2 round 2)", () => {
     /**
      * Is the min-characters hint showing, as the shipped `x-show` binding
-     * decides it? Read out of the markup for the same reason as
-     * `persistentVisible()` above.
+     * decides it? Read out of the markup rather than named here, so
+     * renaming the getter without repointing the binding fails instead of
+     * silently passing.
      *
      * @returns {boolean}
      */
@@ -555,59 +540,107 @@ describe("address-step manual-entry affordance", () => {
       const hint = renderDoc().querySelector(MIN_CHARS_SELECTOR);
       expect(hint).not.toBeNull();
       const bound = hint.getAttribute("x-show");
-      // Unlike `persistentManualEntryVisible`, this binding names a plain
-      // method rather than a getter (CSP-friendly Alpine resolves either the
-      // same way, as a property lookup it then calls), so it must be invoked.
       expect(typeof component[bound]).toBe("function");
       return component[bound]();
     }
 
-    test("the empty field offers the link below it and no panel", () => {
-      // The state the in-dropdown row cannot cover: nothing typed, so the panel
-      // is shut. Something must still offer manual entry here — this is the
-      // sole-trader route, and a buyer who knows they are in no registry should
-      // not have to type three characters of a company name first.
-      expect(component.showDropdown()).toBe(false);
-      expect(persistentVisible()).toBe(true);
+    /**
+     * Would the in-dropdown manual-entry row be on screen right now? Reads
+     * the row's own gate out of the shipped markup — `showDropdown` —
+     * rather than assuming it.
+     *
+     * @returns {boolean}
+     */
+    function rowVisible() {
+      const row = renderDoc().querySelector(ROW_SELECTOR);
+      expect(row).not.toBeNull();
+      const gate = row.closest("[x-show]");
+      expect(gate).not.toBeNull();
+      const bound = gate.getAttribute("x-show");
+      expect(typeof component[bound]).toBe("function");
+      return component[bound]();
+    }
+
+    /**
+     * Would the restored below-the-field manual-entry link be on screen
+     * right now? Same pattern as `rowVisible()`, reading
+     * `REMOVED_PERSISTENT_SELECTOR`'s own gate out of the shipped markup.
+     *
+     * @returns {boolean}
+     */
+    function belowFieldVisible() {
+      const link = renderDoc().querySelector(REMOVED_PERSISTENT_SELECTOR);
+      expect(link).not.toBeNull();
+      const gate = link.closest("[x-show]");
+      expect(gate).not.toBeNull();
+      const bound = gate.getAttribute("x-show");
+      expect(typeof component[bound]).toBe("boolean");
+      return component[bound];
+    }
+
+    /**
+     * Is EITHER manual-entry affordance visible right now? Asserts the two
+     * are mutually exclusive on every call — this is what a mutated re-gate
+     * (e.g. binding the restored link onto the SAME condition as the row)
+     * would break, rather than merely "at least one is offered".
+     *
+     * @returns {boolean}
+     */
+    function manualEntryVisible() {
+      const row = rowVisible();
+      const belowField = belowFieldVisible();
+
+      expect(row && belowField).toBe(false);
+
+      return row || belowField;
+    }
+
+    /*
+     * Bug 4.2 named two states the affordance must NOT read as "not on the
+     * list": manual mode (the wording would be nonsensical) and a completed
+     * selection (the claim is simply false). Round 2 added a third
+     * constraint of its own: the affordance must be reachable in EVERY
+     * OTHER state, including an untouched field and a sub-threshold query —
+     * the exact states the first-pass fix (2026-07-28) left with nothing at
+     * all.
+     */
+    test("an untouched field: the below-field link is the reachable affordance", () => {
+      expect(rowVisible()).toBe(false);
+      expect(belowFieldVisible()).toBe(true);
+      expect(manualEntryVisible()).toBe(true);
     });
 
-    test("a sub-threshold query offers the link below it and no panel", () => {
+    test("a sub-threshold query: the below-field link stays the reachable affordance", () => {
       type("xx");
 
-      expect(component.showDropdown()).toBe(false);
-      expect(persistentVisible()).toBe(true);
+      expect(rowVisible()).toBe(false);
+      expect(belowFieldVisible()).toBe(true);
+      expect(manualEntryVisible()).toBe(true);
     });
 
-    test("an open panel takes the link below it away", () => {
+    test("an open panel: the row takes over from the below-field link", () => {
       type("x".repeat(INJECTED_MIN));
 
-      expect(component.showDropdown()).toBe(true);
-      // Identical wording on both, so both on screen at once reads as a bug.
-      expect(persistentVisible()).toBe(false);
+      expect(rowVisible()).toBe(true);
+      expect(belowFieldVisible()).toBe(false);
+      expect(manualEntryVisible()).toBe(true);
     });
 
-    test("never both, and never neither, across the whole length range", () => {
-      // The invariant stated as one assertion rather than as a set of examples:
-      // whatever the typed length, exactly one route into manual entry is
-      // offered. A gate stuck true fails the upper half, a gate stuck false
-      // fails the lower half.
+    test("the row and the below-field link are exact complements, across the whole length range", () => {
+      // The invariant restated without a helper to hide behind: whatever the
+      // typed length, exactly one of the two conditions holds, never both
+      // and never neither (while a company remains unselected). A gate stuck
+      // on either value, or a mutation that drops the `!showDropdown()` term
+      // from one side, fails half this sweep.
       for (let n = 0; n <= INJECTED_MIN + 3; n += 1) {
         type("x".repeat(n));
 
-        const routes = [component.showDropdown(), persistentVisible()].filter(
-          Boolean,
-        );
-        expect(routes).toHaveLength(1);
+        expect(rowVisible()).toBe(component.showDropdown());
+        expect(belowFieldVisible()).toBe(!component.showDropdown());
+        expect(manualEntryVisible()).toBe(true);
       }
     });
 
-    /*
-     * The length sweep above cannot reach any of the following, and that is a
-     * property of the sweep rather than of the states: it drives a component
-     * that has never selected a company and never closed a dropdown, so every
-     * point it visits is one where exactly one route is right. A sweep unable
-     * to reach the failing state is not evidence about it. These walk in.
-     */
     describe("states the length sweep cannot reach", () => {
       const CHOSEN = { companyName: "Acme Widgets Ltd", companyId: "111" };
 
@@ -616,12 +649,6 @@ describe("address-step manual-entry affordance", () => {
        * once to consume `isSelecting` — so what is asserted afterwards is the
        * settled post-selection state rather than the one-shot guard.
        *
-       * getItems() is called directly rather than through a dispatched `input`
-       * event, which means the interleaving where a keystroke lands BEFORE that
-       * consumption is not covered here. That window is a live finding against
-       * `noteCompanyQuery()`'s `isSelecting` guard, not something this helper
-       * should paper over.
-       *
        * @returns {Promise<void>}
        */
       async function pickFromDropdown() {
@@ -629,94 +656,58 @@ describe("address-step manual-entry affordance", () => {
         component.selectItem(CHOSEN);
         await component.getItems();
         expect(component.isSelecting).toBe(false);
-        // The precondition that makes these tests about the right thing: the
-        // panel is shut and the query is at FULL length, which is the only
-        // combination in which the length sweep would have expected the link.
         expect(component.isCompanySelected).toBe(true);
         expect(component.search.length).toBeGreaterThanOrEqual(INJECTED_MIN);
         expect(component.showDropdown()).toBe(false);
       }
 
-      test("a completed selection offers neither route", async () => {
-        // The bug this term exists for. The panel is shut and the query is long,
-        // so the link showed — telling a buyer their company is not on the list
-        // immediately after they picked it off that list. The copy is a claim
-        // about the current state, so being visible here is being wrong, not
-        // merely redundant.
+      test("a completed selection: BOTH affordances are shut", async () => {
+        // The exact bug 4.2 case: "after a company is already selected" —
+        // the one state where the below-field link's `!isCompanySelected`
+        // term earns its keep, since `!showDropdown()` alone would show it.
         await pickFromDropdown();
 
-        expect(persistentVisible()).toBe(false);
+        expect(rowVisible()).toBe(false);
+        expect(belowFieldVisible()).toBe(false);
       });
 
-      test("editing the chosen name brings the link back on the keystroke", async () => {
-        // So the state above is a resting place, not a dead end. Without this,
-        // hard-coding the gate to false would satisfy the test above — and the
-        // buyer who picked the wrong company would have no way back to manual
-        // entry at all.
-        //
-        // Driven by the UNDEBOUNCED handler alone, with no getItems() await, and
-        // that is the point of the test rather than a shortcut. Both handlers
-        // clear the flag, so a version that awaited the debounced one passed with
-        // either clear present and pinned neither — mutating away the undebounced
-        // one left the whole suite green. The affordance has to return on the
-        // keystroke: half a second of a buyer being told nothing offers manual
-        // entry is the same defect as never being told, only briefer.
+      test("editing the chosen name re-opens the below-field link on the keystroke, not the row", async () => {
         await pickFromDropdown();
 
-        // Edited SHORT, so the panel stays down and the link is the only route
-        // that could answer.
+        // Edited SHORT — below the search threshold, so the row stays shut,
+        // but the correction already cleared `isCompanySelected`, so the
+        // below-field link is the one reachable now.
         field.value = "Jo";
         component.noteCompanyQuery();
 
         expect(component.isCompanySelected).toBe(false);
         expect(component.showDropdown()).toBe(false);
-        expect(persistentVisible()).toBe(true);
-
-        // And the debounced handler behind it does not take it away again.
-        await component.getItems();
-        expect(persistentVisible()).toBe(true);
+        expect(rowVisible()).toBe(false);
+        expect(belowFieldVisible()).toBe(true);
+        expect(hintVisible()).toBe(true);
       });
 
-      /*
-       * The interleaving pickFromDropdown()'s own doc comment names as
-       * uncovered: a REAL keystroke landing BEFORE the debounced getItems()
-       * tick has ever consumed `isSelecting` (TWO-25288 element 5 round 2).
-       *
-       * Pre-fix, `noteCompanyQuery()` gated on `isSelecting` itself, so this
-       * keystroke was indistinguishable from the synthetic echo `selectItem()`
-       * dispatches on itself and was silently dropped: both the link and the
-       * min-chars hint stayed down, over a field the buyer was actively
-       * correcting, for as long as they kept typing within the 500ms window.
-       */
       describe("a real keystroke landing before the debounced tick", () => {
         function selectThenEcho() {
           component.items = [CHOSEN];
           component.selectItem(CHOSEN);
-          // The synthetic echo selectItem() dispatches on itself, simulated
-          // the same way "the undebounced handler does not consume the
-          // selection flag" does above — no debounced tick has run yet.
           component.noteCompanyQuery();
           expect(component.isSelecting).toBe(true);
           expect(component.isCompanySelected).toBe(true);
         }
 
-        test("a short correction shows the min-chars hint immediately, not the link", () => {
+        test("a short correction shows the min-chars hint AND the below-field link", () => {
           selectThenEcho();
 
           field.value = "Jo";
           component.noteCompanyQuery();
 
-          // Believed on the keystroke: neither still claiming the old
-          // selection nor blanked outright.
           expect(component.isCompanySelected).toBe(false);
           expect(component.isSelecting).toBe(false);
           expect(component.showDropdown()).toBe(false);
-          // Both show together below the threshold — the hint and the link
-          // answer different questions ("how many more characters" and "is
-          // there another way in") and are not mutually exclusive the way the
-          // row and the link are.
           expect(hintVisible()).toBe(true);
-          expect(persistentVisible()).toBe(true);
+          expect(rowVisible()).toBe(false);
+          expect(belowFieldVisible()).toBe(true);
         });
 
         test("a full-length correction opens the row and searches on the tick behind it", async () => {
@@ -728,12 +719,9 @@ describe("address-step manual-entry affordance", () => {
           expect(component.isCompanySelected).toBe(false);
           expect(component.isSelecting).toBe(false);
           expect(component.showDropdown()).toBe(true);
-          expect(persistentVisible()).toBe(false);
+          expect(rowVisible()).toBe(true);
+          expect(belowFieldVisible()).toBe(false);
 
-          // The debounced tick behind this keystroke must search for the
-          // correction rather than silently no-opping on a stale
-          // `isSelecting` — the same one-shot guard the test above this
-          // block exists to pin.
           const pending = component.getItems();
           await H.flushPromises();
           expect(fetchStub.calls.length).toBeGreaterThan(0);
@@ -742,54 +730,54 @@ describe("address-step manual-entry affordance", () => {
         });
       });
 
-      test("retyping past the threshold offers the row, still not the link", async () => {
-        // The other half of the recovery: exactly one route again, and it is the
-        // in-dropdown one. A gate stuck true would put both on screen here.
+      test("retyping past the threshold re-opens the row", async () => {
         await pickFromDropdown();
 
         field.value = "y".repeat(INJECTED_MIN + 1);
         component.noteCompanyQuery();
 
         expect(component.showDropdown()).toBe(true);
-        expect(persistentVisible()).toBe(false);
+        expect(rowVisible()).toBe(true);
+        expect(belowFieldVisible()).toBe(false);
       });
 
-      test("a click outside hands a full-length query back to the link", async () => {
-        // Documented because it is easy to describe wrongly, and the comments
-        // beside both affordances did: the row does NOT own "everything from the
-        // threshold upwards". closeDropdown() is bound as `@click.outside` and
-        // lowers `isOpen` without touching `search`, so at full query length the
-        // row goes and the link takes over. Exactly one route either way, which
-        // is why the behaviour is left alone — but what the link actually owns is
-        // "the panel is shut", not "the query is too short to search".
+      test("a click outside shuts the panel and hands manual entry to the below-field link", async () => {
+        // This is the exact state bug 4.2's first-pass fix (2026-07-28) left
+        // with NOTHING: closeDropdown() is bound as `@click.outside` and
+        // lowers `isOpen` without touching `search`, so a full-length query
+        // whose panel got dismissed by a click elsewhere used to be a dead
+        // end. Round 2's below-field link takes over here instead, exactly
+        // as the pre-4.2 persistent link once did.
         type("x".repeat(INJECTED_MIN));
         expect(component.showDropdown()).toBe(true);
-        expect(persistentVisible()).toBe(false);
+        expect(rowVisible()).toBe(true);
+        expect(belowFieldVisible()).toBe(false);
 
         component.closeDropdown();
 
         expect(component.search.length).toBeGreaterThanOrEqual(INJECTED_MIN);
         expect(component.showDropdown()).toBe(false);
-        expect(persistentVisible()).toBe(true);
+        expect(rowVisible()).toBe(false);
+        expect(belowFieldVisible()).toBe(true);
       });
     });
 
-    test("manual mode offers neither, and the way back instead", () => {
-      // Once manual entry is in effect there is nothing left to enter manually
-      // INTO, so both routes go and the reverse link takes over.
+    test("manual mode: BOTH affordances are shut, the reverse link takes over", () => {
       component.enterManually();
 
       expect(component.showDropdown()).toBe(false);
-      expect(persistentVisible()).toBe(false);
+      expect(rowVisible()).toBe(false);
+      expect(belowFieldVisible()).toBe(false);
       expect(component.manualModeActive).toBe(true);
     });
 
-    test("with the lookup switched off, neither route renders", () => {
+    test("with the lookup switched off, neither affordance renders", () => {
       component.isCompanySearchEnabled = "";
       type("x".repeat(INJECTED_MIN));
 
       expect(component.showDropdown()).toBe(false);
-      expect(persistentVisible()).toBe(false);
+      expect(rowVisible()).toBe(false);
+      expect(belowFieldVisible()).toBe(false);
     });
   });
 });

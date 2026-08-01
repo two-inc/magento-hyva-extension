@@ -250,31 +250,30 @@ $form = $block->getData("form");
             </div>
             <?php
             /*
-             * Manual entry, route one of two: the link below the field.
+             * Manual entry has TWO routes on this surface again, restored
+             * 2026-08-01 after adversarial review round 2 found the
+             * single-route version (2026-07-28, bug 4.2 first pass) left an
+             * untouched or sub-threshold field with no way in at all — the
+             * in-dropdown row below cannot show until
+             * `search.length >= minSearchChars`.
              *
-             * Same action and the SAME wording as the row inside the dropdown,
-             * and never visible at the same time as it. This link owns the
-             * states in which the panel is SHUT — an untouched field, a query
-             * too short to search, and a full-length query whose panel a click
-             * outside dismissed. The row owns the states in which it is open,
-             * including a search that matched nothing or failed. Both are needed
-             * because an untouched field is not reachable from the row, and
-             * manual entry is the only route on this surface for a company the
-             * registry has no identifier for.
+             * This copy is gated on `belowFieldManualEntryVisible`
+             * (`searchModeActive && !isCompanySelected && !showDropdown()`),
+             * NOT on the same condition as the row: the two conditions are
+             * complements of each other on the `showDropdown()` term, so
+             * exactly one of the two is ever visible at once, never both.
+             * That is what the first-pass fix's own deletion was rightly
+             * guarding against — this restores reachability without
+             * reintroducing the duplicate-link defect.
              *
-             * They do not cover `searchModeActive` between them: a completed
-             * selection offers neither, because the copy is a factual claim
-             * about the current state rather than a label.
-             * `persistentManualEntryVisible` carries the reasoning.
-             *
-             * Bound to a bare getter rather than to an expression:
-             * CSP-friendly Alpine looks the WHOLE attribute string up as a key
-             * on the component, so a negation or a conjunction needs a getter of
-             * its own, and a bare name is also what the suite's binding reader
-             * resolves.
+             * Hidden in the states where the claim is false, same as before:
+             * manual mode itself (the "Search for company" reverse link
+             * above already covers that state) and once a company is
+             * selected (`isCompanySelected`) — a completed pick is not "not
+             * in the list".
              */
             ?>
-            <div x-show="persistentManualEntryVisible" class="mt-1 text-right">
+            <div x-show="belowFieldManualEntryVisible" class="mt-1 text-right">
                 <span
                     role="button"
                     tabindex="0"
@@ -407,7 +406,31 @@ $form = $block->getData("form");
              * tile's lookup.
              */
             ?>
-            <div class="field two-company-id mt-2">
+            <?php
+            /*
+             * Bug 4.3 (2026-07-28) — canonical cross-platform design: once a
+             * search result is selected, the company number is NOT its own
+             * field. It renders as plain text immediately below the company
+             * NAME field, right-aligned to that field's edge. Same visual
+             * pattern as 1.1/2.3/3.2 on WooCommerce/PrestaShop/Luma; Hyvä's
+             * own mechanism (Alpine + this CSP-nonce build) differs, but the
+             * rendered result matches.
+             *
+             * Gated on `companyIdDisplayVisible` (== hasVouchedCompanyId()):
+             * a REGISTRY-supplied number is what "a result is selected" means
+             * here. A hand-typed number — no registry hit backs it, so
+             * nothing was "selected" — still needs the real editable input
+             * below, unchanged: manual entry and a store with the lookup
+             * switched off both depend on it staying typeable.
+             */
+            ?>
+            <div
+                x-show="companyIdDisplayVisible"
+                class="two-company-id-display mt-1 text-right text-sm text-gray-700"
+                x-text="companyId"
+                aria-label="<?= $escaper->escapeHtmlAttr(__("Company Number")) ?>"
+            ></div>
+            <div class="field two-company-id mt-2" x-show="!companyIdDisplayVisible">
                 <label for="two_address_company_id" class="block font-semibold text-gray-700">
                     <?= $escaper->escapeHtml(__("Company Number")) ?>
                 </label>

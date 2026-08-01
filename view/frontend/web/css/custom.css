@@ -221,6 +221,42 @@ summary::marker {
 }
 
 /*
+ * Bug 4.1 (2026-07-28): the focus ring must stay scoped to whichever field
+ * actually has DOM focus, not bleed across this wrapper onto the sibling
+ * Company Number field it also contains.
+ *
+ * `.two-company-search` wraps the search input AND, nested further in, the
+ * `.two-company-id` field — so a `:focus-within` ring painted on THIS
+ * element (the behaviour the shared field/input-group styling this module
+ * inherits applies to a container by default, so an input+addon pair reads
+ * as one control) frames both fields together the moment the search input
+ * gets focus, even though they are two independently labelled inputs, not
+ * one addon pair. Suppressed here rather than upstream: this selector only
+ * matches the company-search wrapper, so no other Hyvä field on the
+ * checkout is affected.
+ *
+ * The ring itself is NOT lost — it moves onto the search input directly
+ * below, the same way gateway_method.phtml's equivalent input already
+ * carries its own explicit `focus:ring focus:ring-indigo-300`. This rule
+ * cannot use that utility class directly — the input sits inside an
+ * Alpine/CSP-nonce component and the `:focus-within` suppression above
+ * needs a scoped `>`-combinator rule of its own regardless — so the colour
+ * is restated as its literal RGB. `rgb(165, 180, 252)` is Tailwind's actual
+ * `indigo-300` (`#A5B4FC`); a prior revision of this rule used
+ * `rgba(129, 140, 248, 0.5)`, which is `indigo-400`, not `indigo-300` —
+ * a one-shade drift from the token this rule is supposed to mirror.
+ */
+.two-company-search:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+
+.two-company-search > input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
+}
+
+/*
  * Reserve room for the spinner unconditionally rather than only while
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
