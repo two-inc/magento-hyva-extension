@@ -250,31 +250,40 @@ $form = $block->getData("form");
             </div>
             <?php
             /*
-             * Manual entry has exactly ONE route on this surface: the row
-             * inside the results dropdown, below (TWO-25288 / 4.2 follow-up).
+             * Manual entry has TWO routes on this surface again, restored
+             * 2026-08-01 after adversarial review round 2 found the
+             * single-route version (2026-07-28, bug 4.2 first pass) left an
+             * untouched or sub-threshold field with no way in at all — the
+             * in-dropdown row below cannot show until
+             * `search.length >= minSearchChars`.
              *
-             * A second copy used to live here, below the field, gated on
-             * `persistentManualEntryVisible` so it could stand in for the row
-             * while the panel was shut — an untouched field, a query too short
-             * to search, a full-length query a click outside had dismissed.
-             * That is exactly the set of states in which this affordance must
-             * NOT be visible per the design set 2026-07-28: it is meant to
-             * read as "nothing on this registry matches what you're currently
-             * searching for", which is only true while a search is actually
-             * live. Shown before any query, or beside a company the buyer had
-             * already picked, it reads as a claim about the buyer's own
-             * company rather than about the current search — wrong in both
-             * cases, not merely redundant with the row.
+             * This copy is gated on `belowFieldManualEntryVisible`
+             * (`searchModeActive && !isCompanySelected && !showDropdown()`),
+             * NOT on the same condition as the row: the two conditions are
+             * complements of each other on the `showDropdown()` term, so
+             * exactly one of the two is ever visible at once, never both.
+             * That is what the first-pass fix's own deletion was rightly
+             * guarding against — this restores reachability without
+             * reintroducing the duplicate-link defect.
              *
-             * Deleted rather than re-gated onto `showDropdown` directly:
-             * binding the SAME condition here as the row already uses would
-             * put two identical links on screen at once whenever the panel is
-             * open, which the pre-existing dropdown-open test in
-             * `company-manual-entry.test.js` already called out as a defect in
-             * its own right. The row is the sole surviving affordance and it
-             * already carries the correct gate.
+             * Hidden in the states where the claim is false, same as before:
+             * manual mode itself (the "Search for company" reverse link
+             * above already covers that state) and once a company is
+             * selected (`isCompanySelected`) — a completed pick is not "not
+             * in the list".
              */
             ?>
+            <div x-show="belowFieldManualEntryVisible" class="mt-1 text-right">
+                <span
+                    role="button"
+                    tabindex="0"
+                    @click.stop="enterManually"
+                    @keydown.enter.stop.prevent="enterManually"
+                    @keydown.space.stop.prevent="enterManually"
+                    @mousedown.stop
+                    class="two-company-manual-entry text-blue-600 text-sm cursor-pointer"
+                ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
+            </div>
             <!-- Search Results Dropdown -->
             <div
                 x-show="showDropdown"

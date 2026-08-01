@@ -406,14 +406,37 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         /*
-         * `persistentManualEntryVisible` — the second, below-the-field copy of
-         * the manual-entry affordance — was removed 2026-07-28 (bug 4.2). It
-         * showed "My company is not on the list" whenever the panel was shut,
-         * which included an untouched field and a completed selection: exactly
-         * the two states in which that claim is not true. The in-dropdown row
-         * (gated on `showDropdown`, see companyName.phtml) is now the sole
-         * route into manual entry, live only while a search is actually open.
+         * `persistentManualEntryVisible`, the below-the-field copy of the
+         * manual-entry affordance, was deleted outright on 2026-07-28 (bug
+         * 4.2 first pass) because its old gate — visible whenever the panel
+         * was shut — included two states where the claim is false: an
+         * already-completed selection, and manual mode itself (which has its
+         * own "Search for company" reverse link). That much of the deletion
+         * was right.
+         *
+         * It was also wrong: with no replacement, an untouched or
+         * sub-threshold field lost its ONLY route into manual entry, because
+         * the in-dropdown row (gated on `showDropdown()`) cannot show until
+         * `search.length >= minSearchChars`. A buyer who already knows their
+         * company is not in the registry had no way to say so without first
+         * typing a query that was never going to match (adversarial review
+         * round 2, 2026-08-01).
+         *
+         * `belowFieldManualEntryVisible` restores the affordance with a
+         * narrower gate than either the original bug or the first-pass fix:
+         * visible while search mode is active, no company is selected yet,
+         * AND the dropdown is not currently open. That last term is what
+         * makes this safe against the duplication problem the first-pass
+         * fix was guarding against — this link and the in-dropdown row are
+         * gated on exactly complementary conditions (`!showDropdown()` vs
+         * `showDropdown()`), so precisely one of the two manual-entry routes
+         * is ever on screen at once, in every state including untouched.
          */
+        get belowFieldManualEntryVisible() {
+            return this.searchModeActive
+                && !this.isCompanySelected
+                && !this.showDropdown();
+        },
 
         /**
          * Is there an identifier that something other than the buyer vouched

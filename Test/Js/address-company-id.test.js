@@ -240,19 +240,26 @@ describe("address-step company number", () => {
       expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
     });
 
-    test("the below-the-field manual-entry link is gone (bug 4.2)", () => {
-      // Removed 2026-07-28: it was gated to show whenever the panel was shut,
-      // which included an untouched field and a completed selection — both
-      // states its wording ("My company is not on the list") is false in.
-      // The in-dropdown row (see company-manual-entry.test.js) is the sole
-      // remaining route and is live only while the dropdown is genuinely
-      // open. Asserted here at the markup level, on the same fixture this
-      // file's other tests mount from, so a re-add of the link in ANY gated
-      // form fails this test regardless of what it is gated on.
+    test("the below-the-field manual-entry link is restored, gated on the complement of showDropdown (bug 4.2 round 2)", () => {
+      // 2026-07-28 first pass deleted this link outright: its old gate showed
+      // it whenever the panel was shut, which included an untouched field and
+      // a completed selection — both states its wording ("My company is not
+      // on the list") is false in. That much was right.
+      //
+      // 2026-08-01 (adversarial review round 2) restored it, because deleting
+      // it with no replacement left an untouched/sub-threshold field with NO
+      // route into manual entry at all — the in-dropdown row cannot show
+      // until `search.length >= minSearchChars`. It is back, gated on
+      // `belowFieldManualEntryVisible`, the complement of `showDropdown()`
+      // (see company-manual-entry.test.js for the full behavioural proof that
+      // the two never show at once).
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
+      const link = doc.querySelector(".two-company-manual-entry");
 
-      expect(doc.querySelector(".two-company-manual-entry")).toBeNull();
+      expect(link).not.toBeNull();
+      const wrapper = link.closest("[x-show]");
+      expect(wrapper.getAttribute("x-show")).toBe("belowFieldManualEntryVisible");
     });
 
     test("the mode links resolve both ways round the search flag", () => {
