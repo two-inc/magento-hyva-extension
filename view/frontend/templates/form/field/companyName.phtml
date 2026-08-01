@@ -119,6 +119,23 @@ $form = $block->getData("form");
             ?>
             @input="noteCompanyQuery"
             @input.debounce.500ms="getItems"
+            <?php
+            /*
+             * Arrow-key result navigation, mirroring the payment tile's
+             * `OnArrowDown`/`OnArrowUp`/`OnEnterSelect` (gateway_method.phtml).
+             * This surface never had it: the dropdown was reachable and
+             * openable by keyboard, but once open a keyboard user had no way
+             * to move through the results other than Tab-ing item by item —
+             * there is no `role="listbox"` here (see the note on the
+             * manual-entry row above), so Tab is genuinely the only other
+             * route, and it visits the WHOLE page, not just the dropdown.
+             * `.prevent` on each stops Enter submitting the address form and
+             * the arrow keys moving the caret in the input.
+             */
+            ?>
+            @keydown.arrow-down.prevent="<?= $gwBase ?>OnArrowDown"
+            @keydown.arrow-up.prevent="<?= $gwBase ?>OnArrowUp"
+            @keydown.enter.prevent="<?= $gwBase ?>OnEnterSelect"
             />
             <!--
                 In-field searching indicator (TWO-25288). `isSearching` has
@@ -273,6 +290,20 @@ $form = $block->getData("form");
                             :data-index="index"
                             @click.stop="handleItemClick"
                             @mousedown.stop
+                            <?php
+                            /*
+                             * Visual highlight for the arrow-key-navigated row,
+                             * mirroring the payment tile's `GetItemClass` /
+                             * `OnItemMouseover` pair. The mouseover listener
+                             * keeps mouse and keyboard highlighting on the same
+                             * piece of state, so hovering a row with the mouse
+                             * and then pressing an arrow key moves from where
+                             * the buyer's mouse actually is, not from wherever
+                             * the keyboard last left it.
+                             */
+                            ?>
+                            @mouseover="<?= $gwBase ?>OnItemMouseover"
+                            :class="<?= $gwBase ?>GetItemClass"
                             class="cursor-pointer hover:bg-gray-100 p-2 border-b border-gray-100"
                         >
                             <span x-html="item.companyDisplayName"></span>

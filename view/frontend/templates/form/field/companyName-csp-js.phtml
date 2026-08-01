@@ -830,6 +830,7 @@ function <?= $gwBase ?>CompanySearchField() {
             this.awaitingSelectionEcho = true;
             this.isOpen = false;
             this.items = [];
+            this.selectedIndex = -1;
             this.search = item.companyName;
             this.isCompanySelected = true;
             this.manualMode = false;
@@ -1045,6 +1046,68 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isSearchUnavailable = false;
             this.isOpen = false;
             this.items = [];
+        },
+
+        // Arrow-key result navigation. Mirrors the payment tile's
+        // nextItem()/prevItem()/adjustScroll()/selectHighlightedItem() —
+        // this surface never had them, so keyboard users could open the
+        // dropdown but never move through it without a mouse. Clamped, not
+        // wrapping: arriving at either end and pressing the same direction
+        // again is a no-op, matching the payment tile.
+        <?= $gwBase ?>OnArrowDown() {
+            this.nextItem();
+        },
+        <?= $gwBase ?>OnArrowUp() {
+            this.prevItem();
+        },
+        <?= $gwBase ?>OnEnterSelect() {
+            this.selectHighlightedItem();
+        },
+        <?= $gwBase ?>OnItemMouseover(event) {
+            this.selectedIndex = parseInt(event.currentTarget.dataset.index, 10);
+        },
+        <?= $gwBase ?>GetItemClass() {
+            return this.selectedIndex === this.index
+                ? 'bg-gray-100'
+                : '';
+        },
+
+        nextItem() {
+            if (this.selectedIndex < this.items.length - 1) {
+                this.selectedIndex++;
+                this.adjustScroll();
+            }
+        },
+
+        prevItem() {
+            if (this.selectedIndex > 0) {
+                this.selectedIndex--;
+                this.adjustScroll();
+            }
+        },
+
+        adjustScroll() {
+            this.$nextTick(() => {
+                const dropdown = this.$root.querySelector('.two-company-search-results, .flex.flex-col.w-full.max-h-\\[250px\\]');
+                const highlighted = this.$root.querySelectorAll('[data-index]')[this.selectedIndex];
+
+                if (dropdown && highlighted) {
+                    const dropdownRect = dropdown.getBoundingClientRect();
+                    const itemRect = highlighted.getBoundingClientRect();
+
+                    if (itemRect.bottom > dropdownRect.bottom) {
+                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
+                    } else if (itemRect.top < dropdownRect.top) {
+                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
+                    }
+                }
+            });
+        },
+
+        selectHighlightedItem() {
+            if (this.selectedIndex >= 0 && this.items.length > 0 && this.items[this.selectedIndex]) {
+                this.selectItem(this.items[this.selectedIndex]);
+            }
         },
     }
 }
