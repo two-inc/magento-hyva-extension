@@ -181,6 +181,42 @@ $quoteDetails = json_encode(
         return merged;
     };
 
+    /*
+     * Bridge Hyvä Checkout's `billing_as_shipping_address_updated` Magewire
+     * event to a window event the payment tile can bind with `@event.window`.
+     *
+     * Only the UNTICK is relayed. The tick is already handled elsewhere (the
+     * shipping sync re-populates the tile from the stored shipping company);
+     * the untick had no handler at all, which is what left a captured — and
+     * therefore control-less — shipping company stranded on the tile with no
+     * way to enter a different billing company.
+     *
+     * A window event rather than a direct component call because Magewire
+     * re-renders destroy and rebuild the Alpine component: the listener below
+     * is registered once for the page, while `@event.window` is re-bound to
+     * whichever instance is currently mounted and torn down with it.
+     *
+     * Once-guarded and retried for Magewire the same way
+     * company-name-payment.phtml's tick-side listener is — this script can be
+     * re-executed by a re-render, and Magewire is not necessarily up yet when
+     * it first runs.
+     */
+    if (!window.twoGatewayBillingAsShippingBridged) {
+        window.twoGatewayBillingAsShippingBridged = true;
+        const bridgeBillingAsShipping = function() {
+            if (typeof Magewire !== 'undefined' && Magewire.on) {
+                Magewire.on('billing_as_shipping_address_updated', function(data) {
+                    if (data && data.billingAsShipping === false) {
+                        window.dispatchEvent(new CustomEvent('two-billing-as-shipping-cleared'));
+                    }
+                });
+            } else {
+                setTimeout(bridgeBillingAsShipping, 100);
+            }
+        };
+        bridgeBillingAsShipping();
+    }
+
     /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
@@ -1131,13 +1167,123 @@ $quoteDetails = json_encode(
                 // A merging write, never a rebuild from a key list: dropping
                 // `quote_id` that way is what silently disarmed the new-order
                 // clear.
+                //
+                // `company_id_source` is provenance, and it MUST be written
+                // here. Merging means a `'manual'` left behind by an earlier
+                // address-step edit otherwise survives alongside a registry
+                // number picked on the tile; the address step's
+                // hasVouchedCompanyId() then reads false for a genuine
+                // registry pick and refuses to render the read-only number.
+                // The whole address-step editability model rests on this key,
+                // so it is written on every path that writes a number —
+                // `''` when the hit carried none, never left as-is.
                 window.twoGatewayWriteCompanySelection({
                     company_name: item.companyName,
                     company_id: item.companyId,
+                    company_id_source: item.companyId ? 'registry' : '',
                     manual_mode: false
                 });
 
                 this.fillCompanyData(item.companyId, item.companyName);
+            },
+
+            /*
+             * TWO-25326 §7 follow-up: the way BACK out of a captured company.
+             *
+             * Once captured, the tile hides the search control and the whole
+             * Company Number block and shows the read-only label instead. The
+             * only "Enter details manually" link lives INSIDE the hidden
+             * search block, and nothing outside it can set `showManual`, so
+             * without this the captured company is unchangeable from the tile.
+             * Two real dead ends it closes:
+             *
+             *  - the buyer unticks "billing same as shipping": the shipping
+             *    sync stops, the tile keeps showing the SHIPPING company, and
+             *    there is no control left to enter the billing company;
+             *  - the buyer picked the wrong company on the address step and is
+             *    now on payment, with no way to correct it from here.
+             *
+             * Storage is cleared as well as component state. `initialize()`
+             * restores from storage on every Magewire re-render, so leaving
+             * the captured pair there would put the company — and the hidden
+             * controls — straight back.
+             */
+            clearCapturedCompany() {
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
+                this.items = [];
+                this.selectedIndex = -1;
+                this.isSelecting = false;
+
+                // Before the mode flags: the `manualMode` watcher runs
+                // applyCompanyIdEditability(), and this flag has to be current
+                // when it does (same ordering selectItem() relies on).
+                this.companyIdEntryRequired = true;
+                this.companyName = '';
+                this.companyId = '';
+                this.search = '';
+                this.manualMode = false;
+                // Back to the search control, not manual entry: search is the
+                // route that can still produce a registry-vouched number.
+                this.showManual = false;
+                this.applyCompanyIdEditability();
+
+                const nameInput = document.getElementById('company_name');
+                if (nameInput) nameInput.value = '';
+                const idInput = document.getElementById('company_id');
+                if (idInput) idInput.value = '';
+
+                window.twoGatewayWriteCompanySelection({
+                    company_name: '',
+                    company_id: '',
+                    company_id_source: '',
+                    manual_mode: false
+                });
+
+                this.focusCompanySearchInput();
+            },
+
+            /*
+             * Put the caret in the control the clear just revealed.
+             *
+             * `$nextTick` because the search block is revealed by `x-show`,
+             * and an element still carrying `display: none` cannot take focus
+             * — a bare `.focus()` on the same tick is a silent no-op. The
+             * result is then CHECKED rather than assumed, and retried once on
+             * a macrotask, because Alpine's own transition can leave the
+             * element unfocusable for a further frame.
+             */
+            focusCompanySearchInput() {
+                const focus = () => {
+                    const input = document.getElementById('company_name');
+                    if (!input) return false;
+                    input.focus();
+                    return document.activeElement === input;
+                };
+                this.$nextTick(() => {
+                    if (focus()) return;
+                    setTimeout(focus, 0);
+                });
+            },
+
+            <?= $gwBase ?>OnChangeCompanyClick() {
+                this.clearCapturedCompany();
+            },
+
+            /*
+             * Hyvä Checkout's `billing_as_shipping_address_updated` Magewire
+             * event, relayed as a window event by the once-guarded bridge at
+             * the top of this file.
+             *
+             * Untick means the billing company is no longer the shipping
+             * company, so the captured pair the tile is showing is now the
+             * WRONG company — and, being captured, is showing as a read-only
+             * label with no control beside it. Clearing hands the buyer the
+             * search control back with the fields empty.
+             */
+            <?= $gwBase ?>OnBillingAsShippingCleared() {
+                this.clearCapturedCompany();
             },
 
             enterManually() {

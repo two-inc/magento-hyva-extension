@@ -79,12 +79,12 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
  */
 const COMPANY_TILE_LABEL_SHOW_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'div[data-name="company_tile_label"]',
+  '[data-name="company_tile_label"]',
   "x-show",
 );
 const COMPANY_TILE_LABEL_TEXT_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'div[data-name="company_tile_label"]',
+  '[data-name="company_tile_label"]',
   "x-text",
 );
 
@@ -233,7 +233,7 @@ describe("payment component company selection", () => {
 
   /** @returns {HTMLElement} the TWO-25326 §7 captured-company label */
   function companyTileLabel() {
-    return document.querySelector('div[data-name="company_tile_label"]');
+    return document.querySelector('[data-name="company_tile_label"]');
   }
 
   /** @returns {HTMLInputElement} */

@@ -36,12 +36,12 @@ const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
 /** The label's own two bindings. */
 const LABEL_SHOW_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'div[data-name="company_tile_label"]',
+  '[data-name="company_tile_label"]',
   "x-show",
 );
 const LABEL_TEXT_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'div[data-name="company_tile_label"]',
+  '[data-name="company_tile_label"]',
   "x-text",
 );
 
@@ -57,6 +57,33 @@ const SEARCH_BLOCK_SHOW_BINDING = readSearchBlockShowBinding();
 const NUMBER_BLOCK_HIDDEN_CLASS_BINDING = readNumberBlockClassBinding();
 
 /**
+ * The "Change company" control's bindings. Capture hides both company controls
+ * and the only "Enter details manually" link lives inside the hidden search
+ * block, so this button is the ONLY way back out — a binding that resolves to
+ * nothing here is an unchangeable company, not a cosmetic defect.
+ */
+const CHANGE_BUTTON_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  '[data-name="company_tile_change"]',
+  "x-show",
+);
+const CHANGE_BUTTON_CLICK_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  '[data-name="company_tile_change"]',
+  "@click",
+);
+
+/**
+ * The form's handler for the untick of "billing same as shipping", relayed as
+ * a window event by the Magewire bridge in gateway_method-csp-js.phtml.
+ */
+const BILLING_CLEARED_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  "form[x-data]",
+  "@two-billing-as-shipping-cleared.window",
+);
+
+/**
  * @returns {Document} the shipped payment markup, parsed
  */
 function parsedMarkup() {
@@ -64,6 +91,20 @@ function parsedMarkup() {
     H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
     "text/html",
   );
+}
+
+/** @returns {HTMLElement} the "Change company" control, from the shipped markup */
+function changeButton() {
+  const button = parsedMarkup().querySelector(
+    '[data-name="company_tile_change"]',
+  );
+  if (!button) {
+    throw new Error(
+      "the tile has no 'Change company' control — a captured company would " +
+        "then be unchangeable from the payment step",
+    );
+  }
+  return button;
 }
 
 /**
@@ -165,21 +206,29 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       ["label x-text", () => LABEL_TEXT_BINDING],
       ["search block x-show", () => SEARCH_BLOCK_SHOW_BINDING],
       ["number block :class", () => NUMBER_BLOCK_HIDDEN_CLASS_BINDING],
+      ["change button x-show", () => CHANGE_BUTTON_SHOW_BINDING],
+      ["change button @click", () => CHANGE_BUTTON_CLICK_BINDING],
+      ["form @two-billing-as-shipping-cleared", () => BILLING_CLEARED_BINDING],
     ])("%s names a key the component actually defines", (_label, binding) => {
       expect(binding() in component).toBe(true);
     });
 
-    test("the label is the first child of the payment fieldset", () => {
+    test("the label row is the first child of the payment fieldset", () => {
       // §7 puts it between the term chips (outside the form) and the
-      // order-intent message (the element that used to be first here).
+      // order-intent message (the element that used to be first here). The row
+      // wraps the label and its "Change company" button so the two stay
+      // adjacent; the label itself carries the class §7 names.
       const fieldset = parsedMarkup().querySelector("form fieldset");
-      const label = fieldset.querySelector(
-        'div[data-name="company_tile_label"]',
+      const label = fieldset.querySelector('[data-name="company_tile_label"]');
+      const button = fieldset.querySelector(
+        '[data-name="company_tile_change"]',
       );
 
       expect(label).not.toBeNull();
-      expect(fieldset.firstElementChild).toBe(label);
+      expect(button).not.toBeNull();
       expect(label.classList.contains("two-company-tile-label")).toBe(true);
+      expect(fieldset.firstElementChild).toBe(label.parentElement);
+      expect(button.parentElement).toBe(label.parentElement);
     });
 
     test("the label sits inside the form's Alpine scope", () => {
@@ -187,7 +236,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // x-data=...>` would bind against the outer tile component instead and
       // resolve to nothing.
       const label = parsedMarkup().querySelector(
-        'div[data-name="company_tile_label"]',
+        '[data-name="company_tile_label"]',
       );
 
       expect(label.closest("form[x-data]")).not.toBeNull();
@@ -350,6 +399,197 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+    });
+  });
+
+  /**
+   * The way back out. Without it a captured company is unchangeable from the
+   * tile: the search block is hidden, the only "Enter details manually" link
+   * lives inside it, nothing outside it can set `showManual`, and neither of
+   * the two things that recompute `companyIdEntryRequired` (the tile's own
+   * `getItems()`, which needs the hidden search input, and an inbound shipping
+   * sync) can be reached from the payment step.
+   */
+  describe("the 'Change company' control", () => {
+    test("is a real button, not a clickable div or an anchor", () => {
+      // §2's rule on this ticket. `type="button"` additionally keeps it from
+      // submitting the checkout form it sits inside.
+      const button = changeButton();
+
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.getAttribute("type")).toBe("button");
+    });
+
+    test("is shown on exactly the same gate as the label", () => {
+      // Never visible while the search block is: the two gates are the same
+      // getter, so a state where both a control and its replacement show is
+      // unreachable.
+      expect(CHANGE_BUTTON_SHOW_BINDING).toBe(LABEL_SHOW_BINDING);
+    });
+
+    test("takes a captured company all the way back to a usable search control", () => {
+      // The round trip, end to end. Every assertion below fails if
+      // clearCapturedCompany() is reduced to a no-op.
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      expect(component[LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
+
+      component[CHANGE_BUTTON_CLICK_BINDING]();
+
+      expect(component[LABEL_SHOW_BINDING]).toBe(false);
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
+      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(component.companyName).toBe("");
+      expect(component.companyId).toBe("");
+      expect(component.search).toBe("");
+      expect(document.getElementById("company_name").value).toBe("");
+      expect(document.getElementById("company_id").value).toBe("");
+      // The number field has to be typeable again, not merely visible.
+      expect(component.companyIdDisabled).toBe(false);
+    });
+
+    test("lets a different company be captured afterwards", () => {
+      // The half of the round trip that proves the control is usable and not
+      // just present: clear, then capture again, and the tile must show the
+      // NEW company.
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      component[CHANGE_BUTTON_CLICK_BINDING]();
+
+      component.selectItem(pickerItem("Other Example Ltd", "987654321"));
+
+      expect(component[LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[LABEL_TEXT_BINDING]).toBe("Other Example Ltd (987654321)");
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
+    });
+
+    test("clears storage too, so a Magewire re-render does not restore the company", () => {
+      // `initialize()` restores from storage on every re-render. Leaving the
+      // captured pair there would put the company — and the hidden controls —
+      // straight back, which is the same dead end with an extra step.
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+      component[CHANGE_BUTTON_CLICK_BINDING]();
+
+      const stored = JSON.parse(
+        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+      );
+      expect(stored.company_name).toBe("");
+      expect(stored.company_id).toBe("");
+      expect(stored.company_id_source).toBe("");
+    });
+
+    test("puts focus in the control it reveals, and the focus actually lands", () => {
+      // Asserted on `document.activeElement`, not on a spy: a `.focus()` call
+      // that reaches an element still carrying `display: none` is a silent
+      // no-op, which is exactly the failure a spy would report as success.
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      document.getElementById("company_id").focus();
+
+      component[CHANGE_BUTTON_CLICK_BINDING]();
+
+      expect(document.activeElement).toBe(
+        document.getElementById("company_name"),
+      );
+    });
+
+    test("retries the focus once when the first attempt does not take", () => {
+      // The real-browser case the plain `$nextTick` cannot cover: Alpine's
+      // transition can leave the revealed input unfocusable for a further
+      // frame. Simulated by making the first `focus()` a no-op.
+      const input = document.getElementById("company_name");
+      const realFocus = input.focus.bind(input);
+      let attempts = 0;
+      input.focus = function () {
+        attempts += 1;
+        if (attempts === 1) return;
+        realFocus();
+      };
+
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      component[CHANGE_BUTTON_CLICK_BINDING]();
+      expect(document.activeElement).not.toBe(input);
+
+      jest.runOnlyPendingTimers();
+
+      expect(attempts).toBeGreaterThan(1);
+      expect(document.activeElement).toBe(input);
+    });
+  });
+
+  describe("unticking 'billing same as shipping'", () => {
+    test("clears the captured company the tile is still showing", () => {
+      // The sync stops, so the tile would otherwise keep showing the SHIPPING
+      // company as a read-only label with no control beside it — and no way to
+      // enter a different billing company.
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      expect(component[LABEL_SHOW_BINDING]).toBe(true);
+
+      component[BILLING_CLEARED_BINDING]();
+
+      expect(component[LABEL_SHOW_BINDING]).toBe(false);
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
+      expect(component.companyName).toBe("");
+      expect(component.companyId).toBe("");
+    });
+
+    test("only the untick is bridged from Magewire, never the tick", () => {
+      // The tick is already handled by company-name-payment.phtml, which
+      // re-populates the tile from the stored shipping company. Bridging it
+      // here as well would clear the company that handler had just written.
+      const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
+
+      expect(js).toContain("billing_as_shipping_address_updated");
+      expect(js).toContain("data.billingAsShipping === false");
+    });
+  });
+
+  describe("provenance written by the tile's own pick", () => {
+    /** @returns {Object} the persisted company selection */
+    function stored() {
+      return JSON.parse(
+        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+      );
+    }
+
+    test("a registry pick is recorded as 'registry'", () => {
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+      expect(stored().company_id).toBe("123456789");
+      expect(stored().company_id_source).toBe("registry");
+    });
+
+    test("overwrites a 'manual' left behind by an earlier address-step edit", () => {
+      // The defect this pins. The write merges, so without an explicit
+      // `company_id_source` the stale `'manual'` survives beside a registry
+      // number; the address step's hasVouchedCompanyId() then reads false and
+      // refuses to render the read-only number for a genuine registry pick.
+      window.twoGatewayWriteCompanySelection({ company_id_source: "manual" });
+
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+      expect(stored().company_id_source).toBe("registry");
+    });
+
+    test("a pick with no identifier records no provenance", () => {
+      // Nothing vouched for a number, so nothing may claim it did.
+      window.twoGatewayWriteCompanySelection({ company_id_source: "manual" });
+
+      component.selectItem(pickerItem("Example Trading Ltd", ""));
+
+      expect(stored().company_id).toBe("");
+      expect(stored().company_id_source).toBe("");
+    });
+
+    test("the write still merges — quote_id survives it", () => {
+      // Guards the regression the write's own comment names: rebuilding the
+      // blob from a key list drops `quote_id` and silently disarms the
+      // new-order clear. `quote_id` is written by a different path, so it is
+      // seeded here and only its SURVIVAL through this write is asserted.
+      window.twoGatewayWriteCompanySelection({ quote_id: "test-quote-1" });
+
+      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+      expect(stored().quote_id).toBe("test-quote-1");
     });
   });
 });

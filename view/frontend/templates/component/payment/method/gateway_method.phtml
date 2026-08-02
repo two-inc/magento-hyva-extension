@@ -144,6 +144,18 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         ) ?>"
         wire:ignore
         @keydown.window.prevent.enter
+        <?php
+        /*
+         * Untick of "billing same as shipping", relayed as a window event by
+         * the once-guarded Magewire bridge in gateway_method-csp-js.phtml. The
+         * tile is then showing the SHIPPING company as a read-only captured
+         * label with no control beside it, so the capture is cleared and the
+         * search control handed back. Bound here, on the component root, so
+         * Alpine tears the listener down with the instance across Magewire
+         * re-renders.
+         */
+        ?>
+        @two-billing-as-shipping-cleared.window="<?= $gwBase ?>OnBillingAsShippingCleared"
         class="">
         <fieldset class="space-y-4">
             <?php
@@ -170,12 +182,41 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * `companyIdHiddenClass` below).
              */
             ?>
-            <div
-                class="two-company-tile-label font-semibold text-gray-700"
-                data-name="company_tile_label"
-                x-show="companyTileLabelVisible"
-                x-text="companyTileLabelText"
-            ></div>
+            <div class="two-company-tile-label-row flex items-center gap-2">
+                <span
+                    class="two-company-tile-label font-semibold text-gray-700"
+                    data-name="company_tile_label"
+                    x-show="companyTileLabelVisible"
+                    x-text="companyTileLabelText"
+                ></span>
+                <?php
+                /*
+                 * The way BACK out of a captured company, and the reason the
+                 * label is allowed to replace the controls at all.
+                 *
+                 * Capture hides the search block, and the only "Enter details
+                 * manually" link lives inside it, so without this the captured
+                 * company cannot be changed from the tile — a buyer who
+                 * unticks "billing same as shipping", or who picked the wrong
+                 * company on the address step, has no control left to correct
+                 * it. See clearCapturedCompany() for the full case.
+                 *
+                 * A real `<button type="button">`, per this ticket's §2: it is
+                 * an action, it has to be reachable and operable from the
+                 * keyboard, and `type="button"` keeps it from submitting the
+                 * checkout form it sits inside. The visible-only-when-captured
+                 * gate is the same getter the label uses, so the control can
+                 * never appear while the search block is already showing.
+                 */
+                ?>
+                <button
+                    type="button"
+                    class="two-company-tile-change text-blue-600 text-sm cursor-pointer"
+                    data-name="company_tile_change"
+                    x-show="companyTileLabelVisible"
+                    @click="<?= $gwBase ?>OnChangeCompanyClick"
+                ><?= $escaper->escapeHtml(__("Change company")) ?></button>
+            </div>
             <?php
             /*
              * Persistent inline "order intent approved" notice, inside the
