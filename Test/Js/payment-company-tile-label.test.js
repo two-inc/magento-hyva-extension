@@ -451,20 +451,41 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
     });
 
-    test("clears storage too, so a Magewire re-render does not restore the company", () => {
+    test("clears the BILLING record only, leaving the shipping company intact", () => {
       // `initialize()` restores from storage on every re-render. Leaving the
       // captured pair there would put the company — and the hidden controls —
       // straight back, which is the same dead end with an extra step.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Shipping Company Ltd",
+          company_id: "99999999",
+          company_id_source: "registry",
+        }),
+      );
       component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
 
       component[CHANGE_BUTTON_CLICK_BINDING]();
 
-      const stored = JSON.parse(
+      // The BILLING record is REMOVED, not blanked. `initialize()` restores
+      // from storage on every re-render, so leaving the pair there would put
+      // the company — and the hidden controls — straight back.
+      //
+      // Removal rather than empty strings is load-bearing: the tile falls back
+      // to the shipping company only when there is NO billing record, so a
+      // blank one would suppress that fallback for the rest of the checkout.
+      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
+
+      // And the SHIPPING record is untouched. Before the key split this cleared
+      // one shared blob, so "Change company" also destroyed the shipping
+      // company's identifier and the address step's read-only number label went
+      // with it.
+      const shipping = JSON.parse(
         env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
       );
-      expect(stored.company_name).toBe("");
-      expect(stored.company_id).toBe("");
-      expect(stored.company_id_source).toBe("");
+      expect(shipping.company_name).toBe("Shipping Company Ltd");
+      expect(shipping.company_id).toBe("99999999");
     });
 
     test("puts focus in the control it reveals, and the focus actually lands", () => {
@@ -547,11 +568,154 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
   });
 
+  describe("the billing/shipping key split (TWO-25326 review round 3)", () => {
+    /**
+     * Mount a FRESH tile against whatever is currently in storage.
+     *
+     * The suite's own `beforeEach` has already mounted one with empty storage,
+     * and `initialize()` is what reads the records — so a restore test has to
+     * build its own instance after seeding.
+     *
+     * @param {boolean} [billingAsShipping] renders the checkbox in that state;
+     *   omit to leave it absent, which is the "no such toggle" default
+     * @returns {Object} the mounted component
+     */
+    function remount(billingAsShipping) {
+      const existing = document.getElementById("billing-as-shipping");
+      if (existing) existing.remove();
+      if (billingAsShipping !== undefined) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.id = "billing-as-shipping";
+        box.checked = billingAsShipping;
+        document.body.appendChild(box);
+      }
+      const root = document.getElementById("payment-root");
+      const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: root,
+        root: root,
+      });
+      fresh.$watch = function () {};
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+      return fresh;
+    }
+
+    /** @param {string} key @param {Object} data */
+    function seed(key, data) {
+      env.browserStorage.setItem(key, JSON.stringify(data));
+    }
+
+    const SHIPPING = {
+      quote_id: "test-quote-1",
+      company_name: "Shipping Company Ltd",
+      company_id: "99999999",
+      company_id_source: "registry",
+    };
+    const BILLING = {
+      quote_id: "test-quote-1",
+      company_name: "Billing Company Ltd",
+      company_id: "11112222",
+      company_id_source: "registry",
+    };
+
+    test("the BILLING record wins over the shipping one", () => {
+      // The corruption this split removes: before it, one blob held both, so
+      // whichever surface wrote last decided what the order carried.
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+      seed(H.BILLING_COMPANY_KEY, BILLING);
+
+      const fresh = remount(true);
+
+      expect(fresh.companyName).toBe("Billing Company Ltd");
+      expect(fresh.companyId).toBe("11112222");
+    });
+
+    test("falls back to shipping when there is no billing record AND the box is ticked", () => {
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+
+      const fresh = remount(true);
+
+      expect(fresh.companyName).toBe("Shipping Company Ltd");
+      expect(fresh.companyId).toBe("99999999");
+    });
+
+    test("does NOT fall back to shipping once the buyer unticks the box", () => {
+      // The bug the withdrawn Magewire bridge was trying to paper over: with
+      // billing declared different from shipping, adopting the shipping company
+      // shows the buyer a company they have explicitly said does not apply —
+      // and, being captured, it renders as a read-only label.
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+
+      const fresh = remount(false);
+
+      expect(fresh.companyName).toBe("");
+      expect(fresh.companyId).toBe("");
+      expect(fresh[LABEL_SHOW_BINDING]).toBe(false);
+      // And the capture route is available, which is the whole point.
+      expect(fresh[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
+    });
+
+    test("falls back when the toggle does not exist at all", () => {
+      // A checkout with no such control has one address, so the shipping
+      // company IS the billing company. Absent must not read as unticked.
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+
+      const fresh = remount();
+
+      expect(fresh.companyName).toBe("Shipping Company Ltd");
+    });
+
+    test("an emptied billing record is a REMOVAL, so the fallback stays live", () => {
+      // Blanking instead of removing would leave a record present-but-empty,
+      // which the fallback reads as "the buyer named a billing company" and
+      // suppresses for the rest of the checkout.
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+      const captured = remount(true);
+      captured.selectItem(pickerItem("Billing Company Ltd", "11112222"));
+      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).not.toBeNull();
+
+      captured[CHANGE_BUTTON_CLICK_BINDING]();
+      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
+
+      const afterClear = remount(true);
+      expect(afterClear.companyName).toBe("Shipping Company Ltd");
+    });
+
+    test("isBillingAsShipping is published as a shared window helper", () => {
+      // Hoisted so the tile and company-name-payment.phtml cannot answer it
+      // differently — two surfaces disagreeing is how the tile adopts a company
+      // the buyer has ruled out.
+      expect(typeof window.twoGatewayIsBillingAsShipping).toBe("function");
+
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.id = "billing-as-shipping";
+      box.checked = false;
+      document.body.appendChild(box);
+      expect(window.twoGatewayIsBillingAsShipping()).toBe(false);
+
+      box.checked = true;
+      expect(window.twoGatewayIsBillingAsShipping()).toBe(true);
+
+      box.remove();
+      expect(window.twoGatewayIsBillingAsShipping()).toBe(true);
+    });
+
+    test("the two keys are separately store-scoped", () => {
+      expect(window.TWO_GATEWAY_BILLING_COMPANY_KEY).toBe(H.BILLING_COMPANY_KEY);
+      expect(window.TWO_GATEWAY_BILLING_COMPANY_KEY).not.toBe(
+        window.TWO_GATEWAY_COMPANY_SELECTION_KEY,
+      );
+      // Store-less must mean "no storage", never a bucket every store shares.
+      expect(H.BILLING_COMPANY_KEY).toMatch(/:1$/);
+    });
+  });
+
   describe("provenance written by the tile's own pick", () => {
-    /** @returns {Object} the persisted company selection */
+    /** @returns {Object} the persisted BILLING company selection */
     function stored() {
       return JSON.parse(
-        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+        env.browserStorage.getItem(H.BILLING_COMPANY_KEY) || "{}",
       );
     }
 
@@ -589,11 +753,37 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // blob from a key list drops `quote_id` and silently disarms the
       // new-order clear. `quote_id` is written by a different path, so it is
       // seeded here and only its SURVIVAL through this write is asserted.
-      window.twoGatewayWriteCompanySelection({ quote_id: "test-quote-1" });
+      window.twoGatewayWriteBillingCompany({ quote_id: "test-quote-1" });
 
       component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
 
       expect(stored().quote_id).toBe("test-quote-1");
+    });
+
+    test("the tile never writes the SHIPPING record", () => {
+      // The whole point of the key split. The address step owns the shipping
+      // company; a tile write reaching that key is the data-corruption bug the
+      // split removes, and it is the regression most likely to be reintroduced
+      // by copying one of the sibling write calls.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Shipping Company Ltd",
+          company_id: "99999999",
+          company_id_source: "registry",
+        }),
+      );
+      const before = env.browserStorage.getItem(H.COMPANY_SELECTION_KEY);
+
+      component.selectItem(pickerItem("Billing Company Ltd", "11112222"));
+      component.saveManualModeToStorage(true);
+
+      // Byte-for-byte: a re-parsed comparison would hide a rewrite that
+      // happened to round-trip to an equal object, and any tile write into the
+      // shipping slot is the defect whether or not the value changed.
+      expect(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY)).toBe(before);
+      expect(stored().company_name).toBe("Billing Company Ltd");
     });
   });
 });

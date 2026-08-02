@@ -406,6 +406,16 @@ const PAYMENT_FIELDS_TEMPLATE =
 const COMPANY_SELECTION_KEY = "shipping_company_selection:1";
 
 /**
+ * The BILLING company's storage key AS THE TEMPLATES BUILD IT (TWO-25326).
+ *
+ * A second, separately scoped record, written only by the payment tile. The
+ * split exists because the checkout can hold two different companies at once —
+ * shipping, and a different billing one once "billing same as shipping" is
+ * unticked — and one record cannot describe both.
+ */
+const BILLING_COMPANY_KEY = "billing_company_selection:1";
+
+/**
  * The globals gateway_method-csp-js.phtml publishes for the other pickers.
  */
 const SHARED_HELPER_GLOBALS = [
@@ -425,6 +435,14 @@ const SHARED_HELPER_GLOBALS = [
   "TWO_GATEWAY_COMPANY_SELECTION_KEY",
   "twoGatewayReadCompanySelection",
   "twoGatewayWriteCompanySelection",
+  // The billing-scoped accessors, listed for exactly the same reason: they use
+  // the same `window.X = window.X || …` idiom, so without resetting them the
+  // first test file's key — and its store id — would leak into every later one.
+  "TWO_GATEWAY_BILLING_COMPANY_KEY",
+  "twoGatewayReadBillingCompany",
+  "twoGatewayWriteBillingCompany",
+  "twoGatewayClearBillingCompany",
+  "twoGatewayIsBillingAsShipping",
 ];
 
 /**
@@ -699,6 +717,7 @@ async function flushPromises() {
 module.exports = {
   REPO_ROOT: REPO_ROOT,
   COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
+  BILLING_COMPANY_KEY: BILLING_COMPANY_KEY,
   QUOTE_JSON: QUOTE_JSON,
   ESCAPED_STRING: ESCAPED_STRING,
   PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,

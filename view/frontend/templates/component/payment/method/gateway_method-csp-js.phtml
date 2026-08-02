@@ -181,6 +181,115 @@ $quoteDetails = json_encode(
         return merged;
     };
 
+    /*
+     * The BILLING company's own storage key (TWO-25326 review round 3).
+     *
+     * The key above is the SHIPPING company's, and until now it was the only
+     * one — so the payment tile and the address step both merged into it. That
+     * is a data-corruption bug rather than an inconvenience: this checkout can
+     * legitimately hold two different companies at once, because unticking
+     * "billing same as shipping" lets the buyer name a different billing
+     * company, and one record cannot describe both. Every symptom rounds 2 and
+     * 3 chased — a tile pick overwriting the address step's number, an untick
+     * clearing the shipping company for good, `init()` restoring a pair that
+     * contradicted the field beside it — was a guess at which company a given
+     * read belonged to. With two keys there is nothing to guess.
+     *
+     * Same store-view scoping and same empty-key-means-no-storage contract as
+     * the shipping key; see the note above for why '' must not become a shared
+     * store-less bucket.
+     */
+    window.TWO_GATEWAY_BILLING_COMPANY_KEY = window.TWO_GATEWAY_BILLING_COMPANY_KEY
+        || (window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            ? 'billing_company_selection:' + window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            : '');
+
+    /**
+     * Read the current store view's BILLING company selection.
+     *
+     * Guarded exactly as the shipping read is, and for the same reason: this
+     * runs inside the handlers that go on to register Alpine components, so
+     * anything thrown here leaves a dead checkout step.
+     *
+     * @returns {Object} the stored blob, or {} when absent or unparseable
+     */
+    window.twoGatewayReadBillingCompany = window.twoGatewayReadBillingCompany || function() {
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (!key) {
+                return {};
+            }
+            const parsed = JSON.parse(hyva.getBrowserStorage().getItem(key) || '{}');
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                ? parsed
+                : {};
+        } catch (error) {
+            return {};
+        }
+    };
+
+    /**
+     * Merge `patch` into the current store view's BILLING company selection.
+     *
+     * Written ONLY by the payment tile. The address step must never reach this
+     * key — it captures the shipping company, and the whole point of the split
+     * is that the two records cannot overwrite one another.
+     *
+     * @param {Object} patch keys to overwrite; everything else is preserved
+     * @returns {Object} the merged blob as written
+     */
+    window.twoGatewayWriteBillingCompany = window.twoGatewayWriteBillingCompany || function(patch) {
+        const merged = Object.assign({}, window.twoGatewayReadBillingCompany(), patch || {});
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (key) {
+                hyva.getBrowserStorage().setItem(key, JSON.stringify(merged));
+            }
+        } catch (error) {
+            // Same as the shipping write: the caller's own state is already
+            // updated and the only loss is carry-over between steps.
+        }
+        return merged;
+    };
+
+    /**
+     * Drop the BILLING company record entirely.
+     *
+     * A removal, not a write of empty strings. An empty-but-present blob is
+     * indistinguishable from "the buyer deliberately cleared the billing
+     * company", and the tile's fallback-to-shipping rule keys on the record
+     * being ABSENT — so writing blanks here would permanently suppress the
+     * fallback for the rest of the checkout.
+     *
+     * @returns {void}
+     */
+    window.twoGatewayClearBillingCompany = window.twoGatewayClearBillingCompany || function() {
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (key) {
+                hyva.getBrowserStorage().removeItem(key);
+            }
+        } catch (error) {
+            // Nothing to do; the caller has already cleared its own state.
+        }
+    };
+
+    /**
+     * Is the buyer's billing address the shipping address?
+     *
+     * Hoisted here from company-name-payment.phtml (review round 3) so the two
+     * surfaces that now depend on it cannot answer it differently. Defaults to
+     * TRUE when the checkbox is absent, which is the pre-existing behaviour and
+     * the safe direction: on a checkout with no such toggle there is only one
+     * address, so the shipping company IS the billing company.
+     *
+     * @returns {boolean}
+     */
+    window.twoGatewayIsBillingAsShipping = window.twoGatewayIsBillingAsShipping || function() {
+        const checkbox = document.querySelector('#billing-as-shipping');
+        return checkbox ? checkbox.checked : true;
+    };
+
     /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
@@ -860,8 +969,32 @@ $quoteDetails = json_encode(
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
 
-                // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
-                const shippingCompanySelectionData = window.twoGatewayReadCompanySelection();
+                /*
+                 * Restore from the BILLING record first (TWO-25326 review
+                 * round 3), falling back to the shipping one only when there is
+                 * no billing record AND the buyer has billing set to the
+                 * shipping address.
+                 *
+                 * Both terms are load-bearing. Reading billing first is what
+                 * stops a company the buyer named here being overwritten by the
+                 * shipping company on the next re-render. Gating the fallback
+                 * on `twoGatewayIsBillingAsShipping()` is what stops the
+                 * shipping company being adopted as the billing company after
+                 * the buyer has explicitly said the two differ — which, before
+                 * the split, is precisely why unticking the box left the WRONG
+                 * company showing as a read-only captured label.
+                 *
+                 * Absence, not emptiness, selects the fallback: the clear is a
+                 * removal (see twoGatewayClearBillingCompany), so an empty
+                 * billing record cannot exist and "no keys" unambiguously means
+                 * the buyer has not named a billing company yet.
+                 */
+                const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
+                const hasBillingRecord = Object.keys(billingCompanySelectionData).length > 0;
+                const shippingCompanySelectionData =
+                    (!hasBillingRecord && window.twoGatewayIsBillingAsShipping())
+                        ? window.twoGatewayReadCompanySelection()
+                        : billingCompanySelectionData;
                 /*
                  * `manual_mode` is deliberately NOT restored here.
                  *
@@ -1141,7 +1274,7 @@ $quoteDetails = json_encode(
                 // The whole address-step editability model rests on this key,
                 // so it is written on every path that writes a number —
                 // `''` when the hit carried none, never left as-is.
-                window.twoGatewayWriteCompanySelection({
+                window.twoGatewayWriteBillingCompany({
                     company_name: item.companyName,
                     company_id: item.companyId,
                     company_id_source: item.companyId ? 'registry' : '',
@@ -1175,14 +1308,6 @@ $quoteDetails = json_encode(
              * restores from storage on every Magewire re-render, so leaving
              * the captured pair there would put the company — and the hidden
              * controls — straight back.
-             *
-             * KNOWN LIMITATION, deliberately not patched (TWO-25326 review
-             * round 3). There is ONE selection blob for both surfaces, so
-             * clearing it here also drops the SHIPPING company's identifier.
-             * The name survives via Magewire's `address.company`; the number
-             * does not, and the address step's read-only number label goes with
-             * it. Closing that properly needs a billing-scoped storage key of
-             * its own rather than another guard — written up on the ticket.
              */
             clearCapturedCompany() {
                 this.abortCompanySearch();
@@ -1210,12 +1335,18 @@ $quoteDetails = json_encode(
                 const idInput = document.getElementById('company_id');
                 if (idInput) idInput.value = '';
 
-                window.twoGatewayWriteCompanySelection({
-                    company_name: '',
-                    company_id: '',
-                    company_id_source: '',
-                    manual_mode: false
-                });
+                /*
+                 * The BILLING record, and a removal rather than a write of
+                 * blanks — see twoGatewayClearBillingCompany().
+                 *
+                 * The shipping record is deliberately untouched. Before the key
+                 * split this cleared the single shared blob, so pressing
+                 * "Change company" also destroyed the shipping company's
+                 * identifier and the address step's read-only number label went
+                 * with it. That was the known limitation this PR carried; it is
+                 * now closed rather than documented.
+                 */
+                window.twoGatewayClearBillingCompany();
 
                 this.focusCompanySearchInput();
             },
@@ -1266,7 +1397,7 @@ $quoteDetails = json_encode(
             },
 
             saveManualModeToStorage(manualMode) {
-                window.twoGatewayWriteCompanySelection({ manual_mode: manualMode });
+                window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
 
             // Keyboard navigation

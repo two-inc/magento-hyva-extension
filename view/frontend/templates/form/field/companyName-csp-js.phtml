@@ -271,12 +271,13 @@ function <?= $gwBase ?>CompanySearchField() {
              * the stale name and the guard then discards the pick that was
              * perfectly correct.
              *
-             * Both directions are heuristics over the same underlying problem:
-             * one storage key is being asked to hold what may be two different
-             * companies (shipping and billing). That needs a billing-scoped key
-             * of its own, which is a design change and is written up on
-             * TWO-25326 rather than guessed at here. Leaving the restore
-             * unguarded is the known prior behaviour.
+             * Unguarded is now also CORRECT, not merely the prior behaviour.
+             * Both directions were heuristics over one storage key being asked
+             * to hold what may be two different companies; the key has since
+             * been split (`billing_company_selection:<store>`, written only by
+             * the payment tile), so this key holds the shipping company alone
+             * and nothing else can contradict it. There is nothing left to
+             * reconcile against.
              */
         },
 

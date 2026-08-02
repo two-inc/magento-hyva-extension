@@ -250,6 +250,60 @@ describe("company-selection storage scoping", () => {
 
     describeInitialiser(run);
 
+    describe("the BILLING record's own new-order clear (TWO-25326)", () => {
+      // The billing key is a second store with the same lifetime problem as the
+      // first. Without its own clear, a company named on one order's payment
+      // step comes back on the NEXT order as a captured read-only label, for a
+      // buyer who never chose it and cannot see where it came from.
+
+      test("a billing record from a previous quote is REMOVED", () => {
+        seedKey(H.BILLING_COMPANY_KEY, {
+          quote_id: "some-previous-quote",
+          company_name: "Last Order's Company Ltd",
+          company_id: "55556666",
+        });
+
+        run();
+
+        // Removed, not blanked: the tile's fallback-to-shipping keys on the
+        // record being absent, so a blank one would suppress it all checkout.
+        expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
+      });
+
+      test("a billing record for THIS quote survives untouched", () => {
+        const kept = seedKey(H.BILLING_COMPANY_KEY, {
+          quote_id: CURRENT_QUOTE,
+          company_name: "This Order's Company Ltd",
+          company_id: "11112222",
+        });
+
+        run();
+
+        expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBe(kept);
+      });
+
+      test("an unstamped billing record is stamped rather than dropped", () => {
+        seedKey(H.BILLING_COMPANY_KEY, {
+          company_name: "Unstamped Company Ltd",
+          company_id: "33334444",
+        });
+
+        run();
+
+        const billing = JSON.parse(
+          env.browserStorage.getItem(H.BILLING_COMPANY_KEY) || "{}",
+        );
+        expect(billing.quote_id).toBe(CURRENT_QUOTE);
+        expect(billing.company_name).toBe("Unstamped Company Ltd");
+      });
+
+      test("no billing record is not created by the clear", () => {
+        run();
+
+        expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
+      });
+    });
+
     describe("restoring a backend-persisted shipping company", () => {
       beforeEach(() => {
         // Publisher before the DOM, and that order is load-bearing. Each
@@ -349,8 +403,14 @@ describe("company-selection storage scoping", () => {
       jest.spyOn(console, "error").mockImplementation(() => {});
     });
 
-    test("the payment tile merges rather than rebuilds", () => {
+    test("the payment tile merges rather than rebuilds — into the BILLING key", () => {
+      // Re-pointed by TWO-25326: the tile writes its own billing-scoped record
+      // now, because the checkout can hold two different companies at once. The
+      // merge-not-rebuild property being asserted is unchanged, and still the
+      // thing that keeps `quote_id` alive for the new-order clear.
+      seedKey(H.BILLING_COMPANY_KEY, { quote_id: CURRENT_QUOTE });
       seed(SEEDED);
+      const shippingBefore = env.browserStorage.getItem(CURRENT_STORE_KEY);
       const component = mount(
         H.GATEWAY_METHOD_TEMPLATE,
         "twoGatewayHyvaPaymentMethodBase",
@@ -359,8 +419,13 @@ describe("company-selection storage scoping", () => {
 
       component.selectItem(pick());
 
-      expect(stored().quote_id).toBe(CURRENT_QUOTE);
-      expect(stored().company_name).toBe("Example Trading Ltd");
+      const billing = JSON.parse(
+        env.browserStorage.getItem(H.BILLING_COMPANY_KEY) || "{}",
+      );
+      expect(billing.quote_id).toBe(CURRENT_QUOTE);
+      expect(billing.company_name).toBe("Example Trading Ltd");
+      // And the shipping slot is byte-for-byte untouched by a tile write.
+      expect(env.browserStorage.getItem(CURRENT_STORE_KEY)).toBe(shippingBefore);
     });
 
     test("the address picker merges rather than rebuilds", () => {

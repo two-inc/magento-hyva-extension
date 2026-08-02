@@ -241,10 +241,20 @@ describe("payment component company selection", () => {
     return document.getElementById("company_id");
   }
 
-  /** @returns {Object} the persisted shipping-company selection */
+  /**
+   * The record this component actually writes.
+   *
+   * The BILLING key since TWO-25326: the payment tile captures the billing
+   * company and the address step captures the shipping one, into two separately
+   * scoped records, because a checkout with "billing same as shipping" unticked
+   * legitimately holds two different companies and one blob cannot describe
+   * both.
+   *
+   * @returns {Object} the persisted billing-company selection
+   */
   function storedSelection() {
     return JSON.parse(
-      env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+      env.browserStorage.getItem(H.BILLING_COMPANY_KEY) || "{}",
     );
   }
 
