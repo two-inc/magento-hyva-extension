@@ -69,31 +69,22 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
   'input[data-name="company_id"]',
   ":class",
 );
-const COMPANY_ID_HINT_SHOW_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'p[data-name="company_id_hint"]',
-  "x-show",
-);
-const COMPANY_ID_HINT_TEXT_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'p[data-name="company_id_hint"]',
-  "x-text",
-);
-
 /**
- * The bindings the TWO-25288 follow-up's company-NAME hint adds. Same
- * reasoning as the id-hint bindings above: resolved from the shipped markup,
- * not just declared on the component, so this file cannot pass with the wire
- * missing or renamed on one side only.
+ * TWO-25326 §7 replaced TWO-25288's two inline hint paragraphs
+ * (`company_name_hint` / `company_id_hint`) with ONE captured-company label at
+ * the top of the payment fieldset. This file's hint assertions moved onto it
+ * wholesale — same gate, same stale-safety properties, one element instead of
+ * two. Resolved from the shipped markup for the same reason as the bindings
+ * above: state alone cannot fail when the wire is missing on one side.
  */
-const COMPANY_NAME_HINT_SHOW_BINDING = H.readAlpineBinding(
+const COMPANY_TILE_LABEL_SHOW_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'p[data-name="company_name_hint"]',
+  '[data-name="company_tile_label"]',
   "x-show",
 );
-const COMPANY_NAME_HINT_TEXT_BINDING = H.readAlpineBinding(
+const COMPANY_TILE_LABEL_TEXT_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'p[data-name="company_name_hint"]',
+  '[data-name="company_tile_label"]',
   "x-text",
 );
 
@@ -109,15 +100,14 @@ describe("payment component company selection", () => {
     // `#company_id` starts WITHOUT a `disabled` attribute: its locked state is
     // Alpine's to apply, and hardcoding it here is how the earlier version of
     // this fixture let the suite pass with the field permanently disabled.
-    // The inline company-id hint (TWO-25288) starts with neither `hidden`
+    // The captured-company label (TWO-25326 §7) starts with neither `hidden`
     // (on the input) nor a rendered value, for the same reason `#company_id`
     // starts without `disabled`: locked state is Alpine's to apply.
     document.body.innerHTML = [
       '<div id="payment-root">',
       '  <input type="text" id="company_name" value="" />',
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
-      '  <p data-name="company_name_hint"></p>',
-      '  <p data-name="company_id_hint"></p>',
+      '  <div data-name="company_tile_label"></div>',
       "</div>",
     ].join("\n");
 
@@ -168,7 +158,7 @@ describe("payment component company selection", () => {
     // property changes. `syncCompanyIdField()` is that run, by hand.
     syncCompanyIdField(mounted);
     syncCompanyIdHint(mounted);
-    syncCompanyNameHint(mounted);
+    syncCompanyTileLabel(mounted);
     return { component: mounted, watchers: recorded, root: root };
   }
 
@@ -196,10 +186,10 @@ describe("payment component company selection", () => {
   }
 
   /**
-   * Apply the template's `:class`, `x-show` and `x-text` bindings for
-   * TWO-25288's inline hint, the same by-hand way `syncCompanyIdField()`
-   * applies `:disabled` — these mounted components are plain object
-   * literals, not Alpine proxies, so nothing re-runs the bindings on its own.
+   * Apply the template's `:class` binding for TWO-25288's hidden company-id
+   * input, the same by-hand way `syncCompanyIdField()` applies `:disabled` —
+   * these mounted components are plain object literals, not Alpine proxies, so
+   * nothing re-runs the bindings on its own.
    *
    * @param {Object} instance the mounted component
    * @returns {void}
@@ -208,24 +198,20 @@ describe("payment component company selection", () => {
     const input = companyIdInput();
     const hiddenClass = String(instance[COMPANY_ID_HIDDEN_CLASS_BINDING] || "");
     input.className = ["company_id", hiddenClass].filter(Boolean).join(" ");
-
-    const hint = companyIdHint();
-    hint.hidden = !instance[COMPANY_ID_HINT_SHOW_BINDING];
-    hint.textContent = String(instance[COMPANY_ID_HINT_TEXT_BINDING] || "");
   }
 
   /**
-   * Apply the template's `x-show` / `x-text` bindings for the follow-up's
-   * company-NAME hint, the same by-hand way `syncCompanyIdHint()` applies the
-   * id hint's.
+   * Apply the template's `x-show` / `x-text` bindings for TWO-25326 §7's
+   * captured-company label, the same by-hand way `syncCompanyIdHint()` applies
+   * the input's `:class`.
    *
    * @param {Object} instance the mounted component
    * @returns {void}
    */
-  function syncCompanyNameHint(instance) {
-    const hint = companyNameHint();
-    hint.hidden = !instance[COMPANY_NAME_HINT_SHOW_BINDING];
-    hint.textContent = String(instance[COMPANY_NAME_HINT_TEXT_BINDING] || "");
+  function syncCompanyTileLabel(instance) {
+    const label = companyTileLabel();
+    label.hidden = !instance[COMPANY_TILE_LABEL_SHOW_BINDING];
+    label.textContent = String(instance[COMPANY_TILE_LABEL_TEXT_BINDING] || "");
   }
 
   /**
@@ -245,14 +231,9 @@ describe("payment component company selection", () => {
     };
   }
 
-  /** @returns {HTMLElement} the TWO-25288 inline company-id hint */
-  function companyIdHint() {
-    return document.querySelector('p[data-name="company_id_hint"]');
-  }
-
-  /** @returns {HTMLElement} the TWO-25288 follow-up's inline company-name hint */
-  function companyNameHint() {
-    return document.querySelector('p[data-name="company_name_hint"]');
+  /** @returns {HTMLElement} the TWO-25326 §7 captured-company label */
+  function companyTileLabel() {
+    return document.querySelector('[data-name="company_tile_label"]');
   }
 
   /** @returns {HTMLInputElement} */
@@ -260,10 +241,20 @@ describe("payment component company selection", () => {
     return document.getElementById("company_id");
   }
 
-  /** @returns {Object} the persisted shipping-company selection */
+  /**
+   * The record this component actually writes.
+   *
+   * The BILLING key since TWO-25326: the payment tile captures the billing
+   * company and the address step captures the shipping one, into two separately
+   * scoped records, because a checkout with "billing same as shipping" unticked
+   * legitimately holds two different companies and one blob cannot describe
+   * both.
+   *
+   * @returns {Object} the persisted billing-company selection
+   */
   function storedSelection() {
     return JSON.parse(
-      env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+      env.browserStorage.getItem(H.BILLING_COMPANY_KEY) || "{}",
     );
   }
 
@@ -475,7 +466,7 @@ describe("payment component company selection", () => {
       component.abortCompanySearch();
     }
     syncCompanyIdField(component);
-    syncCompanyNameHint(component);
+    syncCompanyTileLabel(component);
   }
 
   describe("a name typed without picking a dropdown hit", () => {
@@ -571,7 +562,7 @@ describe("payment component company selection", () => {
         }),
       );
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
+      syncCompanyTileLabel(component);
     }
 
     test("an identifier-less shipping company unlocks the field", () => {
@@ -592,20 +583,20 @@ describe("payment component company selection", () => {
       // shipping sync can hand over a company with no identifier, and the
       // name hint must drop with the number hint rather than keep showing
       // the PREVIOUS locked company's name.
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("an identified shipping company re-locks it", () => {
       syncFromShipping("Example Trading Ltd", "");
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
 
       syncFromShipping("Other Example Ltd", "12345678");
 
       expect(component.companyIdEntryRequired).toBe(false);
       expect(companyIdInput().disabled).toBe(true);
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
-      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Other Example Ltd",
       );
     });
@@ -630,7 +621,7 @@ describe("payment component company selection", () => {
       expect(restored.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
       // No registry number to lock, so no read-only name to show either.
-      expect(restored[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(restored[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("a stored name with an id comes back locked", () => {
@@ -653,8 +644,8 @@ describe("payment component company selection", () => {
       // restore happens through initialize()'s pre-$nextTick synchronous
       // derivation, same as the id hint, so the name hint must land already
       // showing the restored company -- not empty, not the wrong company.
-      expect(restored[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
-      expect(restored[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+      expect(restored[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(restored[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
     });
@@ -778,7 +769,7 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the inline company-id hint (TWO-25288)", () => {
+  describe("the captured-company tile label (TWO-25326 §7) and the hidden number input", () => {
     test("stays hidden with an empty class before any company is picked", () => {
       // `companyIdDisabled` defaults locked, but with nothing stored
       // `initialize()` derives it open (see the earlier "is open once the
@@ -786,7 +777,7 @@ describe("payment component company selection", () => {
       // neither a locked field nor a hint to show.
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("shows the id and hides the redundant input once a company locks it", () => {
@@ -798,8 +789,8 @@ describe("payment component company selection", () => {
       // exactly when the registry answered.
       expect(companyIdInput().disabled).toBe(true);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(true);
-      expect(component[COMPANY_ID_HINT_TEXT_BINDING]).toContain("12345678");
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain("12345678");
     });
 
     test("never hides the input while it is still empty and editable", () => {
@@ -812,7 +803,7 @@ describe("payment component company selection", () => {
 
       expect(companyIdInput().disabled).toBe(false);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("re-reveals the input if a later pick has no identifier", () => {
@@ -827,7 +818,7 @@ describe("payment component company selection", () => {
 
       expect(companyIdInput().disabled).toBe(false);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("`companyIdHiddenClass` can never fire unless `companyIdDisabled` is also true", () => {
@@ -877,7 +868,7 @@ describe("payment component company selection", () => {
 
       expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
       expect(companyIdInput().disabled).toBe(true);
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
 
       // The tick after: fillCompanyData() (or the $nextTick callback in
@@ -887,23 +878,23 @@ describe("payment component company selection", () => {
       syncCompanyIdHint(component);
       syncCompanyIdField(component);
 
-      expect(component[COMPANY_ID_HINT_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
   });
 
-  describe("the inline company-name hint (TWO-25288 follow-up)", () => {
+  describe("the captured-company tile label — stale safety", () => {
     test("stays hidden before any company is picked", () => {
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("shows the captured name once a company locks the id field", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
+      syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
-      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
     });
@@ -911,9 +902,9 @@ describe("payment component company selection", () => {
     test("stays hidden for a pick with no identifier — nothing is locked", () => {
       component.selectItem(pickerItem("Example Trading Ltd", ""));
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
+      syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     /**
@@ -927,9 +918,9 @@ describe("payment component company selection", () => {
     test("goes stale-safe: disappears when the buyer types after a pick, before any new pick exists", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
-      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+      syncCompanyTileLabel(component);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
 
@@ -941,35 +932,32 @@ describe("payment component company selection", () => {
       // "Example Trading Ltd" beside a field the buyer can now edit freely.
       expect(component.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
     });
 
     test("re-appears with the new name once the buyer picks a new identified company", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       typeCompanyName("Other Example");
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(false);
+      syncCompanyTileLabel(component);
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(false);
 
       component.selectItem(pickerItem("Other Example Ltd", "87654321"));
       syncCompanyIdField(component);
-      syncCompanyNameHint(component);
+      syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(true);
-      expect(component[COMPANY_NAME_HINT_TEXT_BINDING]).toContain(
+      expect(component[COMPANY_TILE_LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Other Example Ltd",
       );
     });
 
-    test("shows/hides in exact lockstep with the id hint across every editability combination", () => {
-      // Pins the gate itself, not a one-way implication that a boolean AND
-      // (companyIdHintVisible = companyIdDisabled && Boolean(companyId))
-      // satisfies by construction regardless of wiring. Both hints read the
-      // SAME getter, so this asserts direct equality against
-      // COMPANY_ID_HINT_SHOW_BINDING -- which fails if the name hint were
-      // ever rewired to a different property (e.g. `companyName` truthiness),
-      // unlike a check that only re-derives `companyIdHintVisible`'s own
-      // definition.
+    test("never shows while the company-number field is still editable", () => {
+      // The one-way implication that matters after TWO-25326 §7 folded both
+      // hints into a single label: the label STANDS IN FOR the search control
+      // and the number field, so it must never be able to appear while the
+      // buyer still needs to fill that field in. Pins the derivation across
+      // every editability combination rather than today's scenarios.
       [
         [false, false, ""],
         [false, false, "12345678"],
@@ -986,9 +974,10 @@ describe("payment component company selection", () => {
         component.companyName = "Some Company Ltd";
         component.applyCompanyIdEditability();
 
-        expect(component[COMPANY_NAME_HINT_SHOW_BINDING]).toBe(
-          component[COMPANY_ID_HINT_SHOW_BINDING],
-        );
+        if (component[COMPANY_TILE_LABEL_SHOW_BINDING]) {
+          expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
+          expect(component.companyId).toBeTruthy();
+        }
       });
     });
   });

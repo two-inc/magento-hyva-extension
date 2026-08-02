@@ -251,6 +251,56 @@ summary::marker {
   box-shadow: none;
 }
 
+/*
+ * TWO-25326 §7, the reported 6px blue border around BOTH company fields.
+ *
+ * The rule above only ever suppressed the ring on `.two-company-search`. The
+ * artefact is painted one level further out, on the `.input-group` wrapper that
+ * is the GRANDPARENT of the company-name input — Hyvä's shared field styling
+ * treats an input-group as one control and rings it on `:focus-within`, so
+ * focusing either descendant framed the whole group.
+ *
+ * Scoped by a class this module puts on that element itself
+ * (companyName.phtml), so no other Hyvä field is affected and the hook cannot
+ * silently stop matching the way a structural selector would.
+ *
+ * MEASURED on the live Hyvä checkout rather than inferred, because the first
+ * two revisions of this rule both guessed the mechanism wrong. The shipped
+ * theme rule is:
+ *
+ *   .input-group:focus-within {
+ *     border-color: rgb(37 99 235 / …);
+ *     box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), …;
+ *     --tw-ring-color: rgb(30 64 175 / …); --tw-ring-opacity: .5;
+ *   }
+ *
+ * On the real element `border-width` computes to `0px` in BOTH states, so the
+ * border-colour change paints nothing at all. The visible blue is the Tailwind
+ * RING — a `box-shadow` — and `box-shadow: none` is the whole fix. An earlier
+ * revision also forced `border-color: transparent`; that was both unnecessary
+ * and harmful, since a merchant theme whose input-group does carry a real
+ * border would have had it vanish on focus, a visible-to-invisible flip worse
+ * than the artefact.
+ *
+ * `.input-group` is doubled into the selector to make this (0,3,0) against the
+ * theme rule's (0,2,0). Matching on `.two-company-search-group` alone ties on
+ * specificity and the winner is then decided by stylesheet load order — which
+ * this module does not control, and which would make the fix silently do
+ * nothing on any install that loads the theme's CSS last. That is exactly how
+ * the Luma leg of this ticket ended up with a hide rule that sat in the tree
+ * for weeks and never once applied.
+ *
+ * The second reported artefact — a faint outline enclosing the name field and
+ * the company-number display together — is fixed structurally rather than
+ * here: the company-number INPUT that used to sit inside this group is gone
+ * (TWO-25326 §5), so there is no longer a second field for a group-level ring
+ * to enclose.
+ */
+.input-group.two-company-search-group:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+
 .two-company-search > input:focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
@@ -261,8 +311,43 @@ summary::marker {
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  */
-.two-company-search > input {
+.two-company-search > input,
+.two-company-search__query > input {
   padding-right: 34px;
+}
+
+/*
+ * The dropdown's query field (TWO-25326 §1).
+ *
+ * `position: relative` here rather than as a Tailwind utility for the reason
+ * every other rule in this block gives — the module must not depend on the
+ * merchant's Tailwind build having emitted a class only this module uses. It is
+ * load-bearing: the spinner inside is absolutely positioned, and without a
+ * positioned ancestor here it would resolve against `.two-company-search` and
+ * land at the right-hand end of the COMPANY-NAME field instead.
+ */
+.two-company-search__query {
+  position: relative;
+}
+
+/*
+ * The query field takes focus the moment the panel opens, so it needs a focus
+ * ring of its own — the `.two-company-search > input:focus` rule above is a
+ * direct-child selector and does not reach it.
+ */
+.two-company-search__query > input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
+}
+
+/*
+ * The results scroller is `tabindex="-1"` (see companyName.phtml) so Chrome
+ * does not make it a tab stop. Chrome still paints a focus ring on a
+ * programmatically-focused scroller; suppress it, since nothing here is ever
+ * deliberately focused.
+ */
+.two-company-search__results:focus {
+  outline: none;
 }
 
 /*

@@ -181,6 +181,115 @@ $quoteDetails = json_encode(
         return merged;
     };
 
+    /*
+     * The BILLING company's own storage key (TWO-25326 review round 3).
+     *
+     * The key above is the SHIPPING company's, and until now it was the only
+     * one — so the payment tile and the address step both merged into it. That
+     * is a data-corruption bug rather than an inconvenience: this checkout can
+     * legitimately hold two different companies at once, because unticking
+     * "billing same as shipping" lets the buyer name a different billing
+     * company, and one record cannot describe both. Every symptom rounds 2 and
+     * 3 chased — a tile pick overwriting the address step's number, an untick
+     * clearing the shipping company for good, `init()` restoring a pair that
+     * contradicted the field beside it — was a guess at which company a given
+     * read belonged to. With two keys there is nothing to guess.
+     *
+     * Same store-view scoping and same empty-key-means-no-storage contract as
+     * the shipping key; see the note above for why '' must not become a shared
+     * store-less bucket.
+     */
+    window.TWO_GATEWAY_BILLING_COMPANY_KEY = window.TWO_GATEWAY_BILLING_COMPANY_KEY
+        || (window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            ? 'billing_company_selection:' + window.TWO_GATEWAY_COMPANY_SELECTION_STORE
+            : '');
+
+    /**
+     * Read the current store view's BILLING company selection.
+     *
+     * Guarded exactly as the shipping read is, and for the same reason: this
+     * runs inside the handlers that go on to register Alpine components, so
+     * anything thrown here leaves a dead checkout step.
+     *
+     * @returns {Object} the stored blob, or {} when absent or unparseable
+     */
+    window.twoGatewayReadBillingCompany = window.twoGatewayReadBillingCompany || function() {
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (!key) {
+                return {};
+            }
+            const parsed = JSON.parse(hyva.getBrowserStorage().getItem(key) || '{}');
+            return (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                ? parsed
+                : {};
+        } catch (error) {
+            return {};
+        }
+    };
+
+    /**
+     * Merge `patch` into the current store view's BILLING company selection.
+     *
+     * Written ONLY by the payment tile. The address step must never reach this
+     * key — it captures the shipping company, and the whole point of the split
+     * is that the two records cannot overwrite one another.
+     *
+     * @param {Object} patch keys to overwrite; everything else is preserved
+     * @returns {Object} the merged blob as written
+     */
+    window.twoGatewayWriteBillingCompany = window.twoGatewayWriteBillingCompany || function(patch) {
+        const merged = Object.assign({}, window.twoGatewayReadBillingCompany(), patch || {});
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (key) {
+                hyva.getBrowserStorage().setItem(key, JSON.stringify(merged));
+            }
+        } catch (error) {
+            // Same as the shipping write: the caller's own state is already
+            // updated and the only loss is carry-over between steps.
+        }
+        return merged;
+    };
+
+    /**
+     * Drop the BILLING company record entirely.
+     *
+     * A removal, not a write of empty strings. An empty-but-present blob is
+     * indistinguishable from "the buyer deliberately cleared the billing
+     * company", and the tile's fallback-to-shipping rule keys on the record
+     * being ABSENT — so writing blanks here would permanently suppress the
+     * fallback for the rest of the checkout.
+     *
+     * @returns {void}
+     */
+    window.twoGatewayClearBillingCompany = window.twoGatewayClearBillingCompany || function() {
+        try {
+            const key = window.TWO_GATEWAY_BILLING_COMPANY_KEY;
+            if (key) {
+                hyva.getBrowserStorage().removeItem(key);
+            }
+        } catch (error) {
+            // Nothing to do; the caller has already cleared its own state.
+        }
+    };
+
+    /**
+     * Is the buyer's billing address the shipping address?
+     *
+     * Hoisted here from company-name-payment.phtml (review round 3) so the two
+     * surfaces that now depend on it cannot answer it differently. Defaults to
+     * TRUE when the checkbox is absent, which is the pre-existing behaviour and
+     * the safe direction: on a checkout with no such toggle there is only one
+     * address, so the shipping company IS the billing company.
+     *
+     * @returns {boolean}
+     */
+    window.twoGatewayIsBillingAsShipping = window.twoGatewayIsBillingAsShipping || function() {
+        const checkbox = document.querySelector('#billing-as-shipping');
+        return checkbox ? checkbox.checked : true;
+    };
+
     /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
@@ -860,8 +969,32 @@ $quoteDetails = json_encode(
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
 
-                // Restore state from storage immediately (before $nextTick) to avoid flash of disabled state
-                const shippingCompanySelectionData = window.twoGatewayReadCompanySelection();
+                /*
+                 * Restore from the BILLING record first (TWO-25326 review
+                 * round 3), falling back to the shipping one only when there is
+                 * no billing record AND the buyer has billing set to the
+                 * shipping address.
+                 *
+                 * Both terms are load-bearing. Reading billing first is what
+                 * stops a company the buyer named here being overwritten by the
+                 * shipping company on the next re-render. Gating the fallback
+                 * on `twoGatewayIsBillingAsShipping()` is what stops the
+                 * shipping company being adopted as the billing company after
+                 * the buyer has explicitly said the two differ — which, before
+                 * the split, is precisely why unticking the box left the WRONG
+                 * company showing as a read-only captured label.
+                 *
+                 * Absence, not emptiness, selects the fallback: the clear is a
+                 * removal (see twoGatewayClearBillingCompany), so an empty
+                 * billing record cannot exist and "no keys" unambiguously means
+                 * the buyer has not named a billing company yet.
+                 */
+                const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
+                const hasBillingRecord = Object.keys(billingCompanySelectionData).length > 0;
+                const shippingCompanySelectionData =
+                    (!hasBillingRecord && window.twoGatewayIsBillingAsShipping())
+                        ? window.twoGatewayReadCompanySelection()
+                        : billingCompanySelectionData;
                 /*
                  * `manual_mode` is deliberately NOT restored here.
                  *
@@ -1131,13 +1264,118 @@ $quoteDetails = json_encode(
                 // A merging write, never a rebuild from a key list: dropping
                 // `quote_id` that way is what silently disarmed the new-order
                 // clear.
-                window.twoGatewayWriteCompanySelection({
+                //
+                // `company_id_source` is provenance, and it MUST be written
+                // here. Merging means a `'manual'` left behind by an earlier
+                // address-step edit otherwise survives alongside a registry
+                // number picked on the tile; the address step's
+                // hasVouchedCompanyId() then reads false for a genuine
+                // registry pick and refuses to render the read-only number.
+                // The whole address-step editability model rests on this key,
+                // so it is written on every path that writes a number —
+                // `''` when the hit carried none, never left as-is.
+                window.twoGatewayWriteBillingCompany({
                     company_name: item.companyName,
                     company_id: item.companyId,
+                    company_id_source: item.companyId ? 'registry' : '',
                     manual_mode: false
                 });
 
                 this.fillCompanyData(item.companyId, item.companyName);
+            },
+
+            /*
+             * TWO-25326 §7 follow-up: the way BACK out of a captured company.
+             *
+             * Once captured, the tile hides the search control and the whole
+             * Company Number block and shows the read-only label instead. The
+             * only "Enter details manually" link lives INSIDE the hidden
+             * search block, and nothing outside it can set `showManual`, so
+             * without this the captured company is unchangeable from the tile.
+             * Two real dead ends it closes:
+             *
+             *  - the buyer unticks "billing same as shipping": the shipping
+             *    sync stops, the tile keeps showing the SHIPPING company, and
+             *    there is no control left to enter the billing company;
+             *  - the buyer picked the wrong company on the address step and is
+             *    now on payment, with no way to correct it from here.
+             *
+             * Reached ONLY from the explicit "Change company" button. An
+             * automatic trigger on the untick was written and then withdrawn in
+             * review — see the note in Test/Js/payment-company-tile-label.test.js.
+             *
+             * Storage is cleared as well as component state. `initialize()`
+             * restores from storage on every Magewire re-render, so leaving
+             * the captured pair there would put the company — and the hidden
+             * controls — straight back.
+             */
+            clearCapturedCompany() {
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
+                this.items = [];
+                this.selectedIndex = -1;
+                this.isSelecting = false;
+
+                // Before the mode flags: the `manualMode` watcher runs
+                // applyCompanyIdEditability(), and this flag has to be current
+                // when it does (same ordering selectItem() relies on).
+                this.companyIdEntryRequired = true;
+                this.companyName = '';
+                this.companyId = '';
+                this.search = '';
+                this.manualMode = false;
+                // Back to the search control, not manual entry: search is the
+                // route that can still produce a registry-vouched number.
+                this.showManual = false;
+                this.applyCompanyIdEditability();
+
+                const nameInput = document.getElementById('company_name');
+                if (nameInput) nameInput.value = '';
+                const idInput = document.getElementById('company_id');
+                if (idInput) idInput.value = '';
+
+                /*
+                 * The BILLING record, and a removal rather than a write of
+                 * blanks — see twoGatewayClearBillingCompany().
+                 *
+                 * The shipping record is deliberately untouched. Before the key
+                 * split this cleared the single shared blob, so pressing
+                 * "Change company" also destroyed the shipping company's
+                 * identifier and the address step's read-only number label went
+                 * with it. That was the known limitation this PR carried; it is
+                 * now closed rather than documented.
+                 */
+                window.twoGatewayClearBillingCompany();
+
+                this.focusCompanySearchInput();
+            },
+
+            /*
+             * Put the caret in the control the clear just revealed.
+             *
+             * `$nextTick` because the search block is revealed by `x-show`,
+             * and an element still carrying `display: none` cannot take focus
+             * — a bare `.focus()` on the same tick is a silent no-op. The
+             * result is then CHECKED rather than assumed, and retried once on
+             * a macrotask, because Alpine's own transition can leave the
+             * element unfocusable for a further frame.
+             */
+            focusCompanySearchInput() {
+                const focus = () => {
+                    const input = document.getElementById('company_name');
+                    if (!input) return false;
+                    input.focus();
+                    return document.activeElement === input;
+                };
+                this.$nextTick(() => {
+                    if (focus()) return;
+                    setTimeout(focus, 0);
+                });
+            },
+
+            <?= $gwBase ?>OnChangeCompanyClick() {
+                this.clearCapturedCompany();
             },
 
             enterManually() {
@@ -1159,7 +1397,7 @@ $quoteDetails = json_encode(
             },
 
             saveManualModeToStorage(manualMode) {
-                window.twoGatewayWriteCompanySelection({ manual_mode: manualMode });
+                window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
 
             // Keyboard navigation
@@ -1262,26 +1500,52 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // Additive (TWO-25288): text for the inline hint next to the
-            // company name field. Only rendered while `companyIdHintVisible`
-            // is true (see x-show on the hint in gateway_method.phtml), so
-            // `companyId` is guaranteed non-empty here.
-            get companyIdHintText() {
-                return '<?= $escaper->escapeJs(__("Company number:")) ?> ' + this.companyId;
+            // TWO-25326 §7: the single captured-company label at the top of
+            // the payment fieldset, replacing the two inline hints TWO-25288
+            // put next to the company-name field.
+            //
+            // Same gate as everything else here — `companyIdHintVisible`, i.e.
+            // CAPTURED (a registry-supplied number is locked in for the name
+            // beside it). Deliberately not `companyName` truthiness:
+            // `companyName` has no clearing writer, so a later shipping sync
+            // or re-render can leave it holding a PREVIOUS pick. The derived
+            // gate drops the moment `getItems()` recomputes
+            // `companyIdEntryRequired` for text that no longer matches the
+            // locked pick, which is the "buyer typed after selecting" case
+            // this must not go stale on.
+            get companyTileLabelVisible() {
+                return this.companyIdHintVisible;
             },
 
-            // Additive (TWO-25288 follow-up): read-only display of the
-            // captured company NAME, alongside the number hint above. Gated
-            // on `companyIdHintVisible` rather than on `companyName` directly
-            // — `companyName` has no clearing writer (a later shipping sync
-            // or re-render can leave it holding a PREVIOUS pick with nothing
-            // to blank it), while `companyIdHintVisible` is fully derived and
-            // already proven stale-safe: it drops the moment `getItems()`
-            // recomputes `companyIdEntryRequired` for a name that no longer
-            // matches the locked pick, which is exactly the "buyer typed in
-            // the search box after selecting" case this must not go stale on.
-            get companyNameHintText() {
-                return '<?= $escaper->escapeJs(__("Company name:")) ?> ' + this.companyName;
+            // "<name> (<number>)", built here rather than in the template:
+            // bound attribute expressions are looked up as a KEY on the
+            // component, never evaluated, so a concatenation in the markup
+            // would resolve to nothing at all. Only read while
+            // `companyTileLabelVisible` is true, so `companyId` is non-empty.
+            get companyTileLabelText() {
+                return this.companyName + ' (' + this.companyId + ')';
+            },
+
+            // TWO-25326 §7: the editable company-name search control is shown
+            // only while NOTHING is captured yet. Once captured, the read-only
+            // label above stands in for it.
+            //
+            // Gated on captured, NOT on mode. On Magento this control is a
+            // company-capture route in its own right for buyers who never see
+            // the address-step company field (a logged-in buyer picking a
+            // saved address; a virtual cart with no shipping step), so hiding
+            // it on anything broader than "we already have the company" blocks
+            // those orders outright.
+            get companySearchBlockVisible() {
+                return !this.showManual && !this.companyIdHintVisible;
+            },
+
+            // Companion to `companyIdHiddenClass`, hiding the whole Company
+            // Number block — its static caption included — rather than only
+            // the input. Class-NAME STRING for the same reason: `:class` here
+            // is a key lookup, not expression evaluation.
+            get companyNumberBlockHiddenClass() {
+                return this.companyIdHintVisible ? 'hidden' : '';
             },
 
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {

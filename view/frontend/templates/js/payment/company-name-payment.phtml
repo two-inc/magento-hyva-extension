@@ -80,7 +80,22 @@ $methodCode = $brandedViewModel->getMethodCode();
      * Check if billing address is set to be the same as shipping address.
      * This respects Hyva Checkout's billingAsShipping checkbox state.
      */
+    /*
+     * Delegates to the shared window helper (TWO-25326 review round 3), which
+     * the payment tile also consults when deciding whether it may fall back to
+     * the shipping company. Two surfaces answering this question differently is
+     * how the tile ends up adopting a company the buyer has said does not apply.
+     *
+     * Resolved at CALL time with a local fallback, never bound at eval time:
+     * this template goes into `head.additional` and so runs BEFORE
+     * gateway_method-csp-js.phtml publishes the helper. Binding early would
+     * freeze the fallback permanently — the same trap the selection accessors
+     * at the top of this file already document.
+     */
     const isBillingAsShipping = () => {
+        if (window.twoGatewayIsBillingAsShipping) {
+            return window.twoGatewayIsBillingAsShipping();
+        }
         const checkbox = document.querySelector('#billing-as-shipping');
         return checkbox ? checkbox.checked : true; // Default to true if checkbox not found
     };
@@ -167,6 +182,44 @@ $methodCode = $brandedViewModel->getMethodCode();
             }
         };
         clearStaleCompanyDataIfNeeded();
+
+        /*
+         * The same new-order clear for the BILLING company record
+         * (TWO-25326 review round 3).
+         *
+         * Not optional housekeeping: the billing record is a second storage key
+         * with the same lifetime problem as the first, and without this a
+         * company named on one order's payment step would be restored, as a
+         * captured read-only label, onto the NEXT order — for a buyer who never
+         * chose it and cannot see where it came from.
+         *
+         * Removed rather than blanked, because the tile's fallback-to-shipping
+         * rule keys on the record being absent; a blank record would suppress
+         * the fallback for the whole of the new checkout.
+         *
+         * Guarded on the helpers existing: this template runs before
+         * gateway_method-csp-js.phtml publishes them, so the call happens on
+         * DOMContentLoaded, by which point it has.
+         */
+        const clearStaleBillingCompanyIfNeeded = () => {
+            if (!window.twoGatewayReadBillingCompany
+                || !window.twoGatewayWriteBillingCompany
+                || !window.twoGatewayClearBillingCompany) {
+                return;
+            }
+            const billingData = window.twoGatewayReadBillingCompany();
+            if (Object.keys(billingData).length === 0) return;
+
+            const billingQuoteId = String(billingData.quote_id || '');
+            if (currentQuoteId && billingQuoteId && billingQuoteId !== currentQuoteId) {
+                window.twoGatewayClearBillingCompany();
+                return;
+            }
+            if (!billingQuoteId && currentQuoteId) {
+                window.twoGatewayWriteBillingCompany({ quote_id: currentQuoteId });
+            }
+        };
+        clearStaleBillingCompanyIfNeeded();
 
         /**
          * Initialize payment fields with persisted shipping company data on page load.
