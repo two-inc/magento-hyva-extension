@@ -451,7 +451,13 @@ function <?= $gwBase ?>CompanySearchField() {
             }
             // The field must be left exactly as it was.
             event.preventDefault();
-            const seed = (typeof key === 'string' && key.length === 1) ? key : '';
+            // A bare Space opens the panel but is not seeded: a query that
+            // begins with a space is never what the buyer meant, and Space is
+            // the conventional "open the combobox" key rather than a character
+            // in this position.
+            const seed = (typeof key === 'string' && key.length === 1 && key !== ' ')
+                ? key
+                : '';
             if (this.isOpen) {
                 const q = this.queryField();
                 if (q) {
@@ -715,7 +721,17 @@ function <?= $gwBase ?>CompanySearchField() {
          * @returns {boolean}
          */
         get companyIdDisplayVisible() {
-            return this.hasVouchedCompanyId();
+            /*
+             * TWO-25326 §5 adds the manual-mode term, and it is not
+             * redundant: enterManually() deliberately does not clear a
+             * previously picked company, and getItems()'s stale-pair clear
+             * only fires when the typed name has actually diverged. So a buyer
+             * who picked a company and then chose "my company is not on the
+             * list" still held a registry-vouched number, and the label went on
+             * showing it beside a name they were about to retype — while §5
+             * requires manual entry to show no number at all.
+             */
+            return !this.manualMode && this.hasVouchedCompanyId();
         },
 
         // CSP-friendly Alpine forbids the `!` operator in attribute

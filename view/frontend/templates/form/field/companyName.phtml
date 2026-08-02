@@ -114,7 +114,32 @@ $form = $block->getData("form");
              * that is hidden, so the association is correct in both states.
              */
             ?>
-            aria-describedby="two-company-search-min-chars"
+            <?php
+            /*
+             * `readonly` while search mode is active (TWO-25326 §1).
+             *
+             * onCompanyNameKeydown() already prevents every editing key, but
+             * that only covers the keyboard: a right-click paste, a drag-drop
+             * of text, or a browser autofill still writes into the field, and
+             * in search mode nothing would then capture what landed there — the
+             * buyer would see their company name in the box with no identifier
+             * behind it and no search ever run. `readonly` is the honest
+             * expression of "unchanged until a result is selected", and it
+             * closes those routes at the source.
+             *
+             * A readonly input still takes focus, still fires `click`, and
+             * still submits, so the open-on-click/open-on-key behaviour and
+             * Hyvä's own Magewire binding are untouched. It drops in manual
+             * mode, where this field IS the capture control.
+             *
+             * The `aria-describedby` that used to point at the
+             * minimum-characters hint is gone with it: that hint now lives in
+             * the panel and describes the QUERY field, which carries the
+             * association instead. Pointing two controls at it would announce
+             * a typing instruction on a field that cannot be typed into.
+             */
+            ?>
+            :readonly="searchModeActive"
             <?php
             /*
              * TWO-25326 §1. This input is NO LONGER the query field.

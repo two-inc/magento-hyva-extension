@@ -163,6 +163,28 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       );
     });
 
+    test("§1 the company-name field is readonly in search mode, typeable in manual mode", () => {
+      // Preventing keys covers the keyboard only. Paste, drag-drop and autofill
+      // all write into the field without a keydown, and in search mode nothing
+      // would capture what landed — the buyer would see a company name with no
+      // identifier behind it and no search ever run.
+      const doc = shippedDoc();
+      const name = doc.querySelector(".two-company-search > input");
+      expect(name.getAttribute(":readonly")).toBe("searchModeActive");
+      // A hard `readonly` attribute would break manual entry, where this field
+      // IS the capture control.
+      expect(name.hasAttribute("readonly")).toBe(false);
+      // The hint describes the query field now, so the name field must not
+      // still claim it — that would announce a typing instruction on a field
+      // that cannot be typed into.
+      expect(name.getAttribute("aria-describedby")).toBeNull();
+      expect(
+        doc
+          .querySelector("input.two-company-query")
+          .getAttribute("aria-describedby"),
+      ).toBe("two-company-search-min-chars");
+    });
+
     test("§1 the min-characters hint is inside the panel", () => {
       // Outside it, the hint could only ever be seen in states where the panel
       // was shut — which is why the ticket reports it as appearing late.
@@ -474,6 +496,35 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       expect(component.focusAndVerify(unfocusable)).toBe(false);
       expect(component.focusAndVerify(null)).toBe(false);
       expect(component.focusAndVerify(nextControl)).toBe(true);
+    });
+
+    test("§1 Space opens the panel but is NOT seeded into the query", () => {
+      const event = key(" ");
+
+      component.onCompanyNameKeydown(event);
+
+      expect(component.isOpen).toBe(true);
+      // A query beginning with a space is never what the buyer meant; Space is
+      // the conventional "open the combobox" key in this position.
+      expect(queryField.value).toBe("");
+      expect(component.query).toBe("");
+    });
+
+    test("§5 the company-number label does not survive into manual entry", () => {
+      // enterManually() deliberately does not clear a previous pick, and the
+      // stale-pair clear only fires once the typed name has diverged — so a
+      // buyer who picked a company and then chose "not on the list" kept a
+      // registry-vouched number, and the label went on showing it. §5 requires
+      // manual entry to show no number at all.
+      component.companyId = "123456789";
+      component.companyIdSource = "registry";
+      component.companyName = "Acme Ltd";
+      expect(component.companyIdDisplayVisible).toBe(true);
+
+      component.enterManually();
+
+      expect(component.manualMode).toBe(true);
+      expect(component.companyIdDisplayVisible).toBe(false);
     });
 
     test("§2 activating 'not on the list' places focus in the company-name field", () => {
