@@ -257,6 +257,33 @@ function <?= $gwBase ?>CompanySearchField() {
              * a company has been chosen.
              */
             this.isCompanySelected = Boolean(this.companyId);
+
+            /*
+             * Drop a restored pair that does not describe the company the field
+             * actually holds (review round 2).
+             *
+             * Both checkout surfaces merge into ONE selection blob, so a
+             * company picked on the payment tile overwrites the pair the
+             * address step stored. Coming back to the address step, Hyvä
+             * restores the field's own value from `address.company` while this
+             * restored the tile's pair — and the read-only number label then
+             * showed the TILE company's number underneath the ADDRESS
+             * company's name, with search mode readonly so the buyer could not
+             * correct it.
+             *
+             * Only applied when the field actually holds something: an empty
+             * field on a fresh render has not contradicted anything, and
+             * dropping the pair there would discard a perfectly good pick.
+             */
+            const restoredInto = this.companyNameField();
+            const fieldValue = restoredInto ? restoredInto.value : '';
+            if (fieldValue && this.companyName && fieldValue !== this.companyName) {
+                this.companyId = '';
+                this.companyIdSource = '';
+                this.isCompanySelected = false;
+                this.companyIdEntryRequired = true;
+                this.applyCompanyIdEditability();
+            }
         },
 
         /*
@@ -977,8 +1004,21 @@ function <?= $gwBase ?>CompanySearchField() {
          * unlocked, one character later.
          */
         commitCompanyName() {
-            if (this.search === this.companyName) return;
-
+            /*
+             * Unconditional since review round 2, and the guard it replaces was
+             * a live data bug rather than a safeguard.
+             *
+             * The old `if (this.search === this.companyName) return;` claimed
+             * to stop an intact registry pick being overwritten by its own
+             * field. That case is unreachable: every caller is on the manual or
+             * lookup-off path, where `companyName` is only ever written by
+             * init() and selectItem(). With no prior pick it stays '' for the
+             * whole page load — so a buyer who typed a name and then DELETED it
+             * hit `'' === ''`, returned early, and left the deleted name in
+             * storage. announceCompanyPair() then broadcast it to the payment
+             * step, which repopulated the tile from it: an empty address field
+             * and the deleted company on the order.
+             */
             // A merging write, never a rebuild from a key list: dropping
             // `quote_id` that way is what silently disarmed the new-order clear.
             twoAddressWriteSelection({ company_name: this.search });
@@ -1008,6 +1048,20 @@ function <?= $gwBase ?>CompanySearchField() {
          * against, because it arms an order intent for a company with no number.
          */
         announceCompanyPair() {
+            /*
+             * Never announce a name beside an identifier that was written for a
+             * DIFFERENT name (review round 2).
+             *
+             * forgetStaleCompanyId() drops a `registry` identifier when the
+             * name diverges, but deliberately spares a `manual` one — and with
+             * the address step's own number input gone (§5), nothing on this
+             * surface can correct a `manual` identifier any more. One left in
+             * storage by an earlier session would otherwise ride along with
+             * every debounced keystroke, arming an order intent for a
+             * half-typed name beside somebody else's number.
+             */
+            if (this.companyId && this.search !== this.companyName) return;
+
             const companyData = twoAddressWriteSelection({});
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
@@ -1041,9 +1095,14 @@ function <?= $gwBase ?>CompanySearchField() {
                 this.forgetStaleCompanyId();
                 this.commitCompanyName();
                 this.applyCompanyIdEditability();
-                // See announceCompanyPair(): with the editable number input
-                // gone, this is the only remaining announcement on the manual
-                // and lookup-off paths.
+                /*
+                 * Kept for callers that reach getItems() directly (the suite
+                 * does), but NOT the live manual path: getItems() is bound only
+                 * on the query input, which lives inside the panel, and the
+                 * panel cannot open in manual mode or with the lookup off. The
+                 * live announcement on those paths is onNameFieldInput()'s.
+                 * Review round 2 corrected the opposite claim here.
+                 */
                 this.announceCompanyPair();
                 return;
             }

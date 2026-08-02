@@ -74,16 +74,6 @@ const CHANGE_BUTTON_CLICK_BINDING = H.readAlpineBinding(
 );
 
 /**
- * The form's handler for the untick of "billing same as shipping", relayed as
- * a window event by the Magewire bridge in gateway_method-csp-js.phtml.
- */
-const BILLING_CLEARED_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  "form[x-data]",
-  "@two-billing-as-shipping-cleared.window",
-);
-
-/**
  * @returns {Document} the shipped payment markup, parsed
  */
 function parsedMarkup() {
@@ -208,7 +198,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       ["number block :class", () => NUMBER_BLOCK_HIDDEN_CLASS_BINDING],
       ["change button x-show", () => CHANGE_BUTTON_SHOW_BINDING],
       ["change button @click", () => CHANGE_BUTTON_CLICK_BINDING],
-      ["form @two-billing-as-shipping-cleared", () => BILLING_CLEARED_BINDING],
     ])("%s names a key the component actually defines", (_label, binding) => {
       expect(binding() in component).toBe(true);
     });
@@ -516,15 +505,16 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
   });
 
-  describe("unticking 'billing same as shipping'", () => {
-    test("clears the captured company the tile is still showing", () => {
-      // The sync stops, so the tile would otherwise keep showing the SHIPPING
-      // company as a read-only label with no control beside it — and no way to
-      // enter a different billing company.
+  describe("getting back to an editable company", () => {
+    test("the Change company button hands the search control back", () => {
+      // Without a route back, a captured company is a read-only label with no
+      // control beside it: a buyer who picked the wrong company, or who needs a
+      // different BILLING company from their shipping one, is stuck.
       component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
       expect(component[LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
 
-      component[BILLING_CLEARED_BINDING]();
+      component[CHANGE_BUTTON_CLICK_BINDING]();
 
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
@@ -532,14 +522,28 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(component.companyId).toBe("");
     });
 
-    test("only the untick is bridged from Magewire, never the tick", () => {
-      // The tick is already handled by company-name-payment.phtml, which
-      // re-populates the tile from the stored shipping company. Bridging it
-      // here as well would clear the company that handler had just written.
+    test("nothing clears the captured company automatically (review round 2)", () => {
+      // A `billing_as_shipping_address_updated` bridge was added and then
+      // WITHDRAWN. Two reasons, both found in review round 2 and neither
+      // resolvable without live measurement:
+      //
+      // 1. `clearCapturedCompany()` blanks the ONE shared selection blob, which
+      //    is also the SHIPPING company's record. Re-ticking "billing same as
+      //    shipping" reads that blob, finds it empty, and restores nothing — so
+      //    a single untick-and-retick lost the shipping company for good.
+      // 2. The event's own semantics are unverified. Its name says "address
+      //    updated", not "toggle changed", so it may well re-emit on every
+      //    billing-field auto-save while unticked — and each re-emission would
+      //    destroy the company the buyer had just typed.
+      //
+      // Clearing is therefore only ever reached from the explicit "Change
+      // company" button, where wiping the single shared record is what the
+      // buyer asked for. Pinned as a test because re-adding the bridge without
+      // solving (1) is the obvious next move and it is the wrong one.
       const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
 
-      expect(js).toContain("billing_as_shipping_address_updated");
-      expect(js).toContain("data.billingAsShipping === false");
+      expect(js).not.toContain("billing_as_shipping_address_updated");
+      expect(js).not.toContain("two-billing-as-shipping-cleared");
     });
   });
 

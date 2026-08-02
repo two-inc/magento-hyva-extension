@@ -181,42 +181,6 @@ $quoteDetails = json_encode(
         return merged;
     };
 
-    /*
-     * Bridge Hyvä Checkout's `billing_as_shipping_address_updated` Magewire
-     * event to a window event the payment tile can bind with `@event.window`.
-     *
-     * Only the UNTICK is relayed. The tick is already handled elsewhere (the
-     * shipping sync re-populates the tile from the stored shipping company);
-     * the untick had no handler at all, which is what left a captured — and
-     * therefore control-less — shipping company stranded on the tile with no
-     * way to enter a different billing company.
-     *
-     * A window event rather than a direct component call because Magewire
-     * re-renders destroy and rebuild the Alpine component: the listener below
-     * is registered once for the page, while `@event.window` is re-bound to
-     * whichever instance is currently mounted and torn down with it.
-     *
-     * Once-guarded and retried for Magewire the same way
-     * company-name-payment.phtml's tick-side listener is — this script can be
-     * re-executed by a re-render, and Magewire is not necessarily up yet when
-     * it first runs.
-     */
-    if (!window.twoGatewayBillingAsShippingBridged) {
-        window.twoGatewayBillingAsShippingBridged = true;
-        const bridgeBillingAsShipping = function() {
-            if (typeof Magewire !== 'undefined' && Magewire.on) {
-                Magewire.on('billing_as_shipping_address_updated', function(data) {
-                    if (data && data.billingAsShipping === false) {
-                        window.dispatchEvent(new CustomEvent('two-billing-as-shipping-cleared'));
-                    }
-                });
-            } else {
-                setTimeout(bridgeBillingAsShipping, 100);
-            }
-        };
-        bridgeBillingAsShipping();
-    }
-
     /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
@@ -1268,21 +1232,6 @@ $quoteDetails = json_encode(
             },
 
             <?= $gwBase ?>OnChangeCompanyClick() {
-                this.clearCapturedCompany();
-            },
-
-            /*
-             * Hyvä Checkout's `billing_as_shipping_address_updated` Magewire
-             * event, relayed as a window event by the once-guarded bridge at
-             * the top of this file.
-             *
-             * Untick means the billing company is no longer the shipping
-             * company, so the captured pair the tile is showing is now the
-             * WRONG company — and, being captured, is showing as a read-only
-             * label with no control beside it. Clearing hands the buyer the
-             * search control back with the fields empty.
-             */
-            <?= $gwBase ?>OnBillingAsShippingCleared() {
                 this.clearCapturedCompany();
             },
 

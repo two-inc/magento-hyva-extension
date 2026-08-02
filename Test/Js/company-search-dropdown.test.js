@@ -569,6 +569,120 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       }
     });
 
+    test("clearing the manual company name CLEARS it from storage too", () => {
+      // Review round 2. `commitCompanyName()` used to early-return on
+      // `search === companyName`, and with no prior pick `companyName` is ''
+      // for the whole page load — so deleting a typed name hit `'' === ''`,
+      // returned, and left the deleted name in storage. announceCompanyPair()
+      // then broadcast it, and the payment step repopulated the tile from it:
+      // an empty address field, the deleted company on the order.
+      const heard = [];
+      const listener = function (e) {
+        heard.push(e.detail);
+      };
+      window.addEventListener("shipping-company-selected", listener);
+      try {
+        component.enterManually();
+        nameField.value = "Acme Ltd";
+        component.$el = nameField;
+        component.onNameFieldInput();
+
+        nameField.value = "";
+        component.onNameFieldInput();
+
+        expect(component.search).toBe("");
+        expect(heard[heard.length - 1].company_name).toBe("");
+      } finally {
+        window.removeEventListener("shipping-company-selected", listener);
+      }
+    });
+
+    test("no announcement pairs a name with an identifier written for another name", () => {
+      // Review round 2. `forgetStaleCompanyId()` spares a `manual`-sourced
+      // identifier, and with the address step's own number input gone (§5)
+      // nothing on this surface can correct one. A `manual` id left in storage
+      // by an earlier session would otherwise ride along with every debounced
+      // keystroke, arming an order intent for a half-typed name beside somebody
+      // else's number.
+      const heard = [];
+      const listener = function (e) {
+        heard.push(e.detail);
+      };
+      window.addEventListener("shipping-company-selected", listener);
+      try {
+        component.enterManually();
+        component.companyId = "99999999";
+        component.companyIdSource = "manual";
+        component.companyName = "Some Other Company Ltd";
+
+        nameField.value = "Ac";
+        component.$el = nameField;
+        component.onNameFieldInput();
+
+        expect(heard).toHaveLength(0);
+
+        // And it announces again as soon as the pair is coherent.
+        component.companyName = "Ac";
+        component.onNameFieldInput();
+        expect(heard).toHaveLength(1);
+      } finally {
+        window.removeEventListener("shipping-company-selected", listener);
+      }
+    });
+
+    test("init() drops a restored pair that contradicts the field's own value", () => {
+      // Review round 2. Both surfaces merge into ONE selection blob, so a
+      // company picked on the payment tile overwrites the address step's pair.
+      // Coming back, Hyvä restores the FIELD from `address.company` while the
+      // component restored the TILE's pair — and the read-only number label
+      // showed the tile company's number under the address company's name, with
+      // search mode readonly so the buyer could not correct it.
+      nameField.value = "Address Company Ltd";
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          company_name: "Tile Company Ltd",
+          company_id: "77777777",
+          company_id_source: "registry",
+        }),
+      );
+
+      const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: nameField,
+        root: root,
+      });
+      restored.init();
+
+      expect(restored.companyId).toBe("");
+      expect(restored.companyIdSource).toBe("");
+      expect(restored.isCompanySelected).toBe(false);
+      expect(restored.companyIdDisplayVisible).toBe(false);
+    });
+
+    test("init() KEEPS a restored pair that matches the field's value", () => {
+      // The other half, so the fix above cannot be satisfied by simply
+      // discarding every restored pick.
+      nameField.value = "Acme Ltd";
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          company_name: "Acme Ltd",
+          company_id: "12345678",
+          company_id_source: "registry",
+        }),
+      );
+
+      const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: nameField,
+        root: root,
+      });
+      restored.init();
+
+      expect(restored.companyId).toBe("12345678");
+      expect(restored.isCompanySelected).toBe(true);
+      expect(restored.companyIdDisplayVisible).toBe(true);
+    });
+
     test("§1 a pick blanks the query field's DOM value, not just the state", () => {
       // Otherwise any getItems() that runs before a close re-searches the term
       // the buyer abandoned when they picked.
