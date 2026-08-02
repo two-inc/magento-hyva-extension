@@ -141,11 +141,11 @@ describe("company-search focus scope (bug 4.1)", () => {
     // `.input-group` on `:focus-within`, and that element is the GRANDPARENT
     // of the company-name input, so focusing the input framed the whole group.
     // Suppressing it on `.two-company-search` alone never touched that.
-    const body = ruleBody(".two-company-search-group:focus-within");
+    const body = ruleBody(".input-group.two-company-search-group:focus-within");
 
     if (body === null) {
       throw new Error(
-        "no `.two-company-search-group:focus-within` rule in " +
+        "no `.input-group.two-company-search-group:focus-within` rule in " +
           STYLESHEET +
           " — without it the input-group grandparent keeps painting a ring " +
           "around both the company-name field and the number display.",
@@ -153,11 +153,29 @@ describe("company-search focus scope (bug 4.1)", () => {
     }
     expect(body).toMatch(/box-shadow:\s*none/);
     expect(body).toMatch(/outline:\s*none/);
-    // And deliberately NOT `border-color`. Forcing it transparent would make a
-    // merchant theme's real input-group border vanish on focus — a
-    // visible-to-invisible flip, which is a worse artefact than the ring this
-    // rule exists to suppress.
+    // And deliberately NOT `border-color`. Measured on the live checkout, the
+    // theme's own rule does change `border-color` on focus but `border-width`
+    // computes to 0px in both states, so it paints nothing; the visible blue is
+    // the Tailwind ring, i.e. the box-shadow. Forcing the colour transparent
+    // would only risk erasing a real border a merchant theme does draw.
     expect(body).not.toMatch(/border-color/);
+  });
+
+  test("the grandparent rule outranks the theme rule on specificity alone", () => {
+    // The theme ships `.input-group:focus-within` at (0,2,0). A selector of
+    // `.two-company-search-group:focus-within` ties it, and a tie is settled by
+    // stylesheet load order — which this module does not control. Doubling
+    // `.input-group` into the selector makes it (0,3,0) and removes load order
+    // from the question entirely.
+    //
+    // This is the defect shape the Luma leg of this ticket hit: a hide rule
+    // that lost on specificity, sat in the tree for weeks, and never applied.
+    const css = declarations();
+    expect(css).toMatch(
+      /\.input-group\.two-company-search-group:focus-within\s*\{/,
+    );
+    // And the bare, tie-ing form must NOT be what ships.
+    expect(css).not.toMatch(/(^|[^.\w-])\.two-company-search-group:focus-within/m);
   });
 
   test("the hook the grandparent rule needs is actually on the shipped element", () => {

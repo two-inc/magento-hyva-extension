@@ -264,20 +264,39 @@ summary::marker {
  * (companyName.phtml), so no other Hyvä field is affected and the hook cannot
  * silently stop matching the way a structural selector would.
  *
- * `outline` and `box-shadow` only. A first revision also forced
- * `border-color: transparent`, which was wrong: a merchant theme whose
- * input-group carries a REAL border would have that border vanish the moment
- * either field took focus — a visible-to-invisible flip, a worse artefact than
- * the one being fixed. The group's own border, if it has one, is not what the
- * ticket reports.
+ * MEASURED on the live Hyvä checkout rather than inferred, because the first
+ * two revisions of this rule both guessed the mechanism wrong. The shipped
+ * theme rule is:
+ *
+ *   .input-group:focus-within {
+ *     border-color: rgb(37 99 235 / …);
+ *     box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), …;
+ *     --tw-ring-color: rgb(30 64 175 / …); --tw-ring-opacity: .5;
+ *   }
+ *
+ * On the real element `border-width` computes to `0px` in BOTH states, so the
+ * border-colour change paints nothing at all. The visible blue is the Tailwind
+ * RING — a `box-shadow` — and `box-shadow: none` is the whole fix. An earlier
+ * revision also forced `border-color: transparent`; that was both unnecessary
+ * and harmful, since a merchant theme whose input-group does carry a real
+ * border would have had it vanish on focus, a visible-to-invisible flip worse
+ * than the artefact.
+ *
+ * `.input-group` is doubled into the selector to make this (0,3,0) against the
+ * theme rule's (0,2,0). Matching on `.two-company-search-group` alone ties on
+ * specificity and the winner is then decided by stylesheet load order — which
+ * this module does not control, and which would make the fix silently do
+ * nothing on any install that loads the theme's CSS last. That is exactly how
+ * the Luma leg of this ticket ended up with a hide rule that sat in the tree
+ * for weeks and never once applied.
  *
  * The second reported artefact — a faint outline enclosing the name field and
  * the company-number display together — is fixed structurally rather than
  * here: the company-number INPUT that used to sit inside this group is gone
- * (TWO-25326 §5), so there is no longer a second field for a group-level
- * border to enclose.
+ * (TWO-25326 §5), so there is no longer a second field for a group-level ring
+ * to enclose.
  */
-.two-company-search-group:focus-within {
+.input-group.two-company-search-group:focus-within {
   outline: none;
   box-shadow: none;
 }
