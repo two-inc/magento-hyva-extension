@@ -259,31 +259,25 @@ function <?= $gwBase ?>CompanySearchField() {
             this.isCompanySelected = Boolean(this.companyId);
 
             /*
-             * Drop a restored pair that does not describe the company the field
-             * actually holds (review round 2).
+             * NOT reconciled against the field's own value, deliberately.
              *
-             * Both checkout surfaces merge into ONE selection blob, so a
-             * company picked on the payment tile overwrites the pair the
-             * address step stored. Coming back to the address step, Hyvä
-             * restores the field's own value from `address.company` while this
-             * restored the tile's pair — and the read-only number label then
-             * showed the TILE company's number underneath the ADDRESS
-             * company's name, with search mode readonly so the buyer could not
-             * correct it.
+             * Review round 2 added a guard here that dropped a restored pair
+             * when the company-name field held a different name — the case
+             * where the payment tile has overwritten the address step's pick in
+             * the ONE shared selection blob. Review round 3 showed the guard
+             * can destroy a GOOD pick instead: `wire:model.defer` means the
+             * server's `address.company` lags the client value, so any Magewire
+             * re-render landing before the roundtrip rebuilds this field from
+             * the stale name and the guard then discards the pick that was
+             * perfectly correct.
              *
-             * Only applied when the field actually holds something: an empty
-             * field on a fresh render has not contradicted anything, and
-             * dropping the pair there would discard a perfectly good pick.
+             * Both directions are heuristics over the same underlying problem:
+             * one storage key is being asked to hold what may be two different
+             * companies (shipping and billing). That needs a billing-scoped key
+             * of its own, which is a design change and is written up on
+             * TWO-25326 rather than guessed at here. Leaving the restore
+             * unguarded is the known prior behaviour.
              */
-            const restoredInto = this.companyNameField();
-            const fieldValue = restoredInto ? restoredInto.value : '';
-            if (fieldValue && this.companyName && fieldValue !== this.companyName) {
-                this.companyId = '';
-                this.companyIdSource = '';
-                this.isCompanySelected = false;
-                this.companyIdEntryRequired = true;
-                this.applyCompanyIdEditability();
-            }
         },
 
         /*
@@ -821,7 +815,26 @@ function <?= $gwBase ?>CompanySearchField() {
          * and adjusted the name.
          */
         forgetStaleCompanyId() {
-            if (!this.hasVouchedCompanyId()) return;
+            /*
+             * Any identifier, whatever its provenance — narrowed from
+             * registry-only in review round 3.
+             *
+             * The source scoping existed to protect a number the buyer had
+             * typed on THIS surface from being wiped when they adjusted the
+             * name. Since §5 deleted the address step's company-number input
+             * there is no such number: nothing here can write a `manual`
+             * identifier, and nothing here can correct one either. Sparing it
+             * only meant one left in storage by an earlier session rode along
+             * with a name it never belonged to.
+             *
+             * Round 2 tried to solve that with a guard inside
+             * announceCompanyPair() instead. That was worse: it suppressed the
+             * announcement rather than fixing the pair, so a buyer in that
+             * state silently stopped announcing anything for the rest of the
+             * page load — reinstating the stale-submission bug the
+             * announcement was added to prevent.
+             */
+            if (!this.companyId) return;
             if (this.search === this.companyName) return;
 
             this.companyId = '';
@@ -1048,20 +1061,6 @@ function <?= $gwBase ?>CompanySearchField() {
          * against, because it arms an order intent for a company with no number.
          */
         announceCompanyPair() {
-            /*
-             * Never announce a name beside an identifier that was written for a
-             * DIFFERENT name (review round 2).
-             *
-             * forgetStaleCompanyId() drops a `registry` identifier when the
-             * name diverges, but deliberately spares a `manual` one — and with
-             * the address step's own number input gone (§5), nothing on this
-             * surface can correct a `manual` identifier any more. One left in
-             * storage by an earlier session would otherwise ride along with
-             * every debounced keystroke, arming an order intent for a
-             * half-typed name beside somebody else's number.
-             */
-            if (this.companyId && this.search !== this.companyName) return;
-
             const companyData = twoAddressWriteSelection({});
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {

@@ -597,13 +597,19 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       }
     });
 
-    test("no announcement pairs a name with an identifier written for another name", () => {
-      // Review round 2. `forgetStaleCompanyId()` spares a `manual`-sourced
-      // identifier, and with the address step's own number input gone (§5)
-      // nothing on this surface can correct one. A `manual` id left in storage
-      // by an earlier session would otherwise ride along with every debounced
+    test("a name edit drops an identifier that belonged to another name, and still announces", () => {
+      // Rounds 2 and 3. `forgetStaleCompanyId()` used to spare a
+      // `manual`-sourced identifier, and with the address step's own number
+      // input gone (§5) nothing here can write or correct one — so an id left
+      // in storage by an earlier session rode along with every debounced
       // keystroke, arming an order intent for a half-typed name beside somebody
       // else's number.
+      //
+      // Round 2 suppressed the ANNOUNCEMENT in that state, which was worse: the
+      // buyer then silently stopped announcing anything for the rest of the
+      // page load, reinstating the stale-submission bug the announcement exists
+      // to prevent. The fix is to drop the mismatched id instead, so the pair
+      // announced is always coherent.
       const heard = [];
       const listener = function (e) {
         heard.push(e.detail);
@@ -619,24 +625,34 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
         component.$el = nameField;
         component.onNameFieldInput();
 
-        expect(heard).toHaveLength(0);
-
-        // And it announces again as soon as the pair is coherent.
-        component.companyName = "Ac";
-        component.onNameFieldInput();
+        // The announcement still happens — silence is what round 2 got wrong.
         expect(heard).toHaveLength(1);
+        // And it carries a coherent pair: the new name, and NO identifier.
+        expect(heard[0].company_name).toBe("Ac");
+        expect(heard[0].company_id).toBe("");
+        expect(heard[0].company_id_source).toBe("");
+        expect(component.companyId).toBe("");
       } finally {
         window.removeEventListener("shipping-company-selected", listener);
       }
     });
 
-    test("init() drops a restored pair that contradicts the field's own value", () => {
-      // Review round 2. Both surfaces merge into ONE selection blob, so a
-      // company picked on the payment tile overwrites the address step's pair.
-      // Coming back, Hyvä restores the FIELD from `address.company` while the
-      // component restored the TILE's pair — and the read-only number label
-      // showed the tile company's number under the address company's name, with
-      // search mode readonly so the buyer could not correct it.
+    test("init() restores a stored pick WITHOUT reconciling it against the field", () => {
+      // Reverted in review round 3, and the revert is deliberate.
+      //
+      // Round 2 added a guard that dropped a restored pair when the
+      // company-name field held a different name — the case where the payment
+      // tile has overwritten the address step's pick in the ONE shared blob.
+      // Round 3 showed it destroys a GOOD pick instead: `wire:model.defer`
+      // means the server's `address.company` lags the client value, so a
+      // Magewire re-render landing before the roundtrip rebuilds the field from
+      // the stale name and the guard discards a perfectly correct pick.
+      //
+      // Both directions are heuristics over one storage key being asked to hold
+      // two different companies. That needs a billing-scoped key, which is a
+      // design change written up on TWO-25326, not guessed at here. This test
+      // pins the unguarded behaviour so the guard cannot be reinstated silently
+      // as "an obvious fix".
       nameField.value = "Address Company Ltd";
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
@@ -653,34 +669,8 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       });
       restored.init();
 
-      expect(restored.companyId).toBe("");
-      expect(restored.companyIdSource).toBe("");
-      expect(restored.isCompanySelected).toBe(false);
-      expect(restored.companyIdDisplayVisible).toBe(false);
-    });
-
-    test("init() KEEPS a restored pair that matches the field's value", () => {
-      // The other half, so the fix above cannot be satisfied by simply
-      // discarding every restored pick.
-      nameField.value = "Acme Ltd";
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({
-          company_name: "Acme Ltd",
-          company_id: "12345678",
-          company_id_source: "registry",
-        }),
-      );
-
-      const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: nameField,
-        root: root,
-      });
-      restored.init();
-
-      expect(restored.companyId).toBe("12345678");
+      expect(restored.companyId).toBe("77777777");
       expect(restored.isCompanySelected).toBe(true);
-      expect(restored.companyIdDisplayVisible).toBe(true);
     });
 
     test("§1 a pick blanks the query field's DOM value, not just the state", () => {

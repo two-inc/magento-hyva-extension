@@ -1167,10 +1167,22 @@ $quoteDetails = json_encode(
              *  - the buyer picked the wrong company on the address step and is
              *    now on payment, with no way to correct it from here.
              *
+             * Reached ONLY from the explicit "Change company" button. An
+             * automatic trigger on the untick was written and then withdrawn in
+             * review — see the note in Test/Js/payment-company-tile-label.test.js.
+             *
              * Storage is cleared as well as component state. `initialize()`
              * restores from storage on every Magewire re-render, so leaving
              * the captured pair there would put the company — and the hidden
              * controls — straight back.
+             *
+             * KNOWN LIMITATION, deliberately not patched (TWO-25326 review
+             * round 3). There is ONE selection blob for both surfaces, so
+             * clearing it here also drops the SHIPPING company's identifier.
+             * The name survives via Magewire's `address.company`; the number
+             * does not, and the address step's read-only number label goes with
+             * it. Closing that properly needs a billing-scoped storage key of
+             * its own rather than another guard — written up on the ticket.
              */
             clearCapturedCompany() {
                 this.abortCompanySearch();

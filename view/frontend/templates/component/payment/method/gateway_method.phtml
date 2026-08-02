@@ -144,17 +144,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         ) ?>"
         wire:ignore
         @keydown.window.prevent.enter
-        <?php
-        /*
-         * Untick of "billing same as shipping", relayed as a window event by
-         * the once-guarded Magewire bridge in gateway_method-csp-js.phtml. The
-         * tile is then showing the SHIPPING company as a read-only captured
-         * label with no control beside it, so the capture is cleared and the
-         * search control handed back. Bound here, on the component root, so
-         * Alpine tears the listener down with the instance across Magewire
-         * re-renders.
-         */
-        ?>
         class="">
         <fieldset class="space-y-4">
             <?php

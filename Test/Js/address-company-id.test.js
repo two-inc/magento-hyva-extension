@@ -887,9 +887,20 @@ describe("address-step company number", () => {
       expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("a number the BUYER typed is never cleared by a name edit", async () => {
-      // Only a registry number belongs to a name. Clearing a hand-typed one here
-      // would delete the buyer's own entry every time they adjusted the name.
+    test("a name edit drops ANY identifier that no longer describes the name", async () => {
+      // Reversed in review round 3, and the reversal is the fix.
+      //
+      // This used to assert that a hand-typed number survived a name edit,
+      // because clearing it would have deleted the buyer's own entry from the
+      // field they typed it into. That field is gone: §5 removed the address
+      // step's company-number input, so nothing on this surface can write a
+      // `manual` identifier and nothing can correct one either. Sparing it only
+      // meant an identifier left in storage by an earlier session travelled
+      // with a name it never belonged to — and got announced to the payment
+      // step as a matched pair.
+      //
+      // The payment tile, which DOES still have a typeable number field, keeps
+      // its own state and is unaffected.
       component = mount({ quote_id: "test-quote-1" });
       component.enterManually();
       await typeName("Jo Smith Trading");
@@ -897,8 +908,12 @@ describe("address-step company number", () => {
 
       await typeName("Jo Smith Trading Ltd");
 
-      expect(component.companyId).toBe("1234567");
-      expect(storedSelection().company_id).toBe("1234567");
+      expect(component.companyId).toBe("");
+      expect(storedSelection().company_id).toBe("");
+      expect(storedSelection().company_id_source).toBe("");
+      // The NAME is still captured — dropping the identifier must not drop the
+      // company with it.
+      expect(storedSelection().company_name).toBe("Jo Smith Trading Ltd");
     });
 
     test("an intact pick keeps its number through a re-fired handler", async () => {
