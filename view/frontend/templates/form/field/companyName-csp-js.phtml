@@ -120,12 +120,10 @@ function <?= $gwBase ?>CompanySearchField() {
         items: [],
         selectedIndex: -1,
         // True from the moment a company is chosen from the dropdown until the
-        // buyer edits the field again. Distinct from `isSelecting`, which is a
-        // one-shot flag consumed by the very next getItems() tick: this one has
-        // to OUTLIVE that tick, because `selectItem()` writes the chosen name
-        // into `search` and a company whose name is shorter than the threshold
-        // would otherwise leave the min-characters hint under a populated,
-        // closed field.
+        // buyer edits the name field by hand — which, since TWO-25326 §1, only
+        // manual mode and a lookup-disabled store can do. It gates the
+        // below-the-field manual-entry affordance: a completed pick is not "my
+        // company is not on the list".
         isCompanySelected: false,
         manualMode: false,
         /*
@@ -282,37 +280,23 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         /**
-         * Undebounced `input` handler, running alongside the debounced
-         * getItems() (TWO-25288 element 5).
+         * Undebounced `input` handler on the DROPDOWN'S QUERY FIELD, running
+         * alongside the debounced getItems() (TWO-25288 element 5, re-pointed
+         * by TWO-25326 §1).
          *
-         * The manual-entry row has to be reachable as soon as the buyer has
-         * typed enough characters to search — BEFORE the debounce elapses and
-         * before any result exists. getItems() was the only thing that opened
-         * the dropdown, and only ever on a non-empty result set, so the row
-         * could not appear until a search had both fired and matched.
+         * The `awaitingSelectionEcho` / `isSelecting` machinery this comment
+         * used to describe is gone. It existed only because the company-name
+         * field was both the search box and the thing selectItem() wrote back
+         * into, so a pick echoed as a keystroke. With the query field separate
+         * there is no echo to tell apart from a real edit.
          *
          * Bound as a SECOND `@input` attribute rather than folded into
-         * getItems(): `@input` and `@input.debounce.500ms` are distinct
+         * getItems(): `@input` and `@input.debounce.300ms` are distinct
          * attribute names, so Alpine registers both listeners, and the debounce
          * has to stay on the request half — an undebounced search would put one
-         * request per keystroke on the wire.
-         *
-         * `awaitingSelectionEcho` is the one this swallows, and only for the
-         * single call it names: selectItem() sets it and then dispatches
-         * `input` on the field, so this handler runs first, synchronously,
-         * before selectItem() returns. Consuming it here — not leaving it for
-         * getItems() the way `isSelecting` is — is what stops a REAL keystroke
-         * typed a moment later from being mistaken for that same echo (TWO-25288
-         * element 5 round 2): the echo is the only call gated, so the very next
-         * one always reaches the code below.
-         *
-         * `isSelecting` is read but deliberately CLEARED here rather than left
-         * alone, on any call that gets this far — i.e. every call except the
-         * echo itself. That is what makes a real correction typed within the
-         * debounce window reach the search: without it, the debounced
-         * getItems() tick behind this keystroke would still see `isSelecting`
-         * true, hit its own one-shot guard, and silently skip searching for
-         * the very text the buyer just corrected.
+         * request per keystroke on the wire. This half is what keeps the
+         * min-characters hint and the "No matches found" verdict answering the
+         * keystroke rather than the debounce behind it.
          *
          * Nothing is aborted, cleared or requested here beyond that. The
          * debounced handler owns the whole request lifecycle, and duplicating
@@ -518,18 +502,31 @@ function <?= $gwBase ?>CompanySearchField() {
          */
         onManualEntryTab(event) {
             if (event.shiftKey) return;
-            const next = this.nextFocusableAfterComponent();
-            if (!next) {
-                // Nothing after this component to move to. Close anyway rather
-                // than trapping the buyer inside an open panel; the browser's
-                // own Tab then leaves the document normally.
-                this.closeDropdown();
-                return;
-            }
+            /*
+             * `preventDefault()` unconditionally, INCLUDING when there is
+             * nothing after this component to move to (review round 1).
+             * Letting the native Tab run in that case does not help: Alpine's
+             * reactive flush drains on the microtask queue, which runs before
+             * the browser performs the default action, so the focused button is
+             * already `display: none` by the time the next stop is computed and
+             * focus lands on `<body>` regardless. Falling back to the
+             * company-name field keeps focus somewhere the buyer can see.
+             */
             event.preventDefault();
+            const candidates = this.focusablesAfterComponent();
             this.closeDropdown();
             this.$nextTick(() => {
-                this.focusAndVerify(next);
+                /*
+                 * Walk the list rather than trusting the first entry. A
+                 * candidate can still refuse focus for a reason no attribute
+                 * check catches, and `.focus()` failing silently is what turns
+                 * this into a keyboard trap — so the fallback is tried, and the
+                 * company-name field is the last resort.
+                 */
+                for (let i = 0; i < candidates.length; i++) {
+                    if (this.focusAndVerify(candidates[i])) return;
+                }
+                this.focusAndVerify(this.companyNameField());
             });
         },
 
@@ -550,43 +547,79 @@ function <?= $gwBase ?>CompanySearchField() {
             let node = el;
             while (node && node.style) {
                 if (node.style.display === 'none') return true;
+                /*
+                 * `hidden` and Tailwind's `.hidden` as well as the inline
+                 * style. Review round 1: this codebase hides things with a
+                 * CLASS at least twice (`companyIdHiddenClass`,
+                 * `companyNumberBlockHiddenClass` on the payment tile), so an
+                 * inline-style-only check would hand back an invisible element,
+                 * focusAndVerify() would fail silently and focus would fall to
+                 * `<body>` — the exact WooCommerce defect this resolver exists
+                 * to prevent.
+                 */
+                if (node.hidden) return true;
+                if (node.classList && node.classList.contains('hidden')) return true;
                 node = node.parentElement;
             }
             return false;
         },
 
         /**
-         * The first focusable control that follows this whole component in
-         * document order — i.e. where Tab should land on the way OUT.
+         * Every focusable control that follows this whole component in document
+         * order — i.e. the candidates for where Tab should land on the way OUT,
+         * best first.
+         *
+         * A LIST rather than a single answer (review round 1): a candidate can
+         * refuse focus for a reason no attribute check catches, and
+         * `.focus()` failing silently is what turns Tab-out into a keyboard
+         * trap. The caller walks the list until one actually takes focus.
          *
          * Resolved against the document rather than the form, so this works on
          * the Hyvä address step whether or not the field happens to sit in a
          * `<form>`.
          *
-         * @returns {HTMLElement|null}
+         * Document order is assumed to be tab order, which holds because
+         * nothing in the Hyvä checkout ships a positive `tabindex`. If that
+         * ever changes this resolver is where it has to be handled.
+         *
+         * @returns {Array<HTMLElement>}
          */
-        nextFocusableAfterComponent() {
+        focusablesAfterComponent() {
             const root = this.$root;
             const doc = root && root.ownerDocument;
-            if (!doc) return null;
-            const candidates = Array.prototype.slice.call(doc.querySelectorAll(
-                'a[href], button, input, select, textarea, [tabindex]'
+            if (!doc) return [];
+            const all = Array.prototype.slice.call(doc.querySelectorAll(
+                'a[href], area[href], button, input, select, textarea,'
+                + ' summary, iframe, [contenteditable], [tabindex]'
             ));
+            const after = [];
             let seenRoot = false;
-            for (let i = 0; i < candidates.length; i++) {
-                const el = candidates[i];
+            for (let i = 0; i < all.length; i++) {
+                const el = all[i];
                 if (root.contains(el)) {
                     seenRoot = true;
                     continue;
                 }
                 if (!seenRoot) continue;
                 if (el.disabled) continue;
+                if (el.closest && el.closest('fieldset[disabled]')) continue;
                 if (el.type === 'hidden') continue;
                 if (el.getAttribute('tabindex') === '-1') continue;
                 if (this.isDisplayNone(el)) continue;
-                return el;
+                after.push(el);
             }
-            return null;
+            return after;
+        },
+
+        /**
+         * The single best Tab-out target, or null. Kept as a named member
+         * because it is the question the requirement is phrased in.
+         *
+         * @returns {HTMLElement|null}
+         */
+        nextFocusableAfterComponent() {
+            const after = this.focusablesAfterComponent();
+            return after.length > 0 ? after[0] : null;
         },
 
         /**
@@ -610,6 +643,7 @@ function <?= $gwBase ?>CompanySearchField() {
             this.forgetStaleCompanyId();
             this.commitCompanyName();
             this.applyCompanyIdEditability();
+            this.announceCompanyPair();
         },
 
         /**
@@ -950,6 +984,37 @@ function <?= $gwBase ?>CompanySearchField() {
             twoAddressWriteSelection({ company_name: this.search });
         },
 
+        /**
+         * Announce the captured pair on the channel the payment step listens
+         * on, for the paths where no selectItem() will ever follow.
+         *
+         * Restored by TWO-25326 review round 1, and it is a genuine regression
+         * this rework introduced rather than a nicety. Before it, the address
+         * step had TWO dispatchers: selectItem() for a registry pick, and
+         * onCompanyIdInput() for a hand-typed number. Deleting the editable
+         * company-number input (§5) removed the only binding for the second
+         * one, so manual entry — and a store with the lookup switched off —
+         * wrote localStorage and announced nothing.
+         *
+         * The payment tile syncs from this event or from its own initialize().
+         * A tile that is ALREADY mounted (buyer reached payment, went back to
+         * the address step, changed the company, came forward again) therefore
+         * kept the previous company and submitted it as `payment[company_name]`.
+         * Storage alone is not enough: nothing re-reads it on the way forward.
+         *
+         * Deliberately NOT called from the search path. There, selectItem() is
+         * the single writer and announces the complete pair itself; announcing
+         * a bare name mid-search is what the note on commitCompanyName() warns
+         * against, because it arms an order intent for a company with no number.
+         */
+        announceCompanyPair() {
+            const companyData = twoAddressWriteSelection({});
+
+            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
+                detail: companyData
+            }));
+        },
+
         async getItems() {
             /*
              * TWO-25326 §1 split the two texts this used to conflate.
@@ -976,6 +1041,10 @@ function <?= $gwBase ?>CompanySearchField() {
                 this.forgetStaleCompanyId();
                 this.commitCompanyName();
                 this.applyCompanyIdEditability();
+                // See announceCompanyPair(): with the editable number input
+                // gone, this is the only remaining announcement on the manual
+                // and lookup-off paths.
+                this.announceCompanyPair();
                 return;
             }
 
@@ -1134,6 +1203,11 @@ function <?= $gwBase ?>CompanySearchField() {
             // rather than from a previous buyer's half-finished term.
             this.query = '';
             this.searchCompletedFor = null;
+            // The DOM value as well as the state, matching closeDropdown().
+            // Leaving the abandoned term in the box means any later getItems()
+            // that runs before a close re-searches it.
+            const abandonedQuery = this.queryField();
+            if (abandonedQuery) abandonedQuery.value = '';
             this.search = item.companyName;
             this.isCompanySelected = true;
             this.manualMode = false;
@@ -1365,18 +1439,13 @@ function <?= $gwBase ?>CompanySearchField() {
             // the native submit unchanged.
             //
             // `showDropdown()` is the gate, not a bare `manualMode` check —
-            // it already folds that in via `searchModeActive`, AND it is
-            // what actually catches a real race: `noteCompanyQuery()` closes
-            // the panel (`isOpen = false`) SYNCHRONOUSLY on every keystroke
-            // once the query drops below `minSearchChars`, but
-            // `items`/`selectedIndex` are only cleared/reset inside the
-            // DEBOUNCED getItems(), 500ms behind it. Gating on
-            // `selectedIndex`/`items.length` alone left a real window, up to
-            // that whole 500ms, where the panel was already closed on screen
-            // but state still pointed at the previous search's stale
-            // highlight — an Enter press in that window would silently
-            // swallow the native submit for a row the buyer could no longer
-            // even see.
+            // it already folds that in via `searchModeActive`, and it is the
+            // only term that answers "is a row VISIBLY on offer". The race it
+            // used to be justified by is gone: `noteCompanyQuery()` no longer
+            // closes the panel, and it now clears `items`/`selectedIndex`
+            // synchronously below the threshold rather than leaving that to
+            // the debounced tick. The gate stays because the three terms are
+            // still the honest question, not because of that race.
             if (!this.showDropdown() || this.selectedIndex < 0 || this.items.length === 0) {
                 return;
             }

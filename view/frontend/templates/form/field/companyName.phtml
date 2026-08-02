@@ -483,12 +483,12 @@ $form = $block->getData("form");
              * own mechanism (Alpine + this CSP-nonce build) differs, but the
              * rendered result matches.
              *
-             * Gated on `companyIdDisplayVisible` (== hasVouchedCompanyId()):
-             * a REGISTRY-supplied number is what "a result is selected" means
-             * here. A hand-typed number — no registry hit backs it, so
-             * nothing was "selected" — still needs the real editable input
-             * below, unchanged: manual entry and a store with the lookup
-             * switched off both depend on it staying typeable.
+             * Gated on `companyIdDisplayVisible` — a REGISTRY-supplied number,
+             * and not in manual mode. That is what "a result is selected"
+             * means here, and it is the only state in which a number is shown
+             * on this surface at all (TWO-25326 §5). There is no editable
+             * number input below it any more: a buyer who needs to supply a
+             * number the registry did not give does so on the payment step.
              */
             ?>
             <div

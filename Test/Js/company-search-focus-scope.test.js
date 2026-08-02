@@ -153,10 +153,11 @@ describe("company-search focus scope (bug 4.1)", () => {
     }
     expect(body).toMatch(/box-shadow:\s*none/);
     expect(body).toMatch(/outline:\s*none/);
-    // `border-color` as well: the group carries a real border in some themes,
-    // and that is the faint outline the ticket reports around the pair when
-    // the number is showing.
-    expect(body).toMatch(/border-color:\s*transparent/);
+    // And deliberately NOT `border-color`. Forcing it transparent would make a
+    // merchant theme's real input-group border vanish on focus — a
+    // visible-to-invisible flip, which is a worse artefact than the ring this
+    // rule exists to suppress.
+    expect(body).not.toMatch(/border-color/);
   });
 
   test("the hook the grandparent rule needs is actually on the shipped element", () => {

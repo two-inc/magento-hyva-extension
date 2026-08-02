@@ -484,6 +484,103 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       expect(component.nextFocusableAfterComponent()).toBe(later);
     });
 
+    test("§4 Tab-out skips a control hidden by CLASS, not just by inline style", () => {
+      // Review round 1. This codebase hides things with a Tailwind `.hidden`
+      // class at least twice on the payment tile (`companyIdHiddenClass`,
+      // `companyNumberBlockHiddenClass`). An inline-style-only visibility check
+      // would hand back an invisible element, focusAndVerify() would fail
+      // silently, and focus would fall to `<body>` — the exact WooCommerce
+      // defect this resolver exists to prevent.
+      nextControl.classList.add("hidden");
+      // jsdom applies no stylesheet, so `.hidden` has no computed effect here;
+      // the resolver has to recognise the class itself, which is the point.
+      const later = document.createElement("input");
+      later.id = "later-control";
+      document.getElementById("address-container").appendChild(later);
+
+      expect(component.nextFocusableAfterComponent()).toBe(later);
+    });
+
+    test("§4 Tab-out skips a control hidden by the `hidden` attribute", () => {
+      nextControl.hidden = true;
+      const later = document.createElement("input");
+      document.getElementById("address-container").appendChild(later);
+
+      expect(component.nextFocusableAfterComponent()).toBe(later);
+    });
+
+    test("§4 Tab off the button falls back to company-name when nothing follows", () => {
+      // Review round 1: the no-next-focusable branch used to skip
+      // preventDefault() and let the native Tab run. That does not help —
+      // Alpine's reactive flush drains on the microtask queue, before the
+      // browser performs the default action, so the focused button is already
+      // hidden when the next stop is computed and focus lands on `<body>`.
+      document.getElementById("address-container").removeChild(nextControl);
+      component.onCompanyNameClick();
+      const event = key("Tab");
+
+      component.onManualEntryTab(event);
+
+      expect(event.prevented).toBe(true);
+      expect(component.isOpen).toBe(false);
+      expect(document.activeElement).toBe(nameField);
+      expect(document.activeElement).not.toBe(document.body);
+    });
+
+    test("§4 Tab-out walks past a candidate that refuses focus", () => {
+      // `.focus()` failing silently is the whole failure class this ticket
+      // keeps hitting, so the resolver returns a LIST and the caller walks it.
+      // A disabled-by-JS-only control models a candidate no attribute check
+      // catches.
+      const later = document.createElement("input");
+      document.getElementById("address-container").appendChild(later);
+      Object.defineProperty(nextControl, "focus", {
+        value: function () {},
+        configurable: true,
+      });
+
+      component.onCompanyNameClick();
+      component.onManualEntryTab(key("Tab"));
+
+      expect(document.activeElement).toBe(later);
+    });
+
+    test("§5 manual entry announces the pair, so an already-mounted tile updates", () => {
+      // Review round 1. Deleting the address step's editable number input took
+      // `onCompanyIdInput()` — the only dispatcher on the manual path — out of
+      // the DOM with it, so manual entry wrote localStorage and announced
+      // nothing. A payment tile that is already mounted syncs from this event,
+      // not from storage, and so kept the previous company.
+      const heard = [];
+      const listener = function (e) {
+        heard.push(e.detail);
+      };
+      window.addEventListener("shipping-company-selected", listener);
+      try {
+        component.enterManually();
+        nameField.value = "Widgets Inc";
+        component.$el = nameField;
+        component.onNameFieldInput();
+
+        expect(heard).toHaveLength(1);
+        expect(heard[0].company_name).toBe("Widgets Inc");
+      } finally {
+        window.removeEventListener("shipping-company-selected", listener);
+      }
+    });
+
+    test("§1 a pick blanks the query field's DOM value, not just the state", () => {
+      // Otherwise any getItems() that runs before a close re-searches the term
+      // the buyer abandoned when they picked.
+      queryField.value = "acm";
+      component.query = "acm";
+
+      component.selectItem({ companyName: "Acme Ltd", companyId: "111" });
+
+      expect(component.query).toBe("");
+      expect(queryField.value).toBe("");
+    });
+
     test("focusAndVerify reports FALSE when the element cannot take focus", () => {
       // The one behaviour every silent-no-op bug on this ticket needed and
       // none of them had.

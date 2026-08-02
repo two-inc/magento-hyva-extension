@@ -724,11 +724,22 @@ describe("address-step company number", () => {
       expect(fetchStub.calls).toHaveLength(0);
     });
 
-    test("a name edit records itself but announces nothing", async () => {
-      // Announcing a name edit would push the new name beside the PREVIOUS
-      // number to the payment step, and arm an order intent for that
-      // mismatched pair. The number handler announces instead, by which point
-      // the name in the blob is already the current one.
+    test("a name edit in MANUAL mode announces the pair it leaves behind", async () => {
+      // Reversed by TWO-25326 review round 1, and the reversal is the fix.
+      //
+      // This used to assert that a name edit announced nothing, on the
+      // reasoning that announcing a new name beside the PREVIOUS number would
+      // arm an order intent for a mismatched pair — and that the company-number
+      // handler would announce a moment later anyway. The second half stopped
+      // being true when §5 deleted the address step's editable number input:
+      // `onCompanyIdInput()` is bound to nothing on this surface now, so
+      // silence here meant the manual path announced NOTHING, ever.
+      //
+      // An already-mounted payment tile syncs from this event, so without it a
+      // buyer who reached payment, came back, changed the company and went
+      // forward again submitted the previous company. The mismatch worry does
+      // not apply: `forgetStaleCompanyId()` runs first and drops the previous
+      // registry number, which is exactly what the assertion below pins.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       selectedEvents.length = 0;
@@ -737,6 +748,26 @@ describe("address-step company number", () => {
       await typeName("Different Company Ltd");
 
       expect(storedSelection().company_name).toBe("Different Company Ltd");
+      expect(selectedEvents).toHaveLength(1);
+      // The announced pair must carry the NEW name and NO number — never the
+      // new name beside the old company's identifier.
+      expect(selectedEvents[0].company_name).toBe("Different Company Ltd");
+      expect(selectedEvents[0].company_id).toBe("");
+      expect(selectedEvents[0].company_id_source).toBe("");
+    });
+
+    test("a name edit in SEARCH mode still announces nothing", async () => {
+      // The other half of the same rule, and the reason the fix above is scoped
+      // to manual mode. In search mode selectItem() is the single writer and
+      // announces the complete pair itself; the name field cannot be edited by
+      // hand there at all, so an announcement from this path could only ever
+      // carry a partial pair.
+      component = mount({ quote_id: "test-quote-1" });
+      await pick(hit("Acme Ltd", "111"));
+      selectedEvents.length = 0;
+
+      await typeName("Different Company Ltd");
+
       expect(selectedEvents).toEqual([]);
     });
 
@@ -960,7 +991,21 @@ describe("address-step company number", () => {
       typeNumber("87654321");
 
       expect(storedSelection().company_id).toBe("87654321");
-      expect(selectedEvents).toHaveLength(1);
+      // TWO-25326 review round 1: the name edit now announces too, so this is
+      // two events rather than one. That is the fix, not a regression — with
+      // the address step's own number input deleted (§5), the name edit was
+      // otherwise silent, and an already-mounted payment tile kept the previous
+      // company. What matters is that the LAST announcement carries the
+      // complete pair, and that the first one never pairs a new name with a
+      // stale number.
+      expect(selectedEvents).toHaveLength(2);
+      expect(selectedEvents[0].company_name).toBe("Acme Widgets Limited");
+      expect(selectedEvents[0].company_id).toBeUndefined();
+      expect(selectedEvents[1]).toMatchObject({
+        company_name: "Acme Widgets Limited",
+        company_id: "87654321",
+        company_id_source: "manual",
+      });
     });
   });
 

@@ -258,19 +258,28 @@ summary::marker {
  * artefact is painted one level further out, on the `.input-group` wrapper that
  * is the GRANDPARENT of the company-name input — Hyvä's shared field styling
  * treats an input-group as one control and rings it on `:focus-within`, so
- * focusing either descendant framed the whole group. `border` as well as
- * `box-shadow`/`outline`, because the group carries a real border in some
- * themes and that is what reads as the faint outline the ticket also reports
- * around the name field and the company-number display together.
+ * focusing either descendant framed the whole group.
  *
  * Scoped by a class this module puts on that element itself
  * (companyName.phtml), so no other Hyvä field is affected and the hook cannot
  * silently stop matching the way a structural selector would.
+ *
+ * `outline` and `box-shadow` only. A first revision also forced
+ * `border-color: transparent`, which was wrong: a merchant theme whose
+ * input-group carries a REAL border would have that border vanish the moment
+ * either field took focus — a visible-to-invisible flip, a worse artefact than
+ * the one being fixed. The group's own border, if it has one, is not what the
+ * ticket reports.
+ *
+ * The second reported artefact — a faint outline enclosing the name field and
+ * the company-number display together — is fixed structurally rather than
+ * here: the company-number INPUT that used to sit inside this group is gone
+ * (TWO-25326 §5), so there is no longer a second field for a group-level
+ * border to enclose.
  */
 .two-company-search-group:focus-within {
   outline: none;
   box-shadow: none;
-  border-color: transparent;
 }
 
 .two-company-search > input:focus {
