@@ -113,22 +113,65 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(body).not.toMatch(/129,\s*140,\s*248/);
   });
 
-  test("the Company Number input is never matched by the direct-child input rule", () => {
-    // Structural guarantee behind the `>` combinator above: render the real
-    // shipped markup and confirm the number input is not a direct child of
-    // `.two-company-search`, which is what would make `.two-company-search >
-    // input:focus` match it too.
+  test("there is no company-number INPUT on the address step at all (TWO-25326 §5)", () => {
+    // Stronger than the claim this replaces. The number used to be a real,
+    // permanently-visible input and the rule above only had to avoid ringing
+    // it; §5 removes it outright, so the guarantee is now that no such control
+    // exists — not before a selection, not in manual mode, not ever.
     const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
     const doc = new DOMParser().parseFromString(markup, "text/html");
-    const wrapper = doc.querySelector(".two-company-search");
-    const numberInput = doc.querySelector("input[data-two-company-id]");
 
-    expect(wrapper).not.toBeNull();
-    expect(numberInput).not.toBeNull();
-    expect(numberInput.parentElement).not.toBe(wrapper);
-    // And confirm it over the actual selector, not just parentElement, so a
-    // future markup reshuffle that keeps it a non-direct-child a different
-    // way still passes for the right reason.
-    expect(Array.from(wrapper.children)).not.toContain(numberInput);
+    expect(doc.querySelector(".two-company-search")).not.toBeNull();
+    expect(doc.querySelector("input[data-two-company-id]")).toBeNull();
+    expect(doc.querySelector("input.company_id")).toBeNull();
+    expect(doc.querySelector("#two_address_company_id")).toBeNull();
+
+    // What replaces it: a plain-text display, gated on a registry-supplied
+    // number, carrying no form control of any kind.
+    const display = doc.querySelector(".two-company-id-display");
+    expect(display).not.toBeNull();
+    expect(display.tagName).toBe("DIV");
+    expect(display.getAttribute("x-show")).toBe("companyIdDisplayVisible");
+    expect(display.querySelector("input")).toBeNull();
+  });
+
+  test("the focus ring is suppressed on the GRANDPARENT input-group too (TWO-25326 §7)", () => {
+    // The reported 6px blue border was painted one level further out than the
+    // rule this file already covered: Hyva's shared field styling rings an
+    // `.input-group` on `:focus-within`, and that element is the GRANDPARENT
+    // of the company-name input, so focusing the input framed the whole group.
+    // Suppressing it on `.two-company-search` alone never touched that.
+    const body = ruleBody(".two-company-search-group:focus-within");
+
+    if (body === null) {
+      throw new Error(
+        "no `.two-company-search-group:focus-within` rule in " +
+          STYLESHEET +
+          " — without it the input-group grandparent keeps painting a ring " +
+          "around both the company-name field and the number display.",
+      );
+    }
+    expect(body).toMatch(/box-shadow:\s*none/);
+    expect(body).toMatch(/outline:\s*none/);
+    // `border-color` as well: the group carries a real border in some themes,
+    // and that is the faint outline the ticket reports around the pair when
+    // the number is showing.
+    expect(body).toMatch(/border-color:\s*transparent/);
+  });
+
+  test("the hook the grandparent rule needs is actually on the shipped element", () => {
+    // A CSS rule scoped to a class no element carries is a fix that never
+    // applies — the exact shape of the Luma `!important` defect on this ticket,
+    // where a hide rule sat in the tree for weeks and never once matched.
+    const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+    const doc = new DOMParser().parseFromString(markup, "text/html");
+
+    const group = doc.querySelector(".two-company-search-group");
+    expect(group).not.toBeNull();
+    // It must really be the grandparent of the company-name input, or it is
+    // not the element the ring is painted on.
+    const input = doc.querySelector(".two-company-search > input");
+    expect(input).not.toBeNull();
+    expect(input.parentElement.parentElement).toBe(group);
   });
 });

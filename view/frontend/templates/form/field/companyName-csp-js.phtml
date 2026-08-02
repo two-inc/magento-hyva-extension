@@ -528,6 +528,28 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         /**
+         * Is this element, or any ancestor, hidden the way `x-show` hides
+         * things — an inline `display: none`?
+         *
+         * Deliberately NOT `offsetParent === null`, which is the usual idiom.
+         * `x-show` writes exactly this inline style, so reading it back is the
+         * precise question; `offsetParent` also answers null for a
+         * `position: fixed` element, and it is unimplemented in jsdom, so a
+         * test written against it would silently pass while proving nothing.
+         *
+         * @param {HTMLElement} el
+         * @returns {boolean}
+         */
+        isDisplayNone(el) {
+            let node = el;
+            while (node && node.style) {
+                if (node.style.display === 'none') return true;
+                node = node.parentElement;
+            }
+            return false;
+        },
+
+        /**
          * The first focusable control that follows this whole component in
          * document order — i.e. where Tab should land on the way OUT.
          *
@@ -555,9 +577,7 @@ function <?= $gwBase ?>CompanySearchField() {
                 if (el.disabled) continue;
                 if (el.type === 'hidden') continue;
                 if (el.getAttribute('tabindex') === '-1') continue;
-                // `offsetParent` is null for a `display: none` subtree, which is
-                // how `x-show` hides things — those are not tab stops.
-                if (el.offsetParent === null && el.tagName !== 'BODY') continue;
+                if (this.isDisplayNone(el)) continue;
                 return el;
             }
             return null;
