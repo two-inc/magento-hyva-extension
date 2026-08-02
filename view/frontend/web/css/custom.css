@@ -251,6 +251,28 @@ summary::marker {
   box-shadow: none;
 }
 
+/*
+ * TWO-25326 §7, the reported 6px blue border around BOTH company fields.
+ *
+ * The rule above only ever suppressed the ring on `.two-company-search`. The
+ * artefact is painted one level further out, on the `.input-group` wrapper that
+ * is the GRANDPARENT of the company-name input — Hyvä's shared field styling
+ * treats an input-group as one control and rings it on `:focus-within`, so
+ * focusing either descendant framed the whole group. `border` as well as
+ * `box-shadow`/`outline`, because the group carries a real border in some
+ * themes and that is what reads as the faint outline the ticket also reports
+ * around the name field and the company-number display together.
+ *
+ * Scoped by a class this module puts on that element itself
+ * (companyName.phtml), so no other Hyvä field is affected and the hook cannot
+ * silently stop matching the way a structural selector would.
+ */
+.two-company-search-group:focus-within {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
 .two-company-search > input:focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
@@ -261,8 +283,43 @@ summary::marker {
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  */
-.two-company-search > input {
+.two-company-search > input,
+.two-company-search__query > input {
   padding-right: 34px;
+}
+
+/*
+ * The dropdown's query field (TWO-25326 §1).
+ *
+ * `position: relative` here rather than as a Tailwind utility for the reason
+ * every other rule in this block gives — the module must not depend on the
+ * merchant's Tailwind build having emitted a class only this module uses. It is
+ * load-bearing: the spinner inside is absolutely positioned, and without a
+ * positioned ancestor here it would resolve against `.two-company-search` and
+ * land at the right-hand end of the COMPANY-NAME field instead.
+ */
+.two-company-search__query {
+  position: relative;
+}
+
+/*
+ * The query field takes focus the moment the panel opens, so it needs a focus
+ * ring of its own — the `.two-company-search > input:focus` rule above is a
+ * direct-child selector and does not reach it.
+ */
+.two-company-search__query > input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
+}
+
+/*
+ * The results scroller is `tabindex="-1"` (see companyName.phtml) so Chrome
+ * does not make it a tab stop. Chrome still paints a focus ring on a
+ * programmatically-focused scroller; suppress it, since nothing here is ever
+ * deliberately focused.
+ */
+.two-company-search__results:focus {
+  outline: none;
 }
 
 /*

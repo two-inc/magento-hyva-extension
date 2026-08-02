@@ -45,7 +45,22 @@ $form = $block->getData("form");
     <?= /* @noEscape */ $renderer->renderLabel($element) ?>
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
-    <div class="group input-group flex gap-4">
+    <?php
+    /*
+     * `two-company-search-group` (TWO-25326 §7) is a hook for one CSS rule and
+     * nothing else: the shared Hyvä field/input-group styling paints a focus
+     * ring on this container via `:focus-within`, and this container is the
+     * GRANDPARENT of the company-name input. So focusing that input framed the
+     * whole group — company name, the company-number display and the dropdown
+     * chrome together — in a 6px blue border, which is what the ticket reports
+     * as an unwanted visual artefact.
+     *
+     * A class of our own rather than a `:has()` selector on `.input-group`:
+     * this template owns this element, so the hook cannot silently stop
+     * matching, and no other Hyvä field on the checkout is touched.
+     */
+    ?>
+    <div class="group input-group two-company-search-group flex gap-4">
         <?php
         /*
          * `two-company-search` is what reserves the trailing padding on the
@@ -102,109 +117,26 @@ $form = $block->getData("form");
             aria-describedby="two-company-search-min-chars"
             <?php
             /*
-             * TWO-25288 element 5. TWO `@input` handlers, undebounced first.
+             * TWO-25326 §1. This input is NO LONGER the query field.
              *
-             * The manual-entry row inside the dropdown must be reachable as
-             * soon as the query is long enough to search, which is BEFORE the
-             * debounced request fires and long before a result comes back.
-             * `noteCompanyQuery` opens the panel on typed length alone;
-             * `getItems` still owns the request, and its debounce has to stay
-             * where it is or every keystroke goes on the wire.
+             * The dropdown below now contains a query input of its own, and
+             * that is where a buyer types a search term. This field holds the
+             * COMPANY NAME and must not change until a result is selected — so
+             * in search mode every key that would edit it is prevented, and
+             * routed into the dropdown instead (`onCompanyNameKeydown`).
              *
-             * Two attributes rather than one because the names differ —
-             * `@input` and `@input.debounce.500ms` — so Alpine registers a
-             * listener for each. Duplicate attribute names would not work: the
-             * HTML parser keeps only the first.
+             * `@input` still exists because the field is shared with
+             * MANUAL-entry mode, where it is an ordinary text input and the
+             * typed name is the only name the order will ever have. It is also
+             * the listener selectItem()'s non-bubbling synthetic `input` event
+             * reaches, which is how the chosen name gets into Hyvä's own form
+             * state — the previous revision relied on that too.
              */
             ?>
-            @input="noteCompanyQuery"
-            @input.debounce.500ms="getItems"
-            <?php
-            /*
-             * Arrow-key result navigation, mirroring the payment tile's
-             * `OnArrowDown`/`OnArrowUp`/`OnEnterSelect` (gateway_method.phtml).
-             * This surface never had it: the dropdown was reachable and
-             * openable by keyboard, but once open a keyboard user had no way
-             * to move through the results other than Tab-ing item by item —
-             * there is no `role="listbox"` here (see the note on the
-             * manual-entry row above), so Tab is genuinely the only other
-             * route, and it visits the WHOLE page, not just the dropdown.
-             * `.prevent` on each stops Enter submitting the address form and
-             * the arrow keys moving the caret in the input.
-             */
-            ?>
-            <?php
-            /*
-             * No `.prevent` modifier on any of these three — deliberately,
-             * and different from how this looks on the payment tile.
-             *
-             * This one input is shared between search AND manual-entry mode
-             * (the payment tile's equivalent is two separate elements, one
-             * per mode), and a modifier-level `.prevent` fires before Alpine
-             * ever calls the handler — it cannot be made conditional on
-             * `manualMode` from here. Arrow keys never need to prevent the
-             * native caret move (matching the payment tile, which does not
-             * prevent them either); Enter DOES need to keep submitting the
-             * address form in every case except "a row is highlighted", so
-             * that one case is handled inside OnEnterSelect() itself, which
-             * receives the real `$event` Alpine passes to a bare handler
-             * name and calls `preventDefault()` only then.
-             */
-            ?>
-            @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
-            @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
-            @keydown.enter="<?= $gwBase ?>OnEnterSelect"
+            @click="onCompanyNameClick"
+            @keydown="onCompanyNameKeydown"
+            @input.debounce.300ms="onNameFieldInput"
             />
-            <!--
-                In-field searching indicator (TWO-25288). `isSearching` has
-                existed in this component's state and been driven correctly for
-                some time, but nothing on this surface bound it, so the address
-                form searched with no visible feedback at all.
-
-                Same element and same two classes as the payment tile, so one
-                stylesheet rule serves both surfaces: the positioning class
-                carries position, size and the loading GIF applied as a
-                `background-image`. The chip-loading class paints nothing here —
-                it is the shared loading hook this markup has always carried,
-                kept as a legacy/overlay hook, and its declarations are inert on
-                this element. Childless by design — a background image needs no
-                child nodes.
-            -->
-            <span
-                x-show="isSearching"
-                class="two-company-search__spinner two-term-chip__loading"
-                aria-hidden="true"
-            ></span>
-            <?php
-            /*
-             * Minimum-characters hint (TWO-25288). Below the threshold the
-             * component returns early from getItems() and this surface rendered
-             * nothing whatsoever, so one or two characters produced silence
-             * indistinguishable from a search that had failed.
-             *
-             * The number is INTERPOLATED from the same value the guard compares
-             * against — never restated as a literal — so the count a buyer is
-             * told and the count enforced cannot drift. That drift is the actual
-             * defect; the wording is incidental.
-             *
-             * A FIXED count, not a remaining-count: a message that counts down
-             * as you type re-renders on every keystroke and reads as validation
-             * failing repeatedly.
-             *
-             * Sits OUTSIDE the results dropdown, unlike the payment tile's
-             * equivalent. The two are mutually exclusive by construction — the
-             * panel opens at or above the threshold and this hint shows only
-             * below it — so nesting the hint inside the panel would put it
-             * somewhere it could never be seen.
-             */
-            ?>
-            <div
-                id="two-company-search-min-chars"
-                x-show="<?= $gwBase ?>ShouldShowMinCharsMessage"
-                class="two-company-search__min-chars mt-1 text-sm text-gray-700"
-            ><?= $escaper->escapeHtml(
-                __('Please enter %1 or more characters', $companySearchMinChars),
-            ) ?></div>
             <?php
             /*
              * Both mode links carry a term for the company-search flag, in the
@@ -238,15 +170,12 @@ $form = $block->getData("form");
             ?>
             <!-- Search for company link (shows in manual mode) -->
             <div x-show="manualModeActive" class="mt-1 text-right">
-                <span
-                    role="button"
-                    tabindex="0"
+                <button
+                    type="button"
                     @click.stop="enableSearch"
-                    @keydown.enter.stop.prevent="enableSearch"
-                    @keydown.space.stop.prevent="enableSearch"
                     @mousedown.stop
                     class="two-company-search-again text-blue-600 text-sm cursor-pointer"
-                ><?= $escaper->escapeHtml(__("Search for company")) ?></span>
+                ><?= $escaper->escapeHtml(__("Search for company")) ?></button>
             </div>
             <?php
             /*
@@ -274,24 +203,133 @@ $form = $block->getData("form");
              */
             ?>
             <div x-show="belowFieldManualEntryVisible" class="mt-1 text-right">
-                <span
-                    role="button"
-                    tabindex="0"
+                <button
+                    type="button"
                     @click.stop="enterManually"
-                    @keydown.enter.stop.prevent="enterManually"
-                    @keydown.space.stop.prevent="enterManually"
                     @mousedown.stop
                     class="two-company-manual-entry text-blue-600 text-sm cursor-pointer"
-                ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
+                ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></button>
             </div>
             <!-- Search Results Dropdown -->
             <div
                 x-show="showDropdown"
                 @click.stop
                 @mousedown.stop
-                class="w-full z-40 border border-gray-200 rounded-b-lg bg-white absolute mt-1 shadow-lg"
+                class="two-company-search__panel w-full z-40 border border-gray-200 rounded-b-lg bg-white absolute mt-1 shadow-lg"
             >
-                <div class="flex flex-col w-full max-h-[250px] overflow-y-auto">
+                <?php
+                /*
+                 * The query field (TWO-25326 §1). This surface previously had
+                 * none — the company-name input was the search box, which is
+                 * what the ticket describes as "a plain in-field autocomplete
+                 * with no visible separation from the input".
+                 *
+                 * Deliberately the FIRST child of the panel, and the panel sits
+                 * immediately after the company-name input in document order
+                 * with nothing focusable in between (the below-field
+                 * manual-entry affordance is hidden whenever the panel is open,
+                 * by construction — the two gates are exact complements). That
+                 * is what makes this the next tab stop after company-name
+                 * without any tabindex management, and the "not on the list"
+                 * button below the results the next one after it.
+                 *
+                 * `two-company-query` is a real hook, not decoration:
+                 * companyNameField() resolves the NAME input by excluding it,
+                 * and that resolver decides what gets published as the order's
+                 * company name.
+                 */
+                ?>
+                <div class="two-company-search__query relative p-2 border-b border-gray-200">
+                    <input
+                        type="text"
+                        class="two-company-query block w-full form-input renderer-text"
+                        autocomplete="off"
+                        aria-label="<?= $escaper->escapeHtmlAttr(__('Search for a company')) ?>"
+                        placeholder="<?= $escaper->escapeHtmlAttr(__('Search for a company')) ?>"
+                        aria-describedby="two-company-search-min-chars"
+                        @input="noteCompanyQuery"
+                        @input.debounce.300ms="getItems"
+                        @keydown.escape.stop.prevent="onQueryEscape"
+                        @keydown.tab="onQueryTab"
+                        @keydown.arrow-down.prevent="<?= $gwBase ?>OnArrowDown"
+                        @keydown.arrow-up.prevent="<?= $gwBase ?>OnArrowUp"
+                        @keydown.enter.stop.prevent="<?= $gwBase ?>OnEnterSelect"
+                    />
+                    <!--
+                        Searching indicator (TWO-25326 §1): the same animated
+                        GIF the payment tile uses, applied by custom.css as a
+                        `background-image` on one childless element, absolutely
+                        positioned at the right-hand end of the QUERY field —
+                        `.two-company-search__query` is the positioned ancestor
+                        it resolves against.
+                    -->
+                    <span
+                        x-show="isSearching"
+                        class="two-company-search__spinner two-term-chip__loading"
+                        aria-hidden="true"
+                    ></span>
+                </div>
+                <?php
+                /*
+                 * Minimum-characters hint (TWO-25288, re-sited by TWO-25326
+                 * §1). It now lives INSIDE the panel and is shown from the
+                 * moment the panel opens — including at zero typed characters,
+                 * which is the ticket's actual complaint: the buyer clicked in
+                 * and got an empty panel with no explanation until they had
+                 * typed at least one letter.
+                 *
+                 * The number is INTERPOLATED from the same value the guard
+                 * compares against — never restated as a literal — so the count
+                 * a buyer is told and the count enforced cannot drift.
+                 */
+                ?>
+                <div
+                    id="two-company-search-min-chars"
+                    x-show="<?= $gwBase ?>ShouldShowMinCharsMessage"
+                    class="two-company-search__min-chars px-2 py-2 text-sm text-gray-700"
+                ><?= $escaper->escapeHtml(
+                    __('Please enter %1 or more characters', $companySearchMinChars),
+                ) ?></div>
+                <?php
+                /*
+                 * Zero results (TWO-25326 §1). This surface rendered nothing at
+                 * all, so a query that matched nothing was indistinguishable
+                 * from one still in flight or one that had failed.
+                 *
+                 * The wording is EXACT and cross-platform ("No matches found");
+                 * Luma shipped "No results found" and it counted as a failure.
+                 *
+                 * Gated on a completed search for the query currently in the
+                 * box (`noMatchesVisible`), not on `items.length === 0` alone —
+                 * otherwise it flashes in the gap between the panel opening and
+                 * the first response.
+                 */
+                ?>
+                <div
+                    x-show="noMatchesVisible"
+                    class="two-company-search__no-matches px-2 py-2 text-sm text-gray-700"
+                ><?= $escaper->escapeHtml(__('No matches found')) ?></div>
+                <div
+                    x-show="isSearchUnavailable"
+                    role="alert"
+                    class="two-company-search__unavailable mx-2 mt-2 px-2 py-2 text-sm"
+                ><?= $escaper->escapeHtml(
+                    __('Company search is unavailable. Try again, or enter details manually.'),
+                ) ?></div>
+                <?php
+                /*
+                 * `tabindex="-1"` is load-bearing (TWO-25326 §2). Chrome makes
+                 * a scrollable container keyboard-focusable by default when it
+                 * has no focusable children, so this results scroller was
+                 * itself a tab stop sitting between the query field and the
+                 * "not on the list" button. The rows are activated by mouse or
+                 * by the arrow keys, never by Tab, so nothing is lost.
+                 */
+                ?>
+                <div
+                    tabindex="-1"
+                    class="two-company-search__results flex flex-col w-full max-h-[250px] overflow-y-auto"
+                >
                     <?php
                     /*
                      * The key must be unique per row and `companyId` is not:
@@ -357,53 +395,57 @@ $form = $block->getData("form");
                  */
                 ?>
                 <div class="px-2 py-3 border-t border-gray-200">
-                    <span
-                        role="button"
-                        tabindex="0"
+                    <?php
+                    /*
+                     * A real `<button type="button">` (TWO-25326 §2), not a
+                     * `role="button"` span: Enter and Space then activate it
+                     * natively, so the two `@keydown` handlers the span needed
+                     * are gone and cannot disagree with the click path.
+                     * `type="button"` is load-bearing inside an address form —
+                     * the default `submit` would place the buyer's order.
+                     *
+                     * `@keydown.tab` is the §4 requirement that Tab off this
+                     * control both advances focus AND closes the panel. It
+                     * cannot be left to the browser: closing the panel removes
+                     * this button from the document, and a native Tab computed
+                     * against a document that no longer contains the focused
+                     * element lands on `<body>` — the exact failure WooCommerce
+                     * spent two PRs on.
+                     */
+                    ?>
+                    <button
+                        type="button"
                         @click.stop="enterManually"
-                        @keydown.enter.stop.prevent="enterManually"
-                        @keydown.space.stop.prevent="enterManually"
+                        @keydown.tab="onManualEntryTab"
                         @mousedown.stop
                         class="two-company-manual-entry-row text-blue-600 text-sm cursor-pointer"
-                    ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></span>
+                    ><?= $escaper->escapeHtml(__("My company is not on the list")) ?></button>
                 </div>
             </div>
             <?php
             /*
              * Company Number, on the address step.
              *
-             * Semantics are the payment tile's, deliberately unchanged rather
-             * than reinvented: the field is always rendered and `:disabled` is
-             * the ONLY thing that locks it, derived by
-             * applyCompanyIdEditability() from "is there a registry-supplied
-             * identifier for the name this field currently sits beside".
-             * Unlocked when there is not — a hit that arrived without a
-             * national identifier, a name typed without picking a hit, manual
-             * entry, or a store with the lookup switched off — and locked when
-             * one has been written, so a registry number cannot be typed over.
+             * TWO-25326 §5/§7: there is no longer an editable company-number
+             * INPUT here at all. It used to be rendered unconditionally with
+             * its own "Company Number" label, which the ticket reports as a
+             * permanently-visible field that must not exist — not before a
+             * result is selected, not in manual-entry mode, and not editable at
+             * any point.
              *
-             * `company_id` in the class list is load-bearing: the greyed-out
-             * look for the locked state is `input.company_id:disabled` in
-             * custom.css, which both surfaces share.
+             * What remains is the plain-text display below. That is the whole
+             * of the three-mode capture model on this surface: search mode
+             * captures name + registry identifier and shows the identifier
+             * read-only; manual mode captures a NAME ONLY and shows no number
+             * at all. A buyer who needs to supply a number for a company the
+             * registry did not identify does so on the payment step, which
+             * keeps its own (separately gated) inputs.
              *
-             * It carries NO `name`, so nothing about the address entity's own
-             * submission changes — the value is client-side state that reaches
-             * placement through the company-selection blob and the payment
-             * step, exactly as the company NAME chosen here already does.
-             */
-            ?>
-            <?php
-            /*
-             * `two_address_company_id`, NOT `company_id`.
-             *
-             * The payment tile's own number inputs already claim `company_id`
-             * and `manual_company_id`, and its bridge resolves that field by
-             * `document.getElementById("company_id")`. Both steps can be in the
-             * document at once, and a duplicate id makes that lookup return
-             * whichever came first in document order — the address step's — so
-             * the tile would write its value into this field instead of its own.
-             * A distinct id keeps the label association without touching the
-             * tile's lookup.
+             * `companyIdDisabled` / `applyCompanyIdEditability()` /
+             * `onCompanyIdInput()` are deliberately left in the component:
+             * they still maintain the `company_id_source` provenance that the
+             * payment step reads out of the shared selection blob. Nothing on
+             * this surface binds `companyIdDisabled` any more.
              */
             ?>
             <?php
@@ -430,21 +472,6 @@ $form = $block->getData("form");
                 x-text="companyId"
                 aria-label="<?= $escaper->escapeHtmlAttr(__("Company Number")) ?>"
             ></div>
-            <div class="field two-company-id mt-2" x-show="!companyIdDisplayVisible">
-                <label for="two_address_company_id" class="block font-semibold text-gray-700">
-                    <?= $escaper->escapeHtml(__("Company Number")) ?>
-                </label>
-                <input
-                    type="text"
-                    id="two_address_company_id"
-                    class="company_id block w-full form-input grow renderer-text"
-                    autocomplete="off"
-                    data-two-company-id="true"
-                    :disabled="companyIdDisabled"
-                    :value="companyId"
-                    @input.debounce.300ms="onCompanyIdInput"
-                />
-            </div>
         </div>
         <?php if ($element->hasTooltip()): ?>
             <?= /* @noEscape */ $element
