@@ -10,6 +10,13 @@
  * `getItems()` has to leave the spinner down and nothing on the wire, because a
  * latched `isSearching` is a field that spins forever, and a request left in
  * flight repopulates a dropdown the buyer has already moved past.
+ *
+ * TWO-25326 §1 split the two texts this surface used to conflate. The
+ * company-NAME input is no longer the search box: the dropdown panel carries a
+ * query input of its own (`.two-company-query`), that is what `getItems()`
+ * reads in search mode, and the name field is left untouched until a result is
+ * selected. The fixture below therefore renders BOTH inputs, and every search
+ * in this file is driven through the query one.
  */
 
 "use strict";
@@ -23,18 +30,28 @@ describe("company-name field picker", () => {
   let fetchStub;
   let component;
   let field;
+  let queryInput;
   let root;
 
   beforeEach(() => {
     // setAddressData() walks four levels up from $root to find the address
     // container, so the nesting depth here is load-bearing.
+    //
+    // The `.two-company-query` input is the dropdown panel's own search box
+    // (TWO-25326 §1). It sits AFTER the company-name input, as it does in the
+    // shipped markup, which is what makes `companyNameField()`'s
+    // `:not(.two-company-query)` exclusion do real work here rather than being
+    // satisfied by document order.
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
       "  <div><div><div>",
-      '    <div id="company-root"><input type="text" id="company-field" value="" /></div>',
+      '    <div id="company-root">',
+      '      <input type="text" id="company-field" value="" />',
+      '      <input type="text" class="two-company-query" id="company-query" value="" />',
+      "    </div>",
       "  </div></div></div>",
       "</div>",
     ].join("\n");
@@ -48,6 +65,7 @@ describe("company-name field picker", () => {
     env.fireAlpineInit();
 
     field = document.getElementById("company-field");
+    queryInput = document.getElementById("company-query");
     root = document.getElementById("company-root");
     component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
       el: field,
@@ -79,6 +97,11 @@ describe("company-name field picker", () => {
   /**
    * Start a search and wait until it is on the wire.
    *
+   * The term goes into the PANEL's query field, never the company-name field
+   * (TWO-25326 §1): `getItems()` reads `queryField()` in search mode, and
+   * writing the term into the name field instead would exercise nothing —
+   * the search would run for the empty query.
+   *
    * Wrapped rather than returned bare: an async function returning the
    * promise would adopt it, so the caller would block on a request it has not
    * settled yet.
@@ -87,7 +110,7 @@ describe("company-name field picker", () => {
    * @returns {Promise<{pending: Promise}>}
    */
   async function startSearch(term) {
-    field.value = term;
+    queryInput.value = term;
     const pending = component.getItems();
     await H.flushPromises();
     return { pending: pending };
@@ -115,17 +138,64 @@ describe("company-name field picker", () => {
   });
 
   describe("every early return leaves the spinner down and the wire clear", () => {
-    test("a selection in progress consumes its flag and stops", async () => {
-      component.isSelecting = true;
-      field.value = "acme";
+    test("a selection empties the panel query instead of arming a selection-echo flag", async () => {
+      // REPLACES "a selection in progress consumes its flag and stops".
+      //
+      // The old premise was `isSelecting`: a one-shot flag selectItem() armed
+      // so that the very next (debounced) getItems() tick bailed out, because
+      // writing the chosen name back into the company-name field fired that
+      // field's `input` binding and THAT is what drove the search. TWO-25326
+      // §1 removed the whole mechanism — the name field no longer drives
+      // search at all — so what stops a re-search now is that selectItem()
+      // empties the panel's own query and closes the panel.
+      queryInput.value = "acme";
+      component.query = "acme";
+      component.searchCompletedFor = "acme";
 
+      component.selectItem({
+        companyName: "Acme Widgets",
+        companyId: "111",
+        lookupId: "",
+      });
+      await H.flushPromises();
+
+      expect(component.query).toBe("");
+      expect(component.searchCompletedFor).toBeNull();
+      expect(component.isOpen).toBe(false);
+      expect("isSelecting" in component).toBe(false);
+      expect("awaitingSelectionEcho" in component).toBe(false);
+
+      // And the tick behind it searches for nothing, because there is no
+      // query left to search for.
+      queryInput.value = "";
       await component.getItems();
-
-      // The flag is one-shot: selectItem() sets it because writing the
-      // chosen name back into the field fires `input` again.
-      expect(component.isSelecting).toBe(false);
       expect(fetchStub.calls).toHaveLength(0);
       expect(component.isSearching).toBe(false);
+    });
+
+    test("the chosen name reaches the name field through a non-bubbling input event", async () => {
+      // The other half of what `isSelecting` used to guard. selectItem() still
+      // writes the chosen name into the company-name field and still dispatches
+      // a synthetic `input` — that is how the name reaches Hyvä's own
+      // Magewire-bound field state — and it must still be NON-bubbling, or the
+      // address-book modal reads it as an outside interaction and closes.
+      const bubbles = [];
+      field.addEventListener("input", (event) => bubbles.push(event.bubbles));
+      const onBody = jest.fn();
+      document.body.addEventListener("input", onBody);
+
+      component.selectItem({
+        companyName: "Acme Widgets",
+        companyId: "111",
+        lookupId: "",
+      });
+      await H.flushPromises();
+
+      expect(field.value).toBe("Acme Widgets");
+      expect(bubbles).toEqual([false]);
+      expect(onBody).not.toHaveBeenCalled();
+
+      document.body.removeEventListener("input", onBody);
     });
 
     test("manual entry mode never searches", async () => {
@@ -140,18 +210,21 @@ describe("company-name field picker", () => {
 
     test("fewer than three characters clears the list without searching", async () => {
       component.items = [{ companyName: "Stale" }];
-      field.value = "ac";
+      queryInput.value = "ac";
 
       await component.getItems();
 
       expect(component.items).toEqual([]);
+      // The verdict from the previous search is dropped with the list, or
+      // "No matches found" would sit under a query that was never run.
+      expect(component.searchCompletedFor).toBeNull();
       expect(fetchStub.calls).toHaveLength(0);
       expect(component.isSearching).toBe(false);
     });
 
     test("no resolvable country warns the buyer once and does not search", async () => {
       component.quoteData = {};
-      field.value = "acme";
+      queryInput.value = "acme";
 
       await component.getItems();
       await component.getItems();
@@ -166,7 +239,7 @@ describe("company-name field picker", () => {
       const { pending } = await startSearch("acme");
       expect(fetchStub.calls).toHaveLength(1);
 
-      field.value = "ac";
+      queryInput.value = "ac";
       const shortened = component.getItems();
       await Promise.all([pending, shortened]);
 
@@ -177,7 +250,14 @@ describe("company-name field picker", () => {
   });
 
   describe("results", () => {
-    test("a successful search opens the dropdown and lowers the spinner", async () => {
+    test("a successful search fills the list and lowers the spinner, without opening the panel itself", async () => {
+      // REPLACES an `isOpen === true` assertion here. TWO-25326 §1 removed
+      // `if (items.length > 0) this.isOpen = true` from getItems(): the panel
+      // opens on click or keypress (see "the panel opens on interaction, not
+      // on results" below), never on results arriving. Gating it on a
+      // non-empty result set is precisely why a zero-result search rendered
+      // no panel, so no "no matches" message could ever have been seen.
+      component.isOpen = false;
       const { pending } = await startSearch("acme");
       expect(component.isSearching).toBe(true);
 
@@ -186,10 +266,56 @@ describe("company-name field picker", () => {
 
       expect(component.items).toHaveLength(1);
       expect(component.items[0].companyName).toBe("Acme Widgets");
-      expect(component.isOpen).toBe(true);
+      expect(component.isOpen).toBe(false);
+      expect(component.searchCompletedFor).toBe("acme");
       expect(component.isSearching).toBe(false);
       expect(component.searchAbortController).toBeNull();
       expect(component.isSearchUnavailable).toBe(false);
+    });
+
+    test("the panel opens on interaction, not on results", async () => {
+      // The behaviour that replaced the results-gated open. Clicking the
+      // company-name field opens the panel and moves focus into the query
+      // input; FOCUS alone deliberately does not, because the ticket requires
+      // that merely tabbing into the field leaves the panel shut.
+      expect(component.isOpen).toBe(false);
+
+      component.onCompanyNameClick();
+      await H.flushPromises();
+
+      expect(component.isOpen).toBe(true);
+      expect(component.showDropdown()).toBe(true);
+      expect(document.activeElement).toBe(queryInput);
+      // Nothing searched: the query field is empty, so the panel opens onto
+      // the min-characters hint.
+      expect(fetchStub.calls).toHaveLength(0);
+    });
+
+    test("a keystroke on the company-name field is routed into the query, leaving the name untouched", async () => {
+      // The company-name field must not change until a result is selected
+      // (TWO-25326 §1), so every editing key on it is prevented and its
+      // character seeds the panel's query instead.
+      field.value = "Existing Name";
+      const event = { key: "a", preventDefault: jest.fn() };
+
+      component.onCompanyNameKeydown(event);
+      await H.flushPromises();
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(field.value).toBe("Existing Name");
+      expect(component.isOpen).toBe(true);
+      expect(queryInput.value).toBe("a");
+      expect(component.query).toBe("a");
+      expect(document.activeElement).toBe(queryInput);
+    });
+
+    test("Tab on the company-name field is left alone, so the field is not a keyboard trap", () => {
+      const event = { key: "Tab", preventDefault: jest.fn() };
+
+      component.onCompanyNameKeydown(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(component.isOpen).toBe(false);
     });
 
     test("the search asks for the country the quote resolves to", async () => {
@@ -205,14 +331,60 @@ describe("company-name field picker", () => {
       await pending;
     });
 
-    test("a genuine zero-result search is not flagged unavailable", async () => {
+    test("a genuine zero-result search is not flagged unavailable, and says so", async () => {
+      component.isOpen = true;
       const { pending } = await startSearch("acme");
+      // Still on the wire: "No matches found" must NOT be claimed yet.
+      expect(component.noMatchesVisible).toBe(false);
+
       fetchStub.last().respond({ items: [] });
       await pending;
 
       expect(component.items).toEqual([]);
-      expect(component.isOpen).toBe(false);
       expect(component.isSearchUnavailable).toBe(false);
+      // The verdict is recorded against the query it ran for, which is what
+      // lets the panel distinguish a completed empty search from one still in
+      // flight (TWO-25326 §1).
+      expect(component.searchCompletedFor).toBe("acme");
+      expect(component.noMatchesVisible).toBe(true);
+    });
+
+    test('"No matches found" comes down the moment the query changes, before the next search runs', async () => {
+      // The window `searchCompletedFor` exists for, and the only one that
+      // isolates it: `isSearching` is already false and the query is already
+      // long enough, so every other term in `noMatchesVisible` reads true. The
+      // buyer has typed one more character and the debounced search behind it
+      // has not fired yet — claiming "no matches" here would be a verdict on a
+      // query that was never run.
+      component.isOpen = true;
+      const { pending } = await startSearch("acme");
+      fetchStub.last().respond({ items: [] });
+      await pending;
+      expect(component.noMatchesVisible).toBe(true);
+
+      // One keystroke, through the undebounced handler the query field binds.
+      queryInput.value = "acmex";
+      component.$el = queryInput;
+      component.noteCompanyQuery();
+      component.$el = field;
+
+      expect(component.isSearching).toBe(false);
+      expect(component.query.length).toBeGreaterThanOrEqual(
+        component.minSearchChars,
+      );
+      expect(component.searchCompletedFor).toBeNull();
+      expect(component.noMatchesVisible).toBe(false);
+    });
+
+    test("a failed search says nothing about whether matches exist", async () => {
+      component.isOpen = true;
+      const { pending } = await startSearch("acme");
+      fetchStub.last().networkError();
+      await pending;
+
+      expect(component.isSearchUnavailable).toBe(true);
+      expect(component.searchCompletedFor).toBeNull();
+      expect(component.noMatchesVisible).toBe(false);
     });
 
     test.each([
@@ -234,7 +406,7 @@ describe("company-name field picker", () => {
 
     test("a missing helper is caught rather than becoming an unhandled rejection", async () => {
       delete window.twoGatewayCompanySearch;
-      field.value = "acme";
+      queryInput.value = "acme";
 
       await component.getItems();
 
@@ -276,8 +448,9 @@ describe("company-name field picker", () => {
       expect(component.searchAbortController).toBeNull();
     });
 
-    test("closing the dropdown aborts whatever is in flight", async () => {
+    test("closing the dropdown aborts whatever is in flight and empties the query", async () => {
       const { pending } = await startSearch("acme");
+      expect(component.query).toBe("acme");
 
       component.closeDropdown();
       await pending;
@@ -286,6 +459,14 @@ describe("company-name field picker", () => {
       expect(component.isSearching).toBe(false);
       expect(component.isOpen).toBe(false);
       expect(component.items).toEqual([]);
+      // The query text is the PANEL's state, not the buyer's captured company
+      // (TWO-25326 §1): a reopened panel starts from the min-characters hint,
+      // not from a term someone abandoned. Both the state and the DOM value,
+      // because the DOM is what the next getItems() re-reads.
+      expect(component.query).toBe("");
+      expect(queryInput.value).toBe("");
+      expect(component.searchCompletedFor).toBeNull();
+      expect(component.selectedIndex).toBe(-1);
     });
   });
 
@@ -312,8 +493,9 @@ describe("company-name field picker", () => {
       expect(component.search).toBe("Acme Widgets");
       expect(component.isOpen).toBe(false);
       expect(component.manualMode).toBe(false);
-      // isSelecting suppresses the `input` event the write above fires.
-      expect(component.isSelecting).toBe(true);
+      // The panel's own query is discarded with the panel — see "a selection
+      // empties the panel query…" above for why that replaced `isSelecting`.
+      expect(component.query).toBe("");
 
       const stored = JSON.parse(
         env.browserStorage.getItem(H.COMPANY_SELECTION_KEY),
@@ -499,7 +681,7 @@ describe("company-name field picker", () => {
       expect(component.items).toEqual([]);
       expect(component.isSearching).toBe(false);
       expect(component.searchAbortController).toBe(null);
-      expect(component.isOpen).toBe(false);
+      expect(component.searchCompletedFor).toBe(null);
     });
 
     test("does not write when the component root is gone entirely", async () => {
@@ -526,18 +708,27 @@ describe("company-name field picker", () => {
       await started.pending;
 
       expect(component.items.length).toBe(1);
-      expect(component.isOpen).toBe(true);
+      // The counterpart of the two guards above: a live component records the
+      // verdict. `isOpen` is deliberately NOT asserted here — getItems() no
+      // longer opens the panel (TWO-25326 §1).
+      expect(component.searchCompletedFor).toBe("example");
     });
   });
 
   describe("returning to search from manual entry", () => {
     /**
-     * The "Search for company" link is a route back INTO search, not a
-     * visibility toggle: taking it has to leave the buyer with the caret in the
-     * field and the dropdown for the term already in it open. Both halves used
-     * to be missing — enterManually() empties `items`, and `showDropdown()` is
-     * gated on `items.length > 0`, so unhiding the search section alone
-     * produced a populated, closed, unexplained field.
+     * The "Search for company" button is a route back INTO search, not a
+     * visibility toggle: taking it has to leave the buyer inside an OPEN panel
+     * with the caret in its query field. Both halves used to be missing —
+     * enterManually() empties `items`, and `showDropdown()` was gated on
+     * `items.length > 0`, so unhiding the search section alone produced a
+     * populated, closed, unexplained field.
+     *
+     * TWO-25326 §3 moved where the caret lands and dropped the re-search.
+     * enableSearch() now delegates the whole thing to `openDropdown('')`: the
+     * panel opens, focus goes to the QUERY field (which starts empty), and the
+     * buyer's manually-typed company name is left alone in the name field
+     * rather than being re-run as a query — it is a name, not a search term.
      *
      * Asserted against the real DOM (`document.activeElement`) and the real
      * wire (a recorded fetch), never against a spy on the handler: a
@@ -545,19 +736,25 @@ describe("company-name field picker", () => {
      * returned at its first guard and searched nothing.
      */
 
-    /** Move focus off the field so a focus assertion cannot pass vacuously. */
+    /** Move focus off both inputs so a focus assertion cannot pass vacuously. */
     function blurField() {
       field.blur();
+      queryInput.blur();
       expect(document.activeElement).not.toBe(field);
+      expect(document.activeElement).not.toBe(queryInput);
     }
 
-    test("the link the buyer clicks is bound to enableSearch", () => {
+    test("the button the buyer clicks is bound to enableSearch", () => {
       // Under Hyvä's CSP-friendly Alpine the attribute is a key lookup, so a
       // handler the markup does not name is dead code and a name the component
-      // does not define is a silently inert link.
+      // does not define is a silently inert control.
+      //
+      // A real `<button>` since TWO-25326 §2, not a `role="button"` span, so
+      // the selector names the element type as well as the class — a
+      // regression back to a span would be a keyboard regression too.
       const bound = H.readAlpineBinding(
         H.COMPANY_NAME_MARKUP_TEMPLATE,
-        '[x-show="manualModeActive"] span',
+        'button.two-company-search-again[type="button"]',
         "@click.stop",
       );
 
@@ -578,11 +775,14 @@ describe("company-name field picker", () => {
       expect(typeof component[bound]).toBe("function");
     });
 
-    test("focuses the field and re-opens the dropdown for the term in it", async () => {
+    test("opens the panel and puts the caret in its query field", async () => {
+      // REPLACES "focuses the field and re-opens the dropdown for the term in
+      // it". §3 reversed both halves of that: focus lands in the QUERY input,
+      // not the company-name field, and nothing is re-searched, because the
+      // query field starts empty.
       const started = await startSearch("Alpha Widgets");
       fetchStub.last().respond({ items: [apiItem("Alpha Widgets", "111")] });
       await started.pending;
-      expect(component.showDropdown()).toBe(true);
 
       component.enterManually();
       expect(component.items).toEqual([]);
@@ -590,50 +790,45 @@ describe("company-name field picker", () => {
       blurField();
 
       component.enableSearch();
-
-      // (b) keyboard focus, in the document, synchronously — not on a tick the
-      // buyer's next keystroke could beat.
-      expect(document.activeElement).toBe(field);
-
-      // (a) and a dropdown that is genuinely open again, with the hits in it.
-      // No new request is asserted here on purpose: the helper caches by
-      // query, so re-running the SAME term is legitimately served without one
-      // — the outcome the buyer sees is the assertion, not the mechanism.
       await H.flushPromises();
 
       expect(component.manualMode).toBe(false);
-      expect(component.items).toHaveLength(1);
       expect(component.isOpen).toBe(true);
       expect(component.showDropdown()).toBe(true);
+      // Keyboard focus, in the document — the panel is useless if the caret is
+      // still wherever the mouse left it.
+      expect(document.activeElement).toBe(queryInput);
     });
 
-    test("puts a real request on the wire for a name typed while in manual mode", async () => {
-      // The cache cannot mask this one: the term has never been searched. Proof
-      // that the link runs an actual lookup rather than replaying state.
+    test("does NOT re-run the manually-typed company name as a query", async () => {
+      // REPLACES "puts a real request on the wire for a name typed while in
+      // manual mode". The previous revision re-searched whatever the
+      // company-name field held; §1 makes that field a NAME, not a search box,
+      // so replaying it would put the buyer's hand-entered company name onto
+      // the wire as a registry query and reopen a list they had already
+      // rejected. The name itself must survive untouched.
       component.enterManually();
       field.value = "Beta Holdings";
-      await component.getItems();
+      component.onNameFieldInput();
       const before = fetchStub.calls.length;
       blurField();
 
       component.enableSearch();
       await H.flushPromises();
 
-      expect(fetchStub.calls).toHaveLength(before + 1);
-      expect(fetchStub.last().url).toContain("q=Beta+Holdings");
-      fetchStub.last().respond({ items: [apiItem("Beta Holdings", "222")] });
-      await H.flushPromises();
-
-      expect(document.activeElement).toBe(field);
-      expect(component.items).toHaveLength(1);
-      expect(component.showDropdown()).toBe(true);
+      expect(fetchStub.calls).toHaveLength(before);
+      expect(field.value).toBe("Beta Holdings");
+      expect(component.query).toBe("");
+      expect(queryInput.value).toBe("");
+      expect(document.activeElement).toBe(queryInput);
     });
 
-    test("re-searches even inside the debounce window after a pick", async () => {
-      // selectItem() arms `isSelecting` for the next getItems() tick, and that
-      // tick is debounced 500ms. A buyer who picked a hit and then took both
-      // mode links inside that window arrives here with the flag still set, and
-      // the guard at the top of getItems() would swallow the whole search.
+    test("a pick survives bouncing out to manual entry and back", async () => {
+      // REPLACES "re-searches even inside the debounce window after a pick",
+      // whose whole subject was the removed `isSelecting` one-shot guard. What
+      // matters now is that the round trip does not silently re-query the
+      // chosen company or clear it: the name stays in the field, the panel
+      // comes back empty, and nothing goes on the wire.
       const started = await startSearch("Gamma Trading");
       fetchStub.last().respond({ items: [apiItem("Gamma Trading", "333")] });
       await started.pending;
@@ -643,7 +838,8 @@ describe("company-name field picker", () => {
         companyId: "333",
         lookupId: "",
       });
-      expect(component.isSelecting).toBe(true);
+      await H.flushPromises();
+      const before = fetchStub.calls.length;
 
       component.enterManually();
       blurField();
@@ -651,37 +847,42 @@ describe("company-name field picker", () => {
       component.enableSearch();
       await H.flushPromises();
 
-      expect(document.activeElement).toBe(field);
-      expect(component.isSelecting).toBe(false);
-      expect(component.items).toHaveLength(1);
-      expect(component.showDropdown()).toBe(true);
+      expect(fetchStub.calls).toHaveLength(before);
+      expect(field.value).toBe("Gamma Trading");
+      expect(component.companyId).toBe("333");
+      expect(component.items).toEqual([]);
+      expect(document.activeElement).toBe(queryInput);
     });
 
-    test("reads the field, not the clicked link, when reached from a mode link", async () => {
+    test("resolves the company-name field, not the clicked control, when reached from a mode button", async () => {
       // The actual defect the resolver fixes, and the one thing the harness's
       // static `$el` cannot reproduce on its own: Alpine resolves `$el` PER
-      // EXPRESSION, so a method reached from `@click.stop="enableSearch"` on the
-      // link sees the <span>, not the input. Reassigning `$el` here is what a
-      // real click does. With the resolver reduced to `return this.$el` this
-      // fails — `search` picks up the link's (absent) value instead of the term.
-      const link = document.createElement("span");
-      link.textContent = "Search for company";
-      root.appendChild(link);
-
-      component.enterManually();
+      // EXPRESSION, so a method reached from `@click.stop="enterManually"` on
+      // the button sees the <button>, not the input. Reassigning `$el` here is
+      // what a real click does.
+      //
+      // Driven through enterManually() rather than enableSearch(): §3 means
+      // enableSearch() no longer reads the field at all, but enterManually()
+      // still has to PLACE FOCUS in it (§2), and getItems()'s manual branch
+      // still has to read the typed name out of it. With the resolver reduced
+      // to `return this.$el`, the first lands focus on the button and the
+      // second records the button's (absent) value.
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "My company is not on the list";
+      root.appendChild(button);
       field.value = "Delta Logistics";
+
+      component.$el = button;
+      component.enterManually();
+      await H.flushPromises();
+
+      expect(document.activeElement).toBe(field);
+
       await component.getItems();
 
-      component.$el = link;
-      component.enableSearch();
-      await H.flushPromises();
-
       expect(component.search).toBe("Delta Logistics");
-      expect(fetchStub.last().url).toContain("q=Delta+Logistics");
-      fetchStub.last().respond({ items: [apiItem("Delta Logistics", "444")] });
-      await H.flushPromises();
-
-      expect(component.showDropdown()).toBe(true);
+      expect(fetchStub.calls).toHaveLength(0);
     });
 
     test("never mistakes the company-number input for the search field", () => {
@@ -702,20 +903,42 @@ describe("company-name field picker", () => {
       expect(component.companyNameField()).toBe(field);
     });
 
-    test("a term too short to search opens nothing but still takes focus", async () => {
+    test("the panel opens even with nothing to search yet, so it can explain itself", async () => {
+      // REPLACES "a term too short to search opens nothing but still takes
+      // focus". Under §1 the min-characters hint lives INSIDE the panel and
+      // fires from zero characters, so the panel opening with an empty query
+      // is the whole point — a shut panel would be the old bug, where the
+      // buyer clicked in and got no explanation until they had typed a letter.
       component.enterManually();
       field.value = "Ab";
-      await component.getItems();
+      component.onNameFieldInput();
       blurField();
       const before = fetchStub.calls.length;
 
       component.enableSearch();
       await H.flushPromises();
 
-      expect(document.activeElement).toBe(field);
+      expect(document.activeElement).toBe(queryInput);
       expect(fetchStub.calls).toHaveLength(before);
+      expect(component.isOpen).toBe(true);
+      expect(component.showDropdown()).toBe(true);
+      expect(component.query).toBe("");
+      expect(component.twoGatewayHyvaShouldShowMinCharsMessage()).toBe(true);
+    });
+
+    test("Escape closes the panel and returns focus to the company-name field", async () => {
+      // §1/§4. Focus left on a removed element falls to `<body>`, which is
+      // where every keyboard trap on this ticket started, so this asserts
+      // where focus actually landed rather than that `.focus()` was called.
+      component.openDropdown("");
+      await H.flushPromises();
+      expect(document.activeElement).toBe(queryInput);
+
+      component.onQueryEscape();
+      await H.flushPromises();
+
       expect(component.isOpen).toBe(false);
-      expect(component.showDropdown()).toBe(false);
+      expect(document.activeElement).toBe(field);
     });
 
     test("does not disturb an intact registry pick whose field is not re-read", () => {
@@ -910,35 +1133,63 @@ describe("company-name field picker", () => {
       expect(component.selectedIndex).toBe(-1);
     });
 
-    test("the field wires ArrowDown/ArrowUp/Enter to the navigation handlers, with no .prevent modifier", () => {
-      // No `.prevent` on any of the three: this input is shared between
-      // search and manual-entry mode, and a modifier-level `.prevent` fires
-      // before Alpine calls the handler — it cannot be made conditional on
-      // mode from the template. OnEnterSelect() calls `preventDefault()`
-      // itself, only when there is a row to select (see the dedicated tests
-      // above); arrow keys never prevent the native caret move, matching the
-      // payment tile.
+    test("the QUERY field wires ArrowDown/ArrowUp/Enter to the navigation handlers", () => {
+      // REPLACES the same assertions made against `input[type=text]` — the
+      // company-name field — and the "no .prevent modifier" clause with them.
+      //
+      // Both moved with the search box (TWO-25326 §1). The keys are bound on
+      // `.two-company-query`, which is search-only: it is not shared with
+      // manual-entry mode the way the company-name input is, so a
+      // modifier-level `.prevent` can no longer swallow the address form's
+      // native submit and each binding carries one. The name field instead
+      // gets a single `@keydown` that routes every editing key into the panel.
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
-          "input[type=text]",
-          "@keydown.arrow-down",
+          "input.two-company-query",
+          "@keydown.arrow-down.prevent",
         ),
       ).toBe("twoGatewayHyvaOnArrowDown");
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
-          "input[type=text]",
-          "@keydown.arrow-up",
+          "input.two-company-query",
+          "@keydown.arrow-up.prevent",
         ),
       ).toBe("twoGatewayHyvaOnArrowUp");
       expect(
         H.readAlpineBinding(
           H.COMPANY_NAME_MARKUP_TEMPLATE,
-          "input[type=text]",
-          "@keydown.enter",
+          "input.two-company-query",
+          "@keydown.enter.stop.prevent",
         ),
       ).toBe("twoGatewayHyvaOnEnterSelect");
+    });
+
+    test("the company-name field no longer carries the search bindings at all", () => {
+      // The other half of the move, and the one a passing binding assertion on
+      // the query field cannot see: leaving the old listeners in place would
+      // give two elements racing for the same keys, and would put the
+      // debounced search back on a field that must not change until a result
+      // is selected.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const nameInput = doc.querySelector(
+        'input[type="text"]:not(.two-company-query)',
+      );
+
+      expect(nameInput).not.toBeNull();
+      const names = Array.from(nameInput.attributes).map((a) => a.name);
+      expect(names.filter((n) => n.startsWith("@keydown."))).toEqual([]);
+      expect(names.filter((n) => n.startsWith("@input."))).toEqual([
+        "@input.debounce.300ms",
+      ]);
+      expect(nameInput.getAttribute("@input.debounce.300ms")).toBe(
+        "onNameFieldInput",
+      );
+      // Routed, not edited: one bare `@keydown` that prevents every editing key.
+      expect(nameInput.getAttribute("@keydown")).toBe("onCompanyNameKeydown");
+      expect(nameInput.getAttribute("@click")).toBe("onCompanyNameClick");
     });
 
     test("each result row wires mouseover and the highlight class", () => {

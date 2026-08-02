@@ -2,26 +2,36 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. The company-NUMBER field on the address step.
+ * TWO-25288 / TWO-25326. The company-NUMBER provenance behind the address step.
  *
- * The address step is becoming the checkout's single company field, so it has
- * to be able to supply the thing placement credit-checks: a company
- * identifier. That is a field pair, not a field — a name with no number is not
- * placeable — and the number has to be typeable on every path where nothing has
- * vouched for one: a registry hit that arrived without a national identifier, a
- * name typed without picking a hit, manual entry (the only route on this
- * surface for a company the registry has no identifier for at all), and a store
- * with the lookup switched off.
+ * TWO-25326 §5/§7 removed the editable company-number INPUT from this surface
+ * entirely. The ticket records the permanently-visible "Company Number" field
+ * as a defect in its own right: it must not exist before a result is selected,
+ * nor in manual-entry mode, nor be editable at any point. What remains here is
+ * the read-only `.two-company-id-display` text, shown only for a
+ * registry-supplied number — search mode captures name + identifier, manual
+ * mode captures a NAME ONLY, and a buyer who has to supply a number the
+ * registry did not give does so on the PAYMENT step, which keeps its own
+ * separately-gated inputs.
  *
- * Two failure shapes this file exists to catch, both of which have shipped in
- * this repo before:
+ * So this file no longer tests an address-step input. It tests the state
+ * machine that outlived it: `companyId` / `companyIdSource` /
+ * `companyIdDisabled` / `companyIdEntryRequired` are still maintained by this
+ * component, still written into the shared selection blob, and the payment step
+ * still reads the provenance out of that blob to decide whether ITS number
+ * field is typeable. Get the provenance wrong here and the payment step locks a
+ * field over the buyer's own value, which is the dead end this file exists to
+ * catch — there is now no second company-number input on the address step to
+ * fall back on, because there is no first one either.
  *
- *  - a number field that is empty AND locked AND needed, which is a dead end
- *    with no other company-number input left in the checkout to fall back on;
- *  - state that is bound to nothing. The indicator lives in companyName.phtml
- *    and the state in companyName-csp-js.phtml, so a getter can be perfect and
- *    the page still inert. Every binding under test is therefore read out of
- *    the SHIPPED markup and then looked up on the real component.
+ * Two failure shapes, both of which have shipped in this repo before:
+ *
+ *  - a number that is empty AND locked AND needed on the surface that still
+ *    renders one;
+ *  - state that is bound to nothing. The display lives in companyName.phtml and
+ *    the state in companyName-csp-js.phtml, so a getter can be perfect and the
+ *    page still inert. Every binding under test is therefore read out of the
+ *    SHIPPED markup and then looked up on the real component.
  */
 
 "use strict";
@@ -29,7 +39,26 @@
 const H = require("./hyva-harness");
 
 const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
-const ID_FIELD = "input[data-two-company-id]";
+
+/**
+ * Every selector the removed address-step company-number input ever answered
+ * to. Asserted ABSENT from the shipped markup — the removal is the fix, so a
+ * test that only stopped mentioning the field would let it come back.
+ */
+const REMOVED_ID_INPUT_SELECTORS = [
+  "input[data-two-company-id]",
+  "input.company_id",
+  "#two_address_company_id",
+];
+
+/**
+ * The fixture stand-in for the element `onCompanyIdInput()` reads through
+ * `$el`. It is deliberately NOT a shipped selector: the address step renders no
+ * such input any more, and the handler survives only to maintain the
+ * provenance the payment step consumes. Naming it something the markup cannot
+ * contain is what stops this fixture being mistaken for the real thing.
+ */
+const ID_DRIVER = "input[data-test-company-id-driver]";
 
 describe("address-step company number", () => {
   let env;
@@ -45,16 +74,26 @@ describe("address-step company number", () => {
     selectedEvents.push(event.detail);
   }
 
+  let queryInput;
+
   beforeEach(() => {
     // Nesting depth is load-bearing: setAddressData() walks four levels up
     // from $root to find the address container.
+    //
+    // Three inputs: the company NAME field, the panel's own query field
+    // (TWO-25326 §1), and the number driver described at ID_DRIVER — a test
+    // stand-in for the payment step's input, since this surface renders none.
+    // The driver carries `.company_id` so that `companyNameField()`'s
+    // exclusion is exercised, and sits FIRST for the same reason: document
+    // order must not be what makes the resolver right.
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
       "  <div><div><div>",
       '    <div id="company-root">',
+      '      <input type="text" class="company_id" data-test-company-id-driver="true" value="" />',
       '      <input type="text" id="company-field" value="" />',
-      '      <input type="text" data-two-company-id="true" value="" />',
+      '      <input type="text" class="two-company-query" id="company-query" value="" />',
       "    </div>",
       "  </div></div></div>",
       "</div>",
@@ -69,7 +108,8 @@ describe("address-step company number", () => {
     env.fireAlpineInit();
 
     nameField = document.getElementById("company-field");
-    idField = document.querySelector(ID_FIELD);
+    queryInput = document.getElementById("company-query");
+    idField = document.querySelector(ID_DRIVER);
     root = document.getElementById("company-root");
 
     selectedEvents = [];
@@ -112,14 +152,35 @@ describe("address-step company number", () => {
   }
 
   /**
-   * Type into the company-name field, the way the debounced binding does.
+   * Type into the company-name field, the way its binding does.
+   *
+   * The binding is `@input.debounce.300ms="onNameFieldInput"` since TWO-25326
+   * §1 — NOT `getItems`, which the name field no longer drives at all. In
+   * search mode this handler only keeps `search` in step; in manual mode, and
+   * on a store with the lookup off, it takes the commit/clear path getItems()
+   * used to run. Both are exercised below, in the mode that owns them.
+   *
+   * @param {string} text
+   * @returns {Promise<void>}
+   */
+  async function typeName(text) {
+    nameField.value = text;
+    component.onNameFieldInput();
+    await H.flushPromises();
+  }
+
+  /**
+   * Type into the PANEL's query field and run the debounced search behind it.
    *
    * Any search this starts is settled before returning. An unsettled one leaves
    * the helper's live 30s timeout armed behind the test, which shows up as a
    * five-second test rather than as a failure.
+   *
+   * @param {string} text
+   * @returns {Promise<void>}
    */
-  async function typeName(text) {
-    nameField.value = text;
+  async function typeQuery(text) {
+    queryInput.value = text;
     const pending = component.getItems();
     await H.flushPromises();
     const call = fetchStub.last();
@@ -130,37 +191,32 @@ describe("address-step company number", () => {
   }
 
   /**
-   * Pick a search hit, INCLUDING the echo the pick causes.
+   * Pick a search hit.
    *
-   * selectItem() writes the chosen name back into the field via `$root`'s
-   * querySelector, which fires the field's own `input` binding — the
-   * UNDEBOUNCED one first, in the real DOM. `noteCompanyQuery()` is what
-   * actually swallows that echo (via the one-shot `awaitingSelectionEcho`
-   * flag, consumed by exactly this call), so it is simulated here directly,
-   * in the same order the browser fires it, rather than only through the
-   * debounced `getItems()` tick behind it. `isSelecting` is a second flag
-   * `getItems()` still checks for its own reason — skipping the request that
-   * would otherwise re-search the name just picked — and it stays armed until
-   * that tick runs, which `typeName()` below supplies.
-   *
-   * Tests that skip this helper's echo call and drive `selectItem()` directly
-   * leave BOTH flags set, and the next keystroke they simulate through
-   * `noteCompanyQuery()` is swallowed instead of processed — which silently
-   * turns an assertion about an edited name into an assertion about nothing.
+   * There is no echo to simulate any more. The old helper had to fire
+   * `noteCompanyQuery()` and then a `getItems()` tick by hand, because
+   * selectItem() writing the chosen name back into the company-name field
+   * re-entered the SEARCH path through that field's `input` binding, and two
+   * one-shot flags (`awaitingSelectionEcho`, `isSelecting`) existed to swallow
+   * it. TWO-25326 §1 removed the path and both flags with it: the name field's
+   * `input` handler is `onNameFieldInput`, which does nothing in search mode
+   * beyond syncing `search`.
    *
    * @param {Object} item
    * @returns {Promise<void>}
    */
   async function pick(item) {
     component.selectItem(item);
-    // The synthetic echo, simulated in real DOM order: selectItem() already
-    // wrote `item.companyName` into the field, so this reads that value
-    // through `$el` and is swallowed rather than processed.
-    component.noteCompanyQuery();
-    await typeName(item.companyName);
+    await H.flushPromises();
   }
 
-  /** Type into the company-number field, the way its binding does. */
+  /**
+   * Drive `onCompanyIdInput()` the way the PAYMENT step's binding does.
+   *
+   * The address step has no such input since §5/§7; the handler survives
+   * because it is what stamps `company_id_source: 'manual'` into the shared
+   * blob, and the payment step derives its own field's editability from that.
+   */
   function typeNumber(text) {
     idField.value = text;
     // `$el` is the bound element for THIS handler — the number field.
@@ -184,60 +240,74 @@ describe("address-step company number", () => {
     return { companyName: name, companyId: id, lookupId: "" };
   }
 
-  describe("the markup actually binds the state", () => {
-    // A getter nothing binds has no effect on the page. These read the
-    // binding out of the shipped template and then look the name up on the
-    // real component, so severing either half reddens.
-    test.each([
-      [":disabled", "companyIdDisabled"],
-      [":value", "companyId"],
-      ["@input.debounce.300ms", "onCompanyIdInput"],
-    ])("the number field's %s resolves to %s", (attribute, expected) => {
-      const bound = H.readAlpineBinding(
-        H.COMPANY_NAME_MARKUP_TEMPLATE,
-        ID_FIELD,
-        attribute,
+  describe("the address step renders no company-number input at all (TWO-25326 §5/§7)", () => {
+    // REPLACES the four tests that read this input's `:disabled` / `:value` /
+    // `@input.debounce.300ms` bindings, its `company_id` class, its label and
+    // its absent `name`. The field itself is what the ticket removes, so the
+    // assertions are now about its absence and about the state surviving it.
+    test.each(REMOVED_ID_INPUT_SELECTORS)(
+      "the shipped markup contains no `%s`",
+      (selector) => {
+        const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+        const doc = new DOMParser().parseFromString(markup, "text/html");
+
+        expect(doc.querySelector(selector)).toBeNull();
+      },
+    );
+
+    test("nothing on this surface submits or labels a company number", () => {
+      // The label went with the input. A "Company Number" label pointing at
+      // nothing is worse than none — it announces a control that is not there
+      // — and a `name` would post an unknown field into the address form.
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      expect(doc.querySelector('[name*="company_id"]')).toBeNull();
+      expect(doc.querySelector('label[for*="company_id"]')).toBeNull();
+      // The tile's bridge resolves ITS fields by getElementById, so an element
+      // here carrying either id would capture the tile's writes.
+      expect(doc.querySelector("#company_id")).toBeNull();
+      expect(doc.querySelector("#manual_company_id")).toBeNull();
+    });
+
+    test("the only company-number surface left is the read-only display", () => {
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const display = doc.querySelector(".two-company-id-display");
+
+      expect(display).not.toBeNull();
+      expect(display.tagName).not.toBe("INPUT");
+      // Every text input this component owns, enumerated: the company NAME
+      // field and the panel's query field, and nothing else.
+      const textInputs = Array.from(
+        doc.querySelectorAll('input[type="text"]'),
       );
-
-      expect(bound).toBe(expected);
-      expect(bound in mount()).toBe(true);
+      expect(textInputs).toHaveLength(2);
+      expect(textInputs[1].className).toContain("two-company-query");
     });
 
-    test("the number field carries the shared locked-state class", () => {
-      // The greyed look for the locked state is `input.company_id:disabled` in
-      // custom.css. Without the class the field locks invisibly, which reads
-      // to the buyer as an ordinary empty field that will not accept input.
-      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
+    test("the provenance state survives the removal, because the payment step reads it", () => {
+      // `companyIdDisabled` / `applyCompanyIdEditability()` /
+      // `onCompanyIdInput()` / `companyIdEntryRequired` are deliberately kept:
+      // they maintain `company_id_source` in the shared selection blob, which
+      // is the payment step's only way to tell a registry number from one the
+      // buyer typed. Deleting them along with the input would silently re-lock
+      // the tile's field over the buyer's own value.
+      const mounted = mount();
 
-      expect(doc.querySelector(ID_FIELD).className).toContain("company_id");
-    });
-
-    test("the number field is labelled, with an id the payment tile does not use", () => {
-      // A label with no `for` names nothing to a screen reader, and the field
-      // carries no `name` either, so there is nothing else to fall back on.
-      // The id must also not be the tile's `company_id` / `manual_company_id`:
-      // its bridge resolves that field by getElementById, and a duplicate in
-      // document order would make the tile write into this field instead.
-      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
-      const field = doc.querySelector(ID_FIELD);
-      const id = field.getAttribute("id");
-
-      expect(id).toBeTruthy();
-      expect(["company_id", "manual_company_id"]).not.toContain(id);
-      expect(doc.querySelector(`label[for="${id}"]`)).not.toBeNull();
-    });
-
-    test("the number field submits nothing of its own", () => {
-      // It carries no `name`, so the address entity's own submission is
-      // untouched — the value reaches placement through the selection blob and
-      // the payment step, as the company NAME chosen here already does. A
-      // `name` here would post an unknown field into the address form.
-      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
-
-      expect(doc.querySelector(ID_FIELD).hasAttribute("name")).toBe(false);
+      expect(typeof mounted.applyCompanyIdEditability).toBe("function");
+      expect(typeof mounted.onCompanyIdInput).toBe("function");
+      expect(typeof mounted.companyIdDisabled).toBe("boolean");
+      expect(typeof mounted.companyIdEntryRequired).toBe("boolean");
+      // And the tile still binds the state that mirrors it, so the two ends of
+      // that contract are asserted together rather than assumed.
+      expect(
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          'input[data-name="company_id"]',
+          ":disabled",
+        ),
+      ).toBe("companyIdDisabled");
     });
 
     test("the below-the-field manual-entry link is restored, gated on the complement of showDropdown (bug 4.2 round 2)", () => {
@@ -372,11 +442,32 @@ describe("address-step company number", () => {
       expect(storedSelection().company_id).toBe("");
     });
 
-    test("editing the name after a pick unlocks the field again", async () => {
+    test("a pick stays locked in SEARCH mode, because the name cannot be edited there", async () => {
+      // REPLACES "editing the name after a pick unlocks the field again".
+      // TWO-25326 §1 makes that edit impossible on this surface: every editing
+      // key on the company-name field is prevented and routed into the panel,
+      // so there is no keystroke that can invalidate a registry pick here. The
+      // unlock still exists — see the manual-mode tests below, where the field
+      // IS the capture field and the buyer really is typing a new name.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       expect(component.companyIdDisabled).toBe(true);
 
+      const event = { key: "x", preventDefault: jest.fn() };
+      component.onCompanyNameKeydown(event);
+      await typeName("Acme Limited");
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(component.companyIdDisabled).toBe(true);
+      expect(component.companyId).toBe("111");
+    });
+
+    test("editing the name in MANUAL mode after a pick unlocks the number", async () => {
+      component = mount({ quote_id: "test-quote-1" });
+      await pick(hit("Acme Ltd", "111"));
+      expect(component.companyIdDisabled).toBe(true);
+
+      component.enterManually();
       await typeName("Acme Limited");
 
       expect(component.companyIdDisabled).toBe(false);
@@ -385,6 +476,7 @@ describe("address-step company number", () => {
     test("it stays unlocked while the buyer keeps typing", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
+      component.enterManually();
 
       await typeName("Acme Limite");
       await typeName("Acme Limited");
@@ -401,6 +493,7 @@ describe("address-step company number", () => {
       // name beside the PREVIOUS company's number, uneditable.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
+      component.enterManually();
 
       await typeName("Different Company Ltd");
       await typeName("Different Company Ltd");
@@ -410,11 +503,15 @@ describe("address-step company number", () => {
 
     test("a name still matching its pick keeps the number locked", async () => {
       // The point of the lock: a registry-supplied number must not be typeable
-      // over while the field still names the company it belongs to.
+      // over while the field still names the company it belongs to. Driven
+      // through manual mode's re-entry into search, which is the one route
+      // that recomputes the lock against unchanged text.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
+      component.enterManually();
       await typeName("Acme Ltd");
+      component.enableSearch();
 
       expect(component.companyIdDisabled).toBe(true);
     });
@@ -495,14 +592,17 @@ describe("address-step company number", () => {
       expect(component.isCompanySelected).toBe(false);
     });
 
-    test("a real edit after a restored selection flips it back (TWO-25288 element 5 round 2)", () => {
+    test("a real edit after a restored selection flips it back (TWO-25288 element 5 round 2)", async () => {
       // The two fixes chained, not just proven in isolation: init() marks a
-      // restored pick complete, and a real keystroke through
-      // noteCompanyQuery() — exactly like a buyer correcting a name they
-      // reloaded the page onto — must still be able to end that state.
-      // Without noteCompanyQuery()'s own unconditional
-      // `this.isCompanySelected = false`, a restored selection could look
-      // identical to one made this page load but never be editable.
+      // restored pick complete, and a real edit must still be able to end that
+      // state, or a restored selection looks identical to one made this page
+      // load but is never editable.
+      //
+      // Driven through `onNameFieldInput()` in MANUAL mode, which is where the
+      // clear now lives. `noteCompanyQuery()` — the old driver — belongs to the
+      // panel's query field since TWO-25326 §1 and no longer says anything
+      // about the captured company at all; in search mode there is no keystroke
+      // that reaches the name field, so nothing there can end the selection.
       component = mount({
         company_name: "Acme Ltd",
         company_id: "111",
@@ -510,10 +610,37 @@ describe("address-step company number", () => {
       });
       expect(component.isCompanySelected).toBe(true);
 
-      nameField.value = "Acme Limited";
-      component.noteCompanyQuery();
+      component.enterManually();
+      await typeName("Acme Limited");
 
       expect(component.isCompanySelected).toBe(false);
+    });
+
+    test("a query typed in the panel does not touch the restored selection", () => {
+      // The complement of the test above, and the reason the clear had to move.
+      // `noteCompanyQuery()` records the panel's search term; looking for
+      // alternatives is not the same act as abandoning the company already
+      // captured, and conflating them is what published half-typed queries as
+      // the order's company name.
+      component = mount({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+
+      queryInput.value = "Something Else";
+      const previousEl = component.$el;
+      component.$el = queryInput;
+      try {
+        component.noteCompanyQuery();
+      } finally {
+        component.$el = previousEl;
+      }
+
+      expect(component.query).toBe("Something Else");
+      expect(component.isCompanySelected).toBe(true);
+      expect(component.companyId).toBe("111");
+      expect(storedSelection().company_name).toBe("Acme Ltd");
     });
   });
 
@@ -606,6 +733,7 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       selectedEvents.length = 0;
 
+      component.enterManually();
       await typeName("Different Company Ltd");
 
       expect(storedSelection().company_name).toBe("Different Company Ltd");
@@ -616,6 +744,7 @@ describe("address-step company number", () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
+      component.enterManually();
       await typeName("Acme Ltd");
 
       expect(storedSelection().company_name).toBe("Acme Ltd");
@@ -624,6 +753,17 @@ describe("address-step company number", () => {
   });
 
   describe("a name edit never leaves the previous company's number behind", () => {
+    /*
+     * TWO-25326 §1 narrowed WHERE a name edit can happen at all. In search mode
+     * the company-name field is not editable, so there is no name edit to
+     * mishandle — `getItems()` deliberately no longer runs the stale-identifier
+     * clear there, because reopening the panel to look at alternatives is not
+     * evidence that the captured company changed, and clearing on it dropped a
+     * perfectly good registry number. Every edit below therefore goes through
+     * manual mode or a store with the lookup off, which are the two
+     * configurations where the field really is the capture field — and where
+     * the clear is unchanged.
+     */
     test("editing the name clears the picked number from state AND storage", async () => {
       // The blob is what the payment step reads, and it derives its own locked
       // state from `company_id` being present there. Leaving the old number
@@ -634,11 +774,47 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       expect(storedSelection().company_id).toBe("111");
 
+      component.enterManually();
       await typeName("Different Company Ltd");
 
       expect(component.companyId).toBe("");
       expect(storedSelection().company_id).toBe("");
       expect(storedSelection().company_name).toBe("Different Company Ltd");
+    });
+
+    test("a search that reopens the panel does NOT drop a RESTORED registry pick", async () => {
+      // The regression the narrowing exists to prevent, and the one a
+      // manual-mode-only suite would miss: getItems() used to run
+      // forgetStaleCompanyId() on every search, and that clear fires whenever
+      // `search` differs from the name the number was written for.
+      //
+      // On a RESTORED pick those two are guaranteed to differ: init() restores
+      // `companyName` and `companyId` from storage but leaves `search` at '',
+      // because nothing has read the field this page load. So the first time
+      // the buyer reopened the panel after a reload, the identifier they had
+      // already captured was silently dropped — and there is no editable
+      // number field left on this surface to retype it into.
+      //
+      // Driven from a restored blob rather than a fresh pick on purpose: after
+      // a fresh pick `search === companyName`, forgetStaleCompanyId() returns
+      // at its own guard, and the scenario cannot tell the two versions apart.
+      component = mount({
+        quote_id: "test-quote-1",
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+      expect(component.search).toBe("");
+      expect(component.companyName).toBe("Acme Ltd");
+
+      component.openDropdown("");
+      await typeQuery("Different Company Ltd");
+
+      expect(component.companyId).toBe("111");
+      expect(component.companyIdSource).toBe("registry");
+      expect(component.companyIdDisabled).toBe(true);
+      expect(storedSelection().company_id).toBe("111");
+      expect(storedSelection().company_name).toBe("Acme Ltd");
     });
 
     test("the payment step's own gate reopens on the cleared pair", async () => {
@@ -647,6 +823,7 @@ describe("address-step company number", () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
+      component.enterManually();
       await typeName("Different Company Ltd");
 
       expect(Boolean(storedSelection().company_id)).toBe(false);
@@ -683,6 +860,7 @@ describe("address-step company number", () => {
       // Only a registry number belongs to a name. Clearing a hand-typed one here
       // would delete the buyer's own entry every time they adjusted the name.
       component = mount({ quote_id: "test-quote-1" });
+      component.enterManually();
       await typeName("Jo Smith Trading");
       typeNumber("1234567");
 
@@ -696,6 +874,7 @@ describe("address-step company number", () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
+      component.enterManually();
       await typeName("Acme Ltd");
       await typeName("Acme Ltd");
 
@@ -704,33 +883,49 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("only a settled name is published", () => {
-    test("a fragment too short to search is not stored as the company name", async () => {
-      // The payment step reads this key. Committing above the length guard
-      // published every keystroke fragment as the company name.
+  describe("in SEARCH mode the company-name field publishes nothing at all", () => {
+    /*
+     * REPLACES "only a settled name is published", which pinned a length guard
+     * on the search path's commit. TWO-25326 §1 removed that commit outright:
+     * in search mode the name field is not a query box and not a capture field
+     * — only `selectItem()` writes the company name. That is strictly stronger
+     * than the old guard, which still published every fragment at or above the
+     * threshold, so the assertions are now "nothing is written", at every
+     * length, including one long enough to search.
+     */
+    test.each([
+      ["a fragment too short to search", "Ac"],
+      ["an emptied field", ""],
+      ["a name long enough to search", "Acme Widgets Limited"],
+    ])("%s does not reach the stored company name", async (_label, text) => {
       component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
 
-      await typeName("Ac");
+      await typeName(text);
 
       expect(storedSelection().company_name).toBe("Acme Ltd");
+      // `search` still tracks the field, because manual mode shares it — the
+      // point is that nothing is PUBLISHED, not that nothing is observed.
+      expect(component.search).toBe(text);
     });
 
-    test("clearing the field does not blank the stored company name", async () => {
-      // The worst fragment is the empty one: it left the payment step showing no
-      // company at all.
+    test("a pick is the only writer of the company name in search mode", async () => {
       component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
 
-      await typeName("");
-
-      expect(storedSelection().company_name).toBe("Acme Ltd");
-    });
-
-    test("a name long enough to search is still recorded", async () => {
-      component = mount({ quote_id: "test-quote-1" });
-
-      await typeName("Acme Widgets Limited");
+      await pick(hit("Acme Widgets Limited", "222"));
 
       expect(storedSelection().company_name).toBe("Acme Widgets Limited");
+      expect(storedSelection().company_id).toBe("222");
+    });
+
+    test("manual mode still records every name the buyer types", async () => {
+      // The path that is deliberately unchanged: with no registry hit to
+      // supply one, the typed name is the only name the order will ever carry.
+      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
+      component.enterManually();
+
+      await typeName("Jo Smith Trading");
+
+      expect(storedSelection().company_name).toBe("Jo Smith Trading");
     });
   });
 
@@ -742,6 +937,11 @@ describe("address-step company number", () => {
 
     test("never searches, whatever is typed", async () => {
       await typeName("Acme Widgets Limited");
+      // Driven through the debounced handler too: `onNameFieldInput()` alone
+      // never requests anything in any mode, so asserting on it would be an
+      // assertion that cannot fail. getItems() is the one that would.
+      queryInput.value = "Acme Widgets Limited";
+      await component.getItems();
 
       expect(fetchStub.calls).toHaveLength(0);
       expect(component.isSearching).toBe(false);
@@ -770,7 +970,15 @@ describe("address-step company number", () => {
      * renamed getter that forgets to repoint either binding fails here
      * instead of silently passing.
      *
-     * @returns {{ displayVisible: boolean, displayText: string, inputVisible: boolean }}
+     * The `inputVisible` half is gone with the input (TWO-25326 §5/§7). It
+     * used to resolve `.field.two-company-id`'s `!companyIdDisplayVisible`
+     * gate through the negation getter; there is no longer any element on this
+     * surface carrying that binding, and the presence of the getter alone
+     * would be an assertion about dead code. What replaces it is the absence
+     * assertions at the top of this file, plus `displayIsTheOnlySurface()`
+     * below — the display showing is only meaningful if it is the whole story.
+     *
+     * @returns {{ displayVisible: boolean, displayText: string }}
      */
     function readDisplayState() {
       const DISPLAY_SELECTOR = ".two-company-id-display";
@@ -785,89 +993,83 @@ describe("address-step company number", () => {
         "x-text",
       );
 
-      // The input's own gate is a negation (`!companyIdDisplayVisible`), which
-      // the harness's `readAlpineBinding()` deliberately refuses to resolve
-      // as a bare property (see its own doc comment on `!showManual`) — CSP
-      // Alpine looks such names up directly on the component instead, via the
-      // `['!companyIdDisplayVisible']()` magic getter, so this reads the raw
-      // attribute and calls it that way.
-      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
-      const inputWrapper = doc.querySelector(".field.two-company-id");
-      const inputShowBound = inputWrapper.getAttribute("x-show");
-
       expect(showBound in component).toBe(true);
       expect(textBound in component).toBe(true);
-      expect(typeof component[inputShowBound]).toBe("function");
 
       return {
         displayVisible: Boolean(component[showBound]),
         displayText: component[textBound],
-        inputVisible: Boolean(component[inputShowBound]()),
       };
     }
 
-    test("the display element and the input are never both visible, and never both hidden", () => {
+    test("nothing is shown before a company is chosen", () => {
+      // REPLACES "the display element and the input are never both visible,
+      // and never both hidden" — there is no input left for it to alternate
+      // with. Both hidden IS the correct state here now: manual mode captures
+      // a name only, so an unchosen company simply has no number on this
+      // surface, and the buyer supplies one on the payment step if placement
+      // needs it.
       component = mount({ quote_id: "test-quote-1" });
 
-      // Nothing selected yet: the real, editable input is what the buyer
-      // needs.
-      let state = readDisplayState();
+      const state = readDisplayState();
       expect(state.displayVisible).toBe(false);
-      expect(state.inputVisible).toBe(true);
+      expect(state.displayText).toBe("");
     });
 
-    test("a registry-vouched pick shows the plain-text display, not the input", async () => {
+    test("a registry-vouched pick shows the plain-text display", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
       const state = readDisplayState();
       expect(state.displayVisible).toBe(true);
       expect(state.displayText).toBe("111");
-      expect(state.inputVisible).toBe(false);
     });
 
-    test("a pick with no registry identifier keeps the real input, not the display", async () => {
-      // Nothing was "selected" in the sense this bug's design turns on — the
+    test("a pick with no registry identifier shows no number at all", async () => {
+      // Nothing was "selected" in the sense this design turns on — the
       // registry gave no number, so there is nothing to read out as text, and
-      // the buyer still has to type one.
+      // nothing on this surface for the buyer to type one into either.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Example Trading Ltd", ""));
 
       const state = readDisplayState();
       expect(state.displayVisible).toBe(false);
-      expect(state.inputVisible).toBe(true);
+      expect(component.companyIdEntryRequired).toBe(true);
     });
 
-    test("a hand-typed number keeps the real input, not the display", () => {
-      // Manual entry has no "selected result" at all — the buyer is
-      // transcribing their own number, which must stay editable.
+    test("a hand-typed number is never read out as a registry one", () => {
+      // Manual entry has no "selected result" at all. The number the buyer
+      // transcribes on the payment step must stay theirs to correct, so it
+      // must not appear here as inert, vouched-for text.
       component = mount({ quote_id: "test-quote-1" });
       component.enterManually();
       typeNumber("1234567");
 
       const state = readDisplayState();
+      expect(component.companyId).toBe("1234567");
+      expect(component.companyIdSource).toBe("manual");
       expect(state.displayVisible).toBe(false);
-      expect(state.inputVisible).toBe(true);
+      expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("editing the name after a registry pick returns to the real input", async () => {
+    test("editing the name in manual mode after a registry pick takes the display down", async () => {
       // The lock reverses (`companyIdDisabled` suite above already pins
       // this); the display must track the same reversal, or the buyer would
-      // see inert text over a number they can no longer correct.
+      // see inert text for a number that no longer describes the company in
+      // the field. Driven through manual mode, the only place the name is
+      // editable since §1.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       expect(readDisplayState().displayVisible).toBe(true);
 
+      component.enterManually();
       await typeName("Acme Limited");
 
-      const state = readDisplayState();
-      expect(state.displayVisible).toBe(false);
-      expect(state.inputVisible).toBe(true);
+      expect(readDisplayState().displayVisible).toBe(false);
     });
 
     test("a restored registry pick shows the display on the very first render", () => {
-      // No flash of the real input before init() settles: the gate is
+      // No flash of an unpopulated display before init() settles: the gate is
       // `hasVouchedCompanyId()`, computed straight from restored state.
       component = mount({
         company_name: "Acme Ltd",
@@ -877,7 +1079,7 @@ describe("address-step company number", () => {
 
       const state = readDisplayState();
       expect(state.displayVisible).toBe(true);
-      expect(state.inputVisible).toBe(false);
+      expect(state.displayText).toBe("111");
     });
 
     test("the display carries no input semantics of its own", () => {
