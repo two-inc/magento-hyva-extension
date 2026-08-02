@@ -148,6 +148,36 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         <fieldset class="space-y-4">
             <?php
             /*
+             * TWO-25326 §7: the ONE captured-company label.
+             *
+             * Reads "<name> (<number>)" and replaces three separate things the
+             * tile used to show once a company had been captured — an editable
+             * search control still holding the name, a static "Company Number"
+             * caption, and the number rendered again below it. §7 asks for a
+             * single read-only line, so the two inline hint paragraphs that
+             * preceded this (`company_name_hint` / `company_id_hint`) are gone
+             * with it rather than kept alongside.
+             *
+             * First child of the fieldset, so it sits between the term chips
+             * above and the order-intent notice below. Inside the FORM's
+             * Alpine scope, not the outer tile's, because the form instance is
+             * the one holding company state.
+             *
+             * Both bindings are bare getter names: this file's CSP-friendly
+             * Alpine build looks a bound expression up as a key on the
+             * component rather than evaluating it, so `companyTileLabelText`
+             * does the concatenation in JS (see the same reasoning on
+             * `companyIdHiddenClass` below).
+             */
+            ?>
+            <div
+                class="two-company-tile-label font-semibold text-gray-700"
+                data-name="company_tile_label"
+                x-show="companyTileLabelVisible"
+                x-text="companyTileLabelText"
+            ></div>
+            <?php
+            /*
              * Persistent inline "order intent approved" notice, inside the
              * payment tile. Replaces the window.dispatchMessages() toast,
              * which was visible but self-dismissed after 5 seconds — long
@@ -197,7 +227,26 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                         </span>
                     </div>
                 </div>
-                <div class="flex flex-col field required w-full relative" x-show="!showManual">
+                <?php
+                /*
+                 * `companySearchBlockVisible` = the old `!showManual` AND "no
+                 * company captured yet" (TWO-25326 §7). Once a company IS
+                 * captured the tile shows the single read-only label at the
+                 * top of the fieldset instead of this editable search control.
+                 *
+                 * Gated on CAPTURED, never on mode. This control is a
+                 * company-capture route in its own right for buyers who never
+                 * see the address-step company field — a logged-in buyer
+                 * picking a saved address, or a virtual cart with no shipping
+                 * step. Removing it, or hiding it whenever the address step
+                 * could have collected the company, is an order-blocking
+                 * regression. Uncaptured, the block behaves exactly as before.
+                 *
+                 * `x-show` hides rather than removes, so `payment[company_name]`
+                 * is still in the DOM and still submits.
+                 */
+                ?>
+                <div class="flex flex-col field required w-full relative" x-show="companySearchBlockVisible">
                     <div class="flex flex-col items-center w-full">
                         <div class="bg-white w-full gap-2 flex-col flex">
                             <div class="field required">
@@ -207,44 +256,19 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 <p class="text-xs text-gray-500 mt-1">
                                     <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
                                 </p>
-                                <!--
-                                    Additive inline hint (TWO-25288): once a
-                                    company has been found via search and its
-                                    registry-supplied identifier locked in
-                                    (`companyIdDisabled`, see
-                                    applyCompanyIdEditability() below), surface
-                                    the number here instead of only in the now
-                                    hidden company_id input. Reuses the same
-                                    muted-text class as the helper text above.
-                                    `x-text` binds to a getter
-                                    (`companyIdHintText`) rather than a
-                                    concatenation expression — this file's
-                                    CSP-friendly Alpine build only does a key
-                                    lookup for bound expressions (see
-                                    `x-text="label"` / `x-html="GetCompanyDisplayName"`
-                                    elsewhere in this file), it does not
-                                    evaluate arbitrary JS.
-                                -->
-                                <!--
-                                    Additive inline hint (TWO-25288 follow-up):
-                                    read-only display of the captured company
-                                    NAME, same gate and same reasoning as the
-                                    number hint above — reused rather than
-                                    keyed off `companyName` directly, which has
-                                    no clearing writer and can go stale.
-                                -->
-                                <p
-                                    x-show="companyIdHintVisible"
-                                    data-name="company_name_hint"
-                                    class="text-xs text-gray-500 mt-1"
-                                    x-text="companyNameHintText"
-                                ></p>
-                                <p
-                                    x-show="companyIdHintVisible"
-                                    data-name="company_id_hint"
-                                    class="text-xs text-gray-500 mt-1"
-                                    x-text="companyIdHintText"
-                                ></p>
+                                <?php
+                                /*
+                                 * The two inline hints TWO-25288 added here
+                                 * (`company_name_hint` / `company_id_hint`)
+                                 * are deliberately gone: TWO-25326 §7 asks for
+                                 * ONE read-only line for a captured company,
+                                 * and these were the "extra text labels" it
+                                 * names. Superseded by
+                                 * `two-company-tile-label` at the top of the
+                                 * fieldset — do not reinstate them alongside
+                                 * it.
+                                 */
+                                ?>
                             </div>
                         </div>
                         <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
@@ -373,7 +397,29 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             </div>
 
             <!-- Company Number (dual-input — exactly one is visible per mode) -->
-            <div class="flex flex-col field field-reserved required">
+            <?php
+            /*
+             * TWO-25326 §7: once a company is captured the whole block —
+             * the static "Company Number" caption included — is hidden, and
+             * the single `two-company-tile-label` line carries the number
+             * instead. The caption was the second of §7's three complaints;
+             * hiding only the input would have left it captioning nothing.
+             *
+             * A class, not `x-show`: the inputs inside carry their own
+             * `x-show` for the manual/search mirror pair, and a wrapper
+             * `x-show` writing `display:none` on this div is independent of
+             * those, but `:class` keeps the two mechanisms from being confused
+             * for one another and matches `companyIdHiddenClass` on the input
+             * below. Bound to a getter returning a plain class-name STRING —
+             * this CSP-friendly Alpine build cannot evaluate an object literal
+             * (see the longer note on the input).
+             *
+             * Same CAPTURED gate as the search block above, so a buyer who has
+             * no captured company still sees and can fill the field. The
+             * inputs stay in the DOM, so `payment[company_id]` still submits.
+             */
+            ?>
+            <div class="flex flex-col field field-reserved required" :class="companyNumberBlockHiddenClass">
               <label for="company_id" class="font-semibold text-gray-700">
                 <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>

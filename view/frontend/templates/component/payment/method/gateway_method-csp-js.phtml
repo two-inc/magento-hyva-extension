@@ -1262,26 +1262,52 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // Additive (TWO-25288): text for the inline hint next to the
-            // company name field. Only rendered while `companyIdHintVisible`
-            // is true (see x-show on the hint in gateway_method.phtml), so
-            // `companyId` is guaranteed non-empty here.
-            get companyIdHintText() {
-                return '<?= $escaper->escapeJs(__("Company number:")) ?> ' + this.companyId;
+            // TWO-25326 §7: the single captured-company label at the top of
+            // the payment fieldset, replacing the two inline hints TWO-25288
+            // put next to the company-name field.
+            //
+            // Same gate as everything else here — `companyIdHintVisible`, i.e.
+            // CAPTURED (a registry-supplied number is locked in for the name
+            // beside it). Deliberately not `companyName` truthiness:
+            // `companyName` has no clearing writer, so a later shipping sync
+            // or re-render can leave it holding a PREVIOUS pick. The derived
+            // gate drops the moment `getItems()` recomputes
+            // `companyIdEntryRequired` for text that no longer matches the
+            // locked pick, which is the "buyer typed after selecting" case
+            // this must not go stale on.
+            get companyTileLabelVisible() {
+                return this.companyIdHintVisible;
             },
 
-            // Additive (TWO-25288 follow-up): read-only display of the
-            // captured company NAME, alongside the number hint above. Gated
-            // on `companyIdHintVisible` rather than on `companyName` directly
-            // — `companyName` has no clearing writer (a later shipping sync
-            // or re-render can leave it holding a PREVIOUS pick with nothing
-            // to blank it), while `companyIdHintVisible` is fully derived and
-            // already proven stale-safe: it drops the moment `getItems()`
-            // recomputes `companyIdEntryRequired` for a name that no longer
-            // matches the locked pick, which is exactly the "buyer typed in
-            // the search box after selecting" case this must not go stale on.
-            get companyNameHintText() {
-                return '<?= $escaper->escapeJs(__("Company name:")) ?> ' + this.companyName;
+            // "<name> (<number>)", built here rather than in the template:
+            // bound attribute expressions are looked up as a KEY on the
+            // component, never evaluated, so a concatenation in the markup
+            // would resolve to nothing at all. Only read while
+            // `companyTileLabelVisible` is true, so `companyId` is non-empty.
+            get companyTileLabelText() {
+                return this.companyName + ' (' + this.companyId + ')';
+            },
+
+            // TWO-25326 §7: the editable company-name search control is shown
+            // only while NOTHING is captured yet. Once captured, the read-only
+            // label above stands in for it.
+            //
+            // Gated on captured, NOT on mode. On Magento this control is a
+            // company-capture route in its own right for buyers who never see
+            // the address-step company field (a logged-in buyer picking a
+            // saved address; a virtual cart with no shipping step), so hiding
+            // it on anything broader than "we already have the company" blocks
+            // those orders outright.
+            get companySearchBlockVisible() {
+                return !this.showManual && !this.companyIdHintVisible;
+            },
+
+            // Companion to `companyIdHiddenClass`, hiding the whole Company
+            // Number block — its static caption included — rather than only
+            // the input. Class-NAME STRING for the same reason: `:class` here
+            // is a key lookup, not expression evaluation.
+            get companyNumberBlockHiddenClass() {
+                return this.companyIdHintVisible ? 'hidden' : '';
             },
 
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
