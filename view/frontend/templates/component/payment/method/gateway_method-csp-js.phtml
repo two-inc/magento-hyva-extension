@@ -570,10 +570,12 @@ $quoteDetails = json_encode(
         let dirty = false;
 
         // hyva.formValidation() is third-party and is copied by value as
-        // before — it exposes methods and plain state, no accessors, and
-        // defining onto the object it returns would mutate a Hyvä-owned
-        // value. THIS literal is composed live, so a getter added to it
-        // later cannot be frozen the way TWO-25332's were.
+        // before, unchanged: we RELY on it exposing no accessors — nothing
+        // in this repo can check that, Hyvä checkout being a commercial
+        // package with no distribution here — and defining onto the object
+        // it returns would mutate a Hyvä-owned value. THIS literal is
+        // composed live, so a getter added to it later cannot be frozen the
+        // way TWO-25332's were.
         return twoGatewayComposeLive(
             Object.assign({}, hyva.formValidation(form)), {
                 init() {

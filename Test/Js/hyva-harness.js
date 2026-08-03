@@ -585,10 +585,13 @@ function installHyvaEnvironment() {
  * The components are plain object literals with method shorthand, so calling
  * `component.getItems()` binds `this` the same way Alpine's proxy does.
  *
- * The factory is invoked with the magic properties already bound as `this`,
- * because Alpine does: `twoGatewayHyvaPaymentFormWithValidation` reads
- * `this.$el` and `this.$wire` while it COMPOSES, not later, so a factory called
- * with no receiver would compose against the wrong thing (TWO-25332).
+ * The factory is invoked with these four magics bound as `this`, because
+ * `twoGatewayHyvaPaymentFormWithValidation` reads `this.$el` and `this.$wire`
+ * while it COMPOSES, not later, so a factory called with no receiver would
+ * compose against the wrong thing (TWO-25332). Alpine binds its whole magic set
+ * (`$watch`, `$dispatch`, `$store`, `$refs`, `$data`, `$id` and the rest); these
+ * four are the ones the components under test read, and a test that needs
+ * another supplies it on the mounted component itself.
  *
  * @param {Function} factory the registered Alpine.data factory
  * @param {Object} [options]

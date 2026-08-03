@@ -4,8 +4,10 @@
  *
  * TWO-25332. The component the payment `<form>` ACTUALLY MOUNTS.
  *
- * Every other suite in this directory mounts `twoGatewayHyvaPaymentMethodBase`.
- * The `<form>` in gateway_method.phtml mounts
+ * NO OTHER SUITE IN THIS DIRECTORY MOUNTS THIS COMPONENT. The others mount
+ * `twoGatewayHyvaPaymentMethodBase`, `twoGatewayHyvaCompanySearchField` or
+ * `twoGatewayHyvaTermChip` — all real components, none of them the one the
+ * payment form paints from. The `<form>` in gateway_method.phtml mounts
  * `twoGatewayHyvaPaymentFormWithValidation`, which composes that base with the
  * validation/autosave object — and until TWO-25332 it composed them with object
  * SPREAD. Spread copies own enumerable properties by value, so it invoked each
@@ -24,9 +26,10 @@
  *   | (companyIdHintVisible, the shared derivation behind those three)     |
  *
  * So the whole §7 company-search apparatus was inert in production while 476
- * tests passed, because the suites asserted against the base component where
- * the getters are real. That is a HARNESS-CONTRACT gap, not a coverage gap:
- * no number of tests against the base object can see it.
+ * tests passed, because the suites that assert on these getters assert on the
+ * BASE component, where they are real. That is a HARNESS-CONTRACT gap, not a
+ * coverage gap: no number of assertions against the base object can fail for a
+ * defect in how the base is composed.
  *
  * This file closes it, and it is deliberately written to cover getters nobody
  * has added yet: the accessor test ENUMERATES the base's own accessors rather
@@ -53,8 +56,14 @@ const NOTICE_COPY = {
 };
 
 /**
- * Every bare-identifier Alpine binding inside the `<form>` subtree of the
- * SHIPPED markup, read out of the template rather than listed here.
+ * Every bare-identifier Alpine binding in the form component's OWN Alpine
+ * scope, read out of the shipped markup rather than listed here.
+ *
+ * Nested `x-data` subtrees are skipped: a binding under `PaymentTermsComponent`
+ * resolves against THAT component, not this one, so asserting it here would be
+ * asserting the wrong contract. It would currently pass either way — that
+ * factory returns `PaymentMethodBase()` unchanged — which is exactly why the
+ * scope boundary is enforced rather than left to a coincidence.
  *
  * @returns {Array<{attribute: string, expression: string, selector: string}>}
  */
@@ -85,6 +94,8 @@ function formSubtreeBindings() {
     Array.prototype.slice.call(form.querySelectorAll("*")),
   );
   elements.forEach(function (element) {
+    // The form component's own scope only — see the note above.
+    if (element !== form && element.closest("[x-data]") !== form) return;
     Array.prototype.slice.call(element.attributes).forEach(function (attr) {
       const isBinding =
         attr.name === "x-show" ||
@@ -282,6 +293,35 @@ describe("the component the payment form mounts (TWO-25332)", () => {
     // on the form component. They are asserted HERE, against the form, which
     // is the only place their production value is decided.
 
+    test("the notice clears when the company changes, on THIS component", () => {
+      // The watchers that clear the notice are methods, so the freeze never
+      // touched them — but the notice only paints on the form component, so
+      // this is where their effect on the label matters. The shared instance
+      // stubs `$watch` to a no-op, so a fresh one records the registrations,
+      // which also proves they happen on the composed component at all.
+      const watchers = {};
+      const fresh = H.mountComponent(env.alpineComponents[FORM_COMPONENT], {
+        el: root,
+        root: root,
+        wire: { autoSaveTimeout: 1000 },
+      });
+      fresh.$watch = function (property, callback) {
+        (watchers[property] = watchers[property] || []).push(callback);
+      };
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+
+      fresh.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
+      fresh.processOrderIntentSuccessResponse({ approved: true });
+      expect(fresh.orderIntentMessageVisible).toBe(true);
+
+      expect(watchers.companyName).toBeDefined();
+      expect(watchers.companyId).toBeDefined();
+      watchers.companyName.forEach((callback) => callback());
+
+      expect(fresh.orderIntentMessageVisible).toBe(false);
+    });
+
     test("nothing is captured and nothing is hidden to begin with", () => {
       expect(form.companySearchBlockVisible).toBe(true);
       expect(form.companyNumberBlockHiddenClass).toBe("");
@@ -307,6 +347,37 @@ describe("the component the payment form mounts (TWO-25332)", () => {
 
       expect(form.orderIntentMessageVisible).toBe(true);
       expect(form.companyTileLabelText).toBe("Example Trading Ltd (123456789)");
+    });
+
+    test("with no intent to approve, capture still hides both blocks and shows no label", () => {
+      // NOT a defect this PR introduces, and not one it hides either: it is the
+      // state the 2026-08-03 ruling implies, now reachable on screen for the
+      // first time because the gates are live. With order intent disabled for
+      // the merchant — or for a Dutch buyer whose company is not a BV, where
+      // placeOrderIntent() resolves null — the notice never fires, so the label
+      // never renders, while capture still hides the search block and the
+      // Company Number block. The buyer sees no company name anywhere and a
+      // bare "Change company" button.
+      //
+      // Pinned rather than fixed because widening the label's gate would break
+      // the "exactly when the notice is shown" ruling. If the ruling changes,
+      // THIS test is the one that should fail and be rewritten.
+      form.isOrderIntentEnabled = false;
+      form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+      expect(form.orderIntentMessageVisible).toBe(false);
+      expect(form.companySearchBlockVisible).toBe(false);
+      expect(form.companyNumberBlockHiddenClass).toBe("hidden");
+      expect(form.companyChangeControlVisible).toBe(true);
+      // The order still places: both inputs stay in the DOM with their values,
+      // hidden by a class rather than removed, so `payment[company_name]` and
+      // `payment[company_id]` still submit. Cosmetic-but-bad, not
+      // order-blocking — which is why it is a product question and not a
+      // blocker.
+      expect(document.getElementById("company_name").value).toBe(
+        "Example Trading Ltd",
+      );
+      expect(document.getElementById("company_id").value).toBe("123456789");
     });
 
     test("editing the company away gives the controls back", () => {

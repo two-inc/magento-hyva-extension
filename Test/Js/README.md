@@ -573,9 +573,10 @@ still fail.
 renderer.
 
 `payment-form-composition.test.js` — **the component the payment `<form>` actually mounts**,
-`twoGatewayHyvaPaymentFormWithValidation`. Every other suite here mounts
-`twoGatewayHyvaPaymentMethodBase`; the form mounts that base composed with the
-validation/autosave object, and the composition is a thing that can be wrong on its own.
+`twoGatewayHyvaPaymentFormWithValidation`. **No other suite mounts it** — the others mount
+`twoGatewayHyvaPaymentMethodBase`, `twoGatewayHyvaCompanySearchField` or
+`twoGatewayHyvaTermChip`. The form mounts the base composed with the validation/autosave
+object, and the composition is a thing that can be wrong on its own.
 TWO-25332: it composed with object **spread**, which copies own enumerable properties by
 value — so it invoked each of the base's getters once and stored the reading as a plain data
 property. Seven derived values were frozen at their pre-interaction state on the only
@@ -590,14 +591,25 @@ What the suite therefore pins, in the order that matters:
 - every accessor on the base is still an accessor on the form — **enumerated from the base**,
   not listed, so a getter added to the base literal tomorrow is covered without editing this
   file. Do not replace that enumeration with a literal list;
-- every bare-identifier Alpine binding in the `<form>` subtree of the shipped markup names a
-  key the form component defines;
+- every bare-identifier Alpine binding in the form component's **own** Alpine scope in the
+  shipped markup names a key the form component defines. Nested `x-data` subtrees are
+  skipped: a binding under `PaymentTermsComponent` resolves against that component, and it
+  would pass here either way today only because that factory returns `PaymentMethodBase()`
+  unchanged;
 - the composer keeps a getter live on both sides and keeps the validation object's
   precedence on a name collision (there is none today — the base names its entry point
   `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
 - the four revived behaviours, on the form component, including the two states where a getter
   is read before the value behind it exists: a read before `initialize()`, and the tick inside
-  `initialize()` where `companyIdDisabled` is derived but `companyId` is not written yet.
+  `initialize()` where `companyIdDisabled` is derived but `companyId` is not written yet;
+- the notice-clearing `$watch`es, registered and fired on the FORM component with a recording
+  `$watch` rather than the shared instance's no-op stub;
+- the configuration where order intent never fires (disabled for the merchant, or a Dutch
+  buyer whose company is not a BV): capture still hides both company blocks and no label
+  renders. That is the 2026-08-03 ruling's consequence rather than a defect, it is now
+  reachable on screen because the gates are live, and it is pinned so that a change of ruling
+  fails a test instead of passing quietly. Both inputs keep their values, so the order still
+  places.
 
 | Mutation                                                       | Failing tests |
 | -------------------------------------------------------------- | ------------- |
