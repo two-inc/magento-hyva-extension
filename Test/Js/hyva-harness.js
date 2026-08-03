@@ -585,23 +585,37 @@ function installHyvaEnvironment() {
  * The components are plain object literals with method shorthand, so calling
  * `component.getItems()` binds `this` the same way Alpine's proxy does.
  *
+ * The factory is invoked with the magic properties already bound as `this`,
+ * because Alpine does: `twoGatewayHyvaPaymentFormWithValidation` reads
+ * `this.$el` and `this.$wire` while it COMPOSES, not later, so a factory called
+ * with no receiver would compose against the wrong thing (TWO-25332).
+ *
  * @param {Function} factory the registered Alpine.data factory
  * @param {Object} [options]
  * @param {HTMLElement} [options.el] the bound element (`$el`)
  * @param {HTMLElement} [options.root] the component root (`$root`)
+ * @param {Object} [options.wire] the Magewire component proxy (`$wire`)
  * @returns {Object} the component
  */
 function mountComponent(factory, options) {
   const opts = options || {};
-  const component = factory();
-  component.$el = opts.el || null;
-  component.$root = opts.root || opts.el || null;
-  component.$nextTick = function (fn) {
-    if (typeof fn === "function") {
-      fn();
-    }
-    return Promise.resolve();
+  const magic = {
+    $el: opts.el || null,
+    $root: opts.root || opts.el || null,
+    $wire: opts.wire || null,
+    $nextTick: function (fn) {
+      if (typeof fn === "function") {
+        fn();
+      }
+      return Promise.resolve();
+    },
   };
+  const component = factory.call(magic);
+  // Assigned rather than spread onto the component: the component may be the
+  // live-composed object whose accessors must stay accessors.
+  Object.keys(magic).forEach(function (key) {
+    component[key] = magic[key];
+  });
   return component;
 }
 

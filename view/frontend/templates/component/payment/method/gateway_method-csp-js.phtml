@@ -540,12 +540,42 @@ $quoteDetails = json_encode(
         }
     };
 
+    /**
+     * Compose `source` onto `target` KEEPING ACCESSORS AS ACCESSORS.
+     *
+     * TWO-25332. Object spread and Object.assign copy own enumerable
+     * properties BY VALUE: they invoke every getter once, at composition
+     * time, and store the result as a plain data property. A component
+     * composed that way carries a snapshot nothing ever updates again, so
+     * every `x-show` / `x-text` / `:class` bound to a derived value paints
+     * the value it had before the buyer did anything — silently, because a
+     * frozen property reads exactly like a working one.
+     *
+     * Copying the property DESCRIPTORS instead keeps a getter a getter, so
+     * it is re-evaluated on every read the way Alpine's reactivity assumes.
+     *
+     * @param {Object} target mutated and returned
+     * @param {Object} source its own descriptors are copied onto target
+     * @returns {Object} target
+     */
+    function twoGatewayComposeLive(target, source) {
+        return Object.defineProperties(
+            target,
+            Object.getOwnPropertyDescriptors(source)
+        );
+    }
+
     function twoValidatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
 
-        return Object.assign({},
-            hyva.formValidation(form), {
+        // hyva.formValidation() is third-party and is copied by value as
+        // before — it exposes methods and plain state, no accessors, and
+        // defining onto the object it returns would mutate a Hyvä-owned
+        // value. THIS literal is composed live, so a getter added to it
+        // later cannot be frozen the way TWO-25332's were.
+        return twoGatewayComposeLive(
+            Object.assign({}, hyva.formValidation(form)), {
                 init() {
                     const doSave = async (isWithValidation = true) => {
                         clearTimeout(timeout);
@@ -1533,15 +1563,13 @@ $quoteDetails = json_encode(
             // than a defect here, but it is a product decision and not one to
             // paper over by widening this getter.
             //
-            // SEPARATELY, and unresolved on this branch: every getter in this
-            // object literal is dead on the component the <form> actually
-            // mounts. PaymentFormWithValidation() composes with object SPREAD,
-            // which evaluates each getter once and copies the frozen result, so
-            // the form instance carries own data properties nothing ever
-            // updates. That predates this change and disables the whole §7
-            // label apparatus in production; it is not fixed here because
-            // reviving those getters turns on several dormant behaviours at
-            // once and needs its own verification.
+            // This getter, and every other one in this literal, reaches the
+            // component the <form> mounts as a LIVE accessor only because
+            // PaymentFormWithValidation() composes with property descriptors
+            // (TWO-25332). Composing it with object spread — as it did until
+            // then — evaluated each getter once and copied the frozen result,
+            // which disabled the whole §7 label apparatus in production
+            // without failing a single test. See that function's comment.
             get orderIntentMessageVisible() {
                 return Boolean(this.orderIntentApprovedNotice);
             },
@@ -1833,11 +1861,34 @@ $quoteDetails = json_encode(
         };
     }
 
+    /**
+     * The component the payment `<form>` mounts: the tile component's state
+     * and derivations, plus the form's validation and autosave.
+     *
+     * TWO-25332: composed with DESCRIPTORS, not spread. This used to be
+     *
+     *     return { ...PaymentMethodBase(), ...twoValidatePaymentForm(…) };
+     *
+     * which evaluated each of PaymentMethodBase()'s getters once and copied
+     * the frozen result, so on the component the form actually mounted
+     * `orderIntentMessageVisible`, `companyTileLabelText`,
+     * `companySearchBlockVisible`, `companyChangeControlVisible`,
+     * `companyIdHintVisible`, `companyIdHiddenClass` and
+     * `companyNumberBlockHiddenClass` were all dead data properties holding
+     * their pre-interaction value. Every §7 company-search behaviour tied to
+     * them was inert in production, and no test saw it because the suites
+     * mounted the BASE component, where the getters are real.
+     * `payment-form-composition.test.js` mounts THIS factory for that reason
+     * — do not let that suite go away.
+     *
+     * The validation object still wins on a name collision (`init`), exactly
+     * as the spread ordering did.
+     */
     function <?= $gwBase ?>PaymentFormWithValidation() {
-        return {
-            ...<?= $gwBase ?>PaymentMethodBase(),
-            ...twoValidatePaymentForm(this.$el, this.$wire)
-        };
+        return twoGatewayComposeLive(
+            <?= $gwBase ?>PaymentMethodBase(),
+            twoValidatePaymentForm(this.$el, this.$wire)
+        );
     }
 
     function <?= $gwBase ?>PaymentTermsComponent() {
