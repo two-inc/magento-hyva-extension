@@ -621,14 +621,14 @@ What the suite therefore pins, in the order that matters:
   load-bearing by a pair: with it off nothing dispatches `dispatch-order-intent`, with it on
   the same capture does. Both inputs keep their values, so the order still places.
 
-| Mutation                                                       | Failing tests |
-| -------------------------------------------------------------- | ------------- |
-| `PaymentFormWithValidation()` back to object spread            | 6             |
-| `twoGatewayComposeLive()` back to `Object.assign(target, …)`   | 1             |
-| `form.isOrderIntentEnabled = false` dropped from its test      | 1             |
-| the label row wrapped in a nested `x-data` (shrinks the walk)  | 1 — the floor |
-| `ancestorBinding()` walking from the element instead of its parent | the suite fails to run at all |
-| composer's arguments swapped at the call site                  | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
+| Mutation                                                           | Failing tests                                                                                                                                                            |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PaymentFormWithValidation()` back to object spread                | 6                                                                                                                                                                        |
+| `twoGatewayComposeLive()` back to `Object.assign(target, …)`       | 1                                                                                                                                                                        |
+| `form.isOrderIntentEnabled = false` dropped from its test          | 1                                                                                                                                                                        |
+| the label row wrapped in a nested `x-data` (shrinks the walk)      | 1 — the floor                                                                                                                                                            |
+| `ancestorBinding()` walking from the element instead of its parent | the suite fails to run at all                                                                                                                                            |
+| composer's arguments swapped at the call site                      | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
 
 ## Deliberately out of scope
 
@@ -679,9 +679,13 @@ drives those listeners directly, so it evaluates that template **once**, in `bef
 resets the DOM and browser storage per test instead. A per-test load there would run one
 handler per preceding test on every dispatch.
 
-Elsewhere the leak is inert for a simpler reason: nothing else dispatches these events, and
-each handler only arms the debounce when it fires. A new test that dispatches one belongs in
-its own file for the same reason — or have the production template guard its registration the
+Two more files do dispatch into those listeners — `payment-method-code.test.js` dispatches
+`dispatch-order-intent` and `checkout:payment:method-activate` while loading that template per
+test, and `company-selection-scoping.test.js` dispatches `shipping-company-selected` — so the
+accumulation is real there too. It stays inert for the same two reasons as above: fake timers,
+and no checked `input[name="payment-method-option"]`. Elsewhere the leak is inert for a simpler
+reason: nothing dispatches into the listeners at all, and each handler only arms the debounce
+when it fires. A new test that dispatches one belongs in its own file for the same reason — or have the production template guard its registration the
 way the helpers guard theirs (`window.x = window.x || …`).
 
 ## Adding tests
