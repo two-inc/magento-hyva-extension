@@ -679,13 +679,14 @@ drives those listeners directly, so it evaluates that template **once**, in `bef
 resets the DOM and browser storage per test instead. A per-test load there would run one
 handler per preceding test on every dispatch.
 
-Two more files do dispatch into those listeners — `payment-method-code.test.js` dispatches
-`dispatch-order-intent` and `checkout:payment:method-activate` while loading that template per
-test, and `company-selection-scoping.test.js` dispatches `shipping-company-selected` — so the
-accumulation is real there too. It stays inert for the same two reasons as above: fake timers,
-and no checked `input[name="payment-method-option"]`. Elsewhere the leak is inert for a simpler
-reason: nothing dispatches into the listeners at all, and each handler only arms the debounce
-when it fires. A new test that dispatches one belongs in its own file for the same reason — or have the production template guard its registration the
+`payment-method-code.test.js` also drives those listeners — it dispatches
+`checkout:payment:method-activate` with that template loaded per test — so handlers accumulate
+there too. WHY that has never surfaced is a question about `company-name-payment.phtml`'s own
+handlers rather than about anything TWO-25332 touches, and it is deliberately not characterised
+here: two attempts to describe it, in review rounds 5 and 6 of PR #93, were both wrong.
+Elsewhere the leak is inert for a simpler reason: nothing drives the listeners at all, and each
+handler only arms the debounce when it fires. A new test that dispatches one belongs in its own
+file for the same reason — or have the production template guard its registration the
 way the helpers guard theirs (`window.x = window.x || …`).
 
 ## Adding tests
