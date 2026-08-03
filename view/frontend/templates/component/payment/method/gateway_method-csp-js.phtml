@@ -1381,8 +1381,10 @@ $quoteDetails = json_encode(
                  * enterManually(): those two flip mode only, they never write
                  * `companyName` / `companyId`, so the watchers do not fire and
                  * the notice survives them intact. Resetting there would buy
-                 * nothing and cost a redundant order-intent call every time the
-                 * buyer toggled between search and manual entry. This method is
+                 * nothing — and neither method dispatches, so the cost is not
+                 * the toggle itself but the DISARMED dedup it leaves behind,
+                 * which the next unrelated trigger then pays for with a
+                 * redundant intent for a company that never changed. This method is
                  * reached only from the explicit "Change company" button, and it
                  * has just blanked the company — so the one extra call it can
                  * cause is for a company the buyer has genuinely re-chosen.

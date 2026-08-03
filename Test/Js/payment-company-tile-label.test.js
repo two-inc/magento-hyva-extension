@@ -866,9 +866,18 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
      * The watched property is replaced with an accessor pair over a captured
      * value, so an assignment anywhere in the component runs the callbacks the
      * way Alpine's proxy would — including the same-value no-op, which Alpine
-     * also does not report as a change. Callbacks accumulate per property
-     * rather than replacing, so a second watcher on one property cannot
-     * silently drop the first.
+     * also does not report as a change. That short-circuit is load-bearing, not
+     * a detail: it is why an identical re-sync does NOT blank the notice.
+     * Callbacks accumulate per property rather than replacing, so a second
+     * watcher on one property cannot silently drop the first.
+     *
+     * ONE known divergence: these callbacks fire SYNCHRONOUSLY, where Alpine
+     * queues them on a microtask. Production is unaffected because the intent
+     * response arrives from a real `fetch` — a macrotask, so always after the
+     * watcher's blanking either way. The consequence for this suite is that it
+     * could not catch a regression that made the notice write land BEFORE the
+     * watcher that blanks it; nothing here should be read as covering that
+     * ordering.
      *
      * @returns {{component: Object, intents: string[], stop: Function}}
      *   `intents` records the company id carried by each dispatched intent
@@ -955,9 +964,11 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
 
-        // The state measured on the live storefront: correct label TEXT beside
-        // a hidden label and a visible button. Asserting the text as well as
-        // the gate is what distinguishes the defect from a genuinely empty tile.
+        // The fixed state. What was MEASURED on the live storefront before the
+        // fix was the same correct label text behind a hidden label, beside a
+        // visible button — so asserting the text as well as the gate is what
+        // separates a repaired tile from the defect, where the text was right
+        // all along and only its gate was wrong.
         expect(live.intents).toEqual([SAME[1], SAME[1]]);
         expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
         expect(live.component[LABEL_TEXT_BINDING]).toBe(
@@ -1011,8 +1022,14 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // Why the reset is in clearCapturedCompany() and not in enableSearch() /
       // enterManually(): those two flip mode only, they never write
       // `companyName` / `companyId`, so the notice survives them and there is
-      // nothing to repaint. Resetting there would buy nothing and cost a
-      // redundant order-intent call on every toggle.
+      // nothing to repaint.
+      //
+      // The `intents` assertion below cannot fail on its own — neither method
+      // dispatches, so a toggle costs nothing either way. The load-bearing
+      // assertion is the STATE one: a reset misplaced into these methods leaves
+      // the dedup disarmed, and the next unrelated trigger pays for it with a
+      // redundant intent for a company that never changed. That is what fails
+      // here when the reset is moved.
       const live = mountLive();
       try {
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
@@ -1053,11 +1070,15 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // ONE property, or clearing it fixes half the bug. Read out of the
       // shipped JS rather than assumed.
       const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
-      const occurrences = js.match(/lastOrderIntentCompanyId/g) || [];
 
-      // fillCompanyData()'s gate, the listener's gate, the declaration,
-      // processOrderIntentSuccessResponse()'s write, and the reset under test.
-      expect(occurrences.length).toBeGreaterThanOrEqual(5);
+      // Both gate EXPRESSIONS, deliberately not a count of the identifier.
+      // A count is satisfied by the prose comment beside the reset — which
+      // mentions the property by name — so it stays green with a real gate
+      // deleted, which is the opposite of what this test is for.
+      //
+      // fillCompanyData()'s gate, before it dispatches:
+      expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
+      // and the top-level listener's own "already processed" gate:
       expect(js).toContain(
         "currentCompanyId === twoPaymentComponentInstance.lastOrderIntentCompanyId",
       );
