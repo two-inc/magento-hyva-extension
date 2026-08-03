@@ -40,7 +40,6 @@ $orderIntentApprovedNotice = $configModel->getOrderIntentApprovedNotice();
 // "not approved / no intent" text, shown wherever the approved notice above
 // would otherwise render. Same null-means-brand-switched-it-off contract.
 $orderIntentNotAvailableNotice = $configModel->getOrderIntentNotAvailableNotice();
-$isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
@@ -857,12 +856,6 @@ $quoteDetails = json_encode(
                 | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
             ) ?: 'null' ?>,
             orderIntentNotAvailableNotice: '',
-            // TWO-25326 §7.1: is the payment tile the surface hosting the ONE
-            // company-search control right now? Resolved server-side once, not
-            // recomputed client-side — the admin setting cannot change within a
-            // single page load. Cast through escapeJs/string same as the other
-            // scalar config flags in this literal.
-            isCompanySearchInPaymentTile: '<?= $escaper->escapeJs((string) $isCompanySearchInPaymentTile) ?>' === '1',
             orderIntentDeclinedMessage: '<?= $escaper->escapeJs(
                 __($orderIntentDeclinedMessage),
             ) ?>',

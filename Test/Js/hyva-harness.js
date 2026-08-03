@@ -111,12 +111,6 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$orderIntentNotAvailableNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     "null",
   ],
-  // TWO-25326 §7.1: defaults the harness to the "control lives in the tile"
-  // branch, matching every pre-existing suite in this directory — they all
-  // assert on the rich search/manual-entry markup this flag now gates.
-  // Suites exercising the NEW text-only tile override this via extraRules.
-  [/^\(string\) \$isCompanySearchInPaymentTile$/, "1"],
-  [/^\$isCompanySearchInPaymentTile$/, "1"],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
   // Markup-only values, for renderTemplateMarkup() over gateway_method.phtml.
   // `__()` resolves explicitly rather than falling through the escapeHtmlAttr
