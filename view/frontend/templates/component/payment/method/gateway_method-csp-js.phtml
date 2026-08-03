@@ -1357,6 +1357,37 @@ $quoteDetails = json_encode(
                 this.companyId = '';
                 this.search = '';
                 this.manualMode = false;
+
+                /*
+                 * TWO-25345. Forget which company the last order intent was
+                 * for, so the NEXT pick dispatches a fresh one even when the
+                 * buyer picks the same company again.
+                 *
+                 * Two independent dedup gates read this — fillCompanyData()'s
+                 * `companyId !== lastOrderIntentCompanyId` before it dispatches,
+                 * and the window listener's own "already processed for this
+                 * company" check — and both have to pass for a notice to be
+                 * re-emitted. Clearing it here is one write that opens both.
+                 *
+                 * Without it, re-picking the identical company after "Change
+                 * company" left the tile showing a bare "Change company" button
+                 * and nothing else: the `companyName` / `companyId` watchers had
+                 * already blanked `orderIntentApprovedNotice` on the way
+                 * through, the dedup then suppressed the intent that would have
+                 * re-set it, and the §7 label follows that notice by design
+                 * (TWO-25326, 2026-08-03) so it went with it.
+                 *
+                 * Deliberately HERE and not in enableSearch() or
+                 * enterManually(): those two flip mode only, they never write
+                 * `companyName` / `companyId`, so the watchers do not fire and
+                 * the notice survives them intact. Resetting there would buy
+                 * nothing and cost a redundant order-intent call every time the
+                 * buyer toggled between search and manual entry. This method is
+                 * reached only from the explicit "Change company" button, and it
+                 * has just blanked the company — so the one extra call it can
+                 * cause is for a company the buyer has genuinely re-chosen.
+                 */
+                this.lastOrderIntentCompanyId = '';
                 // Back to the search control, not manual entry: search is the
                 // route that can still produce a registry-vouched number.
                 this.showManual = false;
