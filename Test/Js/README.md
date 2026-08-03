@@ -92,11 +92,13 @@ asserted is ours. Unlike `prestashop-plugin`, which loads the real jQuery UI bec
 of its target defects were properties _of the widget_, there is no npm distribution to
 load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,
-so calling `component.getItems()` binds `this` the way Alpine's proxy does; `$el`,
-`$root`, `$wire` and `$nextTick` are attached by `mountComponent()` — and are also bound as
-the factory's `this`, because Alpine does and because
+so calling `component.getItems()` binds `this` the way Alpine's proxy does. `mountComponent()`
+attaches four magics — `$el`, `$root` and `$nextTick` from Alpine, `$wire` from Magewire — and
+also binds them as the factory's `this`, because Alpine binds its magics that way and because
 `twoGatewayHyvaPaymentFormWithValidation` reads `this.$el` / `this.$wire` while it composes
-rather than later.
+rather than later. `$watch` is deliberately not supplied: a no-op default would let a test
+that means to exercise a watcher pass without one, so every test calling `initialize()` sets
+it itself.
 
 `fetch` is settled by hand per call. Request timing _is_ the subject matter — timeouts,
 supersession, aborts — so controlling it is the point rather than a shortcut. The abort
