@@ -1518,6 +1518,30 @@ $quoteDetails = json_encode(
             // literal specifically so this is never undefined — see the comment
             // on that property. Boolean() rather than the bare string so the
             // getter answers a boolean to a test that compares against one.
+            //
+            // READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two
+            // configurations mean the notice never fires at all, and so that the
+            // §7 label never renders either: order intent disabled for the
+            // merchant (the `isOrderIntentEnabled` gate before dispatch), and a
+            // Dutch buyer whose company is not a BV. Both are permanent rather
+            // than transient, and on this surface the consequence is sharper
+            // than on Luma — capture still hides the search block AND the
+            // Company Number block, so those buyers see no company name
+            // anywhere on the tile and a bare "Change company" button next to
+            // nothing. That follows literally from "shown exactly when the
+            // notice is shown", so it is a consequence of the ruling rather
+            // than a defect here, but it is a product decision and not one to
+            // paper over by widening this getter.
+            //
+            // SEPARATELY, and unresolved on this branch: every getter in this
+            // object literal is dead on the component the <form> actually
+            // mounts. PaymentFormWithValidation() composes with object SPREAD,
+            // which evaluates each getter once and copies the frozen result, so
+            // the form instance carries own data properties nothing ever
+            // updates. That predates this change and disables the whole §7
+            // label apparatus in production; it is not fixed here because
+            // reviving those getters turns on several dormant behaviours at
+            // once and needs its own verification.
             get orderIntentMessageVisible() {
                 return Boolean(this.orderIntentApprovedNotice);
             },

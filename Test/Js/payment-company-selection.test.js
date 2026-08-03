@@ -784,7 +784,7 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the captured-company tile label (TWO-25326 §7) and the hidden number input", () => {
+  describe("the capture gate (TWO-25326 §7) and the hidden number input", () => {
     test("stays hidden with an empty class before any company is picked", () => {
       // `companyIdDisabled` defaults locked, but with nothing stored
       // `initialize()` derives it open (see the earlier "is open once the
@@ -898,12 +898,12 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the captured-company tile label — stale safety", () => {
+  describe("the capture gate — stale safety", () => {
     test("stays hidden before any company is picked", () => {
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
     });
 
-    test("shows the captured name once a company locks the id field", () => {
+    test("the capture gate trips once a company locks the id field", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
@@ -930,7 +930,7 @@ describe("payment component company selection", () => {
      * id field — same tick `getItems()` recomputes `companyIdEntryRequired`
      * for text that no longer matches the locked pick.
      */
-    test("goes stale-safe: disappears when the buyer types after a pick, before any new pick exists", () => {
+    test("goes stale-safe: drops when the buyer types after a pick, before any new pick exists", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
@@ -950,7 +950,7 @@ describe("payment component company selection", () => {
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
     });
 
-    test("re-appears with the new name once the buyer picks a new identified company", () => {
+    test("re-trips once the buyer picks a new identified company", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       typeCompanyName("Other Example");
       syncCompanyIdField(component);
