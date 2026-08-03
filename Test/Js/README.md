@@ -595,9 +595,13 @@ What the suite therefore pins, in the order that matters:
   shipped markup names a key the form component defines. Nested `x-data` subtrees are
   skipped: a binding under `PaymentTermsComponent` resolves against that component, and it
   would pass here either way today only because that factory returns `PaymentMethodBase()`
-  unchanged. The walk has a **floor** under it: the six bindings whose getters the freeze
-  killed are asserted to be inside the enumerated set, because a nesting change would
-  otherwise shrink the enumeration silently — the walk itself only throws on an empty result;
+  unchanged. The walk has a **floor** under it: the seven bindings whose getters the freeze
+  killed — naming six distinct getters, since the label's gate and the notice's gate are
+  deliberately the same one — are asserted to be inside the enumerated set, because a nesting
+  change would otherwise shrink the enumeration silently, the walk itself only throwing on an
+  empty result. The distinct-getter set is asserted by name too: resolving two entries to one
+  expression is how `companyNumberBlockHiddenClass` fell out of this floor once, in round 2 of
+  this PR's own review;
 - the composer keeps a getter live on both sides and keeps the validation object's
   precedence on a name collision (there is none today — the base names its entry point
   `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
@@ -620,6 +624,7 @@ What the suite therefore pins, in the order that matters:
 | `twoGatewayComposeLive()` back to `Object.assign(target, …)`   | 1             |
 | `form.isOrderIntentEnabled = false` dropped from its test      | 1             |
 | the label row wrapped in a nested `x-data` (shrinks the walk)  | 1 — the floor |
+| `ancestorBinding()` walking from the element instead of its parent | the suite fails to run at all |
 | composer's arguments swapped at the call site                  | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
 
 ## Deliberately out of scope
@@ -655,12 +660,14 @@ harness evaluates the template once per test, and that listener cannot be remove
 afterwards — it is anonymous — so a test file accumulates one handler per test on the
 jsdom window it shares.
 
-`payment-company-selection.test.js` is the one file that _does_ dispatch that event, via
-`selectItem()`, so it inherits one handler per preceding test in it. Two things keep that
-inert rather than flaky, and both are deliberate: the file runs under
-`jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and its DOM has no
-`input[name="payment-method-option"]:checked`, which is the debounced callback's first exit.
-It asserts on the dispatch with a listener of its own that it removes.
+Three files _do_ dispatch that event, all via `selectItem()`:
+`payment-company-selection.test.js`, `payment-company-tile-label.test.js` and
+`payment-form-composition.test.js`. Each inherits one handler per preceding test in it. Two
+things keep that inert rather than flaky in all three, and both are deliberate: they run
+under `jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and their DOM
+has no `input[name="payment-method-option"]:checked`, which is the debounced callback's first
+exit. The two that assert on the dispatch do so with a listener of their own that they
+remove.
 
 `company-name-payment.phtml` has the same shape — anonymous top-level `window` listeners for
 `shipping-company-selected` and `checkout:payment:method-activate`. `payment-fields-shipping-sync.test.js`

@@ -579,8 +579,9 @@ function installHyvaEnvironment() {
 }
 
 /**
- * Instantiate an Alpine component factory and attach the magic properties
- * Alpine injects (`$el`, `$root`, `$nextTick`).
+ * Instantiate an Alpine component factory and attach four magic properties:
+ * `$el`, `$root` and `$nextTick`, which Alpine injects, and `$wire`, which is
+ * Magewire's, injected by Hyvä's Magewire integration rather than by Alpine.
  *
  * The components are plain object literals with method shorthand, so calling
  * `component.getItems()` binds `this` the same way Alpine's proxy does.
@@ -590,13 +591,14 @@ function installHyvaEnvironment() {
  * while it COMPOSES, not later, so a factory called with no receiver would
  * compose against the wrong thing (TWO-25332).
  *
- * This is four magics, not Alpine's whole set, and NOT the set the components
- * read. `$el`, `$wire` and `$nextTick` are read by the code under test;
- * `$root` is attached for symmetry and nothing in `view/frontend/templates`
- * reads it. `$watch` is deliberately NOT supplied even though `initialize()`
- * registers three watchers on it: a no-op default would let a test that means
- * to exercise a watcher pass without one. Every test that calls `initialize()`
- * therefore has to set `$watch` itself, either as a no-op or as a recorder.
+ * All four are read by the code under test — `$root` by the search-field
+ * component in `form/field/companyName-csp-js.phtml`, the other three in
+ * `gateway_method-csp-js.phtml`. This is not Alpine's whole magic set:
+ * `$watch` in particular is deliberately NOT supplied, even though
+ * `initialize()` registers three watchers on it, because a no-op default would
+ * let a test that means to exercise a watcher pass without one. Every test that
+ * calls `initialize()` therefore sets `$watch` itself, as a no-op or as a
+ * recorder.
  *
  * @param {Function} factory the registered Alpine.data factory
  * @param {Object} [options]

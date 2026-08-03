@@ -126,10 +126,18 @@ function formSubtreeBindings() {
 }
 
 /**
- * The bare property name an ANCESTOR of `selector` binds, for the two blocks
- * that carry no `data-name` themselves. Throws rather than returning nothing —
- * the value is a floor under another test, so a silent blank would raise the
- * floor's own coverage question.
+ * The bare property name a STRICT ancestor of `selector` binds, for the two
+ * blocks that carry no `data-name` themselves.
+ *
+ * The walk starts at `parentElement`, not at the element: `closest()` matches
+ * the element itself first, and the `company_id` input carries a `:class` of
+ * its own (`companyIdHiddenClass`), so starting there silently returned the
+ * input's binding instead of the block's — which quietly dropped
+ * `companyNumberBlockHiddenClass` out of the floor below. The resolved element
+ * is asserted not to be the starting one, so that cannot recur.
+ *
+ * Throws rather than returning nothing: the value is a floor under another
+ * test, so a silent blank would raise the floor's own coverage question.
  *
  * @param {string} selector the element inside the block
  * @param {string} ancestorSelector the bound ancestor
@@ -143,10 +151,15 @@ function ancestorBinding(selector, ancestorSelector, attribute) {
   if (inner === null) {
     throw new Error("`" + selector + "` is gone from the payment tile");
   }
-  const block = inner.closest(ancestorSelector);
-  if (block === null) {
+  const parent = inner.parentElement;
+  const block = parent === null ? null : parent.closest(ancestorSelector);
+  if (block === null || block === inner) {
     throw new Error(
-      "`" + selector + "` has no ancestor matching `" + ancestorSelector + "`",
+      "`" +
+        selector +
+        "` has no STRICT ancestor matching `" +
+        ancestorSelector +
+        "`",
     );
   }
   const expression = block.getAttribute(attribute);
@@ -159,18 +172,26 @@ function ancestorBinding(selector, ancestorSelector, attribute) {
 }
 
 /**
- * The six §7 bindings whose getters the spread froze, as the SHIPPED markup
- * names them. The floor under `formSubtreeBindings()`: that walk skips nested
- * `x-data` scopes, so a nesting change could otherwise shrink its coverage
- * silently — the only thing it throws on is an empty result. These are read
- * with `readAlpineBinding()`, which throws if the element or the binding is
- * gone, and asserted to be inside the enumerated set.
+ * The §7 bindings whose getters the spread froze, as the SHIPPED markup names
+ * them: SEVEN bindings naming SIX distinct getters — the label's `x-show` and
+ * the notice's `x-show` are deliberately the same getter, which is the whole
+ * point of the 2026-08-03 ruling. The seventh getter of the seven this PR
+ * names, `companyIdHintVisible`, is bound to nothing directly; it is the
+ * derivation the three capture gates read.
+ *
+ * The floor under `formSubtreeBindings()`: that walk skips nested `x-data`
+ * scopes, so a nesting change could otherwise shrink its coverage silently —
+ * the only thing it throws on is an empty result. Every one of these is read
+ * out of the markup by a helper that throws if the element or the binding is
+ * gone, and the set of distinct getters is asserted to be inside the
+ * enumeration.
  */
 const FROZEN_GETTER_BINDINGS = [
   ['[data-name="company_tile_label"]', "x-show"],
   ['[data-name="company_tile_label"]', "x-text"],
   ['[data-name="company_tile_change"]', "x-show"],
   ['[data-name="order_intent_message"]', "x-show"],
+  ['input[data-name="company_id"]', ":class"],
 ]
   .map(([selector, attribute]) => ({
     what: selector + " " + attribute,
@@ -371,12 +392,12 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       expect(binding.expression in form).toBe(true);
     });
 
-    test("the six §7 bindings are inside that enumeration", () => {
+    test("the §7 bindings the freeze killed are inside that enumeration", () => {
       // THE FLOOR. The walk above skips nested `x-data` scopes, and the only
       // thing it throws on is an empty result — so wrapping one of these blocks
       // in an `x-data` would quietly drop it from the enumeration and take a
       // parameterised test with it. Proven: doing that leaves the suite green
-      // without this test. These six are the ones the freeze killed, so they
+      // without this test. These are the bindings the freeze killed, so they
       // are the ones whose coverage may not evaporate.
       const enumerated = bindings.map((b) => b.expression);
       const missing = FROZEN_GETTER_BINDINGS.filter(
@@ -384,6 +405,26 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       ).map((b) => b.what + " (" + b.expression + ")");
 
       expect(missing).toEqual([]);
+
+      // Seven bindings, six distinct getters — the label's gate and the
+      // notice's gate are the same getter by design. Asserted so a helper that
+      // silently resolved two entries to one expression, which is exactly how
+      // `companyNumberBlockHiddenClass` fell out of this list once, fails here
+      // rather than passing with a hole in it.
+      const distinct = FROZEN_GETTER_BINDINGS.map((b) => b.expression).filter(
+        (name, index, all) => all.indexOf(name) === index,
+      );
+      expect(FROZEN_GETTER_BINDINGS).toHaveLength(7);
+      expect(distinct.sort()).toEqual(
+        [
+          "companyChangeControlVisible",
+          "companyIdHiddenClass",
+          "companyNumberBlockHiddenClass",
+          "companySearchBlockVisible",
+          "companyTileLabelText",
+          "orderIntentMessageVisible",
+        ].sort(),
+      );
     });
   });
 
