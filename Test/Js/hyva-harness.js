@@ -99,6 +99,24 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$orderIntentApprovedNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     '"Approved"',
   ],
+  // Sibling of the rule above (TWO-25326 §7.2/§7.3), defaulted to 'null'
+  // (brand switched off) rather than a fake copy object: every pre-existing
+  // suite in this directory predates this getter and exercises the APPROVED
+  // path only, several by overriding `orderIntentApprovedNoticeCopy` directly
+  // without a matching `orderIntentNotAvailableCopy` override — a truthy
+  // placeholder here would make resolveOrderIntentNotAvailableNotice() read
+  // `.withCompany` off a bare string and throw. Suites that need this getter
+  // live override it via extraRules or by assigning the property directly.
+  [
+    /^json_encode\(\s*\$orderIntentNotAvailableNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
+    "null",
+  ],
+  // TWO-25326 §7.1: defaults the harness to the "control lives in the tile"
+  // branch, matching every pre-existing suite in this directory — they all
+  // assert on the rich search/manual-entry markup this flag now gates.
+  // Suites exercising the NEW text-only tile override this via extraRules.
+  [/^\(string\) \$isCompanySearchInPaymentTile$/, "1"],
+  [/^\$isCompanySearchInPaymentTile$/, "1"],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
   // Markup-only values, for renderTemplateMarkup() over gateway_method.phtml.
   // `__()` resolves explicitly rather than falling through the escapeHtmlAttr
@@ -208,6 +226,102 @@ function normalizeExpression(raw) {
 }
 
 /**
+ * Resolve `<?php if ((!)$isCompanySearchInPaymentTile...): ?> A [<?php else: ?>
+ * B] <?php endif ...?>` blocks, keeping only the winning branch's literal
+ * markup and discarding the rest — BEFORE the naive "drop every `<?php ...
+ * ?>` tag" pass below, which has no concept of a condition at all and would
+ * otherwise render BOTH branches concatenated (TWO-25326 §7.1 introduced the
+ * first genuine either/or branches in these templates; every prior `<?php if
+ * ?>` in this codebase has no competing `else`, so always-both-branches was
+ * never visible before).
+ *
+ * Deliberately narrow: it only recognises blocks whose OPENING condition
+ * names this one flag. Every other conditional in a template — `$showChip`,
+ * `hasTooltip()`, `getOrderIntentApprovedNotice() !== null`, and so on — is
+ * left completely untouched by this function and falls through to the
+ * existing naive strip exactly as before, so this cannot change what any
+ * pre-existing suite renders.
+ *
+ * Nesting-aware: a nested `<?php if (...): ?> ... <?php endif ?>` inside the
+ * winning branch (e.g. companyName.phtml's fallback field still has
+ * `$element->hasAttributes()` / `isRequired()` guards inside it) is walked
+ * over by depth-counting rather than matched as this call's own endif, and is
+ * left in the winning branch's text for the ordinary naive strip afterward —
+ * unchanged from how it already renders today.
+ *
+ * @param {string} source the raw template text
+ * @param {boolean} isPaymentTile resolved value of $isCompanySearchInPaymentTile
+ * @param {string} relPath for error messages
+ * @returns {string}
+ */
+function resolveCompanySearchLocationConditionals(source, isPaymentTile, relPath) {
+  const openTagRe =
+    /<\?php\s+if\s*\(\s*(!?)\s*\$isCompanySearchInPaymentTile\b[^)]*\)\s*:\s*\?>/;
+  const tokenRe = /<\?php\s+(if\s*\([\s\S]*?\)\s*:|else\s*:|endif\b[\s\S]*?)\s*\?>/g;
+
+  let openMatch;
+  // eslint-disable-next-line no-cond-assign
+  while ((openMatch = openTagRe.exec(source)) !== null) {
+    const negated = openMatch[1] === "!";
+    const condTrue = negated ? !isPaymentTile : isPaymentTile;
+    const openStart = openMatch.index;
+    const openEnd = openMatch.index + openMatch[0].length;
+
+    tokenRe.lastIndex = openEnd;
+    let depth = 0;
+    let elseStart = -1;
+    let elseEnd = -1;
+    let endifStart = -1;
+    let endifEnd = -1;
+    let tok;
+    // eslint-disable-next-line no-cond-assign
+    while ((tok = tokenRe.exec(source)) !== null) {
+      const body = tok[1];
+      if (/^if\s*\(/.test(body)) {
+        depth += 1;
+      } else if (/^else\s*:/.test(body)) {
+        if (depth === 0 && elseStart === -1) {
+          elseStart = tok.index;
+          elseEnd = tok.index + tok[0].length;
+        }
+      } else if (/^endif\b/.test(body)) {
+        if (depth === 0) {
+          endifStart = tok.index;
+          endifEnd = tok.index + tok[0].length;
+          break;
+        }
+        depth -= 1;
+      }
+    }
+
+    if (endifStart === -1) {
+      throw new Error(
+        "harness: unmatched `<?php if (...$isCompanySearchInPaymentTile...) ?>` " +
+          "(no matching endif found) in " +
+          relPath,
+      );
+    }
+
+    let winningContent;
+    if (elseStart !== -1) {
+      winningContent = condTrue
+        ? source.slice(openEnd, elseStart)
+        : source.slice(elseEnd, endifStart);
+    } else {
+      winningContent = condTrue ? source.slice(openEnd, endifStart) : "";
+    }
+
+    source =
+      source.slice(0, openStart) + winningContent + source.slice(endifEnd);
+    // Restart the outer search: content shifted, and there may be a sibling
+    // (non-nested) block further down the same file.
+    openTagRe.lastIndex = 0;
+  }
+
+  return source;
+}
+
+/**
  * Substitute a `.phtml` template's PHP the way PHP would, minus the PHP.
  *
  * The shared step behind renderTemplateJs() and renderTemplateMarkup(), so the
@@ -222,12 +336,43 @@ function renderTemplate(relPath, extraRules) {
   const absPath = path.join(REPO_ROOT, relPath);
   let source = fs.readFileSync(absPath, "utf8");
 
+  const rules = (extraRules || []).concat(PHP_VALUE_RULES);
+
+  // TWO-25326 §7.1: resolve the one flag this harness understands
+  // conditionally, and cut the losing branch of any block gated on it, BEFORE
+  // the naive "every `<?php ?>` emits nothing" pass a few lines down — which
+  // has no concept of true/false and would otherwise keep both branches.
+  //
+  // Default is PER-FILE, not one shared value, and that is deliberate rather
+  // than an inconsistency: every pre-existing suite over EITHER template was
+  // written against the pre-ruling code, where both templates' rich controls
+  // existed unconditionally and simultaneously — companyName.phtml's suites
+  // assume the address-area control is the live one, gateway_method*.phtml's
+  // assume the tile's own is. Production's actual default (address-area) is
+  // exactly companyName.phtml's assumption, so that file needs no override at
+  // all; gateway_method*.phtml's suites are, after this ruling, exercising the
+  // NON-default (payment_tile) configuration — a real, intentional trade so
+  // their large existing coverage of that control's own behaviour did not
+  // need rewriting. `extraRules` can still override either default per test.
+  if (source.indexOf("$isCompanySearchInPaymentTile") !== -1) {
+    const override = extraRules
+      ? resolveExpression("$isCompanySearchInPaymentTile", extraRules)
+      : null;
+    const isPaymentTile =
+      override !== null
+        ? override === "1"
+        : relPath.indexOf("form/field/companyName.phtml") === -1;
+    source = resolveCompanySearchLocationConditionals(
+      source,
+      isPaymentTile,
+      relPath,
+    );
+  }
+
   // `<?php … ?>` blocks are the template's PHP preamble and its trailing
   // registerInlineScript() call — they emit nothing, so they are dropped
   // whole rather than substituted.
   source = source.replace(/<\?php[\s\S]*?\?>/g, "");
-
-  const rules = (extraRules || []).concat(PHP_VALUE_RULES);
   source = source.replace(/<\?=([\s\S]*?)\?>/g, function (_match, raw) {
     const expression = normalizeExpression(raw);
     const resolved = resolveExpression(expression, rules);

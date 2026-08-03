@@ -17,6 +17,21 @@
                     <label>Version</label>
                     <frontend_model>Two\GatewayHyva\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
+                <!--
+                    TWO-25326 §7.1 (2026-08-03 ruling): exactly ONE company-search
+                    control, and this decides WHERE it renders — never whether it
+                    exists. Default (address_area) matches today's actual behaviour
+                    on every platform: the address-step control is the enhanced one,
+                    and the payment tile is text-only, driven by the order-intent
+                    message.
+                -->
+                <field id="company_search_location" translate="label comment" type="select" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Company Search Location</label>
+                    <comment>Where the company-search control renders. The other location shows only the
+                        order-intent message text.</comment>
+                    <source_model>Two\GatewayHyva\Model\Config\Source\CompanySearchLocation</source_model>
+                </field>
             </group>
         </section>
     </system>

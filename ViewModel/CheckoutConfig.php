@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Two\GatewayHyva\ViewModel;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -22,6 +23,29 @@ use Two\Gateway\Model\Two;
 
 class CheckoutConfig implements ArgumentInterface
 {
+    /**
+     * TWO-25326 §7.1 (2026-08-03 ruling): the admin setting deciding WHERE the
+     * one company-search control renders — never whether it exists.
+     *
+     * This is a Hyvä-module-local setting (read via ScopeConfigInterface
+     * directly, not through ConfigRepository) because the base module's
+     * RepositoryInterface lives in a different repository (two-inc/magento2 /
+     * magento-plugin) and Luma's own equivalent setting is tracked there
+     * separately. The two are independent config paths today; unifying them
+     * behind one shared repository method is a follow-up once both sides
+     * exist.
+     */
+    public const XML_PATH_COMPANY_SEARCH_LOCATION = 'two_general/hyva/company_search_location';
+
+    public const COMPANY_SEARCH_LOCATION_ADDRESS_AREA = 'address_area';
+
+    public const COMPANY_SEARCH_LOCATION_PAYMENT_TILE = 'payment_tile';
+
+    /**
+     * Placeholder the Alpine component substitutes the buyer's company number
+     * into (TWO-25326 §7.3). Sibling of COMPANY_NAME_TOKEN below.
+     */
+    public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
      * into. Deliberately a local constant rather than a reference to the
@@ -84,6 +108,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $brandedViewModel;
 
+    /**
+     * @var ScopeConfigInterface
+     */
+    private $scopeConfig;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -92,6 +121,7 @@ class CheckoutConfig implements ArgumentInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
+        ScopeConfigInterface $scopeConfig,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -100,6 +130,36 @@ class CheckoutConfig implements ArgumentInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
+        $this->scopeConfig = $scopeConfig;
+    }
+
+    /**
+     * TWO-25326 §7.1: where the one company-search control renders.
+     *
+     * Read directly via ScopeConfigInterface rather than through
+     * ConfigRepository — see the constant's own doc comment. Defaults to
+     * address-area (matching etc/config.xml and today's actual behaviour)
+     * whenever the stored value is missing or unrecognised, so a fresh
+     * install or a corrupted value degrades to the SAFE, already-shipped
+     * configuration rather than an unexpected one.
+     */
+    public function getCompanySearchLocation(): string
+    {
+        $value = (string) $this->scopeConfig->getValue(self::XML_PATH_COMPANY_SEARCH_LOCATION);
+
+        return $value === self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE
+            ? self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE
+            : self::COMPANY_SEARCH_LOCATION_ADDRESS_AREA;
+    }
+
+    /**
+     * TWO-25326 §7.1: is the payment tile the surface hosting the ONE
+     * company-search control right now? When false, the tile is text-only
+     * (§7.2/§7.3) and the address-area control is the enhanced one.
+     */
+    public function getIsCompanySearchInPaymentTile(): bool
+    {
+        return $this->getCompanySearchLocation() === self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE;
     }
 
     /**
@@ -277,7 +337,15 @@ class CheckoutConfig implements ArgumentInterface
      * Mirrors Two\Gateway\Model\Ui\ConfigProvider on the Luma side; the
      * brand.xml contract lives on Two\Gateway\Model\Brand\Descriptor.
      *
-     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
+     * TWO-25326 §7.3 (2026-08-03 ruling): the default copy now embeds BOTH
+     * the company name and number directly in the sentence — this is what
+     * replaces the standalone "<name> (<number>)" tile label, which the
+     * ruling removes rather than supplements. A brand override supplied
+     * before this ruling will not carry the number token; that is a brand-
+     * specific follow-up (§7.4), not something this method can fix on a
+     * brand's behalf.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
@@ -311,11 +379,12 @@ class CheckoutConfig implements ArgumentInterface
         // so a stale parent cannot resurrect empty-means-off.
         $withCompany = ($override === null || $override === "")
             ? __(
-                "Your invoice with %1 is likely to be accepted for %2, subject to additional checks.",
-                $productName,
+                "This order by %1 (%2) is likely to be accepted by %3",
                 self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN,
+                $productName,
             )
-            : __($override, $productName, self::COMPANY_NAME_TOKEN);
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
 
         return [
             "withCompany" => (string) $withCompany,
@@ -324,6 +393,51 @@ class CheckoutConfig implements ArgumentInterface
                 $productName,
             ),
             "companyNameToken" => self::COMPANY_NAME_TOKEN,
+            "companyNumberToken" => self::COMPANY_NUMBER_TOKEN,
+        ];
+    }
+
+    /**
+     * TWO-25326 §7.3 (2026-08-03 ruling): the tile's "not approved / no
+     * intent" wording, shown persistently in the text-only tile (§7.2)
+     * exactly where the approved notice would otherwise render.
+     *
+     * On/off is gated on the SAME brand switch as the approved notice
+     * (`isIntentApprovedNoticeEnabled()`) rather than a second one: the
+     * ruling treats the pair as one intent-message concept with two
+     * outcomes, and a brand that suppressed one has suppressed the other.
+     * There is no brand-override hook for this copy yet — BrandRegistryInterface
+     * has no equivalent of getIntentApprovedNotice() for it — so a brand
+     * needing its own wording here (§7.4) needs that added to the base
+     * module first.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    public function getOrderIntentNotAvailableNotice(): ?array
+    {
+        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
+            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
+            : true;
+
+        if (!$enabled) {
+            return null;
+        }
+
+        $productName = $this->brandRegistry->getProductName();
+
+        return [
+            "withCompany" => (string) __(
+                "%1 is not available for this order by %2 (%3)",
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN,
+            ),
+            "withoutCompany" => (string) __(
+                "%1 is not available for this order.",
+                $productName,
+            ),
+            "companyNameToken" => self::COMPANY_NAME_TOKEN,
+            "companyNumberToken" => self::COMPANY_NUMBER_TOKEN,
         ];
     }
 

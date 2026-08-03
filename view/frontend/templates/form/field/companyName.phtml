@@ -47,6 +47,19 @@ $form = $block->getData("form");
 
     <?php
     /*
+     * TWO-25326 §7.1 (2026-08-03 ruling): exactly ONE company-search control
+     * per platform. When the admin setting points that one control at the
+     * payment tile instead, this surface must NOT also render its own — so
+     * everything below (the Alpine search component, the dropdown, the
+     * spinner, manual/search mode toggling, the company-number display) is
+     * skipped entirely in that mode, in favour of a single plain field with
+     * no enhancement at all, in the `else` branch far below.
+     */
+    $isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
+    ?>
+    <?php if (!$isCompanySearchInPaymentTile): ?>
+    <?php
+    /*
      * `two-company-search-group` (TWO-25326 §7) is a hook for one CSS rule and
      * nothing else: the shared Hyvä field/input-group styling paints a focus
      * ring on this container via `:focus-within`, and this container is the
@@ -498,6 +511,36 @@ $form = $block->getData("form");
                 aria-label="<?= $escaper->escapeHtmlAttr(__("Company Number")) ?>"
             ></div>
         </div>
+    <?php else: ?>
+        <?php
+        /*
+         * TWO-25326 §7.1: the one company-search control lives in the
+         * payment tile in this configuration, so the address step gets a
+         * PLAIN field for the same underlying attribute — no search, no
+         * dropdown, no Alpine component at all. `renderAttributes()` still
+         * carries this field's real name/id/value/validation from the
+         * entity-field config, so it submits and restores exactly as any
+         * other Hyvä address field does; nothing here is company-search
+         * specific.
+         */
+        ?>
+        <div class="group input-group flex gap-4">
+            <input
+                type="text"
+                class="<?= $escaper->escapeHtmlAttr(
+                    $element->renderClass(["block w-full form-input grow renderer-text"]),
+                ) ?>"
+                <?php if ($element->hasAttributes()): ?>
+                    <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
+                <?php endif; ?>
+                <?php if ($element->isRequired()): ?>
+                    required
+                    data-validate='{"required":true}'
+                <?php endif; ?>
+                autocomplete="off"
+            />
+        </div>
+    <?php endif ?>
         <?php if ($element->hasTooltip()): ?>
             <?= /* @noEscape */ $element
                     ->getRenderer()

@@ -22,11 +22,16 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
  */
 class CheckoutConfigTest extends TestCase
 {
+    // TWO-25326 §7.3 (2026-08-03 ruling): the default copy embeds both the
+    // name and number tokens directly, replacing the standalone tile label.
     private const DEFAULT_WITH_COMPANY =
-        'Your invoice with TestProduct is likely to be accepted for {{companyName}}, subject to additional checks.';
+        'This order by {{companyName}} ({{companyNumber}}) is likely to be accepted by TestProduct';
 
     private const DEFAULT_WITHOUT_COMPANY =
         'Your invoice with TestProduct is likely to be accepted, subject to additional checks.';
+
+    private const DEFAULT_NOT_AVAILABLE_WITH_COMPANY =
+        'TestProduct is not available for this order by {{companyName}} ({{companyNumber}})';
 
     public function testSwitchEnabledReturnsDefaultCopy(): void
     {
@@ -36,6 +41,7 @@ class CheckoutConfigTest extends TestCase
         $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
         $this->assertSame(self::DEFAULT_WITHOUT_COMPANY, $notice['withoutCompany']);
         $this->assertSame(CheckoutConfig::COMPANY_NAME_TOKEN, $notice['companyNameToken']);
+        $this->assertSame(CheckoutConfig::COMPANY_NUMBER_TOKEN, $notice['companyNumberToken']);
     }
 
     /**
@@ -95,6 +101,84 @@ class CheckoutConfigTest extends TestCase
 
         $this->assertNotNull($notice);
         $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
+    }
+
+    /**
+     * TWO-25326 §7.3: the "not available" notice shares the approved
+     * notice's on/off switch — no independent gate exists for it.
+     */
+    public function testNotAvailableNoticeFollowsTheSameSwitch(): void
+    {
+        $notice = $this->notAvailableFor($this->registry(true, null));
+
+        $this->assertNotNull($notice);
+        $this->assertSame(self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY, $notice['withCompany']);
+        $this->assertSame(CheckoutConfig::COMPANY_NAME_TOKEN, $notice['companyNameToken']);
+        $this->assertSame(CheckoutConfig::COMPANY_NUMBER_TOKEN, $notice['companyNumberToken']);
+
+        $this->assertNull($this->notAvailableFor($this->registry(false, null)));
+    }
+
+    /**
+     * TWO-25326 §7.1: the location setting defaults to address-area when the
+     * stored value is missing, empty, or anything other than the recognised
+     * "payment_tile" value — a degraded default rather than an unexpected one.
+     */
+    public function testCompanySearchLocationDefaultsToAddressArea(): void
+    {
+        $this->assertSame(
+            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
+            $this->locationFor(null)
+        );
+        $this->assertSame(
+            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
+            $this->locationFor('')
+        );
+        $this->assertSame(
+            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
+            $this->locationFor('garbage')
+        );
+        $this->assertSame(
+            CheckoutConfig::COMPANY_SEARCH_LOCATION_PAYMENT_TILE,
+            $this->locationFor(CheckoutConfig::COMPANY_SEARCH_LOCATION_PAYMENT_TILE)
+        );
+    }
+
+    private function locationFor(?string $storedValue): string
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $scopeConfig = new class ($storedValue) {
+            /** @var string|null */
+            private $value;
+
+            public function __construct(?string $value)
+            {
+                $this->value = $value;
+            }
+
+            public function getValue($path)
+            {
+                return $this->value;
+            }
+        };
+
+        $reflection->getProperty('scopeConfig')->setValue($viewModel, $scopeConfig);
+
+        return $viewModel->getCompanySearchLocation();
+    }
+
+    /**
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    private function notAvailableFor(object $brandRegistry): ?array
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('brandRegistry')->setValue($viewModel, $brandRegistry);
+
+        return $viewModel->getOrderIntentNotAvailableNotice();
     }
 
     private function registry(bool $enabled, ?string $override): object
