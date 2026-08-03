@@ -595,7 +595,9 @@ What the suite therefore pins, in the order that matters:
   shipped markup names a key the form component defines. Nested `x-data` subtrees are
   skipped: a binding under `PaymentTermsComponent` resolves against that component, and it
   would pass here either way today only because that factory returns `PaymentMethodBase()`
-  unchanged;
+  unchanged. The walk has a **floor** under it: the six bindings whose getters the freeze
+  killed are asserted to be inside the enumerated set, because a nesting change would
+  otherwise shrink the enumeration silently — the walk itself only throws on an empty result;
 - the composer keeps a getter live on both sides and keeps the validation object's
   precedence on a name collision (there is none today — the base names its entry point
   `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
@@ -605,16 +607,19 @@ What the suite therefore pins, in the order that matters:
 - the notice-clearing `$watch`es, registered and fired on the FORM component with a recording
   `$watch` rather than the shared instance's no-op stub;
 - the configuration where order intent never fires (disabled for the merchant, or a Dutch
-  buyer whose company is not a BV): capture still hides both company blocks and no label
-  renders. That is the 2026-08-03 ruling's consequence rather than a defect, it is now
-  reachable on screen because the gates are live, and it is pinned so that a change of ruling
-  fails a test instead of passing quietly. Both inputs keep their values, so the order still
-  places.
+  buyer whose company is not a BV): capture still hides both company blocks while the label's
+  own `x-show` — read out of the shipped markup, because the getter cannot answer this; it
+  still returns the text — stays shut. That is the 2026-08-03 ruling's consequence rather than
+  a defect, and it is now reachable on screen because the gates are live. The flag is made
+  load-bearing by a pair: with it off nothing dispatches `dispatch-order-intent`, with it on
+  the same capture does. Both inputs keep their values, so the order still places.
 
 | Mutation                                                       | Failing tests |
 | -------------------------------------------------------------- | ------------- |
-| `PaymentFormWithValidation()` back to object spread            | 4             |
+| `PaymentFormWithValidation()` back to object spread            | 6             |
 | `twoGatewayComposeLive()` back to `Object.assign(target, …)`   | 1             |
+| `form.isOrderIntentEnabled = false` dropped from its test      | 1             |
+| the label row wrapped in a nested `x-data` (shrinks the walk)  | 1 — the floor |
 | composer's arguments swapped at the call site                  | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
 
 ## Deliberately out of scope

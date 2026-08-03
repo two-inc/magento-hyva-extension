@@ -585,13 +585,18 @@ function installHyvaEnvironment() {
  * The components are plain object literals with method shorthand, so calling
  * `component.getItems()` binds `this` the same way Alpine's proxy does.
  *
- * The factory is invoked with these four magics bound as `this`, because
+ * The factory is invoked with these magics bound as `this`, because
  * `twoGatewayHyvaPaymentFormWithValidation` reads `this.$el` and `this.$wire`
  * while it COMPOSES, not later, so a factory called with no receiver would
- * compose against the wrong thing (TWO-25332). Alpine binds its whole magic set
- * (`$watch`, `$dispatch`, `$store`, `$refs`, `$data`, `$id` and the rest); these
- * four are the ones the components under test read, and a test that needs
- * another supplies it on the mounted component itself.
+ * compose against the wrong thing (TWO-25332).
+ *
+ * This is four magics, not Alpine's whole set, and NOT the set the components
+ * read. `$el`, `$wire` and `$nextTick` are read by the code under test;
+ * `$root` is attached for symmetry and nothing in `view/frontend/templates`
+ * reads it. `$watch` is deliberately NOT supplied even though `initialize()`
+ * registers three watchers on it: a no-op default would let a test that means
+ * to exercise a watcher pass without one. Every test that calls `initialize()`
+ * therefore has to set `$watch` itself, either as a no-op or as a recorder.
  *
  * @param {Function} factory the registered Alpine.data factory
  * @param {Object} [options]

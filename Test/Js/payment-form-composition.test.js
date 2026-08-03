@@ -126,6 +126,90 @@ function formSubtreeBindings() {
 }
 
 /**
+ * The bare property name an ANCESTOR of `selector` binds, for the two blocks
+ * that carry no `data-name` themselves. Throws rather than returning nothing —
+ * the value is a floor under another test, so a silent blank would raise the
+ * floor's own coverage question.
+ *
+ * @param {string} selector the element inside the block
+ * @param {string} ancestorSelector the bound ancestor
+ * @param {string} attribute the Alpine binding to read off it
+ * @returns {string}
+ */
+function ancestorBinding(selector, ancestorSelector, attribute) {
+  const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
+  const doc = new DOMParser().parseFromString(markup, "text/html");
+  const inner = doc.querySelector(selector);
+  if (inner === null) {
+    throw new Error("`" + selector + "` is gone from the payment tile");
+  }
+  const block = inner.closest(ancestorSelector);
+  if (block === null) {
+    throw new Error(
+      "`" + selector + "` has no ancestor matching `" + ancestorSelector + "`",
+    );
+  }
+  const expression = block.getAttribute(attribute);
+  if (!expression) {
+    throw new Error(
+      "the block around `" + selector + "` has no `" + attribute + "` gate",
+    );
+  }
+  return expression;
+}
+
+/**
+ * The six §7 bindings whose getters the spread froze, as the SHIPPED markup
+ * names them. The floor under `formSubtreeBindings()`: that walk skips nested
+ * `x-data` scopes, so a nesting change could otherwise shrink its coverage
+ * silently — the only thing it throws on is an empty result. These are read
+ * with `readAlpineBinding()`, which throws if the element or the binding is
+ * gone, and asserted to be inside the enumerated set.
+ */
+const FROZEN_GETTER_BINDINGS = [
+  ['[data-name="company_tile_label"]', "x-show"],
+  ['[data-name="company_tile_label"]', "x-text"],
+  ['[data-name="company_tile_change"]', "x-show"],
+  ['[data-name="order_intent_message"]', "x-show"],
+]
+  .map(([selector, attribute]) => ({
+    what: selector + " " + attribute,
+    expression: H.readAlpineBinding(
+      H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+      selector,
+      attribute,
+    ),
+  }))
+  // The search block and the Company Number block carry no `data-name` of
+  // their own — they are the ancestors of the inputs that do, which is how
+  // payment-company-tile-label.test.js reads them too.
+  .concat([
+    {
+      what: "the search block's x-show",
+      expression: ancestorBinding(
+        'input[data-name="company_name"]',
+        "[x-show]",
+        "x-show",
+      ),
+    },
+    {
+      what: "the Company Number block's :class",
+      expression: ancestorBinding(
+        'input[data-name="company_id"]',
+        "[\\:class]",
+        ":class",
+      ),
+    },
+  ]);
+
+/** The label's own visibility gate — the one the getter cannot answer. */
+const LABEL_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  '[data-name="company_tile_label"]',
+  "x-show",
+);
+
+/**
  * A dropdown item in the shape the shared helper's mapItems() produces.
  *
  * @param {string} name
@@ -286,6 +370,21 @@ describe("the component the payment form mounts (TWO-25332)", () => {
     )("%s names a key the form component defines", (_label, binding) => {
       expect(binding.expression in form).toBe(true);
     });
+
+    test("the six §7 bindings are inside that enumeration", () => {
+      // THE FLOOR. The walk above skips nested `x-data` scopes, and the only
+      // thing it throws on is an empty result — so wrapping one of these blocks
+      // in an `x-data` would quietly drop it from the enumeration and take a
+      // parameterised test with it. Proven: doing that leaves the suite green
+      // without this test. These six are the ones the freeze killed, so they
+      // are the ones whose coverage may not evaporate.
+      const enumerated = bindings.map((b) => b.expression);
+      const missing = FROZEN_GETTER_BINDINGS.filter(
+        (b) => enumerated.indexOf(b.expression) === -1,
+      ).map((b) => b.what + " (" + b.expression + ")");
+
+      expect(missing).toEqual([]);
+    });
   });
 
   describe("the behaviours the freeze had switched off", () => {
@@ -349,7 +448,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       expect(form.companyTileLabelText).toBe("Example Trading Ltd (123456789)");
     });
 
-    test("with no intent to approve, capture still hides both blocks and shows no label", () => {
+    test("order intent disabled: nothing is dispatched, and the label's own gate stays shut", () => {
       // NOT a defect this PR introduces, and not one it hides either: it is the
       // state the 2026-08-03 ruling implies, now reachable on screen for the
       // first time because the gates are live. With order intent disabled for
@@ -359,25 +458,58 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       // Company Number block. The buyer sees no company name anywhere and a
       // bare "Change company" button.
       //
-      // Pinned rather than fixed because widening the label's gate would break
-      // the "exactly when the notice is shown" ruling. If the ruling changes,
-      // THIS test is the one that should fail and be rewritten.
-      form.isOrderIntentEnabled = false;
-      form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      // Two things make this a pin rather than a restatement of the test above:
+      //
+      //  - the flag is LOAD-BEARING here. Capture with intent enabled
+      //    dispatches `dispatch-order-intent`; with it disabled nothing is
+      //    dispatched, so flipping the assignment out fails this test;
+      //  - "shows no label" is asserted through the label's OWN `x-show`
+      //    binding, read out of the shipped markup. The getter cannot answer
+      //    it — `companyTileLabelText` still returns the text, and the gate
+      //    that suppresses it is the binding. Asserting the getter alone would
+      //    have made this test a duplicate.
+      const dispatched = [];
+      const record = () => dispatched.push("dispatch-order-intent");
+      window.addEventListener("dispatch-order-intent", record);
 
-      expect(form.orderIntentMessageVisible).toBe(false);
-      expect(form.companySearchBlockVisible).toBe(false);
-      expect(form.companyNumberBlockHiddenClass).toBe("hidden");
-      expect(form.companyChangeControlVisible).toBe(true);
-      // The order still places: both inputs stay in the DOM with their values,
-      // hidden by a class rather than removed, so `payment[company_name]` and
-      // `payment[company_id]` still submit. Cosmetic-but-bad, not
-      // order-blocking — which is why it is a product question and not a
-      // blocker.
-      expect(document.getElementById("company_name").value).toBe(
-        "Example Trading Ltd",
-      );
-      expect(document.getElementById("company_id").value).toBe("123456789");
+      try {
+        form.isOrderIntentEnabled = false;
+        form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+        expect(dispatched).toEqual([]);
+        expect(form[LABEL_SHOW_BINDING]).toBe(false);
+        expect(form.companySearchBlockVisible).toBe(false);
+        expect(form.companyNumberBlockHiddenClass).toBe("hidden");
+        expect(form.companyChangeControlVisible).toBe(true);
+        // The order still places: both inputs stay in the DOM with their
+        // values, hidden by a class rather than removed, so
+        // `payment[company_name]` and `payment[company_id]` still submit.
+        // Cosmetic-but-bad, not order-blocking — which is why it is a product
+        // question and not a blocker.
+        expect(document.getElementById("company_name").value).toBe(
+          "Example Trading Ltd",
+        );
+        expect(document.getElementById("company_id").value).toBe("123456789");
+      } finally {
+        window.removeEventListener("dispatch-order-intent", record);
+      }
+    });
+
+    test("the same capture WITH intent enabled does dispatch — the flag is read", () => {
+      // The other half of the pin above. Without this, "nothing is dispatched"
+      // could hold because nothing ever dispatches.
+      const dispatched = [];
+      const record = () => dispatched.push("dispatch-order-intent");
+      window.addEventListener("dispatch-order-intent", record);
+
+      try {
+        form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+
+        expect(form.isOrderIntentEnabled).toBeTruthy();
+        expect(dispatched).toEqual(["dispatch-order-intent"]);
+      } finally {
+        window.removeEventListener("dispatch-order-intent", record);
+      }
     });
 
     test("editing the company away gives the controls back", () => {
