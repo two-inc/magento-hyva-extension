@@ -670,8 +670,9 @@ handler per preceding test in it. Two things keep that inert rather than flaky i
 and both are deliberate: they run
 under `jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and their DOM
 has no `input[name="payment-method-option"]:checked`, which is the debounced callback's first
-exit. The two that assert on the dispatch do so with a listener of their own that they
-remove.
+exit. The three that assert on the dispatch — `payment-company-selection.test.js`,
+`payment-form-composition.test.js` and, since TWO-25345, `payment-company-tile-label.test.js` —
+do so with a listener of their own that they remove.
 
 `company-name-payment.phtml` has the same shape — anonymous top-level `window` listeners for
 `shipping-company-selected` and `checkout:payment:method-activate`. `payment-fields-shipping-sync.test.js`

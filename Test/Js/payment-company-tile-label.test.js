@@ -840,6 +840,257 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
   });
 
+  /**
+   * TWO-25345. Re-picking the SAME company after "Change company" left the tile
+   * showing a bare "Change company" button and nothing else — no label, no
+   * notice — because two pre-existing behaviours combined:
+   *
+   *  - the `companyName` / `companyId` watchers blank
+   *    `orderIntentApprovedNotice` on the way through, which is the deliberate
+   *    fail-closed property they exist for;
+   *  - `fillCompanyData()` then suppressed the intent that would have re-set it,
+   *    because `lastOrderIntentCompanyId` still held that same identifier.
+   *
+   * The label follows the notice by design (the 2026-08-03 ruling above), so it
+   * went with it. Neither piece is wrong alone; nothing repainted the label.
+   *
+   * These tests need REAL watcher semantics. The rest of this file stubs
+   * `$watch` to a no-op, which leaves the notice surviving `clearCapturedCompany()`
+   * outright — so the defect is not even reachable there, and a test written
+   * against that mount would pass unfixed.
+   */
+  describe("re-picking the same company after 'Change company' (TWO-25345)", () => {
+    /**
+     * Mount a tile whose `$watch` registrations actually fire.
+     *
+     * The watched property is replaced with an accessor pair over a captured
+     * value, so an assignment anywhere in the component runs the callbacks the
+     * way Alpine's proxy would — including the same-value no-op, which Alpine
+     * also does not report as a change. That short-circuit is load-bearing, not
+     * a detail: it is why an identical re-sync does NOT blank the notice.
+     * Callbacks accumulate per property rather than replacing, so a second
+     * watcher on one property cannot silently drop the first.
+     *
+     * ONE known divergence: these callbacks fire SYNCHRONOUSLY, where Alpine
+     * queues them on a microtask.
+     *
+     * Production is unaffected, but NOT because of anything about how the
+     * `fetch` continuation is scheduled — its `.then` is a microtask, the same
+     * queue the watcher uses. The ordering holds because the response cannot
+     * arrive until a later task, and the listener waits out a 500ms debounce
+     * before it even issues the request. The watcher's blanking has therefore
+     * flushed long beforehand.
+     *
+     * The consequence for this suite is that it could not catch a regression
+     * that made the notice write land BEFORE the watcher that blanks it;
+     * nothing here should be read as covering that ordering.
+     *
+     * @returns {{component: Object, intents: string[], stop: Function}}
+     *   `intents` records the company id carried by each dispatched intent
+     */
+    function mountLive() {
+      const root = document.getElementById("payment-root");
+      const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: root,
+        root: root,
+      });
+
+      const callbacks = {};
+      fresh.$watch = function (property, callback) {
+        if (callbacks[property]) {
+          callbacks[property].push(callback);
+          return;
+        }
+        callbacks[property] = [callback];
+        let current = fresh[property];
+        Object.defineProperty(fresh, property, {
+          configurable: true,
+          enumerable: true,
+          get: function () {
+            return current;
+          },
+          set: function (next) {
+            if (next === current) return;
+            current = next;
+            callbacks[property].forEach(function (registered) {
+              registered(next);
+            });
+          },
+        });
+      };
+
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+      // The three the component registers. A rename that drops one would
+      // otherwise make every assertion below vacuous.
+      expect(Object.keys(callbacks).sort()).toEqual([
+        "companyId",
+        "companyName",
+        "manualMode",
+      ]);
+
+      fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
+
+      /*
+       * Stand in for the template's top-level `dispatch-order-intent` listener:
+       * it debounces, calls placeOrderIntent(), and hands an approval to
+       * processOrderIntentSuccessResponse(). Only the last step is what the
+       * notice depends on, and driving it through the REAL success handler is
+       * what makes `lastOrderIntentCompanyId` advance the way production does.
+       */
+      const intents = [];
+      const listener = function () {
+        intents.push(fresh.companyId);
+        fresh.processOrderIntentSuccessResponse({ approved: true });
+      };
+      window.addEventListener("dispatch-order-intent", listener);
+
+      return {
+        component: fresh,
+        intents: intents,
+        stop: function () {
+          window.removeEventListener("dispatch-order-intent", listener);
+        },
+      };
+    }
+
+    /** The identical company, picked twice — the whole point of the ticket. */
+    const SAME = ["Example Trading Ltd", "123456789"];
+
+    test("repaints the label, instead of leaving a bare 'Change company'", () => {
+      const live = mountLive();
+      try {
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+        expect(live.intents).toEqual([SAME[1]]);
+        expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
+
+        live.component[CHANGE_BUTTON_CLICK_BINDING]();
+        // The watchers have blanked the notice, so the label is gone with it —
+        // correct here, because there is no company to label any more.
+        expect(live.component[LABEL_SHOW_BINDING]).toBe(false);
+
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+
+        // The fixed state. What was MEASURED on the live storefront before the
+        // fix was the same correct label text behind a hidden label, beside a
+        // visible button — so asserting the text as well as the gate is what
+        // separates a repaired tile from the defect, where the text was right
+        // all along and only its gate was wrong.
+        expect(live.intents).toEqual([SAME[1], SAME[1]]);
+        expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
+        expect(live.component[LABEL_TEXT_BINDING]).toBe(
+          SAME[0] + " (" + SAME[1] + ")",
+        );
+        expect(live.component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
+        expect(live.component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
+      } finally {
+        live.stop();
+      }
+    });
+
+    test("a DIFFERENT company still works, and still costs one intent", () => {
+      // The no-regression half: the path that already worked must not start
+      // dispatching twice.
+      const live = mountLive();
+      try {
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+        live.component[CHANGE_BUTTON_CLICK_BINDING]();
+        live.component.selectItem(pickerItem("Other Example Ltd", "987654321"));
+
+        expect(live.intents).toEqual([SAME[1], "987654321"]);
+        expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
+        expect(live.component[LABEL_TEXT_BINDING]).toBe(
+          "Other Example Ltd (987654321)",
+        );
+      } finally {
+        live.stop();
+      }
+    });
+
+    test("the dedup still holds without a 'Change company' in between", () => {
+      // The reason the guard exists, and the cost the fix is scoped to avoid
+      // paying generally: re-picking the same company from an OPEN dropdown —
+      // no clear in between — must still dispatch nothing the second time.
+      const live = mountLive();
+      try {
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+
+        expect(live.intents).toEqual([SAME[1]]);
+        // And the notice is intact, because assigning the identical values
+        // never fired the watchers that would have blanked it.
+        expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
+      } finally {
+        live.stop();
+      }
+    });
+
+    test("toggling manual entry and back dispatches no extra intent", () => {
+      // Why the reset is in clearCapturedCompany() and not in enableSearch() /
+      // enterManually(): those two flip mode only, they never write
+      // `companyName` / `companyId`, so the notice survives them and there is
+      // nothing to repaint.
+      //
+      // The `intents` assertion below cannot fail on its own — neither method
+      // dispatches, so a toggle costs nothing either way. The load-bearing
+      // assertion is the STATE one: a reset misplaced into these methods leaves
+      // the dedup disarmed, and the next unrelated trigger pays for it with a
+      // redundant intent for a company that never changed. That is what fails
+      // here when the reset is moved.
+      const live = mountLive();
+      try {
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+        expect(live.intents).toEqual([SAME[1]]);
+
+        live.component.enterManually();
+        live.component.enableSearch();
+
+        expect(live.intents).toEqual([SAME[1]]);
+        expect(live.component.lastOrderIntentCompanyId).toBe(SAME[1]);
+      } finally {
+        live.stop();
+      }
+    });
+
+    test("'Change company' forgets the last intent's company", () => {
+      // The state the two dedup gates read. Asserted directly as well as
+      // through behaviour: the window listener in gateway_method-csp-js.phtml
+      // has its OWN "already processed for this company" check on the same
+      // property, and no test above reaches that listener — so a fix that
+      // opened only fillCompanyData()'s gate would pass every assertion in
+      // this file and still fail on the real storefront.
+      const live = mountLive();
+      try {
+        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
+        expect(live.component.lastOrderIntentCompanyId).toBe(SAME[1]);
+
+        live.component[CHANGE_BUTTON_CLICK_BINDING]();
+
+        expect(live.component.lastOrderIntentCompanyId).toBe("");
+      } finally {
+        live.stop();
+      }
+    });
+
+    test("the listener's own dedup gate names the same property", () => {
+      // Pins the coupling the test above stands in for: both gates must read
+      // ONE property, or clearing it fixes half the bug. Read out of the
+      // shipped JS rather than assumed.
+      const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
+
+      // Both gate EXPRESSIONS, deliberately not a count of the identifier.
+      // A count is satisfied by the prose comment beside the reset — which
+      // mentions the property by name — so it stays green with a real gate
+      // deleted, which is the opposite of what this test is for.
+      //
+      // fillCompanyData()'s gate, before it dispatches:
+      expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
+      // and the top-level listener's own "already processed" gate:
+      expect(js).toContain(
+        "currentCompanyId === twoPaymentComponentInstance.lastOrderIntentCompanyId",
+      );
+    });
+  });
+
   describe("the billing/shipping key split (TWO-25326 review round 3)", () => {
     /**
      * Mount a FRESH tile against whatever is currently in storage.
