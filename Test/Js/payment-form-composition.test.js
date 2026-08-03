@@ -23,7 +23,7 @@
  *   | x-show companyChangeControlVisible | false   | capture            |
  *   | :class companyNumberBlockHiddenClass | ''    | capture            |
  *   | :class companyIdHiddenClass      | ''        | capture            |
- *   | (companyIdHintVisible, the shared derivation behind those three)     |
+ *   | (companyIdHintVisible, the derivation the other four capture gates read) |
  *
  * So the whole §7 company-search apparatus was inert in production while 476
  * tests passed, because the suites that assert on these getters assert on the
@@ -177,7 +177,9 @@ function ancestorBinding(selector, ancestorSelector, attribute) {
  * the notice's `x-show` are deliberately the same getter, which is the whole
  * point of the 2026-08-03 ruling. The seventh getter of the seven this PR
  * names, `companyIdHintVisible`, is bound to nothing directly; it is the
- * derivation the three capture gates read.
+ * derivation the four capture gates read (`companyIdHiddenClass`,
+ * `companyNumberBlockHiddenClass`, `companySearchBlockVisible` and
+ * `companyChangeControlVisible`).
  *
  * The floor under `formSubtreeBindings()`: that walk skips nested `x-data`
  * scopes, so a nesting change could otherwise shrink its coverage silently —

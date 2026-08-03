@@ -381,7 +381,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       approveIntent(component);
 
       expect(component[LABEL_SHOW_BINDING]).toBe(true);
-      expect(component[LABEL_TEXT_BINDING]).toBe("Example Trading Ltd (123456789)");
+      expect(component[LABEL_TEXT_BINDING]).toBe(
+        "Example Trading Ltd (123456789)",
+      );
     });
 
     test("hides the editable search control block", () => {
@@ -579,7 +581,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       approveIntent(component);
 
       expect(component[LABEL_SHOW_BINDING]).toBe(true);
-      expect(component[LABEL_TEXT_BINDING]).toBe("Other Example Ltd (987654321)");
+      expect(component[LABEL_TEXT_BINDING]).toBe(
+        "Other Example Ltd (987654321)",
+      );
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
     });
 
@@ -702,7 +706,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(component[INTENT_MESSAGE_SHOW_BINDING]).toBe(true);
       expect(component[LABEL_SHOW_BINDING]).toBe(true);
       // Tying the VISIBILITY together does not merge the two texts.
-      expect(component[LABEL_TEXT_BINDING]).toBe("Example Trading Ltd (123456789)");
+      expect(component[LABEL_TEXT_BINDING]).toBe(
+        "Example Trading Ltd (123456789)",
+      );
       expect(component.orderIntentApprovedNotice).toBe(
         "Approved for Example Trading Ltd.",
       );

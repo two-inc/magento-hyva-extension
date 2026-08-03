@@ -584,7 +584,8 @@ value — so it invoked each of the base's getters once and stored the reading a
 property. Seven derived values were frozen at their pre-interaction state on the only
 component that paints them (`orderIntentMessageVisible`, `companyTileLabelText`,
 `companySearchBlockVisible`, `companyChangeControlVisible`, `companyNumberBlockHiddenClass`,
-`companyIdHiddenClass` and the `companyIdHintVisible` derivation behind the last three), so
+`companyIdHiddenClass`, and the `companyIdHintVisible` derivation the last four of those
+read), so
 the whole §7 company-search apparatus on the tile was inert in production behind 476 green
 tests. **No number of assertions against the base object could have failed for it.**
 
@@ -662,10 +663,11 @@ harness evaluates the template once per test, and that listener cannot be remove
 afterwards — it is anonymous — so a test file accumulates one handler per test on the
 jsdom window it shares.
 
-Three files _do_ dispatch that event, all via `selectItem()`:
-`payment-company-selection.test.js`, `payment-company-tile-label.test.js` and
-`payment-form-composition.test.js`. Each inherits one handler per preceding test in it. Two
-things keep that inert rather than flaky in all three, and both are deliberate: they run
+Four files _do_ dispatch that event, all via `selectItem()`:
+`payment-company-tile-label.test.js`, `payment-company-selection.test.js`,
+`payment-form-composition.test.js` and `company-selection-scoping.test.js`. Each inherits one
+handler per preceding test in it. Two things keep that inert rather than flaky in all four,
+and both are deliberate: they run
 under `jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and their DOM
 has no `input[name="payment-method-option"]:checked`, which is the debounced callback's first
 exit. The two that assert on the dispatch do so with a listener of their own that they
