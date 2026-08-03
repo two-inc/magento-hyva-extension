@@ -540,12 +540,44 @@ $quoteDetails = json_encode(
         }
     };
 
+    /**
+     * Compose `source` onto `target` KEEPING ACCESSORS AS ACCESSORS.
+     *
+     * TWO-25332. Object spread and Object.assign copy own enumerable
+     * properties BY VALUE: they invoke every getter once, at composition
+     * time, and store the result as a plain data property. A component
+     * composed that way carries a snapshot nothing ever updates again, so
+     * every `x-show` / `x-text` / `:class` bound to a derived value paints
+     * the value it had before the buyer did anything — silently, because a
+     * frozen property reads exactly like a working one.
+     *
+     * Copying the property DESCRIPTORS instead keeps a getter a getter, so
+     * it is re-evaluated on every read the way Alpine's reactivity assumes.
+     *
+     * @param {Object} target mutated and returned
+     * @param {Object} source its own descriptors are copied onto target
+     * @returns {Object} target
+     */
+    function twoGatewayComposeLive(target, source) {
+        return Object.defineProperties(
+            target,
+            Object.getOwnPropertyDescriptors(source)
+        );
+    }
+
     function twoValidatePaymentForm(form, wire) {
         let timeout = null;
         let dirty = false;
 
-        return Object.assign({},
-            hyva.formValidation(form), {
+        // hyva.formValidation() is third-party and is copied by value as
+        // before, unchanged: we RELY on it exposing no accessors — nothing
+        // in this repo can check that, Hyvä checkout being a commercial
+        // package with no distribution here — and defining onto the object
+        // it returns would mutate a Hyvä-owned value. THIS literal is
+        // composed live, so a getter added to it later cannot be frozen the
+        // way TWO-25332's were.
+        return twoGatewayComposeLive(
+            Object.assign({}, hyva.formValidation(form)), {
                 init() {
                     const doSave = async (isWithValidation = true) => {
                         clearTimeout(timeout);
@@ -1500,35 +1532,94 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // TWO-25326 §7: the single captured-company label at the top of
-            // the payment fieldset, replacing the two inline hints TWO-25288
-            // put next to the company-name field.
+            // TWO-25326, ruling of 2026-08-03: the ONE gate for both the
+            // inline order-intent notice and the captured-company label beside
+            // it. The label is shown exactly when the notice is shown and
+            // hidden exactly when it is hidden, so both `x-show` bindings name
+            // THIS getter rather than each testing a condition of its own.
             //
-            // Same gate as everything else here — `companyIdHintVisible`, i.e.
-            // CAPTURED (a registry-supplied number is locked in for the name
-            // beside it). Deliberately not `companyName` truthiness:
-            // `companyName` has no clearing writer, so a later shipping sync
-            // or re-render can leave it holding a PREVIOUS pick. The derived
-            // gate drops the moment `getItems()` recomputes
-            // `companyIdEntryRequired` for text that no longer matches the
-            // locked pick, which is the "buyer typed after selecting" case
-            // this must not go stale on.
-            get companyTileLabelVisible() {
+            // That is the whole reason it exists. A parallel "is a company
+            // captured" check would agree with the notice most of the time and
+            // diverge precisely in the states the ruling asks about: a company
+            // captured with no intent dispatched yet, an intent that was
+            // declined or errored, and a brand that suppressed the notice
+            // (`orderIntentApprovedNoticeCopy` null, so
+            // resolveOrderIntentApprovedNotice() always returns '').
+            //
+            // `orderIntentApprovedNotice` is seeded to '' in the component
+            // literal specifically so this is never undefined — see the comment
+            // on that property. Boolean() rather than the bare string so the
+            // getter answers a boolean to a test that compares against one.
+            //
+            // READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two
+            // configurations mean the notice never fires at all, and so that the
+            // §7 label never renders either: order intent disabled for the
+            // merchant (the `isOrderIntentEnabled` gate before dispatch), and a
+            // Dutch buyer whose company is not a BV. Both are permanent rather
+            // than transient, and on this surface the consequence is sharper
+            // than on Luma — capture still hides the search block AND the
+            // Company Number block, so those buyers see no company name
+            // anywhere on the tile and a bare "Change company" button next to
+            // nothing. That follows literally from "shown exactly when the
+            // notice is shown", so it is a consequence of the ruling rather
+            // than a defect here, but it is a product decision and not one to
+            // paper over by widening this getter.
+            //
+            // This getter, and every other one in this literal, reaches the
+            // component the <form> mounts as a LIVE accessor only because
+            // PaymentFormWithValidation() composes with property descriptors
+            // (TWO-25332). Composing it with object spread — as it did until
+            // then — evaluated each getter once and copied the frozen result,
+            // which disabled the whole §7 label apparatus in production
+            // without failing a single test. See that function's comment.
+            get orderIntentMessageVisible() {
+                return Boolean(this.orderIntentApprovedNotice);
+            },
+
+            // TWO-25326 §7: the "Change company" button beside the label.
+            //
+            // Gated on CAPTURED — `companyIdHintVisible`, i.e. a
+            // registry-supplied number is locked in for the name beside it —
+            // which is the exact negation of the search block's own gate, and
+            // deliberately NOT the label's intent-message gate above. Capture
+            // is what hides the search block, and the only "Enter details
+            // manually" link lives inside it, so a button that followed the
+            // label would leave a buyer with a captured company and no approved
+            // intent holding neither control: an unchangeable company, which is
+            // order-blocking rather than cosmetic.
+            //
+            // Deliberately not `companyName` truthiness either: `companyName`
+            // has no clearing writer, so a later shipping sync or re-render can
+            // leave it holding a PREVIOUS pick. The derived gate drops the
+            // moment `getItems()` recomputes `companyIdEntryRequired` for text
+            // that no longer matches the locked pick, which is the "buyer typed
+            // after selecting" case this must not go stale on.
+            get companyChangeControlVisible() {
                 return this.companyIdHintVisible;
             },
 
             // "<name> (<number>)", built here rather than in the template:
             // bound attribute expressions are looked up as a KEY on the
             // component, never evaluated, so a concatenation in the markup
-            // would resolve to nothing at all. Only read while
-            // `companyTileLabelVisible` is true, so `companyId` is non-empty.
+            // would resolve to nothing at all.
+            //
+            // The parts are guarded rather than assumed. Under the superseded
+            // capture gate a non-empty `companyId` was guaranteed whenever this
+            // was read; the intent-message gate does not guarantee it, so an
+            // unguarded concatenation could paint "Example Ltd ()" or a bare
+            // " (12345678)". Same shape as the sibling platforms' single-line
+            // builders: no name at all means no label text.
             get companyTileLabelText() {
-                return this.companyName + ' (' + this.companyId + ')';
+                const companyName = (this.companyName || '').trim();
+                if (!companyName) return '';
+
+                const companyId = (this.companyId || '').trim();
+                return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
             // TWO-25326 §7: the editable company-name search control is shown
-            // only while NOTHING is captured yet. Once captured, the read-only
-            // label above stands in for it.
+            // only while NOTHING is captured yet. Once captured, the
+            // "Change company" button beside the label is the route back to it.
             //
             // Gated on captured, NOT on mode. On Magento this control is a
             // company-capture route in its own right for buyers who never see
@@ -1772,11 +1863,34 @@ $quoteDetails = json_encode(
         };
     }
 
+    /**
+     * The component the payment `<form>` mounts: the tile component's state
+     * and derivations, plus the form's validation and autosave.
+     *
+     * TWO-25332: composed with DESCRIPTORS, not spread. This used to be
+     *
+     *     return { ...PaymentMethodBase(), ...twoValidatePaymentForm(…) };
+     *
+     * which evaluated each of PaymentMethodBase()'s getters once and copied
+     * the frozen result, so on the component the form actually mounted
+     * `orderIntentMessageVisible`, `companyTileLabelText`,
+     * `companySearchBlockVisible`, `companyChangeControlVisible`,
+     * `companyIdHintVisible`, `companyIdHiddenClass` and
+     * `companyNumberBlockHiddenClass` were all dead data properties holding
+     * their pre-interaction value. Every §7 company-search behaviour tied to
+     * them was inert in production, and no test saw it because the suites
+     * mounted the BASE component, where the getters are real.
+     * `payment-form-composition.test.js` mounts THIS factory for that reason
+     * — do not let that suite go away.
+     *
+     * The validation object still wins on a name collision (`init`), exactly
+     * as the spread ordering did.
+     */
     function <?= $gwBase ?>PaymentFormWithValidation() {
-        return {
-            ...<?= $gwBase ?>PaymentMethodBase(),
-            ...twoValidatePaymentForm(this.$el, this.$wire)
-        };
+        return twoGatewayComposeLive(
+            <?= $gwBase ?>PaymentMethodBase(),
+            twoValidatePaymentForm(this.$el, this.$wire)
+        );
     }
 
     function <?= $gwBase ?>PaymentTermsComponent() {

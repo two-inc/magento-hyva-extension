@@ -92,8 +92,13 @@ asserted is ours. Unlike `prestashop-plugin`, which loads the real jQuery UI bec
 of its target defects were properties _of the widget_, there is no npm distribution to
 load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,
-so calling `component.getItems()` binds `this` the way Alpine's proxy does; `$el`,
-`$root` and `$nextTick` are attached by `mountComponent()`.
+so calling `component.getItems()` binds `this` the way Alpine's proxy does. `mountComponent()`
+attaches four magics — `$el`, `$root` and `$nextTick` from Alpine, `$wire` from Magewire — and
+also binds them as the factory's `this`, because Alpine binds its magics that way and because
+`twoGatewayHyvaPaymentFormWithValidation` reads `this.$el` / `this.$wire` while it composes
+rather than later. `$watch` is deliberately not supplied: a no-op default would let a test
+that means to exercise a watcher pass without one, so every test calling `initialize()` sets
+it itself.
 
 `fetch` is settled by hand per call. Request timing _is_ the subject matter — timeouts,
 supersession, aborts — so controlling it is the point rather than a shortcut. The abort
@@ -569,6 +574,62 @@ still fail.
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
+`payment-form-composition.test.js` — **the component the payment `<form>` actually mounts**,
+`twoGatewayHyvaPaymentFormWithValidation`. **No other suite mounts it** — the others mount
+`twoGatewayHyvaPaymentMethodBase`, `twoGatewayHyvaCompanySearchField` or
+`twoGatewayHyvaTermChip`. The form mounts the base composed with the validation/autosave
+object, and the composition is a thing that can be wrong on its own.
+TWO-25332: it composed with object **spread**, which copies own enumerable properties by
+value — so it invoked each of the base's getters once and stored the reading as a plain data
+property. Seven derived values were frozen at their pre-interaction state on the only
+component that paints them (`orderIntentMessageVisible`, `companyTileLabelText`,
+`companySearchBlockVisible`, `companyChangeControlVisible`, `companyNumberBlockHiddenClass`,
+`companyIdHiddenClass`, and the `companyIdHintVisible` derivation the last four of those
+read), so
+the whole §7 company-search apparatus on the tile was inert in production behind 476 green
+tests. **No number of assertions against the base object could have failed for it.**
+
+What the suite therefore pins, in the order that matters:
+
+- every accessor on the base is still an accessor on the form — **enumerated from the base**,
+  not listed, so a getter added to the base literal tomorrow is covered without editing this
+  file. Do not replace that enumeration with a literal list;
+- every bare-identifier Alpine binding in the form component's **own** Alpine scope in the
+  shipped markup names a key the form component defines. Nested `x-data` subtrees are
+  skipped: a binding under `PaymentTermsComponent` resolves against that component, and it
+  would pass here either way today only because that factory returns `PaymentMethodBase()`
+  unchanged. The walk has a **floor** under it: the seven bindings whose getters the freeze
+  killed — naming six distinct getters, since the label's gate and the notice's gate are
+  deliberately the same one — are asserted to be inside the enumerated set, because a nesting
+  change would otherwise shrink the enumeration silently, the walk itself only throwing on an
+  empty result. The distinct-getter set is asserted by name too: resolving two entries to one
+  expression is how `companyNumberBlockHiddenClass` fell out of this floor once, in round 2 of
+  this PR's own review;
+- the composer keeps a getter live on both sides and keeps the validation object's
+  precedence on a name collision (there is none today — the base names its entry point
+  `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
+- the four revived behaviours, on the form component, including the two states where a getter
+  is read before the value behind it exists: a read before `initialize()`, and the tick inside
+  `initialize()` where `companyIdDisabled` is derived but `companyId` is not written yet;
+- the notice-clearing `$watch`es, registered and fired on the FORM component with a recording
+  `$watch` rather than the shared instance's no-op stub;
+- the configuration where order intent never fires (disabled for the merchant, or a Dutch
+  buyer whose company is not a BV): capture still hides both company blocks while the label's
+  own `x-show` — read out of the shipped markup, because the getter cannot answer this; it
+  still returns the text — stays shut. That is the 2026-08-03 ruling's consequence rather than
+  a defect, and it is now reachable on screen because the gates are live. The flag is made
+  load-bearing by a pair: with it off nothing dispatches `dispatch-order-intent`, with it on
+  the same capture does. Both inputs keep their values, so the order still places.
+
+| Mutation                                                           | Failing tests                                                                                                                                                            |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PaymentFormWithValidation()` back to object spread                | 6                                                                                                                                                                        |
+| `twoGatewayComposeLive()` back to `Object.assign(target, …)`       | 1                                                                                                                                                                        |
+| `form.isOrderIntentEnabled = false` dropped from its test          | 1                                                                                                                                                                        |
+| the label row wrapped in a nested `x-data` (shrinks the walk)      | 1 — the floor                                                                                                                                                            |
+| `ancestorBinding()` walking from the element instead of its parent | the suite fails to run at all                                                                                                                                            |
+| composer's arguments swapped at the call site                      | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
+
 ## Deliberately out of scope
 
 - **The PHP-side CSP guard.** `Test/Unit/` owns that; duplicating it in JS would assert
@@ -576,11 +637,13 @@ renderer.
   `CspInlineScriptTemplateTest.php`, `QuoteDetailsEncodingTest.php` — are not on `staging`
   yet; they arrive with the open CSP-nonce PR.)
 - **Most of the payment-method Alpine components** in `gateway_method-csp-js.phtml`. The
-  template is loaded whole, so the order-intent recheck, the term chips and the
-  form-validation wrapper all _evaluate_ under test — but nothing asserts on them, and
-  mutating any of them leaves the suite green. They are a much larger surface (Magewire
-  round-trips, a 500ms debounced global listener, `Alpine.store`) and belong in their own
-  suite. The exception is `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
+  template is loaded whole, so the order-intent recheck and the term chips both _evaluate_
+  under test — but nothing asserts on their behaviour, and mutating either leaves the suite
+  green. They are a much larger surface (Magewire round-trips, a 500ms debounced global
+  listener, `Alpine.store`) and belong in their own suite. Two exceptions: the
+  form-validation wrapper's COMPOSITION is asserted by `payment-form-composition.test.js`
+  (its Magewire autosave behaviour still is not), and
+  `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
   `payment-company-selection.test.js` does assert on: the identifier guard made an empty
   `companyId` reachable there, and the wrong-data consequence had to be pinned.
 - **Rendered markup, as chrome.** Nothing here mounts a template and asserts on what a buyer
@@ -600,12 +663,15 @@ harness evaluates the template once per test, and that listener cannot be remove
 afterwards — it is anonymous — so a test file accumulates one handler per test on the
 jsdom window it shares.
 
-`payment-company-selection.test.js` is the one file that _does_ dispatch that event, via
-`selectItem()`, so it inherits one handler per preceding test in it. Two things keep that
-inert rather than flaky, and both are deliberate: the file runs under
-`jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and its DOM has no
-`input[name="payment-method-option"]:checked`, which is the debounced callback's first exit.
-It asserts on the dispatch with a listener of its own that it removes.
+Four files _do_ dispatch that event, all via `selectItem()`:
+`payment-company-tile-label.test.js`, `payment-company-selection.test.js`,
+`payment-form-composition.test.js` and `company-selection-scoping.test.js`. Each inherits one
+handler per preceding test in it. Two things keep that inert rather than flaky in all four,
+and both are deliberate: they run
+under `jest.useFakeTimers()`, so no accumulated 500ms debounce ever elapses, and their DOM
+has no `input[name="payment-method-option"]:checked`, which is the debounced callback's first
+exit. The two that assert on the dispatch do so with a listener of their own that they
+remove.
 
 `company-name-payment.phtml` has the same shape — anonymous top-level `window` listeners for
 `shipping-company-selected` and `checkout:payment:method-activate`. `payment-fields-shipping-sync.test.js`
@@ -613,9 +679,14 @@ drives those listeners directly, so it evaluates that template **once**, in `bef
 resets the DOM and browser storage per test instead. A per-test load there would run one
 handler per preceding test on every dispatch.
 
-Elsewhere the leak is inert for a simpler reason: nothing else dispatches these events, and
-each handler only arms the debounce when it fires. A new test that dispatches one belongs in
-its own file for the same reason — or have the production template guard its registration the
+`payment-method-code.test.js` also drives those listeners — it dispatches
+`checkout:payment:method-activate` with that template loaded per test — so handlers accumulate
+there too. WHY that has never surfaced is a question about `company-name-payment.phtml`'s own
+handlers rather than about anything TWO-25332 touches, and it is deliberately not characterised
+here: two attempts to describe it, in review rounds 5 and 6 of PR #93, were both wrong.
+Elsewhere the leak is inert for a simpler reason: nothing drives the listeners at all, and each
+handler only arms the debounce when it fires. A new test that dispatches one belongs in its own
+file for the same reason — or have the production template guard its registration the
 way the helpers guard theirs (`window.x = window.x || …`).
 
 ## Adding tests

@@ -163,6 +163,20 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * Alpine scope, not the outer tile's, because the form instance is
              * the one holding company state.
              *
+             * WHEN it shows is the 2026-08-03 ruling on TWO-25326: shown
+             * exactly when the order-intent notice below is shown, hidden
+             * exactly when it is hidden. Both bindings therefore name the SAME
+             * getter, `orderIntentMessageVisible`, rather than each testing a
+             * condition of its own that happens to agree. This supersedes the
+             * earlier gate, which showed the label whenever a company number
+             * had been captured.
+             *
+             * The label is consequently NOT a swap with the tile's company
+             * controls. Those keep their own capture gate
+             * (`companySearchBlockVisible` / `companyNumberBlockHiddenClass`),
+             * and so does the "Change company" button below, which is the only
+             * route back out of a captured company.
+             *
              * Both bindings are bare getter names: this file's CSP-friendly
              * Alpine build looks a bound expression up as a key on the
              * component rather than evaluating it, so `companyTileLabelText`
@@ -174,7 +188,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 <span
                     class="two-company-tile-label font-semibold text-gray-700"
                     data-name="company_tile_label"
-                    x-show="companyTileLabelVisible"
+                    x-show="orderIntentMessageVisible"
                     x-text="companyTileLabelText"
                 ></span>
                 <?php
@@ -192,16 +206,24 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                  * A real `<button type="button">`, per this ticket's §2: it is
                  * an action, it has to be reachable and operable from the
                  * keyboard, and `type="button"` keeps it from submitting the
-                 * checkout form it sits inside. The visible-only-when-captured
-                 * gate is the same getter the label uses, so the control can
-                 * never appear while the search block is already showing.
+                 * checkout form it sits inside.
+                 *
+                 * Gated on CAPTURE (`companyChangeControlVisible`), which is
+                 * the exact negation of the search block's own gate — NOT on
+                 * the label's new intent-message gate. This is load-bearing.
+                 * Capture is what hides the search block, so if this button
+                 * followed the label instead, a buyer with a captured company
+                 * and no approved intent on screen would have neither the
+                 * search block nor a way back to it, and could not correct the
+                 * company at all. That is an order-blocking dead end, so the
+                 * two gates are deliberately different.
                  */
                 ?>
                 <button
                     type="button"
                     class="two-company-tile-change text-blue-600 text-sm cursor-pointer"
                     data-name="company_tile_change"
-                    x-show="companyTileLabelVisible"
+                    x-show="companyChangeControlVisible"
                     @click="<?= $gwBase ?>OnChangeCompanyClick"
                 ><?= $escaper->escapeHtml(__("Change company")) ?></button>
             </div>
@@ -222,13 +244,19 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * It sits inside the form's Alpine scope, not the outer tile's,
              * because the form is the instance that runs initialize() and so
              * the one holding the order-intent state.
+             *
+             * `x-show` reads `orderIntentMessageVisible` rather than the notice
+             * text directly — same truth value, but it makes the shared gate
+             * literal: the company label above reads the identical getter, so
+             * the two cannot drift apart. `x-text` still reads the text.
              */
             ?>
             <?php if ($configModel->getOrderIntentApprovedNotice() !== null): ?>
                 <div
                     class="two-order-intent-message approved bg-green-50 border border-green-200 text-green-800 text-sm p-2 rounded-md"
                     role="status"
-                    x-show="orderIntentApprovedNotice"
+                    data-name="order_intent_message"
+                    x-show="orderIntentMessageVisible"
                     x-text="orderIntentApprovedNotice"
                 ></div>
             <?php endif ?>
