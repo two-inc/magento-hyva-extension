@@ -93,7 +93,10 @@ of its target defects were properties _of the widget_, there is no npm distribut
 load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,
 so calling `component.getItems()` binds `this` the way Alpine's proxy does; `$el`,
-`$root` and `$nextTick` are attached by `mountComponent()`.
+`$root`, `$wire` and `$nextTick` are attached by `mountComponent()` — and are also bound as
+the factory's `this`, because Alpine does and because
+`twoGatewayHyvaPaymentFormWithValidation` reads `this.$el` / `this.$wire` while it composes
+rather than later.
 
 `fetch` is settled by hand per call. Request timing _is_ the subject matter — timeouts,
 supersession, aborts — so controlling it is the point rather than a shortcut. The abort
@@ -569,6 +572,39 @@ still fail.
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 
+`payment-form-composition.test.js` — **the component the payment `<form>` actually mounts**,
+`twoGatewayHyvaPaymentFormWithValidation`. Every other suite here mounts
+`twoGatewayHyvaPaymentMethodBase`; the form mounts that base composed with the
+validation/autosave object, and the composition is a thing that can be wrong on its own.
+TWO-25332: it composed with object **spread**, which copies own enumerable properties by
+value — so it invoked each of the base's getters once and stored the reading as a plain data
+property. Seven derived values were frozen at their pre-interaction state on the only
+component that paints them (`orderIntentMessageVisible`, `companyTileLabelText`,
+`companySearchBlockVisible`, `companyChangeControlVisible`, `companyNumberBlockHiddenClass`,
+`companyIdHiddenClass` and the `companyIdHintVisible` derivation behind the last three), so
+the whole §7 company-search apparatus on the tile was inert in production behind 476 green
+tests. **No number of assertions against the base object could have failed for it.**
+
+What the suite therefore pins, in the order that matters:
+
+- every accessor on the base is still an accessor on the form — **enumerated from the base**,
+  not listed, so a getter added to the base literal tomorrow is covered without editing this
+  file. Do not replace that enumeration with a literal list;
+- every bare-identifier Alpine binding in the `<form>` subtree of the shipped markup names a
+  key the form component defines;
+- the composer keeps a getter live on both sides and keeps the validation object's
+  precedence on a name collision (there is none today — the base names its entry point
+  `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
+- the four revived behaviours, on the form component, including the two states where a getter
+  is read before the value behind it exists: a read before `initialize()`, and the tick inside
+  `initialize()` where `companyIdDisabled` is derived but `companyId` is not written yet.
+
+| Mutation                                                       | Failing tests |
+| -------------------------------------------------------------- | ------------- |
+| `PaymentFormWithValidation()` back to object spread            | 4             |
+| `twoGatewayComposeLive()` back to `Object.assign(target, …)`   | 1             |
+| composer's arguments swapped at the call site                  | **0 — equivalent.** Nothing is named on both objects today, so the swap is unobservable; the precedence test covers the composer, which is where the ordering is decided |
+
 ## Deliberately out of scope
 
 - **The PHP-side CSP guard.** `Test/Unit/` owns that; duplicating it in JS would assert
@@ -576,11 +612,13 @@ renderer.
   `CspInlineScriptTemplateTest.php`, `QuoteDetailsEncodingTest.php` — are not on `staging`
   yet; they arrive with the open CSP-nonce PR.)
 - **Most of the payment-method Alpine components** in `gateway_method-csp-js.phtml`. The
-  template is loaded whole, so the order-intent recheck, the term chips and the
-  form-validation wrapper all _evaluate_ under test — but nothing asserts on them, and
-  mutating any of them leaves the suite green. They are a much larger surface (Magewire
-  round-trips, a 500ms debounced global listener, `Alpine.store`) and belong in their own
-  suite. The exception is `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
+  template is loaded whole, so the order-intent recheck and the term chips both _evaluate_
+  under test — but nothing asserts on their behaviour, and mutating either leaves the suite
+  green. They are a much larger surface (Magewire round-trips, a 500ms debounced global
+  listener, `Alpine.store`) and belong in their own suite. Two exceptions: the
+  form-validation wrapper's COMPOSITION is asserted by `payment-form-composition.test.js`
+  (its Magewire autosave behaviour still is not), and
+  `twoGatewayHyvaPaymentMethodBase`'s company-selection path, which
   `payment-company-selection.test.js` does assert on: the identifier guard made an empty
   `companyId` reachable there, and the wrong-data consequence had to be pinned.
 - **Rendered markup, as chrome.** Nothing here mounts a template and asserts on what a buyer
