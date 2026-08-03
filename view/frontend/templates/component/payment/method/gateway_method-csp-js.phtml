@@ -1500,35 +1500,72 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // TWO-25326 §7: the single captured-company label at the top of
-            // the payment fieldset, replacing the two inline hints TWO-25288
-            // put next to the company-name field.
+            // TWO-25326, ruling of 2026-08-03: the ONE gate for both the
+            // inline order-intent notice and the captured-company label beside
+            // it. The label is shown exactly when the notice is shown and
+            // hidden exactly when it is hidden, so both `x-show` bindings name
+            // THIS getter rather than each testing a condition of its own.
             //
-            // Same gate as everything else here — `companyIdHintVisible`, i.e.
-            // CAPTURED (a registry-supplied number is locked in for the name
-            // beside it). Deliberately not `companyName` truthiness:
-            // `companyName` has no clearing writer, so a later shipping sync
-            // or re-render can leave it holding a PREVIOUS pick. The derived
-            // gate drops the moment `getItems()` recomputes
-            // `companyIdEntryRequired` for text that no longer matches the
-            // locked pick, which is the "buyer typed after selecting" case
-            // this must not go stale on.
-            get companyTileLabelVisible() {
+            // That is the whole reason it exists. A parallel "is a company
+            // captured" check would agree with the notice most of the time and
+            // diverge precisely in the states the ruling asks about: a company
+            // captured with no intent dispatched yet, an intent that was
+            // declined or errored, and a brand that suppressed the notice
+            // (`orderIntentApprovedNoticeCopy` null, so
+            // resolveOrderIntentApprovedNotice() always returns '').
+            //
+            // `orderIntentApprovedNotice` is seeded to '' in the component
+            // literal specifically so this is never undefined — see the comment
+            // on that property. Boolean() rather than the bare string so the
+            // getter answers a boolean to a test that compares against one.
+            get orderIntentMessageVisible() {
+                return Boolean(this.orderIntentApprovedNotice);
+            },
+
+            // TWO-25326 §7: the "Change company" button beside the label.
+            //
+            // Gated on CAPTURED — `companyIdHintVisible`, i.e. a
+            // registry-supplied number is locked in for the name beside it —
+            // which is the exact negation of the search block's own gate, and
+            // deliberately NOT the label's intent-message gate above. Capture
+            // is what hides the search block, and the only "Enter details
+            // manually" link lives inside it, so a button that followed the
+            // label would leave a buyer with a captured company and no approved
+            // intent holding neither control: an unchangeable company, which is
+            // order-blocking rather than cosmetic.
+            //
+            // Deliberately not `companyName` truthiness either: `companyName`
+            // has no clearing writer, so a later shipping sync or re-render can
+            // leave it holding a PREVIOUS pick. The derived gate drops the
+            // moment `getItems()` recomputes `companyIdEntryRequired` for text
+            // that no longer matches the locked pick, which is the "buyer typed
+            // after selecting" case this must not go stale on.
+            get companyChangeControlVisible() {
                 return this.companyIdHintVisible;
             },
 
             // "<name> (<number>)", built here rather than in the template:
             // bound attribute expressions are looked up as a KEY on the
             // component, never evaluated, so a concatenation in the markup
-            // would resolve to nothing at all. Only read while
-            // `companyTileLabelVisible` is true, so `companyId` is non-empty.
+            // would resolve to nothing at all.
+            //
+            // The parts are guarded rather than assumed. Under the superseded
+            // capture gate a non-empty `companyId` was guaranteed whenever this
+            // was read; the intent-message gate does not guarantee it, so an
+            // unguarded concatenation could paint "Example Ltd ()" or a bare
+            // " (12345678)". Same shape as the sibling platforms' single-line
+            // builders: no name at all means no label text.
             get companyTileLabelText() {
-                return this.companyName + ' (' + this.companyId + ')';
+                const companyName = (this.companyName || '').trim();
+                if (!companyName) return '';
+
+                const companyId = (this.companyId || '').trim();
+                return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
             // TWO-25326 §7: the editable company-name search control is shown
-            // only while NOTHING is captured yet. Once captured, the read-only
-            // label above stands in for it.
+            // only while NOTHING is captured yet. Once captured, the
+            // "Change company" button beside the label is the route back to it.
             //
             // Gated on captured, NOT on mode. On Magento this control is a
             // company-capture route in its own right for buyers who never see
