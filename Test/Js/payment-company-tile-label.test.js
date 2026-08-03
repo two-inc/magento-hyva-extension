@@ -872,12 +872,18 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
      * watcher on one property cannot silently drop the first.
      *
      * ONE known divergence: these callbacks fire SYNCHRONOUSLY, where Alpine
-     * queues them on a microtask. Production is unaffected because the intent
-     * response arrives from a real `fetch` — a macrotask, so always after the
-     * watcher's blanking either way. The consequence for this suite is that it
-     * could not catch a regression that made the notice write land BEFORE the
-     * watcher that blanks it; nothing here should be read as covering that
-     * ordering.
+     * queues them on a microtask.
+     *
+     * Production is unaffected, but NOT because of anything about how the
+     * `fetch` continuation is scheduled — its `.then` is a microtask, the same
+     * queue the watcher uses. The ordering holds because the response cannot
+     * arrive until a later task, and the listener waits out a 500ms debounce
+     * before it even issues the request. The watcher's blanking has therefore
+     * flushed long beforehand.
+     *
+     * The consequence for this suite is that it could not catch a regression
+     * that made the notice write land BEFORE the watcher that blanks it;
+     * nothing here should be read as covering that ordering.
      *
      * @returns {{component: Object, intents: string[], stop: Function}}
      *   `intents` records the company id carried by each dispatched intent
