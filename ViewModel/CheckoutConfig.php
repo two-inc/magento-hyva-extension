@@ -12,7 +12,6 @@ declare(strict_types=1);
 namespace Two\GatewayHyva\ViewModel;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -23,24 +22,6 @@ use Two\Gateway\Model\Two;
 
 class CheckoutConfig implements ArgumentInterface
 {
-    /**
-     * TWO-25326 §7.1 (2026-08-03 ruling): the admin setting deciding WHERE the
-     * one company-search control renders — never whether it exists.
-     *
-     * This is a Hyvä-module-local setting (read via ScopeConfigInterface
-     * directly, not through ConfigRepository) because the base module's
-     * RepositoryInterface lives in a different repository (two-inc/magento2 /
-     * magento-plugin) and Luma's own equivalent setting is tracked there
-     * separately. The two are independent config paths today; unifying them
-     * behind one shared repository method is a follow-up once both sides
-     * exist.
-     */
-    public const XML_PATH_COMPANY_SEARCH_LOCATION = 'two_general/hyva/company_search_location';
-
-    public const COMPANY_SEARCH_LOCATION_ADDRESS_AREA = 'address_area';
-
-    public const COMPANY_SEARCH_LOCATION_PAYMENT_TILE = 'payment_tile';
-
     /**
      * Placeholder the Alpine component substitutes the buyer's company number
      * into (TWO-25326 §7.3). Sibling of COMPANY_NAME_TOKEN below.
@@ -108,11 +89,6 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $brandedViewModel;
 
-    /**
-     * @var ScopeConfigInterface
-     */
-    private $scopeConfig;
-
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -121,7 +97,6 @@ class CheckoutConfig implements ArgumentInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
-        ScopeConfigInterface $scopeConfig,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -130,36 +105,29 @@ class CheckoutConfig implements ArgumentInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
-        $this->scopeConfig = $scopeConfig;
     }
 
     /**
-     * TWO-25326 §7.1: where the one company-search control renders.
+     * TWO-25326 §7.1 (2026-08-03 ruling), corrected 2026-08-04: is the
+     * payment tile the surface hosting the ONE company-search control right
+     * now? When false, the tile is text-only (§7.2/§7.3) and the
+     * address-area control is the enhanced one.
      *
-     * Read directly via ScopeConfigInterface rather than through
-     * ConfigRepository — see the constant's own doc comment. Defaults to
-     * address-area (matching etc/config.xml and today's actual behaviour)
-     * whenever the stored value is missing or unrecognised, so a fresh
-     * install or a corrupted value degrades to the SAFE, already-shipped
-     * configuration rather than an unexpected one.
-     */
-    public function getCompanySearchLocation(): string
-    {
-        $value = (string) $this->scopeConfig->getValue(self::XML_PATH_COMPANY_SEARCH_LOCATION);
-
-        return $value === self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE
-            ? self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE
-            : self::COMPANY_SEARCH_LOCATION_ADDRESS_AREA;
-    }
-
-    /**
-     * TWO-25326 §7.1: is the payment tile the surface hosting the ONE
-     * company-search control right now? When false, the tile is text-only
-     * (§7.2/§7.3) and the address-area control is the enhanced one.
+     * Hyvä has NO setting of its own for this — the earlier revision's
+     * Hyvä-local `two_general/hyva/company_search_location` field was wrong;
+     * Doug's correction is that there must be exactly one control deciding
+     * this per merchant, not one per platform. It reads the CORE module's
+     * already-existing, already-correct setting directly, the same way
+     * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below already
+     * reuse ConfigRepository for other core config: `enable_company_search`
+     * (Stores > Configuration > Two > General > Search). Enabled means the
+     * shipping-address field hosts the control; disabled means the payment
+     * tile does. So "in the payment tile" here is the negation of
+     * isCompanySearchEnabled().
      */
     public function getIsCompanySearchInPaymentTile(): bool
     {
-        return $this->getCompanySearchLocation() === self::COMPANY_SEARCH_LOCATION_PAYMENT_TILE;
+        return !$this->configRepository->isCompanySearchEnabled();
     }
 
     /**

@@ -2,10 +2,12 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §7.1-§7.3, 2026-08-03 ruling. Exactly ONE company-search control
- * per platform; an admin setting (CheckoutConfig::getCompanySearchLocation())
- * decides WHERE it renders — address area, or payment tile — never whether
- * it exists.
+ * TWO-25326 §7.1-§7.3, 2026-08-03 ruling, corrected 2026-08-04. Exactly ONE
+ * company-search control per merchant (not per platform), rendering either
+ * in the address area or in the payment tile, driven by the CORE module's
+ * `enable_company_search` setting. Hyvä has no setting of its own;
+ * CheckoutConfig::getIsCompanySearchInPaymentTile() reads the core setting
+ * directly.
  *
  * Every other suite in this directory over these two templates predates the
  * ruling and keeps testing each control's OWN behaviour as if it were the
