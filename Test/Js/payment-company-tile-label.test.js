@@ -13,28 +13,29 @@
  * inputs still in the DOM so `payment[company_name]` and `payment[company_id]`
  * still submit.
  *
- * TWO GATES, and keeping them apart is what this file is for.
+ * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling). This file used to
+ * carry a SECOND gate alongside the label's, guarding the search block, the
+ * Company Number block and a "Change company" button — all three hidden
+ * together on CAPTURE, with the button as the only route back out. Doug's
+ * exact words, carried over from the identical ruling on Magento (PR #324):
+ * the search control "is controlled ONLY by the state of the 'enable search
+ * in address' admin setting ... and search control visibility is not
+ * changed for any other reason." Found in live testing to read as a
+ * confusing hide-and-reshow rather than a stable control.
  *
- * 1. The CONTROLS — the search block, the Company Number block, and the
- *    "Change company" button that is the route back out — are gated on
- *    CAPTURED, never on mode. On Magento the tile's search control is a
- *    company-capture route in its own right for buyers who never see the
- *    address-step company field: a logged-in buyer picking a saved address, or
- *    a virtual cart with no shipping step. Hiding it while nothing is captured
- *    is an order-blocking regression, not a cosmetic one, so every "hidden"
- *    assertion here has a matching "still visible while uncaptured" one. This
- *    gate is UNCHANGED.
+ * The consequence for this file:
  *
- * 2. The LABEL is gated on the order-intent notice, per the 2026-08-03 ruling
- *    on TWO-25326: shown exactly when that notice is shown, hidden exactly when
- *    it is hidden. Both bindings read the identical getter. This SUPERSEDES the
- *    label's earlier capture gate.
- *
- * The consequence is deliberate and pinned below: a captured company with no
- * approved intent on screen hides the search and number blocks, shows no label,
- * and shows the "Change company" button — which is why that button must keep
- * gate 1. Following the label would leave that buyer with no control at all and
- * an unchangeable company.
+ *   - `SEARCH_BLOCK_SHOW_BINDING` now follows MODE (search vs manual) only —
+ *     every "hides the search block" assertion below became "stays visible";
+ *   - the "Change company" button, `CHANGE_BUTTON_SHOW_BINDING`,
+ *     `CHANGE_BUTTON_CLICK_BINDING` and `clearCapturedCompany()` are all
+ *     REMOVED, along with every test whose only subject was that round trip;
+ *   - the Company Number block's own gate (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`)
+ *     is UNCHANGED — that block was never part of this bug, and still hides
+ *     once a registry number is locked in, exactly as §7 shipped it;
+ *   - the LABEL's gate (gate 2 below) is likewise unchanged — it still follows
+ *     the order-intent notice, per the 2026-08-03 ruling, independently of
+ *     both of the above.
  *
  * Every binding is read out of the SHIPPED markup by `H.readAlpineBinding()`
  * rather than named as a literal. This repo has repeatedly shipped bindings
@@ -68,10 +69,17 @@ const LABEL_TEXT_BINDING = H.readAlpineBinding(
  * search input. Selected via that input's `data-name`, then walked up to the
  * `x-show` ancestor, so a markup reshuffle that moves the gate off this block
  * fails here rather than passing silently.
+ *
+ * Since the 2026-08-05 ruling (bug 5) this follows MODE only — it is `true`
+ * whenever the buyer is not in manual entry, regardless of capture.
  */
 const SEARCH_BLOCK_SHOW_BINDING = readSearchBlockShowBinding();
 
-/** The gate on the whole Company Number block, caption included. */
+/**
+ * The gate on the whole Company Number block, caption included. UNCHANGED by
+ * the 2026-08-05 ruling: this block still hides once a registry number is
+ * locked in.
+ */
 const NUMBER_BLOCK_HIDDEN_CLASS_BINDING = readNumberBlockClassBinding();
 
 /**
@@ -113,26 +121,6 @@ function approveIntent(component) {
 }
 
 /**
- * The "Change company" control's bindings. Capture hides both company controls
- * and the only "Enter details manually" link lives inside the hidden search
- * block, so this button is the ONLY way back out — a binding that resolves to
- * nothing here is an unchangeable company, not a cosmetic defect.
- *
- * Its `x-show` is the CAPTURE gate, and is asserted below to be different from
- * the label's.
- */
-const CHANGE_BUTTON_SHOW_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  '[data-name="company_tile_change"]',
-  "x-show",
-);
-const CHANGE_BUTTON_CLICK_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  '[data-name="company_tile_change"]',
-  "@click",
-);
-
-/**
  * The payment template's raw, UNRENDERED source. Needed for assertions about
  * the PHP itself: renderTemplate() drops every `<?php … ?>` block whole, so a
  * PHP guard is invisible in the rendered markup.
@@ -154,20 +142,6 @@ function parsedMarkup() {
     H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
     "text/html",
   );
-}
-
-/** @returns {HTMLElement} the "Change company" control, from the shipped markup */
-function changeButton() {
-  const button = parsedMarkup().querySelector(
-    '[data-name="company_tile_change"]',
-  );
-  if (!button) {
-    throw new Error(
-      "the tile has no 'Change company' control — a captured company would " +
-        "then be unchangeable from the payment step",
-    );
-  }
-  return button;
 }
 
 /**
@@ -269,8 +243,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       ["label x-text", () => LABEL_TEXT_BINDING],
       ["search block x-show", () => SEARCH_BLOCK_SHOW_BINDING],
       ["number block :class", () => NUMBER_BLOCK_HIDDEN_CLASS_BINDING],
-      ["change button x-show", () => CHANGE_BUTTON_SHOW_BINDING],
-      ["change button @click", () => CHANGE_BUTTON_CLICK_BINDING],
       ["intent message x-show", () => INTENT_MESSAGE_SHOW_BINDING],
     ])("%s names a key the component actually defines", (_label, binding) => {
       expect(binding() in component).toBe(true);
@@ -278,20 +250,24 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
     test("the label row is the first child of the payment fieldset", () => {
       // §7 puts it between the term chips (outside the form) and the
-      // order-intent message (the element that used to be first here). The row
-      // wraps the label and its "Change company" button so the two stay
-      // adjacent; the label itself carries the class §7 names.
+      // order-intent message (the element that used to be first here). The
+      // label itself carries the class §7 names.
       const fieldset = parsedMarkup().querySelector("form fieldset");
       const label = fieldset.querySelector('[data-name="company_tile_label"]');
-      const button = fieldset.querySelector(
-        '[data-name="company_tile_change"]',
-      );
 
       expect(label).not.toBeNull();
-      expect(button).not.toBeNull();
       expect(label.classList.contains("two-company-tile-label")).toBe(true);
       expect(fieldset.firstElementChild).toBe(label.parentElement);
-      expect(button.parentElement).toBe(label.parentElement);
+    });
+
+    test("there is no 'Change company' control left in the markup", () => {
+      // TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the button
+      // this used to pin is REMOVED, along with the hide-and-reshow apparatus
+      // it was the only route out of. The search control stays visible
+      // instead, so there is nothing left for a "change" affordance to do.
+      expect(
+        parsedMarkup().querySelector('[data-name="company_tile_change"]'),
+      ).toBeNull();
     });
 
     test("the label sits inside the form's Alpine scope", () => {
@@ -323,8 +299,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
-      // And no way back is offered, because there is nothing to go back from.
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
     });
 
     test("keeps the controls visible for a pick that carried no identifier", () => {
@@ -333,7 +307,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // number, so nothing may be hidden.
       component.selectItem(pickerItem("Example Trading Ltd", ""));
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
@@ -347,7 +320,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       component.companyName = "Example Trading Ltd";
       component.applyCompanyIdEditability();
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
@@ -386,11 +358,15 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       );
     });
 
-    test("hides the editable search control block", () => {
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
+    test("keeps the editable search control visible (2026-08-05 ruling, bug 5)", () => {
+      // THE fix. Before it, capture hid this block and the only way back was
+      // the now-removed "Change company" button.
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
     });
 
     test("hides the whole Company Number block, caption included", () => {
+      // UNCHANGED by the 2026-08-05 ruling — this block was never part of
+      // bug 5, and still hides once a registry number is locked in.
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
 
@@ -408,9 +384,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(document.getElementById("company_id").value).toBe("123456789");
     });
 
-    test("gives the controls back when the buyer edits the name", () => {
+    test("gives the Company Number block back when the buyer edits the name", () => {
       // The reverse transition. `companyName` has no clearing writer, so a gate
-      // keyed on it directly would leave the controls hidden for a company the
+      // keyed on it directly would leave the block hidden for a company the
       // buyer has just typed away from.
       component.isSelecting = false;
       const nameInput = document.getElementById("company_name");
@@ -424,22 +400,34 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         component.abortCompanySearch();
       }
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
-    test("gives them back when a later pick carries no identifier", () => {
+    test("gives the Company Number block back when a later pick carries no identifier", () => {
       component.selectItem(pickerItem("Other Example Ltd", ""));
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
       expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+    });
+
+    test("a different company can be captured afterwards, typed straight over the field", () => {
+      // The replacement for the old clear-then-repick round trip: since the
+      // search control never hides, the buyer's route to a different company
+      // is simply picking one — no "Change company" step in between.
+      component.selectItem(pickerItem("Other Example Ltd", "987654321"));
+      approveIntent(component);
+
+      expect(component[LABEL_SHOW_BINDING]).toBe(true);
+      expect(component[LABEL_TEXT_BINDING]).toBe(
+        "Other Example Ltd (987654321)",
+      );
+      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
     });
   });
 
   describe("the capture gate itself", () => {
-    test("nothing is hidden unless a number is actually locked in", () => {
+    test("the Company Number block is hidden only while a number is actually locked in", () => {
       // Across every combination of the three inputs to the derivation, not
       // just the scenarios above: hiding a control the buyer still needs is
       // the order-blocking failure, so it must be unreachable by construction.
@@ -461,21 +449,19 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
         const captured = Boolean(component.companyIdDisabled && companyId);
 
-        expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(captured);
         expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe(
           captured ? "hidden" : "",
         );
-        if (!captured) {
-          // Manual mode has its own separate `showManual` gate, so only the
-          // uncaptured-and-not-manual case is asserted visible here.
-          expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(
-            !component.showManual,
-          );
-        }
+        // The search control's own gate no longer depends on capture at all
+        // (2026-08-05 ruling, bug 5) — it is visible whenever the buyer is not
+        // in manual mode, captured or not.
+        expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(
+          !component.showManual,
+        );
       });
     });
 
-    test("manual mode never captures, so it never hides the controls", () => {
+    test("manual mode never captures, so it never hides the Company Number block", () => {
       // `applyCompanyIdEditability()` cannot lock the field while manualMode
       // is set, which is what makes the capture gate safe for the manual
       // route as well.
@@ -485,180 +471,35 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       component.companyId = "123456789";
       component.applyCompanyIdEditability();
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
   });
 
-  /**
-   * The way back out. Without it a captured company is unchangeable from the
-   * tile: the search block is hidden, the only "Enter details manually" link
-   * lives inside it, nothing outside it can set `showManual`, and neither of
-   * the two things that recompute `companyIdEntryRequired` (the tile's own
-   * `getItems()`, which needs the hidden search input, and an inbound shipping
-   * sync) can be reached from the payment step.
-   */
-  describe("the 'Change company' control", () => {
-    test("is a real button, not a clickable div or an anchor", () => {
-      // §2's rule on this ticket. `type="button"` additionally keeps it from
-      // submitting the checkout form it sits inside.
-      const button = changeButton();
-
-      expect(button.tagName).toBe("BUTTON");
-      expect(button.getAttribute("type")).toBe("button");
-    });
-
-    test("is gated on capture, NOT on the label's intent-message gate", () => {
-      // Load-bearing, and the trap this change introduces if the two are left
-      // wired together. Capture is what hides the search block; the label now
-      // follows the order-intent notice. A button following the LABEL would
-      // vanish for a buyer with a captured company and no approved intent on
-      // screen, leaving no search block, no "Enter details manually" link (it
-      // lives inside the hidden block) and no way back — an unchangeable
-      // company, which is order-blocking rather than cosmetic.
-      expect(CHANGE_BUTTON_SHOW_BINDING).not.toBe(LABEL_SHOW_BINDING);
-
-      // Asserted as behaviour too, in exactly that state: captured, no intent.
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-
-      expect(component[LABEL_SHOW_BINDING]).toBe(false);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
-    });
-
-    test("is never visible at the same time as the search block", () => {
-      // The property the old shared gate gave for free and which must survive
-      // the split: the control and its replacement are exact opposites.
-      [
-        [false, ""],
-        [false, "123456789"],
-        [true, ""],
-        [true, "123456789"],
-      ].forEach(([companyIdEntryRequired, companyId]) => {
-        component.manualMode = false;
-        component.showManual = false;
-        component.companyIdEntryRequired = companyIdEntryRequired;
-        component.companyId = companyId;
-        component.companyName = "Some Company Ltd";
-        component.applyCompanyIdEditability();
-
-        expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(
-          !component[SEARCH_BLOCK_SHOW_BINDING],
-        );
-      });
-    });
-
-    test("takes a captured company all the way back to a usable search control", () => {
-      // The round trip, end to end. Every assertion below fails if
-      // clearCapturedCompany() is reduced to a no-op.
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-      approveIntent(component);
-      expect(component[LABEL_SHOW_BINDING]).toBe(true);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
-
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
-      expect(component.companyName).toBe("");
-      expect(component.companyId).toBe("");
-      expect(component.search).toBe("");
-      expect(document.getElementById("company_name").value).toBe("");
-      expect(document.getElementById("company_id").value).toBe("");
-      // The number field has to be typeable again, not merely visible.
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("lets a different company be captured afterwards", () => {
-      // The half of the round trip that proves the control is usable and not
-      // just present: clear, then capture again, and the tile must show the
-      // NEW company.
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-
-      component.selectItem(pickerItem("Other Example Ltd", "987654321"));
-      approveIntent(component);
-
-      expect(component[LABEL_SHOW_BINDING]).toBe(true);
-      expect(component[LABEL_TEXT_BINDING]).toBe(
-        "Other Example Ltd (987654321)",
-      );
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
-    });
-
-    test("clears the BILLING record only, leaving the shipping company intact", () => {
-      // `initialize()` restores from storage on every re-render. Leaving the
-      // captured pair there would put the company — and the hidden controls —
-      // straight back, which is the same dead end with an extra step.
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Shipping Company Ltd",
-          company_id: "99999999",
-          company_id_source: "registry",
-        }),
-      );
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-
-      // The BILLING record is REMOVED, not blanked. `initialize()` restores
-      // from storage on every re-render, so leaving the pair there would put
-      // the company — and the hidden controls — straight back.
+  describe("nothing clears the captured company automatically", () => {
+    test("(review round 2) — a withdrawn Magewire bridge stays withdrawn", () => {
+      // A `billing_as_shipping_address_updated` bridge was added and then
+      // WITHDRAWN. Two reasons, both found in review round 2 and neither
+      // resolvable without live measurement:
       //
-      // Removal rather than empty strings is load-bearing: the tile falls back
-      // to the shipping company only when there is NO billing record, so a
-      // blank one would suppress that fallback for the rest of the checkout.
-      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
+      // 1. Clearing the captured company blanks the ONE shared selection blob,
+      //    which is also the SHIPPING company's record. Re-ticking "billing
+      //    same as shipping" reads that blob, finds it empty, and restores
+      //    nothing — so a single untick-and-retick lost the shipping company
+      //    for good.
+      // 2. The event's own semantics are unverified. Its name says "address
+      //    updated", not "toggle changed", so it may well re-emit on every
+      //    billing-field auto-save while unticked — and each re-emission would
+      //    destroy the company the buyer had just typed.
+      //
+      // Pinned as a test because re-adding the bridge without solving (1) is
+      // the obvious next move and it is the wrong one. Unaffected by the
+      // 2026-08-05 ruling: there is no clearing mechanism left to bridge to at
+      // all now that "Change company" is gone, which makes this guard more
+      // load-bearing, not less.
+      const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
 
-      // And the SHIPPING record is untouched. Before the key split this cleared
-      // one shared blob, so "Change company" also destroyed the shipping
-      // company's identifier and the address step's read-only number label went
-      // with it.
-      const shipping = JSON.parse(
-        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
-      );
-      expect(shipping.company_name).toBe("Shipping Company Ltd");
-      expect(shipping.company_id).toBe("99999999");
-    });
-
-    test("puts focus in the control it reveals, and the focus actually lands", () => {
-      // Asserted on `document.activeElement`, not on a spy: a `.focus()` call
-      // that reaches an element still carrying `display: none` is a silent
-      // no-op, which is exactly the failure a spy would report as success.
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-      document.getElementById("company_id").focus();
-
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-
-      expect(document.activeElement).toBe(
-        document.getElementById("company_name"),
-      );
-    });
-
-    test("retries the focus once when the first attempt does not take", () => {
-      // The real-browser case the plain `$nextTick` cannot cover: Alpine's
-      // transition can leave the revealed input unfocusable for a further
-      // frame. Simulated by making the first `focus()` a no-op.
-      const input = document.getElementById("company_name");
-      const realFocus = input.focus.bind(input);
-      let attempts = 0;
-      input.focus = function () {
-        attempts += 1;
-        if (attempts === 1) return;
-        realFocus();
-      };
-
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-      expect(document.activeElement).not.toBe(input);
-
-      jest.runOnlyPendingTimers();
-
-      expect(attempts).toBeGreaterThan(1);
-      expect(document.activeElement).toBe(input);
+      expect(js).not.toContain("billing_as_shipping_address_updated");
+      expect(js).not.toContain("two-billing-as-shipping-cleared");
     });
   });
 
@@ -678,14 +519,18 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    *
    * The behavioural cases are the mutation-sensitive half: each had the label
    * VISIBLE under the old gate, so reverting the markup one-liner fails them.
+   *
+   * Unaffected by the 2026-08-05 ruling on bug 5 — the label's OWN gate never
+   * named the search control's or the "Change company" button's, and still
+   * does not.
    */
   describe("the label is shown exactly when the intent notice is", () => {
     test("both bindings are the same getter, not two that merely agree", () => {
       expect(LABEL_SHOW_BINDING).toBe(INTENT_MESSAGE_SHOW_BINDING);
-      // And it is the notice's own gate that both read, not a capture check
-      // both were rewired to.
-      expect(LABEL_SHOW_BINDING).not.toBe(CHANGE_BUTTON_SHOW_BINDING);
+      // And it is the notice's own gate that both read, not the search
+      // block's or the Company Number block's.
       expect(LABEL_SHOW_BINDING).not.toBe(SEARCH_BLOCK_SHOW_BINDING);
+      expect(LABEL_SHOW_BINDING).not.toBe(NUMBER_BLOCK_HIDDEN_CLASS_BINDING);
     });
 
     test("a captured company with no intent dispatched yet shows neither", () => {
@@ -693,7 +538,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // so the superseded gate showed the label; no intent, so no notice.
       component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
       expect(component[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
     });
@@ -721,7 +565,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
       component.processOrderIntentSuccessResponse({ approved: false });
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
       expect(component[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
     });
@@ -735,7 +578,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
       component.processOrderIntentErrorResponse({});
 
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
       expect(component[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
     });
@@ -797,69 +639,28 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
   });
 
-  describe("getting back to an editable company", () => {
-    test("the Change company button hands the search control back", () => {
-      // Without a route back, a captured company is a read-only label with no
-      // control beside it: a buyer who picked the wrong company, or who needs a
-      // different BILLING company from their shipping one, is stuck.
-      component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
-      approveIntent(component);
-      expect(component[LABEL_SHOW_BINDING]).toBe(true);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
-
-      component[CHANGE_BUTTON_CLICK_BINDING]();
-
-      expect(component[CHANGE_BUTTON_SHOW_BINDING]).toBe(false);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
-      expect(component.companyName).toBe("");
-      expect(component.companyId).toBe("");
-    });
-
-    test("nothing clears the captured company automatically (review round 2)", () => {
-      // A `billing_as_shipping_address_updated` bridge was added and then
-      // WITHDRAWN. Two reasons, both found in review round 2 and neither
-      // resolvable without live measurement:
-      //
-      // 1. `clearCapturedCompany()` blanks the ONE shared selection blob, which
-      //    is also the SHIPPING company's record. Re-ticking "billing same as
-      //    shipping" reads that blob, finds it empty, and restores nothing — so
-      //    a single untick-and-retick lost the shipping company for good.
-      // 2. The event's own semantics are unverified. Its name says "address
-      //    updated", not "toggle changed", so it may well re-emit on every
-      //    billing-field auto-save while unticked — and each re-emission would
-      //    destroy the company the buyer had just typed.
-      //
-      // Clearing is therefore only ever reached from the explicit "Change
-      // company" button, where wiping the single shared record is what the
-      // buyer asked for. Pinned as a test because re-adding the bridge without
-      // solving (1) is the obvious next move and it is the wrong one.
-      const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
-
-      expect(js).not.toContain("billing_as_shipping_address_updated");
-      expect(js).not.toContain("two-billing-as-shipping-cleared");
-    });
-  });
-
   /**
-   * TWO-25345. Re-picking the SAME company after "Change company" left the tile
-   * showing a bare "Change company" button and nothing else — no label, no
-   * notice — because two pre-existing behaviours combined:
+   * TWO-25345, re-examined under the 2026-08-05 ruling.
+   *
+   * The original defect: re-picking the SAME company after "Change company"
+   * left the tile showing a bare "Change company" button and nothing else —
+   * no label, no notice — because two pre-existing behaviours combined:
    *
    *  - the `companyName` / `companyId` watchers blank
    *    `orderIntentApprovedNotice` on the way through, which is the deliberate
    *    fail-closed property they exist for;
-   *  - `fillCompanyData()` then suppressed the intent that would have re-set it,
-   *    because `lastOrderIntentCompanyId` still held that same identifier.
+   *  - `fillCompanyData()` then suppressed the intent that would have re-set
+   *    it, because `lastOrderIntentCompanyId` still held that same identifier.
    *
-   * The label follows the notice by design (the 2026-08-03 ruling above), so it
-   * went with it. Neither piece is wrong alone; nothing repainted the label.
-   *
-   * These tests need REAL watcher semantics. The rest of this file stubs
-   * `$watch` to a no-op, which leaves the notice surviving `clearCapturedCompany()`
-   * outright — so the defect is not even reachable there, and a test written
-   * against that mount would pass unfixed.
+   * "Change company" is gone (bug 5), and with it the ONLY path that used to
+   * reset `lastOrderIntentCompanyId` mid-session — so the specific "repaints
+   * the label instead of leaving a bare button" scenario cannot occur any
+   * more: there is no button to leave bare. What survives, and is still
+   * pinned below, is the dedup mechanism itself — a DIFFERENT company must
+   * still cost exactly one intent, and re-selecting the SAME one without any
+   * intervening step must still cost none.
    */
-  describe("re-picking the same company after 'Change company' (TWO-25345)", () => {
+  describe("the order-intent dedup gate (TWO-25345)", () => {
     /**
      * Mount a tile whose `$watch` registrations actually fire.
      *
@@ -873,17 +674,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
      *
      * ONE known divergence: these callbacks fire SYNCHRONOUSLY, where Alpine
      * queues them on a microtask.
-     *
-     * Production is unaffected, but NOT because of anything about how the
-     * `fetch` continuation is scheduled — its `.then` is a microtask, the same
-     * queue the watcher uses. The ordering holds because the response cannot
-     * arrive until a later task, and the listener waits out a 500ms debounce
-     * before it even issues the request. The watcher's blanking has therefore
-     * flushed long beforehand.
-     *
-     * The consequence for this suite is that it could not catch a regression
-     * that made the notice write land BEFORE the watcher that blanks it;
-     * nothing here should be read as covering that ordering.
      *
      * @returns {{component: Object, intents: string[], stop: Function}}
      *   `intents` records the company id carried by each dispatched intent
@@ -956,44 +746,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     /** The identical company, picked twice — the whole point of the ticket. */
     const SAME = ["Example Trading Ltd", "123456789"];
 
-    test("repaints the label, instead of leaving a bare 'Change company'", () => {
+    test("a DIFFERENT company still works, and still costs one intent", () => {
       const live = mountLive();
       try {
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
         expect(live.intents).toEqual([SAME[1]]);
         expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
 
-        live.component[CHANGE_BUTTON_CLICK_BINDING]();
-        // The watchers have blanked the notice, so the label is gone with it —
-        // correct here, because there is no company to label any more.
-        expect(live.component[LABEL_SHOW_BINDING]).toBe(false);
-
-        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
-
-        // The fixed state. What was MEASURED on the live storefront before the
-        // fix was the same correct label text behind a hidden label, beside a
-        // visible button — so asserting the text as well as the gate is what
-        // separates a repaired tile from the defect, where the text was right
-        // all along and only its gate was wrong.
-        expect(live.intents).toEqual([SAME[1], SAME[1]]);
-        expect(live.component[LABEL_SHOW_BINDING]).toBe(true);
-        expect(live.component[LABEL_TEXT_BINDING]).toBe(
-          SAME[0] + " (" + SAME[1] + ")",
-        );
-        expect(live.component[CHANGE_BUTTON_SHOW_BINDING]).toBe(true);
-        expect(live.component[SEARCH_BLOCK_SHOW_BINDING]).toBe(false);
-      } finally {
-        live.stop();
-      }
-    });
-
-    test("a DIFFERENT company still works, and still costs one intent", () => {
-      // The no-regression half: the path that already worked must not start
-      // dispatching twice.
-      const live = mountLive();
-      try {
-        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
-        live.component[CHANGE_BUTTON_CLICK_BINDING]();
         live.component.selectItem(pickerItem("Other Example Ltd", "987654321"));
 
         expect(live.intents).toEqual([SAME[1], "987654321"]);
@@ -1006,10 +765,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       }
     });
 
-    test("the dedup still holds without a 'Change company' in between", () => {
+    test("re-selecting the same company from an open dropdown dispatches nothing new", () => {
       // The reason the guard exists, and the cost the fix is scoped to avoid
-      // paying generally: re-picking the same company from an OPEN dropdown —
-      // no clear in between — must still dispatch nothing the second time.
+      // paying generally: re-picking the same company — no intervening
+      // step — must still dispatch nothing the second time.
       const live = mountLive();
       try {
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
@@ -1025,17 +784,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("toggling manual entry and back dispatches no extra intent", () => {
-      // Why the reset is in clearCapturedCompany() and not in enableSearch() /
-      // enterManually(): those two flip mode only, they never write
+      // `enterManually()` / `enableSearch()` flip mode only, they never write
       // `companyName` / `companyId`, so the notice survives them and there is
       // nothing to repaint.
-      //
-      // The `intents` assertion below cannot fail on its own — neither method
-      // dispatches, so a toggle costs nothing either way. The load-bearing
-      // assertion is the STATE one: a reset misplaced into these methods leaves
-      // the dedup disarmed, and the next unrelated trigger pays for it with a
-      // redundant intent for a company that never changed. That is what fails
-      // here when the reset is moved.
       const live = mountLive();
       try {
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
@@ -1051,36 +802,17 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       }
     });
 
-    test("'Change company' forgets the last intent's company", () => {
-      // The state the two dedup gates read. Asserted directly as well as
-      // through behaviour: the window listener in gateway_method-csp-js.phtml
-      // has its OWN "already processed for this company" check on the same
-      // property, and no test above reaches that listener — so a fix that
-      // opened only fillCompanyData()'s gate would pass every assertion in
-      // this file and still fail on the real storefront.
-      const live = mountLive();
-      try {
-        live.component.selectItem(pickerItem(SAME[0], SAME[1]));
-        expect(live.component.lastOrderIntentCompanyId).toBe(SAME[1]);
-
-        live.component[CHANGE_BUTTON_CLICK_BINDING]();
-
-        expect(live.component.lastOrderIntentCompanyId).toBe("");
-      } finally {
-        live.stop();
-      }
-    });
-
     test("the listener's own dedup gate names the same property", () => {
-      // Pins the coupling the test above stands in for: both gates must read
-      // ONE property, or clearing it fixes half the bug. Read out of the
-      // shipped JS rather than assumed.
+      // Pins the coupling fillCompanyData()'s own gate stands in for: both the
+      // component's gate and the top-level listener's own "already processed"
+      // check must read ONE property, or clearing it fixes half the bug. Read
+      // out of the shipped JS rather than assumed.
       const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
 
       // Both gate EXPRESSIONS, deliberately not a count of the identifier.
-      // A count is satisfied by the prose comment beside the reset — which
-      // mentions the property by name — so it stays green with a real gate
-      // deleted, which is the opposite of what this test is for.
+      // A count is satisfied by a prose comment that merely mentions the
+      // property by name, which stays green with a real gate deleted — the
+      // opposite of what this test is for.
       //
       // fillCompanyData()'s gate, before it dispatches:
       expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
@@ -1186,22 +918,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       const fresh = remount();
 
       expect(fresh.companyName).toBe("Shipping Company Ltd");
-    });
-
-    test("an emptied billing record is a REMOVAL, so the fallback stays live", () => {
-      // Blanking instead of removing would leave a record present-but-empty,
-      // which the fallback reads as "the buyer named a billing company" and
-      // suppresses for the rest of the checkout.
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-      const captured = remount(true);
-      captured.selectItem(pickerItem("Billing Company Ltd", "11112222"));
-      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).not.toBeNull();
-
-      captured[CHANGE_BUTTON_CLICK_BINDING]();
-      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
-
-      const afterClear = remount(true);
-      expect(afterClear.companyName).toBe("Shipping Company Ltd");
     });
 
     test("isBillingAsShipping is published as a shared window helper", () => {

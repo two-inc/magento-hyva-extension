@@ -155,6 +155,102 @@ describe("payment-fields template method code", () => {
 
       expect(intents).toEqual([]);
     });
+
+    /**
+     * TWO-25326 tile bugfix batch, bug 3.
+     *
+     * A company picked IN THE PAYMENT TILE is written to the BILLING storage
+     * key (window.twoGatewayWriteBillingCompany), never the shipping one — see
+     * TWO-25326 review round 3's key split. This listener is the deferred
+     * retry for a pick made before Two became the active payment method (the
+     * initial dispatch-order-intent, fired from fillCompanyData() at pick
+     * time, is dropped while a different method is active, by design). Before
+     * the fix it read ONLY the shipping key, so a tile-mode pick's retry
+     * always found nothing and the buyer's order intent never fired at all.
+     */
+    test("fires the deferred order intent for a company captured in the TILE (billing key)", () => {
+      // No SHIPPING record at all — only the billing one the tile itself
+      // writes. `beforeEach` already seeded the shipping key; this test is
+      // specifically about the case where the buyer has NO shipping-step pick
+      // and picked their company in the tile instead, so it overwrites that
+      // seed with an empty record. Seeded BEFORE `run()`: the template's own
+      // page-load path (`initializePaymentFieldsFromShipping()`) also reads
+      // storage and fills the field synchronously on `DOMContentLoaded`, and
+      // `updatePaymentFields()` only ever writes an EMPTY field — seeding
+      // after `run()` would leave the page-load path's (stale) value in place
+      // and mask the very fallback this test is about.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({ quote_id: "test-quote-1" }),
+      );
+      env.browserStorage.setItem(
+        H.BILLING_COMPANY_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Tile Captured Ltd",
+          company_id: "87654321",
+          company_id_source: "registry",
+        }),
+      );
+
+      renderPaymentForm(BRAND_METHOD);
+      run(BRAND_RULES);
+      intents.length = 0;
+      // The page-load path (gated on `activePaymentMethod.value === method
+      // code`) may already have populated and fired for the billing record —
+      // reset the field to isolate the method-activate listener's OWN fallback.
+      document.getElementById("company_name").value = "";
+      document.getElementById("company_id").value = "";
+      intents.length = 0;
+
+      window.dispatchEvent(
+        new CustomEvent("checkout:payment:method-activate", {
+          detail: { method: BRAND_METHOD },
+        }),
+      );
+
+      expect(intents.length).toBeGreaterThan(0);
+      expect(document.getElementById("company_name").value).toBe(
+        "Tile Captured Ltd",
+      );
+      expect(document.getElementById("company_id").value).toBe("87654321");
+    });
+
+    test("prefers the BILLING record over the shipping one when both exist", () => {
+      // Mirrors the identical billing-first fallback the tile's own
+      // initialize() uses (gateway_method-csp-js.phtml) — two surfaces
+      // answering "which company is this?" differently is how a buyer ends up
+      // with the wrong one on the order.
+      renderPaymentForm(BRAND_METHOD);
+      run(BRAND_RULES);
+      intents.length = 0;
+
+      env.browserStorage.setItem(
+        H.BILLING_COMPANY_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Billing Wins Ltd",
+          company_id: "11112222",
+          company_id_source: "registry",
+        }),
+      );
+      // The page-load path already filled the field from the SHIPPING record
+      // `beforeEach` seeds — reset it so the assertion below is isolated to
+      // what THIS event's own fallback resolves, not a value an earlier path
+      // already wrote and the `!companyNameInput.value` guard then preserved.
+      document.getElementById("company_name").value = "";
+      document.getElementById("company_id").value = "";
+
+      window.dispatchEvent(
+        new CustomEvent("checkout:payment:method-activate", {
+          detail: { method: BRAND_METHOD },
+        }),
+      );
+
+      expect(document.getElementById("company_name").value).toBe(
+        "Billing Wins Ltd",
+      );
+    });
   });
 
   test("the template carries no hardcoded method code in its logic", () => {

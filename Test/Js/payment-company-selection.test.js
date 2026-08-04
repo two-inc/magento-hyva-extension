@@ -78,9 +78,16 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
  * They have since moved OFF its `x-show` again. Since the 2026-08-03 ruling on
  * TWO-25326 the label's visibility follows the order-intent notice, not capture
  * — so it is no longer the observable consequence of the derivation this file
- * tests. `COMPANY_CAPTURE_GATE_BINDING` below is: the "Change company" button's
- * gate, which is still exactly "a registry number is locked in", and is what the
- * capture assertions here now read.
+ * tests. `COMPANY_CAPTURE_GATE_BINDING` below is: the Company Number block's
+ * `:class` gate, which is still exactly "a registry number is locked in", and
+ * is what the capture assertions here now read.
+ *
+ * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the "Change
+ * company" button this bound to before is REMOVED — the search control no
+ * longer hides on capture, so there is nothing left for it to reveal. The
+ * Company Number block's own capture gate is UNCHANGED by that ruling (it was
+ * never part of the bug), so it remains this file's read on "is captured" —
+ * a string ("hidden"/"") rather than the button's own boolean `x-show`.
  *
  * The label's own two bindings are still resolved, and still from the shipped
  * markup for the same reason as the bindings above (state alone cannot fail when
@@ -99,7 +106,18 @@ const COMPANY_TILE_LABEL_TEXT_BINDING = H.readAlpineBinding(
 );
 const COMPANY_CAPTURE_GATE_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  '[data-name="company_tile_change"]',
+  'input[data-name="company_id"]',
+  ":class",
+);
+
+/**
+ * TWO-25326 tile bugfix batch, bug 1. The "Enter details manually" link's own
+ * `x-show`, read out of the shipped markup — nested inside the dropdown's own
+ * `x-show="isOpen"`, so the effective visibility is both together.
+ */
+const MANUAL_ENTRY_LINK_SHOW_BINDING = H.readAlpineBinding(
+  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+  "#billing_enter_company",
   "x-show",
 );
 
@@ -598,19 +616,19 @@ describe("payment component company selection", () => {
       // shipping sync can hand over a company with no identifier, and the
       // name hint must drop with the number hint rather than keep showing
       // the PREVIOUS locked company's name.
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("an identified shipping company re-locks it", () => {
       syncFromShipping("Example Trading Ltd", "");
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
 
       syncFromShipping("Other Example Ltd", "12345678");
 
       expect(component.companyIdEntryRequired).toBe(false);
       expect(companyIdInput().disabled).toBe(true);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Other Example Ltd",
       );
@@ -636,7 +654,7 @@ describe("payment component company selection", () => {
       expect(restored.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
       // No registry number to lock, so no read-only name to show either.
-      expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("a stored name with an id comes back locked", () => {
@@ -659,7 +677,7 @@ describe("payment component company selection", () => {
       // restore happens through initialize()'s pre-$nextTick synchronous
       // derivation, same as the id hint, so the name hint must land already
       // showing the restored company -- not empty, not the wrong company.
-      expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(restored[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
@@ -792,7 +810,7 @@ describe("payment component company selection", () => {
       // neither a locked field nor a hint to show.
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("shows the id and hides the redundant input once a company locks it", () => {
@@ -804,7 +822,7 @@ describe("payment component company selection", () => {
       // exactly when the registry answered.
       expect(companyIdInput().disabled).toBe(true);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain("12345678");
     });
 
@@ -818,7 +836,7 @@ describe("payment component company selection", () => {
 
       expect(companyIdInput().disabled).toBe(false);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("re-reveals the input if a later pick has no identifier", () => {
@@ -833,7 +851,7 @@ describe("payment component company selection", () => {
 
       expect(companyIdInput().disabled).toBe(false);
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("`companyIdHiddenClass` can never fire unless `companyIdDisabled` is also true", () => {
@@ -883,7 +901,7 @@ describe("payment component company selection", () => {
 
       expect(component[COMPANY_ID_DISABLED_BINDING]).toBe(true);
       expect(companyIdInput().disabled).toBe(true);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("");
 
       // The tick after: fillCompanyData() (or the $nextTick callback in
@@ -893,14 +911,14 @@ describe("payment component company selection", () => {
       syncCompanyIdHint(component);
       syncCompanyIdField(component);
 
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_ID_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
   });
 
   describe("the capture gate — stale safety", () => {
     test("stays hidden before any company is picked", () => {
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("the capture gate trips once a company locks the id field", () => {
@@ -908,7 +926,7 @@ describe("payment component company selection", () => {
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
@@ -919,7 +937,7 @@ describe("payment component company selection", () => {
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     /**
@@ -934,7 +952,7 @@ describe("payment component company selection", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Example Trading Ltd",
       );
@@ -947,7 +965,7 @@ describe("payment component company selection", () => {
       // "Example Trading Ltd" beside a field the buyer can now edit freely.
       expect(component.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
     test("re-trips once the buyer picks a new identified company", () => {
@@ -955,25 +973,25 @@ describe("payment component company selection", () => {
       typeCompanyName("Other Example");
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(false);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
 
       component.selectItem(pickerItem("Other Example Ltd", "87654321"));
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
 
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe(true);
+      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
       expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
         "Other Example Ltd",
       );
     });
 
     test("the capture gate never trips while the company-number field is still editable", () => {
-      // The one-way implication that matters: capture REPLACES the search
-      // control and the number field, so it must never be able to trip while
-      // the buyer still needs to fill that field in. Pins the derivation across
-      // every editability combination rather than today's scenarios.
+      // The one-way implication that matters: capture hides the Company
+      // Number block, so it must never be able to trip while the buyer still
+      // needs to fill that field in. Pins the derivation across every
+      // editability combination rather than today's scenarios.
       //
-      // Read off the "Change company" button's gate, not the label's — the
+      // Read off the Company Number block's own gate, not the label's — the
       // label follows the order-intent notice since the 2026-08-03 ruling and
       // would make this pass vacuously.
       [
@@ -997,6 +1015,57 @@ describe("payment component company selection", () => {
           expect(component.companyId).toBeTruthy();
         }
       });
+    });
+  });
+
+  describe("the 'Enter details manually' link (TWO-25326 tile bugfix batch, bug 1)", () => {
+    test("is a real binding, not just component state", () => {
+      // Pins the wire: a rename on one side only must fail here, not silently
+      // paint nothing.
+      expect(MANUAL_ENTRY_LINK_SHOW_BINDING).toBe("manualEntryLinkVisible");
+      expect(MANUAL_ENTRY_LINK_SHOW_BINDING in component).toBe(true);
+    });
+
+    test("stays hidden on mere focus, before the buyer has typed anything", () => {
+      // OnCompanySearchFocus opens the dropdown (isOpen = true) on FOCUS
+      // ALONE, before any search has run — at which point `items` is empty
+      // and there is nothing to have "not found a match" for yet. Without the
+      // fix this link (nested inside `x-show="isOpen"`) painted the instant
+      // the field was focused, reading as a link sitting permanently below
+      // the field rather than a genuine dropdown/results-area affordance.
+      component.twoGatewayHyvaOnCompanySearchFocus();
+
+      expect(component.isOpen).toBe(true);
+      expect(component.search).toBe("");
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
+    });
+
+    test("appears once the buyer has actually typed something", () => {
+      component.twoGatewayHyvaOnCompanySearchFocus();
+      typeCompanyName("E");
+
+      expect(component.isOpen).toBe(true);
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
+    });
+
+    test("goes back to hidden once the buyer clears the field again", () => {
+      typeCompanyName("Example");
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
+
+      typeCompanyName("");
+
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
+    });
+
+    test("does not affect the dropdown opening on real results — isOpen is separate", () => {
+      // The fix adds a SECOND gate; it must not change when the dropdown
+      // itself opens.
+      component.items = [{ companyName: "Example Trading Ltd", companyId: "" }];
+      component.isOpen = true;
+
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
+      component.search = "Example";
+      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
     });
   });
 });

@@ -334,24 +334,53 @@ $methodCode = $brandedViewModel->getMethodCode();
             /** Initialize payment method but don't overwrite existing company data */
             /** The company data should only be updated by shipping section selections */
 
-            const shippingCompanySelectionData = twoPaymentReadSelection();
-            const shippingCompany = shippingCompanySelectionData.company_name || "";
-            const shippingCompanyId = shippingCompanySelectionData.company_id || "";
+            /*
+             * TWO-25326 tile bugfix batch, bug 3. Prefer the BILLING record —
+             * the payment tile's own — before falling back to the SHIPPING
+             * one, mirroring the identical billing-first fallback the tile's
+             * own initialize() already uses (gateway_method-csp-js.phtml).
+             *
+             * Without this, a company picked IN THE TILE before the buyer had
+             * selected Two as the active payment method never got its order
+             * intent fired at all: fillCompanyData() dispatches
+             * "dispatch-order-intent" on every pick, but the template's global
+             * listener drops it while a different method is active — by
+             * design, since order intent is only ever for the ACTIVE method.
+             * THIS handler is the deferred retry for exactly that case, fired
+             * once Two does become active — but it read only the SHIPPING
+             * key, which the tile never writes to (TWO-25326 review round 3
+             * split the two so a tile pick and an address-step pick cannot
+             * clobber each other). So the retry always found nothing for a
+             * tile-mode pick, and the buyer's selection silently never
+             * reached order intent.
+             *
+             * Guarded on the billing helper existing for the same reason the
+             * accessors at the top of this file are: this template can run
+             * before gateway_method-csp-js.phtml has published it.
+             */
+            const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
+                || function () { return {}; })();
+            const hasBillingRecord = Object.keys(billingCompanySelectionData).length > 0;
+            const capturedCompanySelectionData = hasBillingRecord
+                ? billingCompanySelectionData
+                : twoPaymentReadSelection();
+            const capturedCompany = capturedCompanySelectionData.company_name || "";
+            const capturedCompanyId = capturedCompanySelectionData.company_id || "";
 
-            /** If we have shipping company data but payment fields are empty, populate them */
-            if (shippingCompany && shippingCompanyId) {
+            /** If we have captured company data but payment fields are empty, populate them */
+            if (capturedCompany && capturedCompanyId) {
                 const companyNameInput = document.querySelector('[data-name="company_name"]');
                 const companyIdInput = document.querySelector('[data-name="company_id"]');
 
                 if (companyNameInput && companyIdInput && !companyNameInput.value) {
                     // Use the centralized update function for consistency and Alpine.js sync
-                    updatePaymentFields(shippingCompany, shippingCompanyId);
+                    updatePaymentFields(capturedCompany, capturedCompanyId);
                     paymentFieldsInitialized = true; // Mark as initialized to prevent duplicates
                 }
             }
 
             // Trigger order intent if we have company data
-            if (shippingCompany && shippingCompanyId) {
+            if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
             }
         }

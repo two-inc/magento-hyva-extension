@@ -43,8 +43,28 @@ $quoteDetails = json_encode(
 
 $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>
+<?php
+/*
+ * TWO-25326 tile bugfix batch, bug 4: `w-full min-w-0` on the tile's own
+ * root, not present before this fix.
+ *
+ * Reported only with company search IN THE TILE
+ * ($isCompanySearchInPaymentTile true): the tile then renders substantial
+ * markup with real content (the search field, its absolutely-positioned
+ * dropdown, the Company Number block) in place of the near-empty two hidden
+ * inputs the text-only mode renders. Without `min-w-0` a flex/grid child
+ * defaults to `min-width: auto`, sized to its content's intrinsic minimum —
+ * so nothing here stopped this root from being pushed wider than its
+ * intended column the moment it held content with a wider minimum than two
+ * hidden inputs (whose own minimum is zero). `w-full` is the complementary
+ * half: it makes the root explicitly claim exactly its column's width rather
+ * than an undefined natural one, so it can only ever match the column, never
+ * exceed it. Same pairing as `two_surcharge.phtml`'s `min-w-0 break-words`
+ * for the identical class of flex-overflow bug on this checkout.
+ */
+?>
 <div
-     x-data="<?= $gwBase ?>PaymentMethodBase" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
+     x-data="<?= $gwBase ?>PaymentMethodBase" class="w-full min-w-0 space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
     <div class="two-payment-subtitle"><?= /* @noEscape */ $configModel->getCheckoutSubtitleHtml() ?></div>
     <?php if ($showChip): ?>
         <div class="two-term-chips field">
@@ -193,10 +213,15 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * had been captured.
              *
              * The label is consequently NOT a swap with the tile's company
-             * controls. Those keep their own capture gate
-             * (`companySearchBlockVisible` / `companyNumberBlockHiddenClass`),
-             * and so does the "Change company" button below, which is the only
-             * route back out of a captured company.
+             * controls any more either. TWO-25326 tile bugfix batch, bug 5
+             * (2026-08-05 ruling): the search block's visibility (and the
+             * whole Company Number block's) is no longer conditioned on
+             * capture at all — see `companySearchBlockVisible` in
+             * gateway_method-csp-js.phtml. The "Change company" button that
+             * used to sit beside this label, as the only route back out of a
+             * hidden search block, is REMOVED along with that hiding: the
+             * search field is now the buyer's route to a different company at
+             * every point, exactly as it is before any company is captured.
              *
              * Both bindings are bare getter names: this file's CSP-friendly
              * Alpine build looks a bound expression up as a key on the
@@ -212,41 +237,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                     x-show="orderIntentMessageVisible"
                     x-text="companyTileLabelText"
                 ></span>
-                <?php
-                /*
-                 * The way BACK out of a captured company, and the reason the
-                 * label is allowed to replace the controls at all.
-                 *
-                 * Capture hides the search block, and the only "Enter details
-                 * manually" link lives inside it, so without this the captured
-                 * company cannot be changed from the tile — a buyer who
-                 * unticks "billing same as shipping", or who picked the wrong
-                 * company on the address step, has no control left to correct
-                 * it. See clearCapturedCompany() for the full case.
-                 *
-                 * A real `<button type="button">`, per this ticket's §2: it is
-                 * an action, it has to be reachable and operable from the
-                 * keyboard, and `type="button"` keeps it from submitting the
-                 * checkout form it sits inside.
-                 *
-                 * Gated on CAPTURE (`companyChangeControlVisible`), which is
-                 * the exact negation of the search block's own gate — NOT on
-                 * the label's new intent-message gate. This is load-bearing.
-                 * Capture is what hides the search block, so if this button
-                 * followed the label instead, a buyer with a captured company
-                 * and no approved intent on screen would have neither the
-                 * search block nor a way back to it, and could not correct the
-                 * company at all. That is an order-blocking dead end, so the
-                 * two gates are deliberately different.
-                 */
-                ?>
-                <button
-                    type="button"
-                    class="two-company-tile-change text-blue-600 text-sm cursor-pointer"
-                    data-name="company_tile_change"
-                    x-show="companyChangeControlVisible"
-                    @click="<?= $gwBase ?>OnChangeCompanyClick"
-                ><?= $escaper->escapeHtml(__("Change company")) ?></button>
             </div>
             <?php endif ?>
             <?php
@@ -333,7 +323,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <input type="hidden" id="company_id" name="payment[company_id]" />
             <?php else: ?>
             <!-- Company Name (manual / search dual-mode) -->
-            <div class="min-h-108">
+            <div class="min-h-108 min-w-0">
                 <div class="flex flex-col field required gap-2" x-show="showManual">
                     <div class="field required">
                         <label for="company_name" class="font-semibold text-gray-700">
@@ -510,9 +500,33 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                     class="two-company-search__unavailable mx-2 mt-3 px-2 py-2 text-sm"
                                 ><?= $escaper->escapeHtmlAttr(__("Company search is unavailable. Try again, or enter details manually.")) ?>
                                 </div>
+                                <?php
+                                /*
+                                 * TWO-25326 tile bugfix batch, bug 1. Gated on
+                                 * `manualEntryLinkVisible` (`Boolean(search)`) IN
+                                 * ADDITION to the parent's `x-show="isOpen"`.
+                                 *
+                                 * The parent alone opens on mere FOCUS
+                                 * (`OnCompanySearchFocus`), before the buyer has
+                                 * typed anything — at which point `items` is
+                                 * still empty and no search has run. Under that
+                                 * gate alone this link (and the min-chars hint
+                                 * above it) painted the instant the field was
+                                 * focused, which reads to a buyer as "a link
+                                 * permanently sitting below the field" rather
+                                 * than a genuine dropdown/results-area
+                                 * affordance. Requiring a non-empty `search`
+                                 * defers it until the buyer has actually typed —
+                                 * real interaction with search, not merely
+                                 * focus — matching how the address step's own
+                                 * in-dropdown manual-entry row behaves (opened
+                                 * only once a search is underway).
+                                 */
+                                ?>
                                 <div
                                     id="billing_enter_company"
                                     class="enter_for_company w-full px-2 py-3"
+                                    x-show="manualEntryLinkVisible"
                                     @click="<?= $gwBase ?>OnManualEntryClick"
                                     title="Enter details manually">
                                     <span class="text-blue-600 text-sm cursor-pointer">
@@ -543,9 +557,14 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * this CSP-friendly Alpine build cannot evaluate an object literal
              * (see the longer note on the input).
              *
-             * Same CAPTURED gate as the search block above, so a buyer who has
-             * no captured company still sees and can fill the field. The
-             * inputs stay in the DOM, so `payment[company_id]` still submits.
+             * Same CAPTURED gate as the search block used to carry before the
+             * 2026-08-05 ruling (bug 5, see gateway_method-csp-js.phtml) — the
+             * ruling was about the EDITABLE search control and the "Change
+             * company" swap specifically, not about this block, so this gate
+             * is deliberately UNCHANGED: a buyer who has no captured company
+             * still sees and can fill the field, and once captured the number
+             * is carried by the tile label instead. The inputs stay in the
+             * DOM either way, so `payment[company_id]` still submits.
              */
             ?>
             <div class="flex flex-col field field-reserved required" :class="companyNumberBlockHiddenClass">
