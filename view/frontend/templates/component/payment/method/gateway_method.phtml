@@ -327,10 +327,25 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * imperatively by id, and do so regardless of which markup mode
              * is rendered. Nothing downstream of company capture needed to
              * change for this mode; only what the buyer SEES did.
+             *
+             * TWO-25326 §7.4 round-2 review: `data-name` added on both — the
+             * address step's `company-name-payment.phtml` (`updatePaymentFields()`)
+             * looks the live company selection up by `[data-name="company_name"]`
+             * / `[data-name="company_id"]`, which previously existed only on
+             * the OTHER mode's own search/manual inputs. Without it, a
+             * post-mount company change on the address step (no payment
+             * remount in between) never reached these mirrors or the
+             * `update-company-data` listener that recomputes
+             * `companyIdEntryRequired`, so `hasRequiredCompanyCapture()` in
+             * `gateway_method-csp-js.phtml` was checking stale data in the
+             * common case. `id` stays as the primary lookup everywhere else
+             * (`fillCompanyData()`, this check); `data-name` only makes the
+             * pre-existing selector-based sync path actually find these
+             * elements.
              */
             ?>
-            <input type="hidden" id="company_name" name="payment[company_name]" />
-            <input type="hidden" id="company_id" name="payment[company_id]" />
+            <input type="hidden" id="company_name" name="payment[company_name]" data-name="company_name" />
+            <input type="hidden" id="company_id" name="payment[company_id]" data-name="company_id" />
             <?php else: ?>
             <!-- Company Name (manual / search dual-mode) -->
             <div class="min-h-108">

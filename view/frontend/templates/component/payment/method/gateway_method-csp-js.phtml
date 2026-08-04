@@ -1222,9 +1222,20 @@ $quoteDetails = json_encode(
              * no shipping step at all — which is exactly the case the two
              * mirror inputs exist to support in the first place (see the
              * long comment on the search block above). So this checks the
-             * two mirrors directly and blocks placement with a visible
+             * NAME mirror directly and blocks placement with a visible
              * message, the same way the other three plugins (Luma,
              * WooCommerce, PrestaShop) enforce it.
+             *
+             * NAME only, deliberately — not name-and-id. `fillCompanyData()`
+             * above documents why the id is allowed to be empty: the search
+             * response is allowed to omit the national identifier, and that
+             * is a legitimate, permanent business state for some companies,
+             * not a "not yet finished typing" state. Requiring both here
+             * would block Place Order for exactly the buyers `fillCompanyData()`
+             * was written to unblock. Round-2 review (TWO-25326 §7.4):
+             * an earlier version of this method required both fields and
+             * the test suite encoded that as the contract — fixed here, and
+             * the test file below now asserts the corrected behaviour.
              *
              * @param {HTMLFormElement} form
              * @returns {boolean}
@@ -1234,16 +1245,14 @@ $quoteDetails = json_encode(
                 return true;
                 <?php else: ?>
                 const nameEl = form.querySelector('#company_name');
-                const idEl = form.querySelector('#company_id');
                 const hasName = Boolean(nameEl && nameEl.value && nameEl.value.trim());
-                const hasId = Boolean(idEl && idEl.value && idEl.value.trim());
-                if (hasName && hasId) return true;
+                if (hasName) return true;
 
                 if (typeof window.dispatchMessages === 'function') {
                     window.dispatchMessages([{
                         type: 'error',
                         text: '<?= $escaper->escapeJs(
-                            __('Please provide your company name and number before continuing.'),
+                            __('Please provide your company name before continuing.'),
                         ) ?>',
                     }], 5000);
                 }

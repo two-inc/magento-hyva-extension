@@ -87,12 +87,17 @@ describe("payment-form company-capture enforcement (TWO-25326 §7.4)", () => {
       expect(form.hasRequiredCompanyCapture(root)).toBe(false);
     });
 
-    test("blocks when only the company name mirror is filled", () => {
+    test("passes when only the company name mirror is filled — the id is legitimately optional", () => {
+      // Round-2 review (TWO-25326 §7.4): fillCompanyData() above documents
+      // that the id may be legitimately absent (the search response is
+      // allowed to omit the national identifier). Requiring both fields
+      // here would re-block exactly the buyers that documented allowance
+      // exists to unblock.
       const form = mountForm(env, ADDRESS_AREA);
       const root = document.getElementById("two_payment_form");
       root.querySelector("#company_name").value = "Acme Ltd";
 
-      expect(form.hasRequiredCompanyCapture(root)).toBe(false);
+      expect(form.hasRequiredCompanyCapture(root)).toBe(true);
     });
 
     test("blocks when only the company id mirror is filled", () => {

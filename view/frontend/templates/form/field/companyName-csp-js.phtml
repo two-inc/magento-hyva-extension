@@ -1414,6 +1414,16 @@ function <?= $gwBase ?>CompanySearchField() {
             // still has to fill in, because the name in the field has no
             // registry-supplied identifier either way.
             this.applyCompanyIdEditability();
+            // Round-2 review (TWO-25326 §7.4): a search that resolved WHILE
+            // manual mode was active (superseded by nothing, so `applied` was
+            // true) still has `runSearch()` write `isSearchUnavailable`
+            // unconditionally before the manualMode guard below discards its
+            // `items`. That leaves the flag latched from a session where no
+            // search has actually run since. openDropdown('') below only
+            // re-runs getItems() — the only other writer of this flag — when
+            // the query is already long enough, which it never is here (query
+            // starts empty on this path), so nothing else clears it.
+            this.isSearchUnavailable = false;
 
             /*
              * TWO-25326 §3: returning to search mode opens the dropdown and
