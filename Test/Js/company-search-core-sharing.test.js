@@ -2,16 +2,17 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §7.4 (2026-08-04 unification). Both Hyvä company-search
- * mount points — the address-step field (`companyName-csp-js.phtml`) and
- * the payment tile (`gateway_method-csp-js.phtml`) — must run their
- * search through the ONE shared request-lifecycle implementation,
+ * TWO-25326 §7.4 (2026-08-04 unification). All THREE Hyvä company-search
+ * mount points — the address-step field (`companyName-csp-js.phtml`), the
+ * payment tile (`gateway_method-csp-js.phtml`), and the shipping-address
+ * picker registered by `shipping_company.phtml` — must run their search
+ * through the ONE shared request-lifecycle implementation,
  * `window.twoCompanySearchCore.runSearch()`, rather than each building its
  * own `fetch`/`AbortController`/status-mapping around
  * `window.twoGatewayCompanySearch()`.
  *
  * This is the grep-verifiable half of "exactly one implementation" made
- * executable: a spy on the shared core catches either surface silently
+ * executable: a spy on the shared core catches any of the three silently
  * regressing back to its own copy, which a text grep alone would not catch
  * if a future edit re-inlined the same logic under a different local name.
  */
@@ -22,6 +23,7 @@ const H = require("./hyva-harness");
 
 const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
 const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+const SHIPPING_COMPONENT = "searchInput";
 
 describe("company-search core is the single shared implementation (TWO-25326 §7.4)", () => {
   let env;
@@ -89,6 +91,36 @@ describe("company-search core is the single shared implementation (TWO-25326 §7
     });
     component.quote = {};
     component.search = "acme";
+
+    const pending = component.getItems();
+    await H.flushPromises();
+    fetchStub.last().respond({ items: [] });
+    await pending;
+
+    expect(runSearchSpy).toHaveBeenCalledTimes(1);
+    expect(runSearchSpy.mock.calls[0][0]).toBe(component);
+    expect(runSearchSpy.mock.calls[0][1].term).toBe("acme");
+  });
+
+  test("the shipping-address picker's getItems() delegates to the same shared core", async () => {
+    document.body.innerHTML = [
+      "<form>",
+      '  <input type="hidden" id="shipping-company_id" value="" />',
+      '  <input type="hidden" id="shipping-company" value="" />',
+      '  <input type="text" id="company-search" value="acme" />',
+      "</form>",
+    ].join("\n");
+
+    H.loadSharedHelpers();
+    runSearchSpy = jest.spyOn(window.twoCompanySearchCore, "runSearch");
+    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE);
+    env.fireAlpineInit();
+
+    const component = H.mountComponent(
+      env.alpineComponents[SHIPPING_COMPONENT],
+      { el: document.getElementById("company-search") },
+    );
+    component.quote = { shipping_country_id: "GB" };
 
     const pending = component.getItems();
     await H.flushPromises();

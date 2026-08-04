@@ -173,13 +173,16 @@ document.addEventListener('alpine:init', () => {
         isSearching: false,
         isSearchUnavailable: false,
         searchAbortController: null,
-        /** Cancel any in-flight company search. Safe to call repeatedly. */
+        /**
+         * Cancel any in-flight company search. Safe to call repeatedly.
+         *
+         * TWO-25326 §7.4: delegates to the ONE shared implementation
+         * (window.twoCompanySearchCore, defined in gateway_method-csp-js.phtml
+         * and already used by the address-step and payment-tile pickers)
+         * rather than carrying a third copy of the same three lines.
+         */
         abortCompanySearch() {
-            if (this.searchAbortController) {
-                this.searchAbortController.abort();
-                this.searchAbortController = null;
-            }
-            this.isSearching = false;
+            window.twoCompanySearchCore.abortCompanySearch(this);
         },
 
         /**
@@ -239,94 +242,60 @@ document.addEventListener('alpine:init', () => {
                 // the field feel slow. Cancellation is now the abort signal
                 // rather than a cleared timer, which also covers a request
                 // that is already on the wire.
-                this.abortCompanySearch();
-                const controller = new AbortController();
-                this.searchAbortController = controller;
-                this.isSearching = true;
-
-                // This picker has no inline spinner markup of its own (its
-                // template lives outside this module — see the note on
-                // isSearchUnavailable below), so the magewire loader stays as
-                // its only progress signal rather than being removed and
-                // replaced with nothing.
+                //
+                // TWO-25326 §7.4: the request lifecycle itself — supersede
+                // any in-flight search, run it, map the response onto
+                // isSearching / isSearchUnavailable / items — is the shared
+                // core (window.twoCompanySearchCore, defined in
+                // gateway_method-csp-js.phtml) the address-step and
+                // payment-tile pickers already call. This is the third and
+                // last caller; only the magewire-loader bookkeeping below is
+                // genuinely specific to this surface (see the ASSUMPTION,
+                // UNVERIFIED note this carries forward unchanged) — this
+                // picker has no inline spinner markup of its own (its
+                // template lives outside this module), so the loader is its
+                // only progress signal.
                 window.dispatchEvent(new Event('magewire:loader:start'));
-                let result;
-                try {
-                    result = await window.twoGatewayCompanySearch({
-                        checkoutApiUrl: this.checkoutApiUrl,
-                        countryCode: this.countryCode,
-                        query: this.search,
-                        limit: this.companySearchLimit,
-                        signal: controller.signal,
-                    });
-                } catch (error) {
-                    // The helper swallows request failures itself, so reaching
-                    // here means something structural (a missing global). Fail
-                    // visibly rather than as an unhandled rejection, which is
-                    // what the old local try/catch degraded to.
-                    console.error('Company search failed:', error);
-                    result = { status: 'failed', items: [] };
+                const applied = await window.twoCompanySearchCore.runSearch(this, {
+                    checkoutApiUrl: this.checkoutApiUrl,
+                    countryCode: this.countryCode,
+                    term: this.search,
+                    limit: this.companySearchLimit,
+                    onSettle: (ownsCompletion) => {
+                        if (ownsCompletion) {
+                            window.dispatchEvent(new Event('magewire:loader:done'));
+                        }
+                    },
+                });
 
-                } finally {
-                    // Retire the loader unless a NEWER search now owns it.
-                    //
-                    // ASSUMPTION, UNVERIFIED: the magewire loader is a boolean,
-                    // not a counter. Both orderings below are correct under a
-                    // boolean — `done` fires exactly once per owning `start`.
-                    // Under a counter, abort-with-successor would leak a count
-                    // permanently and the overlay would never clear. This has not
-                    // been confirmed against Magewire's own implementation
-                    // (magewirephp/magewire's loader plugin), and the Jest stub
-                    // models a boolean, so the suite cannot detect a mismatch
-                    // either. If the overlay is ever seen latching on after a
-                    // superseded search, check this first.
-                    //
-                    // Under a boolean, two rules have to hold at once:
-                    //   - a SUPERSEDED search must not dispatch done, or it
-                    //     hides the overlay while its replacement runs
-                    //     (start(A), abort(A), start(B), done(A));
-                    //   - a search that was aborted with NO successor MUST
-                    //     dispatch done, or the overlay latches on forever and
-                    //     blocks checkout. Every dismissal path — backspacing
-                    //     below three characters, tab-out, picking a result,
-                    //     clearing the country, a DOM-morph disconnect — is
-                    //     exactly this case.
-                    // `abortCompanySearch()` nulls the field synchronously and
-                    // a successor assigns it synchronously in the same task, so
-                    // null unambiguously means "nothing in flight".
-                    if (!this.searchAbortController || this.searchAbortController === controller) {
-                        window.dispatchEvent(new Event('magewire:loader:done'));
-                    }
-                }
+                // Superseded by a newer search — nothing of this call's own
+                // to do; its successor (or, if there is none, the
+                // onSettle hook above) already owns the loader.
+                if (!applied) return;
 
-                // Superseded by a newer search, or the component was
-                // destroyed by a DOM morph while this was in flight. Writing
-                // to a detached instance is the bug the isConnected guards
-                // above were added for; stay silent — but clear our own state
-                // first so the next search doesn't inherit a latched spinner.
-                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+                // The component was destroyed by a DOM morph while this was
+                // in flight. Writing to a detached instance is the bug the
+                // isConnected guard exists for; the shared core has already
+                // reset isSearching/searchAbortController, so only the
+                // result itself needs discarding here.
                 if (!this.$el || !this.$el.isConnected) {
-                    this.searchAbortController = null;
-                    this.isSearching = false;
+                    this.items = [];
                     return;
                 }
 
-                this.searchAbortController = null;
-                this.isSearching = false;
-                this.items = result.items;
                 // This picker renders no unavailable notice of its own (see the
                 // note below), so a flash message is the ONLY signal a buyer
                 // gets. It has to fire on the common failure modes — timeout,
                 // non-2xx, network error, degraded 200 — not just on the
-                // structural error the catch above handles: those return a
-                // status without throwing. Without it the buyer sees an inert
-                // field, and since only selectItem() writes the hidden
-                // shipping-company fields they cannot set a company at all.
+                // structural error the shared core's catch handles. Without it
+                // the buyer sees an inert field, and since only selectItem()
+                // writes the hidden shipping-company fields they cannot set a
+                // company at all.
                 //
                 // Latched once per interaction, mirroring countrySelectionShown
                 // below: the search is debounced per keystroke, so a down API
                 // would otherwise toast on every one.
-                if (result.status === 'failed' || result.status === 'degraded') {
+                if (this.isSearchUnavailable) {
                     if (!this.searchUnavailableShown) {
                         this.searchUnavailableShown = true;
                         // Guarded: this runs on a failure path whose whole point
@@ -343,7 +312,8 @@ document.addEventListener('alpine:init', () => {
                     this.searchUnavailableShown = false;
                 }
                 // A timeout, non-2xx, network error or degraded 200 must not
-                // be rendered as "no companies found".
+                // be rendered as "no companies found" — `isSearchUnavailable`
+                // is the shared core's own verdict on that, above.
                 //
                 // NOTE: nothing in THIS module binds `isSearchUnavailable` —
                 // `searchInput` is registered into head.additional and its
@@ -352,7 +322,6 @@ document.addEventListener('alpine:init', () => {
                 // NOT forced open on a failure here: doing so would show an
                 // empty box with no explanation. The state is exposed for
                 // whichever template renders it.
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
                 if (this.items.length > 0) {
                     this.isOpen = true;
                 }
@@ -422,17 +391,13 @@ document.addEventListener('alpine:init', () => {
             }
 
         },
+        // The index move is the shared core's (window.twoCompanySearchCore);
+        // `adjustScroll()` is DOM-specific to this markup and stays here.
         nextItem() {
-            if (this.selectedIndex < this.items.length - 1) {
-                this.selectedIndex++;
-                this.adjustScroll();
-            }
+            if (window.twoCompanySearchCore.nextItem(this)) this.adjustScroll();
         },
         prevItem() {
-            if (this.selectedIndex > 0) {
-                this.selectedIndex--;
-                this.adjustScroll();
-            }
+            if (window.twoCompanySearchCore.prevItem(this)) this.adjustScroll();
         },
         adjustScroll() {
             this.$nextTick(() => {

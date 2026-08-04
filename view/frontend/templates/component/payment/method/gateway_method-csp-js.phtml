@@ -627,6 +627,26 @@ $quoteDetails = json_encode(
                 result = { status: 'failed', items: [] };
             }
 
+            /*
+             * TWO-25326 §7.4 follow-up: the shipping-company picker
+             * (`shipping_company.phtml`) drives a full-screen magewire
+             * loader off this exact moment — the fetch has just settled,
+             * before this call decides whether ITS OWN result gets applied.
+             * That distinction genuinely differs from the other two
+             * callers, which have no loader of their own, so it is an
+             * optional hook rather than baked into this shared core:
+             * `ownsCompletion` answers "does nothing else already own
+             * signalling that this interaction is over" — true when
+             * nothing has superseded this call (still current, or nothing
+             * is in flight at all), false when a newer call already took
+             * over and will signal completion itself.
+             */
+            if (typeof options.onSettle === 'function') {
+                options.onSettle(
+                    !state.searchAbortController || state.searchAbortController === controller
+                );
+            }
+
             // The buyer typed on, or the component was torn down, while
             // this was in flight. Writing anything now would fight the
             // newer search, or write into a component no longer mounted —
