@@ -27,9 +27,11 @@ $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
-// TWO-25326 §7.1 (2026-08-03 ruling): the ONE company-search control renders
-// either here (in this tile) or on the address step — never both, never
-// neither. See CheckoutConfig::getCompanySearchLocation().
+// TWO-25326 §7.1 (2026-08-03 ruling, corrected 2026-08-04): the ONE
+// company-search control renders either here (in this tile) or on the
+// address step — never both, never neither. Decided by the CORE module's
+// `enable_company_search` setting, not a Hyvä-local one. See
+// CheckoutConfig::getIsCompanySearchInPaymentTile().
 $isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
 $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();

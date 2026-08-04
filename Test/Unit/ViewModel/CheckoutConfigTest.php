@@ -120,53 +120,43 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 §7.1: the location setting defaults to address-area when the
-     * stored value is missing, empty, or anything other than the recognised
-     * "payment_tile" value — a degraded default rather than an unexpected one.
+     * TWO-25326 §7.1, corrected 2026-08-04: Hyvä has no setting of its own —
+     * the location is the negation of the CORE module's
+     * `enable_company_search` setting (Two\Gateway\Api\Config\RepositoryInterface::isCompanySearchEnabled()),
+     * read through the same injected ConfigRepository as
+     * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below. Enabled
+     * (true, address-area) must yield false here; disabled (false, tile) must
+     * yield true.
      */
-    public function testCompanySearchLocationDefaultsToAddressArea(): void
+    public function testIsCompanySearchInPaymentTileIsTheNegationOfTheCoreSetting(): void
     {
-        $this->assertSame(
-            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
-            $this->locationFor(null)
-        );
-        $this->assertSame(
-            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
-            $this->locationFor('')
-        );
-        $this->assertSame(
-            CheckoutConfig::COMPANY_SEARCH_LOCATION_ADDRESS_AREA,
-            $this->locationFor('garbage')
-        );
-        $this->assertSame(
-            CheckoutConfig::COMPANY_SEARCH_LOCATION_PAYMENT_TILE,
-            $this->locationFor(CheckoutConfig::COMPANY_SEARCH_LOCATION_PAYMENT_TILE)
-        );
+        $this->assertFalse($this->isInPaymentTileFor(true));
+        $this->assertTrue($this->isInPaymentTileFor(false));
     }
 
-    private function locationFor(?string $storedValue): string
+    private function isInPaymentTileFor(bool $coreEnableCompanySearch): bool
     {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
-        $scopeConfig = new class ($storedValue) {
-            /** @var string|null */
-            private $value;
+        $configRepository = new class ($coreEnableCompanySearch) {
+            /** @var bool */
+            private $enabled;
 
-            public function __construct(?string $value)
+            public function __construct(bool $enabled)
             {
-                $this->value = $value;
+                $this->enabled = $enabled;
             }
 
-            public function getValue($path)
+            public function isCompanySearchEnabled(): bool
             {
-                return $this->value;
+                return $this->enabled;
             }
         };
 
-        $reflection->getProperty('scopeConfig')->setValue($viewModel, $scopeConfig);
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
 
-        return $viewModel->getCompanySearchLocation();
+        return $viewModel->getIsCompanySearchInPaymentTile();
     }
 
     /**
