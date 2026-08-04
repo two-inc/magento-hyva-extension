@@ -545,6 +545,565 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * TWO-25326 rebuild: the ONE company-search implementation, mirroring
+     * PrestaShop's `TwoCompanySearch` class. Every surface that offers
+     * company search — the address step's field, the payment tile, and the
+     * shipping/address-book field — is a thin adapter around THIS factory.
+     * Nothing below is duplicated anywhere else in this module; a second
+     * copy of any of this logic outside this function is a regression of
+     * this rebuild, not a legitimate per-surface variation.
+     *
+     * What is genuinely per-surface (and therefore NOT here, by design) is
+     * the DOM shape each surface submits and the business logic that reads
+     * a captured company — the payment tile's dual-input id/name swap
+     * between search- and manual-mode fields, its order-intent dispatch, and
+     * the billing/shipping storage split. Those stay in each surface's own
+     * wrapper as hook functions passed in `options`, because they are three
+     * different FEATURES that happen to sit next to a search box, not three
+     * copies of the search box itself. Folding them in here would be exactly
+     * the "correct by accident" abstraction that produced several of the
+     * bugs this file's comments already document.
+     *
+     * @param {Object} options
+     * @param {string} options.checkoutApiUrl
+     * @param {number} options.companySearchLimit
+     * @param {number} options.minSearchChars
+     * @param {boolean} options.isCompanySearchEnabled
+     * @param {boolean} [options.isAddressSearchEnabled]
+     * @param {boolean} [options.manualModeSupported=false] whether this surface
+     *   offers a manual/search toggle at all (shipping does not: it has no
+     *   markup of its own to hang a toggle link on — its visible input is
+     *   rendered by Hyvä Checkout's own address-book form).
+     * @param {boolean} [options.querySplit=false] address-step only
+     *   (TWO-25326 §1): the visible name field and the dropdown's own query
+     *   box are different state, so a keystroke in the dropdown never
+     *   overwrites the captured name until a result is picked.
+     * @param {boolean} [options.editableCompanyId=false] whether this
+     *   surface owns a company-number input whose lock state this engine
+     *   should compute (address + tile; shipping has none).
+     * @param {Function} [options.editableCompanyIdExtraUnlock] extra
+     *   unlock term folded into the id-lock formula (address unlocks whenever
+     *   search itself is switched off; tile has no such term because the tile
+     *   only ever renders with search on).
+     * @param {string} options.dropdownSelector CSS selector for the
+     *   scrollable results container (adjustScroll()).
+     * @param {string} options.itemSelector CSS selector for one result row.
+     * @param {string} [options.countrySelectionMessage]
+     * @param {string} [options.searchUnavailableMessage]
+     * @param {Function} [options.dispatchSearchUnavailableToast=true] whether
+     *   a failed/degraded search toasts `searchUnavailableMessage` itself
+     *   (address + tile render their own inline notice instead — see
+     *   `isSearchUnavailable` — and must not ALSO toast; shipping renders no
+     *   notice of its own, so the toast is its only signal, exactly as
+     *   before).
+     * @param {Function} options.getQuote `() => quoteObject`, called with the
+     *   component as `this`.
+     * @param {Function} options.readSelection `() => storedBlob`
+     * @param {Function} options.writeSelection `(patch) => mergedBlob`
+     * @param {string} [options.selectEventName] custom event name dispatched
+     *   after a pick or a manual commit, `detail` = the merged storage blob.
+     * @param {Function} [options.resolveNameField] `() => HTMLInputElement|null`
+     *   the field selectItem()/getItems() read/write the captured name
+     *   through. Defaults to `this.$el` (the field the search is bound to).
+     * @param {Function} [options.onCompanyCommitted] `(companyName, companyId,
+     *   source) => void`, called with the component as `this` after
+     *   selectItem() or a manual-entry commit has updated state, written
+     *   storage and dispatched the selection event — this is where a
+     *   surface's own business logic (order-intent dispatch, dual-input
+     *   id/name resolution refresh) hooks in.
+     * @param {Function} [options.afterManualToggle] `(enteringManual) => void`
+     *   focus-placement hook run after enterManually()/enableSearch() flips
+     *   mode — each surface's manual-entry field is a different element.
+     * @param {Function} [options.onLoaderStart] fired before a network search
+     *   starts (shipping's magewire loader integration; address/tile render
+     *   their own in-field spinner off `isSearching` instead and pass none).
+     * @param {Function} [options.onLoaderDone] sibling of onLoaderStart, fired
+     *   exactly once per OWNING start — never for a search that was
+     *   superseded, always for one that was aborted with no successor. See
+     *   the loader-ownership note on shipping's own historical version of
+     *   this comment; the invariant is unchanged, only its home is.
+     * @returns {Object} the engine's own members, meant to be layered under a
+     *   surface's own via `twoGatewayComposeLive(surfaceOwn, engine)` so a
+     *   name the surface defines itself always wins.
+     */
+    window.twoGatewayCompanySearchEngine = window.twoGatewayCompanySearchEngine || function twoGatewayCompanySearchEngine(options) {
+        const cfg = Object.assign({
+            checkoutApiUrl: '',
+            companySearchLimit: 10,
+            minSearchChars: 3,
+            isCompanySearchEnabled: true,
+            isAddressSearchEnabled: false,
+            manualModeSupported: false,
+            querySplit: false,
+            editableCompanyId: false,
+            editableCompanyIdExtraUnlock: function () { return false; },
+            dropdownSelector: '.company-results',
+            itemSelector: 'div.cursor-pointer',
+            scopeItemLookupToRoot: false,
+            countrySelectionMessage: '',
+            searchUnavailableMessage: '',
+            dispatchSearchUnavailableToast: false,
+            getQuote: function () { return {}; },
+            readSelection: function () { return {}; },
+            writeSelection: function () { return {}; },
+            resolveNameField: function () { return this.$el || null; },
+            // Container `setAddressData()` writes city/postcode/street into,
+            // resolved fresh per surface since none of the three agree on
+            // where that container is relative to the search field. `null`
+            // (the default) makes `addressLookup()`/`setAddressData()` safe
+            // no-ops on a surface (the tile) that offers no address lookup.
+            resolveAddressContainer: function () { return null; },
+            addressContainerWarning: '',
+            // null/'' disables the DOM CustomEvent dispatch entirely — the
+            // payment tile has never dispatched one from selectItem() (its
+            // own business logic runs off onCompanyCommitted instead), and
+            // adding one it never had is a new event nothing on the tile's
+            // surface is written to expect.
+            selectEventName: null,
+            onCompanyCommitted: function () {},
+            afterManualToggle: function () {},
+            // Fired whenever the engine tears the dropdown state down
+            // (selectItem, enterManually, closeDropdown) — the address
+            // step's query box is a SEPARATE uncontrolled DOM element (see
+            // `querySplit`), so the engine clearing `this.query` alone does
+            // not blank what is actually on screen; this hook is where a
+            // surface with such an element clears it.
+            onDropdownClear: function () {},
+            onLoaderStart: function () {},
+            onLoaderDone: function () {},
+            // Checked right after a search resolves, before writing `items`.
+            // Default true (nothing to check); the address step overrides it
+            // to confirm `$root` is still connected — see the doc comment on
+            // that surface's own options for why Magewire re-renders make
+            // this necessary there and not elsewhere.
+            searchStillValid: function () { return true; },
+        }, options || {});
+
+        return {
+            // --- state ---
+            // These five are seeded from `options` but, unlike the rest of
+            // `options`, are live INSTANCE properties rather than values
+            // closed over in `cfg` — every historical surface exposed them
+            // as plain mutable state (a lookup-off store flips
+            // `isCompanySearchEnabled` at RUNTIME, and several suites mutate
+            // it post-mount to simulate exactly that), so the engine's own
+            // methods read `this.X` for these, never `cfg.X`.
+            checkoutApiUrl: cfg.checkoutApiUrl,
+            companySearchLimit: cfg.companySearchLimit,
+            minSearchChars: cfg.minSearchChars,
+            isCompanySearchEnabled: cfg.isCompanySearchEnabled,
+            isAddressSearchEnabled: cfg.isAddressSearchEnabled,
+            isOpen: false,
+            search: '',
+            query: '',
+            items: [],
+            selectedIndex: -1,
+            isSearching: false,
+            isSearchUnavailable: false,
+            searchAbortController: null,
+            countryCode: '',
+            countrySelectionShown: false,
+            // Latches a search-unavailable TOAST (`dispatchSearchUnavailableToast`)
+            // to once per interaction — shipping's own historical state,
+            // inert (never read) on a surface that renders its own inline
+            // notice instead. Reset by `endSearchInteraction()`.
+            searchUnavailableShown: false,
+            manualMode: false,
+            isCompanySelected: false,
+            companyName: '',
+            companyId: '',
+            companyIdSource: '',
+            companyIdEntryRequired: false,
+            companyIdDisabled: true,
+            searchCompletedFor: null,
+
+            /** Cancel any in-flight company search. Safe to call repeatedly. */
+            abortCompanySearch() {
+                if (this.searchAbortController) {
+                    this.searchAbortController.abort();
+                    this.searchAbortController = null;
+                }
+                this.isSearching = false;
+            },
+
+            /**
+             * Is there an identifier that something other than the buyer
+             * vouched for? Only a registry hit can; a hand-typed number is the
+             * buyer's own and stays theirs to correct.
+             */
+            hasVouchedCompanyId() {
+                return Boolean(this.companyId) && this.companyIdSource === 'registry';
+            },
+
+            /**
+             * Recompute the company-number field's locked state. One derived
+             * state, one writer, shared by every surface that has such a
+             * field. `editableCompanyIdExtraUnlock` is where the address
+             * step's search-switched-off term lives without leaking into the
+             * tile's formula, which has none.
+             */
+            applyCompanyIdEditability() {
+                if (!cfg.editableCompanyId) return;
+                this.companyIdDisabled = !(
+                    cfg.editableCompanyIdExtraUnlock.call(this)
+                    || this.manualMode
+                    || this.companyIdEntryRequired
+                );
+            },
+
+            /**
+             * Drop a registry-supplied identifier that no longer belongs to
+             * the name currently held, from state AND storage together — see
+             * the address step's historical note on why both have to move as
+             * one (the payment step derives its own editability from
+             * `company_id` in the same blob).
+             */
+            forgetStaleCompanyId() {
+                if (!this.companyId) return;
+                if (this.search === this.companyName) return;
+
+                this.companyId = '';
+                this.companyIdSource = '';
+                this.companyIdEntryRequired = true;
+                cfg.writeSelection.call(this, { company_id: '', company_id_source: '' });
+            },
+
+            /**
+             * Run a company search for `term` against the API, populating
+             * `items` / `isSearching` / `isSearchUnavailable` / `countryCode`.
+             * Cancels any prior in-flight search first (supersession) and is
+             * itself safe to abandon mid-flight (a later call, or a teardown,
+             * simply supersedes it).
+             *
+             * Callers own the min-chars gate and what `isOpen` should do
+             * afterwards, because that differs by surface (auto-open on the
+             * tile, no such term at all on the address step which opens on
+             * click/keypress instead).
+             *
+             * @param {string} term
+             * @returns {Promise<void>}
+             */
+            async runCompanySearch(term) {
+                this.selectedIndex = -1;
+                this.isSearchUnavailable = false;
+                const quoteData = cfg.getQuote.call(this);
+                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
+
+                if (this.countryCode) this.countrySelectionShown = false;
+
+                if (!this.countryCode) {
+                    this.abortCompanySearch();
+                    this.endSearchInteraction();
+                    if (!this.countrySelectionShown && term.length >= this.minSearchChars) {
+                        this.countrySelectionShown = true;
+                        window.dispatchMessages([{
+                            type: 'warning',
+                            text: cfg.countrySelectionMessage,
+                        }], 5000);
+                    }
+                    return;
+                }
+                this.countrySelectionShown = false;
+
+                if (term.length < this.minSearchChars) {
+                    this.abortCompanySearch();
+                    this.endSearchInteraction();
+                    this.items = [];
+                    this.searchCompletedFor = null;
+                    return;
+                }
+
+                this.abortCompanySearch();
+                const controller = new AbortController();
+                this.searchAbortController = controller;
+                this.isSearching = true;
+                cfg.onLoaderStart.call(this);
+
+                let result;
+                try {
+                    result = await window.twoGatewayCompanySearch({
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        countryCode: this.countryCode,
+                        query: term,
+                        limit: this.companySearchLimit,
+                        signal: controller.signal,
+                    });
+                } catch (error) {
+                    console.error('Company search failed:', error);
+                    result = { status: 'failed', items: [] };
+                } finally {
+                    // Loader-done fires exactly once per OWNING start: never
+                    // for a search a newer one has already superseded, always
+                    // for one aborted with no successor. `null` unambiguously
+                    // means "nothing in flight" — abortCompanySearch() nulls
+                    // it synchronously and a successor assigns it
+                    // synchronously in the same task.
+                    if (!this.searchAbortController || this.searchAbortController === controller) {
+                        cfg.onLoaderDone.call(this);
+                    }
+                }
+
+                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+
+                // enterManually() (or equivalent) may have fired while this
+                // was in flight — writing `items` now would leave a
+                // populated result list behind the manual-entry fields.
+                // `searchStillValid` is also where a surface bound to a
+                // Magewire-rendered subtree (the address step) checks it has
+                // not been torn down and rebuilt while the request was on
+                // the wire; writing into a detached component is silently
+                // inert on the page and leaves a dead copy holding state.
+                if (this.manualMode || !cfg.searchStillValid.call(this)) {
+                    this.searchAbortController = null;
+                    this.isSearching = false;
+                    return;
+                }
+
+                this.searchAbortController = null;
+                this.isSearching = false;
+                this.items = result.items;
+                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+                if (!this.isSearchUnavailable) {
+                    this.searchCompletedFor = term;
+                    // A good result ends the "unavailable" run, so the next
+                    // failure toasts again rather than staying silenced by an
+                    // earlier one.
+                    this.searchUnavailableShown = false;
+                } else if (cfg.dispatchSearchUnavailableToast && cfg.searchUnavailableMessage) {
+                    // Latched once per interaction: the search is debounced
+                    // per keystroke, so an unlatched toast would fire on
+                    // every one of them while an API stays down.
+                    if (!this.searchUnavailableShown) {
+                        this.searchUnavailableShown = true;
+                        // Guarded: this runs on a failure path whose whole point
+                        // is surviving a missing global, so it must not become
+                        // the thing that throws.
+                        if (typeof window.dispatchMessages === 'function') {
+                            window.dispatchMessages([{
+                                type: 'warning',
+                                text: cfg.searchUnavailableMessage,
+                            }], 5000);
+                        }
+                    }
+                }
+            },
+
+            /**
+             * End of one search interaction: allow a latched
+             * "unavailable" toast to fire again next time. No-op on a
+             * surface that renders its own inline notice instead of a
+             * toast (nothing reads `searchUnavailableShown` there).
+             */
+            endSearchInteraction() {
+                this.searchUnavailableShown = false;
+            },
+
+            // --- keyboard navigation (identical across every surface) ---
+            nextItem() {
+                if (this.selectedIndex < this.items.length - 1) {
+                    this.selectedIndex++;
+                    this.adjustScroll();
+                }
+            },
+            prevItem() {
+                if (this.selectedIndex > 0) {
+                    this.selectedIndex--;
+                    this.adjustScroll();
+                }
+            },
+            adjustScroll() {
+                this.$nextTick(() => {
+                    // Scoped to `$root` only where configured (the address
+                    // step, which shares a page with other company-search
+                    // instances — the shipping/address-book field in
+                    // particular). The payment tile's own historical version
+                    // of this method queried `document` unscoped; preserved
+                    // exactly, not tightened, since this tile is the only
+                    // one of its kind on any page it renders on.
+                    const scope = (cfg.scopeItemLookupToRoot && this.$root) || document;
+                    const dropdown = scope.querySelector(cfg.dropdownSelector);
+                    const highlighted = scope.querySelectorAll(cfg.itemSelector)[this.selectedIndex];
+                    if (dropdown && highlighted) {
+                        const dropdownRect = dropdown.getBoundingClientRect();
+                        const itemRect = highlighted.getBoundingClientRect();
+                        if (itemRect.bottom > dropdownRect.bottom) {
+                            dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
+                        } else if (itemRect.top < dropdownRect.top) {
+                            dropdown.scrollTop -= dropdownRect.top - itemRect.top;
+                        }
+                    }
+                });
+            },
+            handleItemClick(event) {
+                const index = event.currentTarget.dataset.index;
+                if (index !== undefined && this.items[index]) {
+                    this.selectItem(this.items[index]);
+                }
+            },
+            selectHighlightedItem() {
+                if (this.selectedIndex >= 0 && this.items.length > 0 && this.items[this.selectedIndex]) {
+                    this.selectItem(this.items[this.selectedIndex]);
+                }
+            },
+
+            /**
+             * The ONE pick path every surface funnels through. Clears dropdown
+             * state, writes the captured pair into component state AND the
+             * resolved name field, persists it, dispatches the selection
+             * event, then hands off to `onCompanyCommitted` for whatever is
+             * surface-specific about "a company was just captured" (order
+             * intent, id/name field-pair resolution, address lookup).
+             *
+             * @param {{companyName: string, companyId?: string, lookupId?: string}} item
+             */
+            selectItem(item) {
+                this.abortCompanySearch();
+                this.endSearchInteraction();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
+                this.items = [];
+                this.selectedIndex = -1;
+                this.query = '';
+                this.searchCompletedFor = null;
+                cfg.onDropdownClear.call(this);
+
+                this.search = item.companyName;
+                this.isCompanySelected = true;
+                this.manualMode = false;
+
+                this.companyName = item.companyName;
+                this.companyId = item.companyId || '';
+                this.companyIdSource = this.companyId ? 'registry' : '';
+                this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+                this.applyCompanyIdEditability();
+
+                const field = cfg.resolveNameField.call(this);
+                if (field) {
+                    field.value = item.companyName;
+                    field.dispatchEvent(new Event('input', { bubbles: false }));
+                }
+
+                const selectionData = cfg.writeSelection.call(this, {
+                    company_name: item.companyName,
+                    company_id: item.companyId || '',
+                    company_id_source: this.companyIdSource,
+                    manual_mode: false,
+                });
+
+                if (cfg.selectEventName) {
+                    window.dispatchEvent(new CustomEvent(cfg.selectEventName, {
+                        detail: selectionData,
+                    }));
+                }
+
+                cfg.onCompanyCommitted.call(this, this.companyName, this.companyId, this.companyIdSource);
+
+                if (this.isAddressSearchEnabled && item.lookupId) {
+                    this.addressLookup(item.lookupId, cfg.resolveAddressContainer.call(this));
+                }
+            },
+
+            /**
+             * Commit whatever is in the name field as the captured company
+             * with NO identifier vouched for it — the manual-entry / lookup-off
+             * path. Same funnel as selectItem(): writes state, storage, the
+             * selection event, and the commit hook.
+             *
+             * @param {string} name
+             */
+            commitManualCompany(name) {
+                this.search = name;
+                // NOT an unconditional `companyIdEntryRequired = true`: a
+                // name edit that still matches the name a registry number
+                // was written for must leave that number LOCKED —
+                // forgetStaleCompanyId() is the only writer of this flag on
+                // this path, and only when the text has actually diverged.
+                this.forgetStaleCompanyId();
+                this.isCompanySelected = false;
+                this.applyCompanyIdEditability();
+
+                const selectionData = cfg.writeSelection.call(this, { company_name: name });
+                if (cfg.selectEventName) {
+                    window.dispatchEvent(new CustomEvent(cfg.selectEventName, {
+                        detail: selectionData,
+                    }));
+                }
+                cfg.onCompanyCommitted.call(this, name, this.companyId, this.companyIdSource);
+            },
+
+            // --- manual / search mode toggle (only where the surface supports it) ---
+            enterManually(event) {
+                if (!cfg.manualModeSupported) return;
+                if (event) {
+                    event.stopPropagation();
+                    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                }
+                this.abortCompanySearch();
+                this.isSearchUnavailable = false;
+                this.manualMode = true;
+                this.isOpen = false;
+                this.items = [];
+                this.selectedIndex = -1;
+                this.query = '';
+                this.searchCompletedFor = null;
+                cfg.onDropdownClear.call(this);
+                cfg.writeSelection.call(this, { manual_mode: true });
+                this.applyCompanyIdEditability();
+                cfg.afterManualToggle.call(this, true);
+            },
+            enableSearch(event) {
+                if (!cfg.manualModeSupported) return;
+                if (event) {
+                    event.stopPropagation();
+                    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+                }
+                this.manualMode = false;
+                cfg.writeSelection.call(this, { manual_mode: false });
+                this.applyCompanyIdEditability();
+                cfg.afterManualToggle.call(this, false);
+            },
+
+            // --- address lookup (identical across every surface that offers it) ---
+            async addressLookup(lookupId, container) {
+                const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId);
+                if (data && data.addresses && data.addresses.length > 0) {
+                    this.setAddressData(data.addresses[0], container);
+                }
+            },
+            setAddressData(address, container) {
+                if (!container) {
+                    if (cfg.addressContainerWarning) console.warn(cfg.addressContainerWarning);
+                    return;
+                }
+                const cityInput = container.querySelector('input[name="city"]');
+                const postcodeInput = container.querySelector('input[name="postcode"]');
+                const streetInput = container.querySelector('input[name="street[0]"]');
+                if (cityInput) cityInput.value = address.city || "";
+                if (postcodeInput) postcodeInput.value = address.postal_code || "";
+                if (streetInput) streetInput.value = address.street_address || "";
+                [cityInput, postcodeInput, streetInput].forEach((input) => {
+                    if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
+                });
+            },
+
+            closeDropdown() {
+                this.abortCompanySearch();
+                this.endSearchInteraction();
+                this.isSearchUnavailable = false;
+                this.isOpen = false;
+                this.items = [];
+                this.selectedIndex = -1;
+                this.query = '';
+                this.searchCompletedFor = null;
+                cfg.onDropdownClear.call(this);
+            },
+            closeCompanyList(event) {
+                if (event.key === 'Tab') this.closeDropdown();
+            },
+        };
+    };
+
+    /**
      * Compose `source` onto `target` KEEPING ACCESSORS AS ACCESSORS.
      *
      * TWO-25332. Object spread and Object.assign copy own enumerable
@@ -747,58 +1306,60 @@ $quoteDetails = json_encode(
     }
 
     function <?= $gwBase ?>PaymentMethodBase() {
-        return {
-            // State
-            isOpen: false,
-            search: '',
-            items: [],
-            companyName: '',
-            companyId: '',
+        /*
+         * TWO-25326 rebuild. Every bit of search/dropdown/manual-entry state
+         * and behaviour below is composed live from the ONE shared engine
+         * (twoGatewayCompanySearchEngine, defined above) — `manualMode`,
+         * `isOpen`, `items`, `companyName`, `companyId`,
+         * `companyIdEntryRequired`, `companyIdDisabled`, `selectItem()`,
+         * `enterManually()`, `enableSearch()`, `nextItem()`/`prevItem()`,
+         * `applyCompanyIdEditability()` and friends all come from there. What
+         * follows is ONLY what is genuinely specific to this tile: the
+         * dual-input id/name swap between the search- and manual-mode field
+         * pair, order-intent dispatch/dedup, and the billing/shipping
+         * storage split — three real features, not three copies of the
+         * search box.
+         */
+        return twoGatewayComposeLive(window.twoGatewayCompanySearchEngine({
+            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            minSearchChars: <?= (int) $companySearchMinChars ?>,
+            isCompanySearchEnabled: true,
+            isAddressSearchEnabled: false,
+            manualModeSupported: true,
+            editableCompanyId: true,
+            dropdownSelector: '.company-results',
+            itemSelector: 'div.cursor-pointer',
+            countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+            dispatchSearchUnavailableToast: false,
+            // No DOM write/dispatch on pick: this tile's visible field is
+            // `:value="search"` (Alpine-reactive), so a manual `.value`
+            // write plus a synthetic `input` event would be a second,
+            // redundant write path the original tile never had.
+            resolveNameField: function () { return null; },
+            getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
+            readSelection: function () { return window.twoGatewayReadBillingCompany(); },
+            writeSelection: function (patch) { return window.twoGatewayWriteBillingCompany(patch); },
+            afterManualToggle: function (entering) {
+                if (!entering) document.getElementById('company_name')?.focus();
+            },
+            onCompanyCommitted: function (companyName, companyId) {
+                // Preserves the original selectItem()'s isSelecting=true:
+                // the tile's own `@input.debounce.300ms="getItems"` on the
+                // search field must not re-fire (and re-search) as a
+                // consequence of a pick that just completed.
+                this.isSelecting = true;
+                this.fillCompanyData(companyId, companyName);
+            },
+        }), {
+            // State genuinely specific to this tile.
             invoiceEmails: '',
             project: '',
             department: '',
             orderNote: '',
             poNumber: '',
-            manualMode: false,
-            // Manual / search dual-mode toggle for the company-name + company-id pair.
-            // Inputs are duplicated in the template (one per mode, x-show'd); the
-            // visible-mode input always submits as `payment[company_name]` /
-            // `payment[company_id]`, the hidden mirror submits as
-            // `payment[manual_*]` (which Magento ignores).
-            showManual: false,
-            // Bound by gateway_method.phtml as `:disabled` on the search-mode
-            // company-number input. It is the ONLY thing that locks that
-            // field; the greyed-out look derives from it in custom.css
-            // (`input.company_id:disabled`) rather than from a second piece of
-            // state saying the same thing.
-            companyIdDisabled: true,
-            // Set whenever there is no registry-supplied identifier for the
-            // name currently in the name field: the selected company arrived
-            // with NO national identifier (which the search response is allowed
-            // to omit), or the buyer has typed / edited the name without
-            // picking a dropdown hit at all — getItems() recomputes it on every
-            // edit for exactly that case. The
-            // company-id field is still required, so the buyer has to be able
-            // to type the organisation number in themselves — without this the
-            // field would sit empty AND disabled, an unfillable required field.
-            // Kept separate from `manualMode` (which also switches the company
-            // NAME field to free text) and folded into the same derived
-            // enabled state by applyCompanyIdEditability().
-            companyIdEntryRequired: false,
             isSelecting: false,
             isPaymentTermsAccepted: false,
-            selectedIndex: -1,
-            // Company-search request state. `isSearching` drives the in-field
-            // spinner; `isSearchUnavailable` drives the "try again / enter
-            // manually" notice, which must be distinguishable from a genuine
-            // zero-result search. `searchAbortController` supersedes an
-            // in-flight search when the buyer types on or Magewire
-            // re-renders the component.
-            isSearching: false,
-            isSearchUnavailable: false,
-            searchAbortController: null,
-            countryCode: '',
-            countrySelectionShown: false,
             placeOrderIntentFlag: true,
             lastOrderIntentCompanyId: '', // Track last company ID for which order intent was triggered
 
@@ -924,28 +1485,39 @@ $quoteDetails = json_encode(
                 return this.search.length < this.minSearchChars;
             },
 
+            // Manual / search dual-mode toggle for the company-name + company-id pair.
+            // Inputs are duplicated in the template (one per mode, x-show'd); the
+            // visible-mode input always submits as `payment[company_name]` /
+            // `payment[company_id]`, the hidden mirror submits as
+            // `payment[manual_*]` (which Magento ignores). `showManual` is
+            // this tile's own name for the engine's shared `manualMode` state
+            // — kept as an alias, not a second flag, so the two can never
+            // drift apart.
+            get showManual() {
+                return this.manualMode;
+            },
+            set showManual(value) {
+                this.manualMode = value;
+            },
+
             // CSP-friendly Alpine forbids the `!` operator in attribute
             // expressions. Templates using `x-show="!showManual"` resolve
             // this magic getter (bare identifier `!showManual`) instead
             // of evaluating the negation inline. Mirrors the pattern in
             // the overlay repo's hyva/.../gateway_method-csp-js.phtml.
             ['!showManual']() {
-                return !this.showManual;
+                return !this.manualMode;
             },
 
-            // Manual / search mode toggle handlers
-            <?= $gwBase ?>OnSearchModeClick() {
-                this.showManual = false;
+            // Manual / search mode toggle handlers — thin aliases over the
+            // shared engine's enableSearch()/enterManually(), kept under
+            // these exact (branded) names because the markup binds `@click`
+            // to them literally.
+            <?= $gwBase ?>OnSearchModeClick(event) {
+                this.enableSearch(event);
             },
-            <?= $gwBase ?>OnManualEntryClick() {
-                // This — not enterManually() — is what the visible "Enter
-                // details manually" link binds. A search still on the wire
-                // would otherwise land after the switch, spin the spinner
-                // forever and reopen the dropdown over the manual fields.
-                this.abortCompanySearch();
-                this.isSearchUnavailable = false;
-                this.isOpen = false;
-                this.showManual = true;
+            <?= $gwBase ?>OnManualEntryClick(event) {
+                this.enterManually(event);
             },
             <?= $gwBase ?>OnCompanyItemClick(event) {
                 return this.handleItemClick(event);
@@ -1153,7 +1725,13 @@ $quoteDetails = json_encode(
                 });
             },
 
-            // Company search methods
+            // Company search: the network call, the min-chars/country gates
+            // and the isOpen-on-results rule are this tile's own, but the
+            // request itself (`runCompanySearch`) is the shared engine's —
+            // see the class-level doc comment on
+            // `twoGatewayCompanySearchEngine` for why this split, not the
+            // gate/open logic, is the line between "genuinely identical" and
+            // "genuinely per-surface".
             async getItems() {
                 // Every early return below must leave the spinner down and no
                 // request on the wire, or `isSearching` latches true and the
@@ -1195,144 +1773,15 @@ $quoteDetails = json_encode(
                 this.companyIdEntryRequired =
                     !(this.companyId && this.search === this.companyName);
                 this.applyCompanyIdEditability();
-                this.selectedIndex = -1;
-                // Reset BEFORE the country check below: clearing the country
-                // after a failed search would leave this latched true, stacked
-                // under the "select a country" warning.
-                this.isSearchUnavailable = false;
-                const quoteData = JSON.parse(JSON.stringify(this.quote));
 
-                // Get country code using centralized helper
-                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
-
-                if (this.countryCode) {
-                    this.countrySelectionShown = false; // Reset flag when country is available
-                }
-
-                if (!this.countryCode) {
-                    // Only show the message once per interaction when user has typed enough
-                    if (!this.countrySelectionShown && this.search.length >= this.minSearchChars) {
-                        this.countrySelectionShown = true;
-                        window.dispatchMessages([{ type: 'warning', text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>' }], 5000);
-                    }
-                    this.abortCompanySearch();
-                    return;
-                }
-
-                if (this.search.length < this.minSearchChars) {
-                    this.abortCompanySearch();
-                    this.items = [];
-                    this.isSearching = false;
-                    return;
-                }
-
-                // Inline search — no global magewire:loader dispatch.
-                // The dropdown's existing x-show binding renders results
-                // as they arrive; a full-screen busy overlay on every
-                // keystroke would interrupt the user mid-typing, which is
-                // the bug this replaced. The outer @input.debounce already
-                // throttles input; the prior setTimeout(200) was a
-                // redundant second-stage delay and is gone.
-                //
-                // Supersede any in-flight search so a slow response for an
-                // earlier query can never repopulate the dropdown.
-                this.abortCompanySearch();
-                const controller = new AbortController();
-                this.searchAbortController = controller;
-                const query = this.search;
-                this.isSearching = true;
-
-                // try/catch because the helper is a window global: if it were
-                // ever absent the await would throw, leaving this an unhandled
-                // rejection with `isSearching` latched true — and this picker
-                // DOES render a spinner off that flag, so it would spin
-                // forever. The helper swallows request failures itself, so
-                // reaching the catch means something structural.
-                let result;
-                try {
-                    result = await window.twoGatewayCompanySearch({
-                        checkoutApiUrl: this.checkoutApiUrl,
-                        countryCode: this.countryCode,
-                        query: query,
-                        limit: this.companySearchLimit,
-                        signal: controller.signal,
-                    });
-                } catch (error) {
-                    console.error('Company search failed:', error);
-                    result = { status: 'failed', items: [] };
-                }
-
-                // The buyer typed on, or Magewire re-rendered us, while this
-                // was in flight. Writing anything now would fight the newer
-                // search — stay silent.
-                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
-
-                this.searchAbortController = null;
-                this.isSearching = false;
-                this.items = result.items;
+                await this.runCompanySearch(this.search);
                 // A timeout, a network error, a non-2xx, or a degraded 200
                 // must not read as "no companies found" — that is how a
-                // buyer with a valid company concludes we won't take them.
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+                // buyer with a valid company concludes we won't take them —
+                // and `runCompanySearch()` already made sure
+                // `isSearchUnavailable` reflects that. Opening on a failure
+                // too (not only on real results) is this tile's own rule.
                 if (this.items.length > 0 || this.isSearchUnavailable) this.isOpen = true;
-            },
-
-            /** Cancel any in-flight company search. Safe to call repeatedly. */
-            abortCompanySearch() {
-                if (this.searchAbortController) {
-                    this.searchAbortController.abort();
-                    this.searchAbortController = null;
-                }
-                this.isSearching = false;
-            },
-
-            handleItemClick(event) {
-                const index = event.currentTarget.dataset.index;
-                if (index !== undefined && this.items[index]) {
-                    this.selectItem(this.items[index]);
-                }
-            },
-
-            selectItem(item) {
-                // The buyer has chosen; anything still on the wire is stale
-                // and would reopen a dropdown they have just dismissed.
-                this.abortCompanySearch();
-                this.isSearchUnavailable = false;
-                this.isSelecting = true;
-                this.isOpen = false;
-                this.items = [];
-                this.selectedIndex = -1;
-                this.search = item.companyName;
-                this.manualMode = false;
-
-                // The hit may carry no national identifier — see identifierOf()
-                // above. Setting this BEFORE fillCompanyData() matters: the
-                // watcher on `manualMode` (just cleared) recomputes the field
-                // state, and this flag has to be current when it does.
-                this.companyIdEntryRequired = !item.companyId;
-                this.applyCompanyIdEditability();
-
-                // A merging write, never a rebuild from a key list: dropping
-                // `quote_id` that way is what silently disarmed the new-order
-                // clear.
-                //
-                // `company_id_source` is provenance, and it MUST be written
-                // here. Merging means a `'manual'` left behind by an earlier
-                // address-step edit otherwise survives alongside a registry
-                // number picked on the tile; the address step's
-                // hasVouchedCompanyId() then reads false for a genuine
-                // registry pick and refuses to render the read-only number.
-                // The whole address-step editability model rests on this key,
-                // so it is written on every path that writes a number —
-                // `''` when the hit carried none, never left as-is.
-                window.twoGatewayWriteBillingCompany({
-                    company_name: item.companyName,
-                    company_id: item.companyId,
-                    company_id_source: item.companyId ? 'registry' : '',
-                    manual_mode: false
-                });
-
-                this.fillCompanyData(item.companyId, item.companyName);
             },
 
             /*
@@ -1411,7 +1860,8 @@ $quoteDetails = json_encode(
                 this.lastOrderIntentCompanyId = '';
                 // Back to the search control, not manual entry: search is the
                 // route that can still produce a registry-vouched number.
-                this.showManual = false;
+                // (`manualMode`, set to `false` above — `showManual` is now a
+                // read-only alias over it, not a second flag to assign.)
                 this.applyCompanyIdEditability();
 
                 const nameInput = document.getElementById('company_name');
@@ -1462,100 +1912,25 @@ $quoteDetails = json_encode(
                 this.clearCapturedCompany();
             },
 
-            enterManually() {
-                this.abortCompanySearch();
-                this.isSearchUnavailable = false;
-                this.manualMode = true;
-                this.isOpen = false;
-                this.items = [];
-                this.saveManualModeToStorage(true);
-                // No explicit unlock needed: the `manualMode` watcher runs
-                // applyCompanyIdEditability(), which writes the
-                // `companyIdDisabled` the field's `:disabled` is bound to.
-            },
-
-            enableSearch() {
-                this.manualMode = false;
-                this.saveManualModeToStorage(false);
-                document.getElementById('company_name')?.focus();
-            },
-
+            // Kept as its own named method — the engine's enterManually()/
+            // enableSearch() call `cfg.writeSelection` directly rather than
+            // through this name, but it is part of this tile's own API
+            // surface (clearCapturedCompany() does not use it either, by
+            // design — see that method's own comment on why).
             saveManualModeToStorage(manualMode) {
                 window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
 
-            // Keyboard navigation
-            nextItem() {
-                if (this.selectedIndex < this.items.length - 1) {
-                    this.selectedIndex++;
-                    this.adjustScroll();
-                }
-            },
-
-            prevItem() {
-                if (this.selectedIndex > 0) {
-                    this.selectedIndex--;
-                    this.adjustScroll();
-                }
-            },
-
-            adjustScroll() {
-                this.$nextTick(() => {
-                    const dropdown = document.querySelector(".company-results");
-                    const selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
-
-                    if (dropdown && selectedItem) {
-                        const dropdownRect = dropdown.getBoundingClientRect();
-                        const itemRect = selectedItem.getBoundingClientRect();
-
-                        if (itemRect.bottom > dropdownRect.bottom) {
-                            dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
-                        } else if (itemRect.top < dropdownRect.top) {
-                            dropdown.scrollTop -= dropdownRect.top - itemRect.top;
-                        }
-                    }
-                });
-            },
-
-            selectHighlightedItem() {
-                if (this.selectedIndex >= 0 && this.items.length > 0) {
-                    this.selectItem(this.items[this.selectedIndex]);
-                }
-            },
-
-            closeCompanyList(event) {
-                if (event.key === 'Tab') {
-                    this.abortCompanySearch();
-                    this.isSearchUnavailable = false;
-                    this.isOpen = false;
-                    this.items = [];
-                }
-            },
-
-            /**
-             * Recompute the company-id field's enabled state.
-             *
-             * Two independent reasons the buyer may type into it: manual entry
-             * of the whole company, and no registry-supplied identifier for the
-             * name currently in the name field — which covers both a searched
-             * company that came back without a national identifier and a name
-             * the buyer has typed or edited without picking a dropdown hit.
-             * One derived state, one place it is computed — the previous inline
-             * `!manualMode` assignments in two places are what let the second
-             * reason get silently overwritten.
-             *
-             * The invariant: enabled whenever there is no registry-supplied
-             * identifier for the current name, disabled exactly when one has
-             * been written for it.
-             *
-             * `companyIdDisabled` is what gateway_method.phtml binds, so this
-             * is the only writer of the field's locked state. The imperative
-             * `disabled = true` that company-name-payment.phtml used to apply
-             * on every shipping sync — and never reversed — is gone.
-             */
-            applyCompanyIdEditability() {
-                this.companyIdDisabled = !(this.manualMode || this.companyIdEntryRequired);
-            },
+            // Manual/search toggling, keyboard navigation, dropdown teardown
+            // and the company-id lock formula (`applyCompanyIdEditability()`)
+            // are the shared engine's — `enterManually()`, `enableSearch()`,
+            // `nextItem()`/`prevItem()`/`adjustScroll()`,
+            // `selectHighlightedItem()`, `closeCompanyList()`. This tile's
+            // `editableCompanyIdExtraUnlock` is the engine default (`false`):
+            // the formula here has always been exactly
+            // `!(manualMode || companyIdEntryRequired)`, with no extra term —
+            // unlike the address step, which unlocks whenever search itself
+            // is switched off (see that surface's own options).
 
             // Additive (TWO-25288): whether there is an actual registry id to
             // show. Deliberately NOT just `companyIdDisabled` — on
@@ -1952,7 +2327,7 @@ $quoteDetails = json_encode(
                     window.dispatchMessages([{ type: 'error', text: message }], 3000);
                 }
             },
-        };
+        });
     }
 
     /**

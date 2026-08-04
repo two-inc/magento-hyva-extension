@@ -94,121 +94,113 @@ $quoteDetailsJson = json_encode(
     };
 
 function <?= $gwBase ?>CompanySearchField() {
-    return {
-        isOpen: false,
-        /*
-         * `search` is the COMPANY-NAME field's value. Since TWO-25326 §1 that
-         * is no longer the search term: it changes only when the buyer types in
-         * MANUAL mode, or when selectItem() writes a chosen company into it.
-         */
-        search: '',
-        /*
-         * `query` is the dropdown's own query-field text (TWO-25326 §1) — the
-         * thing that is actually searched for. Split from `search` because the
-         * ticket requires the company-name field to be left untouched until a
-         * result is selected: with one shared value, every keystroke in the
-         * dropdown would have been published as the order's company name.
-         */
-        query: '',
-        /*
-         * The query string the most recently COMPLETED search ran for, or null
-         * if none has completed for the current panel. `noMatchesVisible` keys
-         * on it so "No matches found" cannot flash in the window between the
-         * panel opening (or a keystroke landing) and the response arriving.
-         */
-        searchCompletedFor: null,
-        items: [],
-        selectedIndex: -1,
-        // True from the moment a company is chosen from the dropdown until the
-        // buyer edits the name field by hand — which, since TWO-25326 §1, only
-        // manual mode and a lookup-disabled store can do. It gates the
-        // below-the-field manual-entry affordance: a completed pick is not "my
-        // company is not on the list".
-        isCompanySelected: false,
-        manualMode: false,
-        /*
-         * The company the identifier below currently belongs to, and that
-         * identifier.
-         *
-         * `companyName` is NOT the live field text — `search` is. It records
-         * the name a registry-supplied identifier was written FOR, so the
-         * editability rule can ask whether the text still describes the same
-         * company. Collapsing the two would make every keystroke look like it
-         * still had a vouched-for number.
-         */
-        companyName: '',
-        companyId: '',
-        /*
-         * Where the identifier in `companyId` came from: `'registry'` for one a
-         * search hit supplied, `'manual'` for one the buyer typed, `''` for
-         * none.
-         *
-         * Load-bearing because both values live under the same storage key, and
-         * the two have opposite editability rules — a registry number must not
-         * be typed over, a hand-typed one must always be correctable. Without
-         * the provenance the restore path could only ask "is there a number",
-         * so the first Magewire re-render after the buyer typed one locked the
-         * field over their own value and a typo could never be fixed.
-         *
-         * It is also what makes the stale-identifier clear below safe: only a
-         * registry number is dropped when the name stops matching, because only
-         * a registry number belongs to a name at all.
-         */
-        companyIdSource: '',
-        /*
-         * Bound by companyName.phtml as `:disabled` on the company-number
-         * input, and the ONLY thing that locks that field — the greyed look
-         * derives from it in custom.css (`input.company_id:disabled`), shared
-         * with the payment tile.
-         *
-         * Declared locked so the field cannot flash open before init() runs.
-         */
-        companyIdDisabled: true,
-        /*
-         * Set whenever there is no registry-supplied identifier for the name
-         * the field currently holds: the selected company arrived without a
-         * national identifier (the search response is allowed to omit it), the
-         * buyer typed or edited the name without picking a hit, or manual
-         * entry is active. The number is what placement credit-checks, so the
-         * buyer has to be able to type it in themselves in every one of those
-         * cases — otherwise the field sits empty AND locked, and there is no
-         * other company-number input in the checkout to fall back on.
-         */
-        companyIdEntryRequired: false,
+    /*
+     * TWO-25326 rebuild. The search/dropdown/manual-entry/keyboard-nav/
+     * address-lookup behaviour below comes from the ONE shared engine
+     * (twoGatewayCompanySearchEngine, gateway_method-csp-js.phtml) —
+     * `isOpen`, `items`, `manualMode`, `companyName`, `companyId`,
+     * `companyIdSource`, `companyIdEntryRequired`, `companyIdDisabled`,
+     * `selectItem()`, `enterManually()`, `enableSearch()`,
+     * `nextItem()`/`prevItem()`, `hasVouchedCompanyId()`,
+     * `forgetStaleCompanyId()` and friends all live there now. What follows
+     * is ONLY what is genuinely specific to this surface: the query/search
+     * SPLIT (TWO-25326 §1 — the dropdown's own query box is a separate,
+     * uncontrolled element from the company-name field) and the keyboard-
+     * trap/focus-management system built around it (§1/§4), neither of
+     * which any other surface has a use for.
+     */
+    // Both cross-file globals guarded the same way as twoAddressReadSelection/
+    // twoAddressWriteSelection above: gateway_method-csp-js.phtml's inline
+    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // failure there must degrade this surface, not throw a ReferenceError
+    // out of it.
+    const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
+        || function(target) { return target; };
+    const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
+        || function() { return {}; };
+    return twoGatewayComposeLiveFn(twoGatewayCompanySearchEngineFn({
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
-        /*
-         * Whether the registry lookup is switched on for this store.
-         *
-         * With it off this field pair is a plain name + number form: no
-         * request, no dropdown, neither mode link, and the number always
-         * typeable — which is why the editability rule below carries a term
-         * for it rather than the template carrying a PHP branch.
-         */
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
-        quoteData: <?= $quoteDetailsJson ?>,
-        // The one threshold for this repo, emitted from PHP
-        // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as a
-        // literal here — the guard below and the hint that claims the number
-        // must be unable to disagree (TWO-25288). Cast to an int so the
-        // comparison stays numeric; a quoted value would compare a string.
         minSearchChars: <?= (int) $companySearchMinChars ?>,
+        companySearchLimit: 10,
+        manualModeSupported: true,
+        querySplit: true,
+        editableCompanyId: true,
+        // The address step unlocks the (unused, provenance-only —
+        // companyName.phtml binds nothing to it, see the doc comment there)
+        // id-lock formula whenever search itself is off, a term the payment
+        // tile's own formula does not carry.
+        editableCompanyIdExtraUnlock: function () { return !this.isCompanySearchEnabled; },
+        dropdownSelector: '.two-company-search__results',
+        itemSelector: '[data-index]',
+        scopeItemLookupToRoot: true,
+        countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+        dispatchSearchUnavailableToast: false,
+        selectEventName: 'shipping-company-selected',
+        getQuote: function () { return this.quoteData; },
+        readSelection: function () { return twoAddressReadSelection(); },
+        writeSelection: function (patch) { return twoAddressWriteSelection(patch); },
+        resolveNameField: function () { return this.companyNameField(); },
+        // Traverse up levels from the component root to find the container
+        // with all the address inputs — unchanged from the original: still
+        // 4 parentElement hops, still from `$root`.
+        resolveAddressContainer: function () {
+            let container = this.$root;
+            for (let i = 0; i < 4 && container; i++) {
+                container = container.parentElement;
+            }
+            return container;
+        },
+        addressContainerWarning: 'Could not find address container',
+        // Magewire may have re-rendered the address form while a search was
+        // in flight and replaced the node this component is bound to.
+        // Writing `items` into a detached component leaves no dropdown on
+        // the page and a dead copy holding search state. Checked here rather
+        // than `wire:ignore` on the x-data node, which is the payment form's
+        // remedy for the same class of problem — this subtree is NOT
+        // equivalent, since it wraps a Magewire-bound address field rendered
+        // by Hyvä's own form renderer, and opting it out of the diff-merge
+        // cycle would stop the field updating. Fails CLOSED: once Alpine has
+        // torn the subtree down there is no `_x_dataStack` to walk up to, so
+        // `$root` is undefined — the state this most needs to catch.
+        searchStillValid: function () { return Boolean(this.$root) && this.$root.isConnected; },
+        // Cleared alongside the engine's own `query` state: the dropdown's
+        // query box is a plain, uncontrolled input, so blanking component
+        // state alone leaves whatever the buyer last typed sitting on
+        // screen — and a later reopen would re-search it (TWO-25326 §1).
+        onDropdownClear: function () {
+            const q = this.queryField();
+            if (q) q.value = '';
+        },
+        afterManualToggle: function (entering) {
+            if (entering) {
+                this.$nextTick(() => {
+                    this.focusAndVerify(this.companyNameField());
+                });
+            } else {
+                this.openDropdown('');
+            }
+        },
+        // Focus returns to the company-name field after a pick (TWO-25326
+        // §1/§4): the panel that held focus has just been closed, and focus
+        // left on a removed element falls to `<body>`, which is where every
+        // keyboard trap on this ticket has started. Placement is confirmed,
+        // not assumed. Also runs after a manual commit, harmlessly — the
+        // name field already has focus on that path (it is the field being
+        // typed into), so re-verifying it is a no-op.
+        onCompanyCommitted: function () {
+            this.$nextTick(() => {
+                this.focusAndVerify(this.companyNameField());
+            });
+        },
+    }), {
+        quoteData: <?= $quoteDetailsJson ?>,
         // Placeholder copy (TWO-25288). Held as state, not written inline in
         // the markup only, because the manual-entry mode has to be able to
         // blank it: "Enter company name to search" over a field the buyer is
         // typing into by hand is wrong.
         companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
-        countrySelectionShown: false,
-        // Company-search request state. `isSearching` drives an in-field
-        // spinner and `isSearchUnavailable` a "try again / enter manually"
-        // notice, so a failed search is never rendered as a genuine
-        // zero-result one. NOTE: the markup that binds these lives in
-        // companyName.phtml, which is being changed concurrently by the
-        // CSP-Alpine work — the state lands here now and the template chrome
-        // follows in that PR rather than colliding with it.
-        isSearching: false,
-        isSearchUnavailable: false,
-        searchAbortController: null,
 
         init() {
             // Restore manualMode from storage
@@ -661,11 +653,9 @@ function <?= $gwBase ?>CompanySearchField() {
             const field = this.companyNameField();
             this.search = field ? field.value : '';
             if (!this.manualMode && Boolean(this.isCompanySearchEnabled)) return;
-            this.isCompanySelected = false;
-            this.forgetStaleCompanyId();
-            this.commitCompanyName();
-            this.applyCompanyIdEditability();
-            this.announceCompanyPair();
+            // The shared engine's commitManualCompany(): forgetStaleCompanyId(),
+            // write+announce the pair with no identifier vouched for it.
+            this.commitManualCompany(this.search);
         },
 
         /**
@@ -754,17 +744,6 @@ function <?= $gwBase ?>CompanySearchField() {
         },
 
         /**
-         * Is there an identifier that something other than the buyer vouched
-         * for? Only a registry hit can; a hand-typed number is the buyer's own
-         * and stays theirs to correct.
-         *
-         * @returns {boolean}
-         */
-        hasVouchedCompanyId() {
-            return Boolean(this.companyId) && this.companyIdSource === 'registry';
-        },
-
-        /**
          * Bug 4.3 (2026-07-28): gates the plain-text company-number display
          * in companyName.phtml. A registry-vouched number is what "a result
          * is selected" means on this surface — a hand-typed one is not a
@@ -799,98 +778,24 @@ function <?= $gwBase ?>CompanySearchField() {
             return !this.companyIdDisplayVisible;
         },
 
-        /**
-         * Drop a registry-supplied identifier that no longer belongs to the name
-         * in the field, from component state AND from storage together.
-         *
-         * The two have to move as one. The blob is what the payment step reads,
-         * and it derives its own editability from the presence of `company_id`
-         * there — so a name written beside a previous company's number produced a
-         * payment step showing the new name with the old number, LOCKED, with
-         * nothing forcing the buyer to touch it, and sent the old organisation
-         * number onward. Clearing state alone would only fix the address step's
-         * display and leave the wrong number in the blob.
-         *
-         * Scoped to registry-supplied numbers on purpose: clearing a hand-typed
-         * one here would delete the buyer's own entry every time they went back
-         * and adjusted the name.
-         */
-        forgetStaleCompanyId() {
-            /*
-             * Any identifier, whatever its provenance — narrowed from
-             * registry-only in review round 3.
-             *
-             * The source scoping existed to protect a number the buyer had
-             * typed on THIS surface from being wiped when they adjusted the
-             * name. Since §5 deleted the address step's company-number input
-             * there is no such number: nothing here can write a `manual`
-             * identifier, and nothing here can correct one either. Sparing it
-             * only meant one left in storage by an earlier session rode along
-             * with a name it never belonged to.
-             *
-             * Round 2 tried to solve that with a guard inside
-             * announceCompanyPair() instead. That was worse: it suppressed the
-             * announcement rather than fixing the pair, so a buyer in that
-             * state silently stopped announcing anything for the rest of the
-             * page load — reinstating the stale-submission bug the
-             * announcement was added to prevent.
-             */
-            if (!this.companyId) return;
-            if (this.search === this.companyName) return;
-
-            this.companyId = '';
-            this.companyIdSource = '';
-            /*
-             * Set here, not left to the caller. Dropping the number makes typing
-             * one mandatory by definition, and the manual-mode caller below does
-             * not recompute this flag — so without it, leaving manual mode
-             * re-locked a field this had just emptied, which is the empty AND
-             * locked AND required dead end.
-             */
-            this.companyIdEntryRequired = true;
-            // A merging write, never a rebuild from a key list: dropping
-            // `quote_id` that way is what silently disarmed the new-order clear.
-            twoAddressWriteSelection({ company_id: '', company_id_source: '' });
-        },
-
-        /**
-         * Recompute the company-number field's locked state.
-         *
-         * One derived state, one writer — the same shape as the payment tile's,
-         * because the two fields mean the same thing and drifting apart is how
-         * one of them ends up empty, required and uneditable.
-         *
-         * Locked exactly when a registry-supplied identifier has been written
-         * for the name currently in the field. Unlocked otherwise, and
-         * unconditionally unlocked on a store with the lookup off, where
-         * nothing can ever vouch for a number.
-         */
-        applyCompanyIdEditability() {
-            this.companyIdDisabled = !(
-                !this.isCompanySearchEnabled
-                || this.manualMode
-                || this.companyIdEntryRequired
-            );
-        },
+        // forgetStaleCompanyId() and applyCompanyIdEditability() moved to
+        // the shared engine.
 
         /**
          * The buyer typed into the company-number field.
          *
-         * Debounced by the template. Writes through the store-view-keyed
-         * accessor and re-announces the pair on the same event a registry pick
-         * uses, so the payment step sees a hand-typed identifier by exactly the
-         * route it already sees a searched one — there is no second path.
+         * Bound to NOTHING in companyName.phtml any more (TWO-25326 §5
+         * removed the editable company-number input this surface used to
+         * have) but kept as a real, working method rather than deleted: it
+         * still maintains the `company_id_source` provenance the payment
+         * step reads out of the shared selection blob, on the chance a
+         * future revision of this surface (or a branded overlay) re-adds a
+         * binding for it.
          *
-         * No name is written here and nothing is cleared: an identifier edit
-         * says nothing about the name. Clearing the identifier when the NAME
-         * changes is forgetStaleCompanyId()'s job, and only for registry ones.
-         *
-         * The provenance is written WITH the value, not derived from it later.
-         * Both surfaces read one key, so without it the restore path cannot tell
-         * this number from a registry pick's and locks the field over the
-         * buyer's own value on the next re-render — at which point a typo is
-         * uncorrectable, because this field is the only company-number input on
-         * the address step.
+         * Debounced by whichever template binds it. Writes through the
+         * store-view-keyed accessor and re-announces the pair on the same
+         * event a registry pick uses, so the payment step sees a hand-typed
+         * identifier by exactly the route it already sees a searched one.
          */
         onCompanyIdInput() {
             const value = this.$el.value;
@@ -898,8 +803,6 @@ function <?= $gwBase ?>CompanySearchField() {
 
             this.companyId = value;
             this.companyIdSource = 'manual';
-            // A merging write, never a rebuild from a key list: dropping
-            // `quote_id` that way is what silently disarmed the new-order clear.
             const companyData = twoAddressWriteSelection({
                 company_id: value,
                 company_id_source: 'manual'
@@ -988,87 +891,16 @@ function <?= $gwBase ?>CompanySearchField() {
             return this.item.companyId || `two-idx-${this.index}`;
         },
 
-        /** Cancel any in-flight company search. Safe to call repeatedly. */
-        abortCompanySearch() {
-            if (this.searchAbortController) {
-                this.searchAbortController.abort();
-                this.searchAbortController = null;
-            }
-            this.isSearching = false;
-        },
-
-        /**
-         * Record the typed company name when it no longer describes the
-         * company a stored identifier was written for.
-         *
-         * Deliberately does NOT announce itself on `shipping-company-selected`.
-         * The name is now written with no identifier beside it — the callers run
-         * forgetStaleCompanyId() first, which drops a registry number the name no
-         * longer describes — so announcing here would arm an order intent for a
-         * company with no number at all. The identifier handler announces
-         * instead, by which point the name in the blob is already this one.
-         *
-         * Nothing is written while the text still matches, so an intact
-         * registry pick is never overwritten by its own field.
-         *
-         * `companyName` is deliberately NOT reassigned here. It records the
-         * name the current identifier belongs to, and moving it to the typed
-         * text would make the editability comparison match again on the very
-         * next keystroke — re-locking a number field the edit had just
-         * unlocked, one character later.
-         */
-        commitCompanyName() {
-            /*
-             * Unconditional since review round 2, and the guard it replaces was
-             * a live data bug rather than a safeguard.
-             *
-             * The old `if (this.search === this.companyName) return;` claimed
-             * to stop an intact registry pick being overwritten by its own
-             * field. That case is unreachable: every caller is on the manual or
-             * lookup-off path, where `companyName` is only ever written by
-             * init() and selectItem(). With no prior pick it stays '' for the
-             * whole page load — so a buyer who typed a name and then DELETED it
-             * hit `'' === ''`, returned early, and left the deleted name in
-             * storage. announceCompanyPair() then broadcast it to the payment
-             * step, which repopulated the tile from it: an empty address field
-             * and the deleted company on the order.
-             */
-            // A merging write, never a rebuild from a key list: dropping
-            // `quote_id` that way is what silently disarmed the new-order clear.
-            twoAddressWriteSelection({ company_name: this.search });
-        },
-
-        /**
-         * Announce the captured pair on the channel the payment step listens
-         * on, for the paths where no selectItem() will ever follow.
-         *
-         * Restored by TWO-25326 review round 1, and it is a genuine regression
-         * this rework introduced rather than a nicety. Before it, the address
-         * step had TWO dispatchers: selectItem() for a registry pick, and
-         * onCompanyIdInput() for a hand-typed number. Deleting the editable
-         * company-number input (§5) removed the only binding for the second
-         * one, so manual entry — and a store with the lookup switched off —
-         * wrote localStorage and announced nothing.
-         *
-         * The payment tile syncs from this event or from its own initialize().
-         * A tile that is ALREADY mounted (buyer reached payment, went back to
-         * the address step, changed the company, came forward again) therefore
-         * kept the previous company and submitted it as `payment[company_name]`.
-         * Storage alone is not enough: nothing re-reads it on the way forward.
-         *
-         * Deliberately NOT called from the search path. There, selectItem() is
-         * the single writer and announces the complete pair itself; announcing
-         * a bare name mid-search is what the note on commitCompanyName() warns
-         * against, because it arms an order intent for a company with no number.
-         */
-        announceCompanyPair() {
-            const companyData = twoAddressWriteSelection({});
-
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: companyData
-            }));
-        },
-
+        // abortCompanySearch(), commitCompanyName()/announceCompanyPair()
+        // (now commitManualCompany() — see onNameFieldInput()),
+        // handleItemClick(), selectItem(), addressLookup()/setAddressData(),
+        // enterManually()/enableSearch(), saveManualModeToStorage() and
+        // closeDropdown() all moved to the shared engine. What differs on
+        // THIS surface from the engine's generic selectItem()/enterManually()
+        // is expressed as the `resolveNameField` / `writeSelection` /
+        // `onDropdownClear` / `afterManualToggle` options passed into
+        // `twoGatewayCompanySearchEngine()` above — not a second copy of any
+        // of this logic.
         async getItems() {
             /*
              * TWO-25326 §1 split the two texts this used to conflate.
@@ -1086,24 +918,15 @@ function <?= $gwBase ?>CompanySearchField() {
             if (this.manualMode || !this.isCompanySearchEnabled) {
                 const nameField = this.companyNameField();
                 if (nameField) this.search = nameField.value;
-                this.isCompanySelected = false;
                 this.abortCompanySearch();
-                // Same stale-pair clear as the search path below. A buyer who
-                // picked a company and then switched to manual entry is editing
-                // the name of a DIFFERENT company, so the picked number must not
-                // travel with the new name either.
-                this.forgetStaleCompanyId();
-                this.commitCompanyName();
-                this.applyCompanyIdEditability();
                 /*
                  * Kept for callers that reach getItems() directly (the suite
                  * does), but NOT the live manual path: getItems() is bound only
                  * on the query input, which lives inside the panel, and the
                  * panel cannot open in manual mode or with the lookup off. The
                  * live announcement on those paths is onNameFieldInput()'s.
-                 * Review round 2 corrected the opposite claim here.
                  */
-                this.announceCompanyPair();
+                this.commitManualCompany(this.search);
                 return;
             }
 
@@ -1123,365 +946,15 @@ function <?= $gwBase ?>CompanySearchField() {
              */
             const q = this.queryField();
             if (q) this.query = q.value;
-            this.selectedIndex = -1;
-            this.isSearchUnavailable = false;
-            const term = this.query;
-            if (term.length < this.minSearchChars) {
-                this.abortCompanySearch();
-                this.items = [];
-                this.searchCompletedFor = null;
-                return;
-            }
-
-            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const countryCode = window.twoGatewayGetCountryCode(this.quoteData);
-
-            // If no country available from any source, show a friendly message once
-            if (!countryCode) {
-                if (!this.countrySelectionShown) {
-                    this.countrySelectionShown = true;
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>'
-                    }], 5000);
-                }
-                this.abortCompanySearch();
-                return;
-            }
-            this.countrySelectionShown = false;
-
-            // Supersede any in-flight search so a slow response for an
-            // earlier query cannot repopulate the dropdown.
-            this.abortCompanySearch();
-            const controller = new AbortController();
-            this.searchAbortController = controller;
-            this.isSearching = true;
-
-            // try/catch: the helper is a window global, and an absent one
-            // would throw out of getItems as an unhandled rejection with
-            // `isSearching` latched true. Request failures are handled inside
-            // the helper, so the catch means something structural.
-            let result;
-            try {
-                result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: countryCode,
-                    query: term,
-                    limit: 10,
-                    signal: controller.signal,
-                });
-            } catch (error) {
-                console.error('Company search failed:', error);
-                result = { status: 'failed', items: [] };
-            }
-
-            // The buyer typed on, or this component was torn down, while the
-            // request was in flight. Writing anything now would fight the
-            // newer search — stay silent.
-            if (result.status === 'aborted' || this.searchAbortController !== controller) return;
-            // enterManually() may have fired while this was in flight. Writing
-            // `items` now would leave a populated result list behind the
-            // manual-entry fields, ready to appear the moment the buyer goes
-            // back to searching — and `isOpen` would still be set from the
-            // keystroke that started this search. showDropdown() does now carry
-            // a manual-mode term, so nothing is rendered over those fields, but
-            // the stale list is still wrong to keep.
-            if (this.manualMode) {
-                this.isSearching = false;
-                this.searchAbortController = null;
-                return;
-            }
-            // Magewire may have re-rendered the address form while this was in
-            // flight and replaced the node this component is bound to. Writing
-            // `items` then populates a component that is no longer in the
-            // document: no dropdown appears, and this dead copy is left holding
-            // search state.
-            //
-            // Checked here rather than by putting `wire:ignore` on the x-data
-            // node in companyName.phtml, which is the payment form's remedy for
-            // the same class of problem. That subtree is not equivalent: the
-            // payment form documents having no wire:model inputs inside it,
-            // whereas this one wraps a Magewire-bound address field rendered by
-            // Hyva's own form renderer, and opting it out of the diff-merge
-            // cycle would stop the field updating.
-            // Fails CLOSED: once Alpine has torn the subtree down there is no
-            // `_x_dataStack` to walk up to, so `$root` is undefined — the state
-            // this most needs to catch.
-            if (!this.$root || !this.$root.isConnected) {
-                this.isSearching = false;
-                this.searchAbortController = null;
-                return;
-            }
-
-            this.searchAbortController = null;
-            this.isSearching = false;
-            this.items = result.items;
-            // A timeout, non-2xx, network error or degraded 200 must not be
-            // rendered as "no companies found".
-            this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
-            /*
-             * Record WHICH query this verdict belongs to (TWO-25326 §1). It is
-             * what lets "No matches found" distinguish a completed empty search
-             * from one still in flight, and it must be the term this request
-             * actually ran for — not `this.query`, which the buyer may already
-             * have typed past.
-             *
-             * Not set on a failed or degraded search: that is not a verdict on
-             * whether matches exist, and `isSearchUnavailable` says so instead.
-             */
-            if (!this.isSearchUnavailable) this.searchCompletedFor = term;
+            await this.runCompanySearch(this.query);
             // The panel is already open — it opens on click or keypress, not on
             // results arriving (TWO-25326 §1) — so there is nothing to open
-            // here. It used to be gated on a non-empty result set, which is
-            // precisely why a zero-result search rendered no panel and so no
-            // "no matches" message could ever have been seen.
+            // here.
         },
 
-        handleItemClick(event) {
-            // Stop all event propagation to prevent address book modal from closing
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            if (event.preventDefault) event.preventDefault();
-
-            const index = event.currentTarget.dataset.index;
-            if (index !== undefined && this.items[index]) {
-                this.selectItem(this.items[index]);
-            }
-        },
-
-        selectItem(item) {
-            // The buyer has chosen; anything still on the wire is stale and
-            // would reopen a dropdown they have just dismissed.
-            this.abortCompanySearch();
-            this.isSearchUnavailable = false;
-            this.isOpen = false;
-            this.items = [];
-            this.selectedIndex = -1;
-            // The panel's query field is transient: it is emptied on every
-            // close so a reopened panel starts from the min-characters hint
-            // rather than from a previous buyer's half-finished term.
-            this.query = '';
-            this.searchCompletedFor = null;
-            // The DOM value as well as the state, matching closeDropdown().
-            // Leaving the abandoned term in the box means any later getItems()
-            // that runs before a close re-searches it.
-            const abandonedQuery = this.queryField();
-            if (abandonedQuery) abandonedQuery.value = '';
-            this.search = item.companyName;
-            this.isCompanySelected = true;
-            this.manualMode = false;
-
-            /*
-             * The hit may carry no national identifier — the search response is
-             * allowed to omit it — so record the pair as it arrived and derive
-             * the lock from it. Written BEFORE the storage write and the event
-             * below, so both carry the identifier this pick actually has rather
-             * than the previous pick's.
-             */
-            this.companyName = item.companyName;
-            this.companyId = item.companyId || '';
-            // The one place that may claim registry provenance, and only when the
-            // hit actually carried an identifier — a hit that arrived without one
-            // has vouched for nothing.
-            this.companyIdSource = this.companyId ? 'registry' : '';
-            this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-            this.applyCompanyIdEditability();
-
-            /*
-             * `companyNameField()`, not a bare `input[type="text"]` lookup: the
-             * panel now contains a second text input (the query field), and
-             * while it is being torn down by this very call a document-order
-             * lookup is only right by accident. Writing the chosen name into
-             * the query field instead would leave the company-name field empty
-             * on an order.
-             *
-             * The synthetic `input` event is still dispatched and still
-             * non-bubbling. It is what carries the chosen name into Hyvä's own
-             * Magewire-bound field state (`wire:model.defer="address.company"`
-             * on the live address step); non-bubbling keeps the address-book
-             * modal from reading it as an outside interaction and closing.
-             */
-            const input = this.companyNameField();
-            if (input) {
-                input.value = item.companyName;
-                input.dispatchEvent(new Event('input', { bubbles: false }));
-            }
-
-            /*
-             * Focus returns to the company-name field (TWO-25326 §1/§4): the
-             * panel that held focus has just been closed, and focus left on a
-             * removed element falls to `<body>`, which is where every keyboard
-             * trap on this ticket has started. Placement is confirmed, not
-             * assumed.
-             */
-            this.$nextTick(() => {
-                this.focusAndVerify(this.companyNameField());
-            });
-
-            // A merging write, never a rebuild from a key list: dropping
-            // `quote_id` that way is what silently disarmed the new-order clear.
-            const companyData = twoAddressWriteSelection({
-                company_name: item.companyName,
-                company_id: item.companyId,
-                company_id_source: this.companyIdSource,
-                manual_mode: false
-            });
-
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: companyData
-            }));
-
-            // Address lookup if enabled
-            if (this.isAddressSearchEnabled && item.lookupId) {
-                this.addressLookup(item.lookupId);
-            }
-        },
-
-        async addressLookup(lookupId) {
-            // Capture root element before async call since $root may not be available in callbacks
-            const rootEl = this.$root;
-            // Shared helper: carries the same 30s timeout as the search and
-            // checks response.ok. Without that check an error body parsed as
-            // an address payload and silently produced "no addresses".
-            const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId);
-            if (data && data.addresses && data.addresses.length > 0) {
-                this.setAddressData(data.addresses[0], rootEl);
-            }
-        },
-
-        setAddressData(address, rootEl) {
-            // Find the address section containing this company field
-            // Traverse up levels from the component root to find the container with all address inputs
-            let container = rootEl;
-            for (let i = 0; i < 4 && container; i++) {
-                container = container.parentElement;
-            }
-
-            if (!container) {
-                console.warn('Could not find address container');
-                return;
-            }
-
-            const cityInput = container.querySelector('input[name="city"]');
-            const postcodeInput = container.querySelector('input[name="postcode"]');
-            const streetInput = container.querySelector('input[name="street[0]"]');
-
-            if (cityInput) {
-                cityInput.value = address.city || "";
-            }
-
-            if (postcodeInput) {
-                postcodeInput.value = address.postal_code || "";
-            }
-
-            if (streetInput) {
-                streetInput.value = address.street_address || "";
-            }
-
-            // Trigger 'input' event with bubbles: false to prevent modal closure
-            [cityInput, postcodeInput, streetInput].forEach(input => {
-                if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: false }));
-                }
-            });
-        },
-
-        enterManually(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.abortCompanySearch();
-            this.isSearchUnavailable = false;
-            this.manualMode = true;
-            this.isOpen = false;
-            this.items = [];
-            this.selectedIndex = -1;
-            this.query = '';
-            this.searchCompletedFor = null;
-            this.saveManualModeToStorage(true);
-            // Manual entry is one of the reasons the number field has to be
-            // typeable; no separate unlock, the same single writer decides.
-            this.applyCompanyIdEditability();
-            /*
-             * TWO-25326 §2: activating this control must PLACE FOCUS in the
-             * manual company-name field, and it must actually land there.
-             *
-             * Deferred to the next tick because the panel this button lives in
-             * is being closed in the same call: focusing before Alpine has
-             * flushed that leaves focus fighting the teardown. `companyNameField()`
-             * rather than a document-order text-input lookup, for the same
-             * reason as in selectItem().
-             */
-            this.$nextTick(() => {
-                this.focusAndVerify(this.companyNameField());
-            });
-        },
-
-        enableSearch(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.manualMode = false;
-            this.saveManualModeToStorage(false);
-            // Goes through the single writer rather than assigning a lock
-            // directly: leaving manual mode must not re-lock a number the buyer
-            // still has to fill in, because the name in the field has no
-            // registry-supplied identifier either way.
-            this.applyCompanyIdEditability();
-
-            /*
-             * TWO-25326 §3: returning to search mode opens the dropdown and
-             * puts focus in its QUERY field, not back on the company-name
-             * field. openDropdown() owns both, including the focus-landed
-             * check, and it re-runs the search itself once the query is long
-             * enough — which on this path it never is, since the query field
-             * starts empty.
-             *
-             * The previous revision focused the company-name field and
-             * re-searched whatever text it held. Neither is right any more:
-             * that field is no longer a search box, and its contents are the
-             * buyer's manually-typed company name, not a query.
-             */
-            this.openDropdown('');
-        },
-
-        saveManualModeToStorage(manualMode) {
-            twoAddressWriteSelection({ manual_mode: manualMode });
-        },
-
-        /**
-         * Shut the panel and reset everything that belongs to it.
-         *
-         * The query text is part of that (TWO-25326 §1): it is the panel's
-         * state, not the buyer's captured company, so a reopened panel starts
-         * from the min-characters hint rather than from a term that was
-         * abandoned. `searchCompletedFor` goes with it or "No matches found"
-         * would be waiting, already true, the next time the panel opens.
-         */
-        closeDropdown() {
-            this.abortCompanySearch();
-            this.isSearchUnavailable = false;
-            this.isOpen = false;
-            this.items = [];
-            this.selectedIndex = -1;
-            this.query = '';
-            this.searchCompletedFor = null;
-            const q = this.queryField();
-            if (q) q.value = '';
-        },
-
-        // Arrow-key result navigation. Mirrors the payment tile's
-        // nextItem()/prevItem()/adjustScroll()/selectHighlightedItem() —
-        // this surface never had them, so keyboard users could open the
-        // dropdown but never move through it without a mouse. Clamped, not
-        // wrapping: arriving at either end and pressing the same direction
-        // again is a no-op, matching the payment tile.
+        // Arrow-key result navigation — nextItem()/prevItem()/adjustScroll()
+        // are the shared engine's, configured above with this surface's own
+        // `.two-company-search__results` / `[data-index]` selectors.
         <?= $gwBase ?>OnArrowDown() {
             this.nextItem();
         },
@@ -1519,49 +992,7 @@ function <?= $gwBase ?>CompanySearchField() {
                 ? 'bg-gray-100'
                 : '';
         },
-
-        nextItem() {
-            if (this.selectedIndex < this.items.length - 1) {
-                this.selectedIndex++;
-                this.adjustScroll();
-            }
-        },
-
-        prevItem() {
-            if (this.selectedIndex > 0) {
-                this.selectedIndex--;
-                this.adjustScroll();
-            }
-        },
-
-        adjustScroll() {
-            this.$nextTick(() => {
-                // The actual dropdown scroll container in THIS component's
-                // markup (companyName.phtml) — not `.two-company-search-results`,
-                // which is a payment-tile-only class name that does not exist
-                // here and would silently never match.
-                const dropdown = this.$root.querySelector('.two-company-search__results');
-                const highlighted = this.$root.querySelectorAll('[data-index]')[this.selectedIndex];
-
-                if (dropdown && highlighted) {
-                    const dropdownRect = dropdown.getBoundingClientRect();
-                    const itemRect = highlighted.getBoundingClientRect();
-
-                    if (itemRect.bottom > dropdownRect.bottom) {
-                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
-                    } else if (itemRect.top < dropdownRect.top) {
-                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
-                    }
-                }
-            });
-        },
-
-        selectHighlightedItem() {
-            if (this.selectedIndex >= 0 && this.items.length > 0 && this.items[this.selectedIndex]) {
-                this.selectItem(this.items[this.selectedIndex]);
-            }
-        },
-    }
+    });
 }
 document.addEventListener('alpine:init', () => {
     Alpine.data('<?= $gwBase ?>CompanySearchField', <?= $gwBase ?>CompanySearchField);
