@@ -120,12 +120,11 @@ class CheckoutConfig implements ArgumentInterface
      * already-existing, already-correct setting directly, the same way
      * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below already
      * reuse ConfigRepository for other core config: `enable_company_search`
-     * (Stores > Configuration > Two > General > Search > "Enable Company
-     * Search"). That field's own comment states its real job precisely:
-     * "Where the ONE company-search control lives, not whether it exists" —
-     * Yes puts it in the shipping address field, No puts it in the payment
-     * tile instead. So "in the payment tile" is the negation of
-     * isCompanySearchEnabled().
+     * (Stores > Configuration > Two > General > Search). That setting
+     * already decides WHERE the control renders on every other platform, not
+     * whether it exists at all — enabled means the shipping-address field
+     * hosts it, disabled means the payment tile does. So "in the payment
+     * tile" here is the negation of isCompanySearchEnabled().
      */
     public function getIsCompanySearchInPaymentTile(): bool
     {
