@@ -133,384 +133,89 @@ document.addEventListener('alpine:init', () => {
     };
     initShippingCompanyStorage();
 
-    Alpine.data('searchInput', window['searchInput'] = () => ({
-        isOpen: false,
-        search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
-        items: [],
-        companyName: '',
-        companyId: '',
-        lookupId: '',
-        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-        companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
-        countryCode : "",
-        isAddressSearchEnabled : '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
-        isCompanySearchEnabled : '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
-        // Bare object literal, not a quoted JSON string. It is parsed below, and
-        // JSON_HEX_QUOT only survives as far as the JS string layer — it
-        // un-escapes back to a bare double quote, so a product named `24" Monitor`
-        // made JSON.parse() throw and killed company search on the shipping step.
-        quote : <?= $quoteDetailsJson ?>,
-        countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
-        searchUnavailableMessage : "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
-        // The one threshold for this repo, emitted from PHP
-        // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as a
-        // literal here (TWO-25288). This picker renders no min-characters hint
-        // of its own — its markup lives outside this module, see the note on
-        // isSearchUnavailable below — so only the guards change here; it reads
-        // the shared value so it cannot enforce a different number from the
-        // surfaces that do claim one. Cast to an int so the comparison stays
-        // numeric.
-        minSearchChars: <?= (int) $companySearchMinChars ?>,
-        countrySelectionShown: false,
-        searchUnavailableShown: false,
-        selectedIndex: -1,
-        // Company-search request state. `isSearching` is for an in-field
-        // spinner and `isSearchUnavailable` for the "try again / enter
-        // manually" notice, so a failed search is never rendered as a
-        // genuine zero-result one. `searchAbortController` supersedes an
-        // in-flight search when the buyer types on or the component is
-        // destroyed by a DOM morph.
-        isSearching: false,
-        isSearchUnavailable: false,
-        searchAbortController: null,
-        /** Cancel any in-flight company search. Safe to call repeatedly. */
-        abortCompanySearch() {
-            if (this.searchAbortController) {
-                this.searchAbortController.abort();
-                this.searchAbortController = null;
-            }
-            this.isSearching = false;
-        },
+    /*
+     * TWO-25326 rebuild. `searchInput` is the ONE Alpine component name this
+     * surface may use — see the doc comment on shipping-company-loader.test.js
+     * for why: it is consumed by Hyvä Checkout's own (closed-source)
+     * address-book "add address" modal by this literal name, both via
+     * Alpine's registry AND `window.searchInput` directly, so it cannot be
+     * renamed. What it returns is a thin wrapper around the ONE shared
+     * search/dropdown/keyboard-nav/address-lookup engine
+     * (twoGatewayCompanySearchEngine, gateway_method-csp-js.phtml) — this
+     * surface has never offered a manual-entry toggle (there is no markup of
+     * its own to hang one on: its visible input is rendered by that same
+     * closed-source modal), so `manualModeSupported` stays `false`, matching
+     * the surface exactly as it always behaved.
+     */
+    Alpine.data('searchInput', window['searchInput'] = () => twoGatewayComposeLive(
+        window.twoGatewayCompanySearchEngine({
+            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            minSearchChars: <?= (int) $companySearchMinChars ?>,
+            isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
+            isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
+            manualModeSupported: false,
+            editableCompanyId: false,
+            dropdownSelector: '.max-h-select',
+            itemSelector: 'div.cursor-pointer',
+            countrySelectionMessage: "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
+            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
+            // This picker renders no inline "unavailable" notice or
+            // min-characters hint of its own (its markup lives in Hyvä
+            // Checkout's own address-book modal, outside this module) — a
+            // toast is the ONLY signal a buyer gets, so unlike the address
+            // step and the payment tile it dispatches one.
+            dispatchSearchUnavailableToast: true,
+            selectEventName: 'shipping-company-selected',
+            getQuote: function () { return this.quote; },
+            readSelection: function () { return twoShippingReadSelection(); },
+            writeSelection: function (patch) { return twoShippingWriteSelection(patch); },
+            resolveNameField: function () { return document.getElementById('shipping-company'); },
+            // The hidden `#shipping-company_id` mirror selectItem() used to
+            // write directly; the engine's own selectItem only resolves ONE
+            // name field, so the id pair's second element is synced here.
+            onCompanyCommitted: function (companyName, companyId) {
+                const idEl = document.getElementById('shipping-company_id');
+                if (idEl) idEl.value = companyId;
+            },
+            onLoaderStart: function () { window.dispatchEvent(new Event('magewire:loader:start')); },
+            onLoaderDone: function () { window.dispatchEvent(new Event('magewire:loader:done')); },
+            resolveAddressContainer: function () { return this.$el ? this.$el.closest('form') : null; },
+            addressContainerWarning: 'Could not find shipping form container',
+            // Magewire may destroy and rebuild this instance mid-search
+            // (a DOM morph) — the historical `isConnected` guard, moved here.
+            searchStillValid: function () { return Boolean(this.$el) && this.$el.isConnected; },
+        }),
+        {
+            search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
+            // Bare object literal, not a quoted JSON string. It is parsed below, and
+            // JSON_HEX_QUOT only survives as far as the JS string layer — it
+            // un-escapes back to a bare double quote, so a product named `24" Monitor`
+            // made JSON.parse() throw and killed company search on the shipping step.
+            quote: <?= $quoteDetailsJson ?>,
 
-        /**
-         * End of one search interaction: allow the "unavailable" toast to fire
-         * again next time.
-         *
-         * Deliberately NOT folded into abortCompanySearch(), which also runs at
-         * the TOP of every search to supersede the previous request — resetting
-         * there would re-toast on every debounced keystroke, which is the
-         * throttle this latch exists to provide. It is also not reset only on a
-         * successful result: that made it once per PAGE LOAD, and once the 5s
-         * toast expired the buyer was back to an inert field with no signal.
-         */
-        endSearchInteraction() {
-            this.searchUnavailableShown = false;
-        },
-        async getItems() {
-            // Guard: Don't run if element is disconnected (being destroyed during DOM morph)
-            if (!this.$el || !this.$el.isConnected) {
-                // Still cancel: otherwise a fetch stays on the wire for a
-                // detached instance and its controller is never released.
-                this.abortCompanySearch();
-                return;
-            }
-
-            this.search = this.$el.value;
-            this.selectedIndex = -1;
-            if (!this.isCompanySearchEnabled) {
-                this.abortCompanySearch();
-                return;
-            }
-
-            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const quoteData = this.quote;
-            this.countryCode = window.twoGatewayGetCountryCode(quoteData);
-
-            if (this.countryCode) {
-                this.countrySelectionShown = false; // Reset flag when country becomes available
-            }
-
-            // Reset BEFORE the country split: clearing the country after a
-            // failed search would otherwise leave this latched true, stacked
-            // under the "select a country" warning.
-            this.isSearchUnavailable = false;
-
-            if (this.countryCode) {
-                if (this.search.length < this.minSearchChars) {
-                    this.abortCompanySearch();
-                    this.endSearchInteraction();
-                    this.items = [];
-                    return;
-                }
-
-                // The second-stage setTimeout(200) that used to wrap this is
-                // gone: the caller's @input.debounce already throttles
-                // keystrokes, and stacking a second delay on top only made
-                // the field feel slow. Cancellation is now the abort signal
-                // rather than a cleared timer, which also covers a request
-                // that is already on the wire.
-                this.abortCompanySearch();
-                const controller = new AbortController();
-                this.searchAbortController = controller;
-                this.isSearching = true;
-
-                // This picker has no inline spinner markup of its own (its
-                // template lives outside this module — see the note on
-                // isSearchUnavailable below), so the magewire loader stays as
-                // its only progress signal rather than being removed and
-                // replaced with nothing.
-                window.dispatchEvent(new Event('magewire:loader:start'));
-                let result;
-                try {
-                    result = await window.twoGatewayCompanySearch({
-                        checkoutApiUrl: this.checkoutApiUrl,
-                        countryCode: this.countryCode,
-                        query: this.search,
-                        limit: this.companySearchLimit,
-                        signal: controller.signal,
-                    });
-                } catch (error) {
-                    // The helper swallows request failures itself, so reaching
-                    // here means something structural (a missing global). Fail
-                    // visibly rather than as an unhandled rejection, which is
-                    // what the old local try/catch degraded to.
-                    console.error('Company search failed:', error);
-                    result = { status: 'failed', items: [] };
-
-                } finally {
-                    // Retire the loader unless a NEWER search now owns it.
-                    //
-                    // ASSUMPTION, UNVERIFIED: the magewire loader is a boolean,
-                    // not a counter. Both orderings below are correct under a
-                    // boolean — `done` fires exactly once per owning `start`.
-                    // Under a counter, abort-with-successor would leak a count
-                    // permanently and the overlay would never clear. This has not
-                    // been confirmed against Magewire's own implementation
-                    // (magewirephp/magewire's loader plugin), and the Jest stub
-                    // models a boolean, so the suite cannot detect a mismatch
-                    // either. If the overlay is ever seen latching on after a
-                    // superseded search, check this first.
-                    //
-                    // Under a boolean, two rules have to hold at once:
-                    //   - a SUPERSEDED search must not dispatch done, or it
-                    //     hides the overlay while its replacement runs
-                    //     (start(A), abort(A), start(B), done(A));
-                    //   - a search that was aborted with NO successor MUST
-                    //     dispatch done, or the overlay latches on forever and
-                    //     blocks checkout. Every dismissal path — backspacing
-                    //     below three characters, tab-out, picking a result,
-                    //     clearing the country, a DOM-morph disconnect — is
-                    //     exactly this case.
-                    // `abortCompanySearch()` nulls the field synchronously and
-                    // a successor assigns it synchronously in the same task, so
-                    // null unambiguously means "nothing in flight".
-                    if (!this.searchAbortController || this.searchAbortController === controller) {
-                        window.dispatchEvent(new Event('magewire:loader:done'));
-                    }
-                }
-
-                // Superseded by a newer search, or the component was
-                // destroyed by a DOM morph while this was in flight. Writing
-                // to a detached instance is the bug the isConnected guards
-                // above were added for; stay silent — but clear our own state
-                // first so the next search doesn't inherit a latched spinner.
-                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+            /**
+             * Guard against a DOM morph tearing this instance down mid-search
+             * (the historical `!this.$el || !this.$el.isConnected` check at
+             * the top of getItems()) — retained here so it also cancels a
+             * fetch that was already in flight, not only future ones.
+             */
+            async getItems() {
                 if (!this.$el || !this.$el.isConnected) {
-                    this.searchAbortController = null;
-                    this.isSearching = false;
+                    this.abortCompanySearch();
                     return;
                 }
-
-                this.searchAbortController = null;
-                this.isSearching = false;
-                this.items = result.items;
-                // This picker renders no unavailable notice of its own (see the
-                // note below), so a flash message is the ONLY signal a buyer
-                // gets. It has to fire on the common failure modes — timeout,
-                // non-2xx, network error, degraded 200 — not just on the
-                // structural error the catch above handles: those return a
-                // status without throwing. Without it the buyer sees an inert
-                // field, and since only selectItem() writes the hidden
-                // shipping-company fields they cannot set a company at all.
-                //
-                // Latched once per interaction, mirroring countrySelectionShown
-                // below: the search is debounced per keystroke, so a down API
-                // would otherwise toast on every one.
-                if (result.status === 'failed' || result.status === 'degraded') {
-                    if (!this.searchUnavailableShown) {
-                        this.searchUnavailableShown = true;
-                        // Guarded: this runs on a failure path whose whole point
-                        // is surviving a missing global, so it must not become
-                        // the thing that throws.
-                        if (typeof window.dispatchMessages === 'function') {
-                            window.dispatchMessages([{
-                                type: 'warning',
-                                text: this.searchUnavailableMessage,
-                            }], 5000);
-                        }
-                    }
-                } else {
-                    this.searchUnavailableShown = false;
+                this.search = this.$el.value;
+                this.selectedIndex = -1;
+                if (!this.isCompanySearchEnabled) {
+                    this.abortCompanySearch();
+                    return;
                 }
-                // A timeout, non-2xx, network error or degraded 200 must not
-                // be rendered as "no companies found".
-                //
-                // NOTE: nothing in THIS module binds `isSearchUnavailable` —
-                // `searchInput` is registered into head.additional and its
-                // markup lives elsewhere (and the branded overlay ships its
-                // own fork of this template). So the dropdown is deliberately
-                // NOT forced open on a failure here: doing so would show an
-                // empty box with no explanation. The state is exposed for
-                // whichever template renders it.
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
-                if (this.items.length > 0) {
-                    this.isOpen = true;
-                }
-            } else {
-                // The country was cleared while a search was on the wire. Without
-                // the abort, `searchAbortController` still matches and the
-                // response writes items + opens the dropdown for a country the
-                // buyer no longer has selected.
-                this.abortCompanySearch();
-                this.endSearchInteraction();
-                // Only show the message once per interaction to avoid spamming
-                if (!this.countrySelectionShown && this.search.length >= this.minSearchChars) {
-                    this.countrySelectionShown = true;
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: this.countrySelectionMessage,
-                    }], 5000);
-                }
-            }
+                await this.runCompanySearch(this.search);
+                if (this.items.length > 0) this.isOpen = true;
+            },
         },
-
-        selectItem(item) {
-            // The buyer has chosen; anything still on the wire is stale and
-            // would reopen a dropdown they have just dismissed.
-            this.abortCompanySearch();
-            this.endSearchInteraction();
-            this.isSearchUnavailable = false;
-            this.isOpen = false;
-            this.items = [];
-            this.selectedIndex = -1;
-            this.search = item.companyName;
-
-            // Update shipping company hidden fields only
-            const shippingCompanyInput = document.getElementById('shipping-company');
-            const shippingCompanyIdInput = document.getElementById('shipping-company_id');
-
-            if (shippingCompanyInput) {
-                shippingCompanyInput.value = item.companyName;
-            }
-
-            if (shippingCompanyIdInput) {
-                shippingCompanyIdInput.value = item.companyId;
-            }
-
-            // A merging write, never a rebuild from a key list: dropping
-            // `quote_id` that way is what silently disarmed the new-order clear.
-            const shippingCompanySelectionData = twoShippingWriteSelection({
-                company_name: item.companyName,
-                company_id: item.companyId,
-                manual_mode: false
-            });
-
-            // Dispatch event to notify other components (payment fields will handle their own sync)
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: shippingCompanySelectionData
-            }));
-
-            const inputField = document.querySelector("#shipping-company");
-
-            if (inputField) {
-                // Dispatch a non-bubbling input event to prevent modal closure
-                inputField.dispatchEvent(new Event("input", { bubbles: false }));
-            }
-
-            if (this.isAddressSearchEnabled) {
-                this.addressLookup(item.lookupId);
-            }
-
-        },
-        nextItem() {
-            if (this.selectedIndex < this.items.length - 1) {
-                this.selectedIndex++;
-                this.adjustScroll();
-            }
-        },
-        prevItem() {
-            if (this.selectedIndex > 0) {
-                this.selectedIndex--;
-                this.adjustScroll();
-            }
-        },
-        adjustScroll() {
-            this.$nextTick(() => {
-                let dropdown = document.querySelector(".max-h-select");
-                let selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
-
-                if (dropdown && selectedItem) {
-                    let dropdownRect = dropdown.getBoundingClientRect();
-                    let itemRect = selectedItem.getBoundingClientRect();
-
-                    if (itemRect.bottom > dropdownRect.bottom) {
-                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
-                    } else if (itemRect.top < dropdownRect.top) {
-                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
-                    }
-                }
-            });
-        },
-        selectHighlightedItem() {
-            if (this.selectedIndex >= 0 && this.items.length > 0) {
-                this.selectItem(this.items[this.selectedIndex]);
-            }
-        },
-        closeCompanyList(event) {
-            if (event.key === 'Tab') {
-                // Without the abort, an in-flight search lands after the
-                // buyer has tabbed away and reopens the dropdown.
-                this.abortCompanySearch();
-                this.endSearchInteraction();
-                this.isSearchUnavailable = false;
-                this.isOpen = false;
-                this.items = [];
-            }
-        },
-        async addressLookup(lookupId) {
-            // Shared helper: carries the same 30s timeout as the search and
-            // checks response.ok, so an error body can no longer be parsed
-            // as an address payload and silently produce "no addresses".
-            const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId);
-            if (data && data.addresses && data.addresses.length > 0) {
-                this.setAddressData(data.addresses[0]);
-            }
-        },
-        setAddressData(address) {
-            // Find the shipping address form by traversing up from the company search field
-            // This ensures we only update shipping address fields, not billing
-            const shippingForm = this.$el.closest('form');
-
-            if (!shippingForm) {
-                console.warn('Could not find shipping form container');
-                return;
-            }
-
-            const cityInput = shippingForm.querySelector('input[name="city"]');
-            const postcodeInput = shippingForm.querySelector('input[name="postcode"]');
-            const streetInput = shippingForm.querySelector('input[name="street[0]"]');
-
-            if (cityInput) {
-                cityInput.value = address.city || "";
-            }
-
-            if (postcodeInput) {
-                postcodeInput.value = address.postal_code || "";
-            }
-
-            if (streetInput) {
-                streetInput.value = address.street_address || "";
-            }
-
-            // Trigger 'input' event manually with controlled bubbling
-            // Only trigger on fields we actually found and updated
-            [cityInput, postcodeInput, streetInput].forEach(input => {
-                if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: false }));
-                }
-            });
-        },
-    }));
+    ));
 
 
 });

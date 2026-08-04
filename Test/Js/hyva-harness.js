@@ -574,6 +574,10 @@ const SHARED_HELPER_GLOBALS = [
   "TWO_GATEWAY_COMPANY_SELECTION_KEY",
   "twoGatewayReadCompanySelection",
   "twoGatewayWriteCompanySelection",
+  // TWO-25326 rebuild: the ONE shared company-search engine every surface's
+  // Alpine component composes with. Listed for the same leak-between-tests
+  // reason as its neighbours: `window.X = window.X || …`.
+  "twoGatewayCompanySearchEngine",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
