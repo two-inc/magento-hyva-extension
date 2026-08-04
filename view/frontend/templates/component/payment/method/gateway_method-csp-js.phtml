@@ -36,6 +36,10 @@ $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
 // null ⇒ the active brand switched the notice off; the component's setter
 // then no-ops and gateway_method.phtml emits no element at all.
 $orderIntentApprovedNotice = $configModel->getOrderIntentApprovedNotice();
+// TWO-25326 §7.2/§7.3 (2026-08-03 ruling): the tile's persistent
+// "not approved / no intent" text, shown wherever the approved notice above
+// would otherwise render. Same null-means-brand-switched-it-off contract.
+$orderIntentNotAvailableNotice = $configModel->getOrderIntentNotAvailableNotice();
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
@@ -843,6 +847,15 @@ $quoteDetails = json_encode(
             // suppressed the notice — an undefined property would make Alpine
             // throw on every x-show evaluation.
             orderIntentApprovedNotice: '',
+            // TWO-25326 §7.2/§7.3: sibling of orderIntentApprovedNoticeCopy for
+            // the "not approved / no intent" wording. Same null-means-off and
+            // '' live-text contract as the pair above.
+            orderIntentNotAvailableCopy: <?= /* @noEscape */ json_encode(
+                $orderIntentNotAvailableNotice,
+                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+            ) ?: 'null' ?>,
+            orderIntentNotAvailableNotice: '',
             orderIntentDeclinedMessage: '<?= $escaper->escapeJs(
                 __($orderIntentDeclinedMessage),
             ) ?>',
@@ -1092,11 +1105,17 @@ $quoteDetails = json_encode(
                 // clear first and processOrderIntentSuccessResponse re-sets
                 // afterwards; a company edited by hand clears the notice and
                 // leaves it cleared, which is the correct fail-closed outcome.
+                // The not-available notice (TWO-25326 §7.2/§7.3) is the same
+                // persistent-inline-element shape and clears on the same two
+                // watchers, for the same reason: a declined/no-intent verdict
+                // was for the PREVIOUS company and must not survive an edit.
                 this.$watch('companyName', () => {
                     this.orderIntentApprovedNotice = '';
+                    this.orderIntentNotAvailableNotice = '';
                 });
                 this.$watch('companyId', () => {
                     this.orderIntentApprovedNotice = '';
+                    this.orderIntentNotAvailableNotice = '';
                 });
 
                 // Watch manualMode and update derived state reactively. Goes
@@ -1609,6 +1628,15 @@ $quoteDetails = json_encode(
                 return Boolean(this.orderIntentApprovedNotice);
             },
 
+            // Sibling of orderIntentMessageVisible for the "not available"
+            // text (TWO-25326 §7.2/§7.3). Named distinctly rather than folded
+            // into one "any message visible" getter: the two texts are shown
+            // in two DIFFERENT elements (styled approved-green vs
+            // unavailable), so the template needs to ask which one.
+            get twoTileNotAvailableVisible() {
+                return Boolean(this.orderIntentNotAvailableNotice);
+            },
+
             // TWO-25326 §7: the "Change company" button beside the label.
             //
             // Gated on CAPTURED — `companyIdHintVisible`, i.e. a
@@ -1824,10 +1852,11 @@ $quoteDetails = json_encode(
              * Returns '' when the brand suppressed the notice, so callers can
              * assign the result unconditionally.
              *
-             * The company name is substituted here because it is only known
-             * client-side. A replacer *function* is used rather than a plain
-             * string so `$&` / `$1` in a company name are taken literally
-             * instead of as replacement patterns.
+             * The company name AND number are substituted here (TWO-25326
+             * §7.3) because both are only known client-side. A replacer
+             * *function* is used rather than a plain string so `$&` / `$1` in
+             * a company name or number are taken literally instead of as
+             * replacement patterns.
              */
             resolveOrderIntentApprovedNotice() {
                 const copy = this.orderIntentApprovedNoticeCopy;
@@ -1836,7 +1865,28 @@ $quoteDetails = json_encode(
                 const companyName = (this.companyName || '').trim();
                 if (!companyName) return copy.withoutCompany;
 
-                return copy.withCompany.replace(copy.companyNameToken, () => companyName);
+                const companyId = (this.companyId || '').trim();
+                return copy.withCompany
+                    .replace(copy.companyNameToken, () => companyName)
+                    .replace(copy.companyNumberToken, () => companyId);
+            },
+
+            /**
+             * Sibling of resolveOrderIntentApprovedNotice() for the "not
+             * approved / no intent" wording (TWO-25326 §7.2/§7.3). Same
+             * empty-brand-switch and substitution contract.
+             */
+            resolveOrderIntentNotAvailableNotice() {
+                const copy = this.orderIntentNotAvailableCopy;
+                if (!copy) return '';
+
+                const companyName = (this.companyName || '').trim();
+                if (!companyName) return copy.withoutCompany;
+
+                const companyId = (this.companyId || '').trim();
+                return copy.withCompany
+                    .replace(copy.companyNameToken, () => companyName)
+                    .replace(copy.companyNumberToken, () => companyId);
             },
 
             processOrderIntentSuccessResponse(response) {
@@ -1853,9 +1903,17 @@ $quoteDetails = json_encode(
                     // filling in the form never saw the reassurance at the
                     // moment it was useful.
                     this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
+                    this.orderIntentNotAvailableNotice = '';
                 } else {
                     this.placeOrderIntentFlag = false;
                     this.orderIntentApprovedNotice = '';
+                    // Persistent inline "not available" text (TWO-25326 §7.2),
+                    // alongside the existing self-dismissing toast rather than
+                    // instead of it — the toast still serves the surfaces where
+                    // the tile's own search control is showing (payment_tile
+                    // location) and a buyer's attention is on the fields, not
+                    // the text below them.
+                    this.orderIntentNotAvailableNotice = this.resolveOrderIntentNotAvailableNotice();
                     window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 5000);
                 }
             },
@@ -1865,6 +1923,7 @@ $quoteDetails = json_encode(
                 // An intent that errored says nothing about approval; drop any
                 // notice left over from a previous, successful intent.
                 this.orderIntentApprovedNotice = '';
+                this.orderIntentNotAvailableNotice = '';
                 let message = this.generalErrorMessage;
 
                 if (response?.responseJSON) {

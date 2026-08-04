@@ -27,6 +27,10 @@ $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
+// TWO-25326 §7.1 (2026-08-03 ruling): the ONE company-search control renders
+// either here (in this tile) or on the address step — never both, never
+// neither. See CheckoutConfig::getCompanySearchLocation().
+$isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
 $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
 $quoteDetails = $quoteModel->getQuoteDetails();
@@ -148,6 +152,21 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         <fieldset class="space-y-4">
             <?php
             /*
+             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): the captured-company
+             * label + "Change company" button only make sense where the
+             * enhanced company-search control lives — i.e. in THIS tile, when
+             * the admin setting points the one control here.
+             *
+             * When the control lives on the address step instead (the
+             * default), the tile is text-only and carries no editable route
+             * back into a captured company at all — that route is the
+             * address-step control itself. See the `else` branch below for
+             * that mode.
+             */
+            ?>
+            <?php if ($isCompanySearchInPaymentTile): ?>
+            <?php
+            /*
              * TWO-25326 §7: the ONE captured-company label.
              *
              * Reads "<name> (<number>)" and replaces three separate things the
@@ -227,6 +246,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                     @click="<?= $gwBase ?>OnChangeCompanyClick"
                 ><?= $escaper->escapeHtml(__("Change company")) ?></button>
             </div>
+            <?php endif ?>
             <?php
             /*
              * Persistent inline "order intent approved" notice, inside the
@@ -260,6 +280,56 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                     x-text="orderIntentApprovedNotice"
                 ></div>
             <?php endif ?>
+            <?php
+            /*
+             * TWO-25326 §7.2/§7.3 (2026-08-03 ruling): the sibling "not
+             * approved / no intent" text. Same shape and same reasoning as
+             * the approved notice above — a persistent inline element rather
+             * than a toast, gated on the identical brand switch (see
+             * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its
+             * own element, because it needs its own (unavailable, not
+             * success) styling and its own `x-text`.
+             *
+             * Rendered in BOTH company-search-location modes, not only the
+             * text-only tile: it is the text-only tile's ENTIRE story for a
+             * declined/no-intent company in address-area mode, and in
+             * payment-tile mode it supplements the existing toast with
+             * something that does not self-dismiss after 5 seconds.
+             */
+            ?>
+            <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
+                <div
+                    class="two-order-intent-message unavailable bg-gray-50 border border-gray-200 text-gray-800 text-sm p-2 rounded-md"
+                    role="status"
+                    data-name="order_intent_not_available_message"
+                    x-show="twoTileNotAvailableVisible"
+                    x-text="orderIntentNotAvailableNotice"
+                ></div>
+            <?php endif ?>
+            <?php if (!$isCompanySearchInPaymentTile): ?>
+            <?php
+            /*
+             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): text-only tile.
+             *
+             * The enhanced company-search control lives on the address step
+             * in this (default) configuration, so the tile carries NO input
+             * fields, no search control, and no "Change company" link — only
+             * the intent-message text above, which now embeds the company
+             * name and number directly (§7.3).
+             *
+             * `payment[company_name]` / `payment[company_id]` still have to
+             * reach the server, so they stay as hidden inputs rather than
+             * disappearing outright — twoValidatePaymentForm()'s doSave()
+             * reads them by name, and fillCompanyData() / initialize() are
+             * unchanged: they already write these two elements' `.value`
+             * imperatively by id, and do so regardless of which markup mode
+             * is rendered. Nothing downstream of company capture needed to
+             * change for this mode; only what the buyer SEES did.
+             */
+            ?>
+            <input type="hidden" id="company_name" name="payment[company_name]" />
+            <input type="hidden" id="company_id" name="payment[company_id]" />
+            <?php else: ?>
             <!-- Company Name (manual / search dual-mode) -->
             <div class="min-h-108">
                 <div class="flex flex-col field required gap-2" x-show="showManual">
@@ -547,6 +617,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
               />
             </div>
+            <?php endif // !$isCompanySearchInPaymentTile ?>
 
             <!-- Invoice Email (Conditional) -->
             <div class="flex flex-col" x-show="isInvoiceEmailsEnabled">
