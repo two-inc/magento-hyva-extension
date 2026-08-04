@@ -875,10 +875,15 @@ $quoteDetails = json_encode(
                     // every one of them while an API stays down.
                     if (!this.searchUnavailableShown) {
                         this.searchUnavailableShown = true;
-                        window.dispatchMessages([{
-                            type: 'warning',
-                            text: cfg.searchUnavailableMessage,
-                        }], 5000);
+                        // Guarded: this runs on a failure path whose whole point
+                        // is surviving a missing global, so it must not become
+                        // the thing that throws.
+                        if (typeof window.dispatchMessages === 'function') {
+                            window.dispatchMessages([{
+                                type: 'warning',
+                                text: cfg.searchUnavailableMessage,
+                            }], 5000);
+                        }
                     }
                 }
             },

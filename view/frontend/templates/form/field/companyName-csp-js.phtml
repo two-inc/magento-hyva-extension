@@ -109,7 +109,16 @@ function <?= $gwBase ?>CompanySearchField() {
      * trap/focus-management system built around it (§1/§4), neither of
      * which any other surface has a use for.
      */
-    return twoGatewayComposeLive(window.twoGatewayCompanySearchEngine({
+    // Both cross-file globals guarded the same way as twoAddressReadSelection/
+    // twoAddressWriteSelection above: gateway_method-csp-js.phtml's inline
+    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // failure there must degrade this surface, not throw a ReferenceError
+    // out of it.
+    const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
+        || function(target) { return target; };
+    const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
+        || function() { return {}; };
+    return twoGatewayComposeLiveFn(twoGatewayCompanySearchEngineFn({
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',

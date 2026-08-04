@@ -147,8 +147,16 @@ document.addEventListener('alpine:init', () => {
      * closed-source modal), so `manualModeSupported` stays `false`, matching
      * the surface exactly as it always behaved.
      */
-    Alpine.data('searchInput', window['searchInput'] = () => twoGatewayComposeLive(
-        window.twoGatewayCompanySearchEngine({
+    // Both cross-file globals guarded: gateway_method-csp-js.phtml's inline
+    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // failure there must degrade this surface, not throw a ReferenceError
+    // out of it.
+    const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
+        || function(target) { return target; };
+    const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
+        || function() { return {}; };
+    Alpine.data('searchInput', window['searchInput'] = () => twoGatewayComposeLiveFn(
+        twoGatewayCompanySearchEngineFn({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
