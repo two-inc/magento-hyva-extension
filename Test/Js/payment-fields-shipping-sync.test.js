@@ -364,4 +364,74 @@ describe("shipping to payment company sync", () => {
     expect(companyNameInput().value).toBe("");
     expect(syncedEvents).toEqual([]);
   });
+
+  describe("the checkout:payment:method-activate listener", () => {
+    // TWO-25326 §7.4 round 2: this handler had its own, separate
+    // `shippingCompany && shippingCompanyId` gate — a second recurrence of
+    // the exact bug class the other handlers in this file were already
+    // fixed against (see the module docblock above). Without this test,
+    // reverting this one handler back to requiring both fields would leave
+    // the whole suite green.
+    function activateMethod() {
+      window.dispatchEvent(
+        new CustomEvent("checkout:payment:method-activate", {
+          detail: { method: "two_payment" },
+        }),
+      );
+    }
+
+    test("syncs an id-less company on activation", () => {
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "",
+          manual_mode: false,
+        }),
+      );
+
+      activateMethod();
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("");
+    });
+
+    test("does not overwrite fields that are already populated", () => {
+      companyNameInput().value = "Already Here Ltd";
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          manual_mode: false,
+        }),
+      );
+
+      activateMethod();
+
+      expect(companyNameInput().value).toBe("Already Here Ltd");
+    });
+
+    test("ignores activation of a different payment method", () => {
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "",
+          manual_mode: false,
+        }),
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("checkout:payment:method-activate", {
+          detail: { method: "some_other_method" },
+        }),
+      );
+
+      expect(companyNameInput().value).toBe("");
+    });
+  });
 });
