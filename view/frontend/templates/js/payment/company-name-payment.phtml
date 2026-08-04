@@ -235,7 +235,14 @@ $methodCode = $brandedViewModel->getMethodCode();
             const persistedShippingValue = shippingField ? shippingField.value : "";
 
 
-            if (shippingCompany && shippingCompanyId) {
+            // Name alone, for the same reason as the shipping-company-selected
+            // and billing_as_shipping_address_updated handlers below: the
+            // identifier may be legitimately empty (TWO-25326 §7.4 round 2),
+            // and requiring it here skipped this mount-time restore entirely
+            // for an id-less company, leaving `#company_name` blank and
+            // hasRequiredCompanyCapture() blocking Place Order on a company
+            // the buyer had already picked.
+            if (shippingCompany) {
                 // Use stored shipping selection data
                 updatePaymentFields(shippingCompany, shippingCompanyId);
                 paymentFieldsInitialized = true;
@@ -338,8 +345,15 @@ $methodCode = $brandedViewModel->getMethodCode();
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-            /** If we have shipping company data but payment fields are empty, populate them */
-            if (shippingCompany && shippingCompanyId) {
+            /*
+             * If we have shipping company data but payment fields are empty,
+             * populate them. Name alone, same as the sibling handlers in this
+             * file (TWO-25326 §7.4 round 2) — the identifier may be
+             * legitimately empty, and requiring it here left `#company_name`
+             * blank for an id-less company, which hasRequiredCompanyCapture()
+             * then (correctly) blocks Place Order on.
+             */
+            if (shippingCompany) {
                 const companyNameInput = document.querySelector('[data-name="company_name"]');
                 const companyIdInput = document.querySelector('[data-name="company_id"]');
 
@@ -350,7 +364,9 @@ $methodCode = $brandedViewModel->getMethodCode();
                 }
             }
 
-            // Trigger order intent if we have company data
+            // Trigger order intent only when there is an identifier to report —
+            // matching fillCompanyData()'s `companyId &&` term, same reasoning
+            // as the shipping-company-selected handler below.
             if (shippingCompany && shippingCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
             }
