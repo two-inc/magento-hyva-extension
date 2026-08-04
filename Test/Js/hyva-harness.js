@@ -582,6 +582,11 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayWriteBillingCompany",
   "twoGatewayClearBillingCompany",
   "twoGatewayIsBillingAsShipping",
+  // TWO-25326 §7.4: the shared company-search core both the address-step
+  // and payment-tile pickers call into. Same `window.X = window.X || …`
+  // idiom as the rest of this list, and for the same reason it must be
+  // reset between tests.
+  "twoCompanySearchCore",
 ];
 
 /**

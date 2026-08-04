@@ -43,6 +43,10 @@ $orderIntentNotAvailableNotice = $configModel->getOrderIntentNotAvailableNotice(
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
+// TWO-25326 §7.4: which mode this render is in, needed by
+// hasRequiredCompanyCapture() below to decide whether it has anything to
+// check at all — see that method's own docblock.
+$isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $merchantDetails = $orderIntentConfig["merchant"] ?? [];
 $merchantId = $merchantDetails["id"] ?? "";
@@ -545,6 +549,155 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * TWO-25326 §7.4 (2026-08-04 unification). The ONE company-search
+     * core, shared between the two mount points — the address-step field
+     * (`companyName-csp-js.phtml`'s `CompanySearchField`) and the payment
+     * tile's dual-mode control (`PaymentFormWithValidation` below).
+     *
+     * Before this, both surfaces re-implemented their own copy of the
+     * request lifecycle around the already-shared `twoGatewayCompanySearch`
+     * fetch helper above: start the spinner, supersede any in-flight
+     * request, map a failed/degraded response onto `isSearchUnavailable`
+     * rather than "no matches", and ignore a response that arrived after a
+     * newer request superseded it or the component was torn down. Fixing
+     * that lifecycle (the abort-latch bug class this file's own comments
+     * describe more than once) meant fixing it identically in two places by
+     * hand, with nothing to catch the day one of the two copies drifted.
+     *
+     * Deliberately NOT the whole of either surface's `getItems()`. What
+     * differs between the two — where the search term comes from (the
+     * address step's separate query field vs the tile's single combined
+     * field), the gating around manual mode / the lookup being switched
+     * off, and the "select a country first" warning's exact trigger — is
+     * genuine per-surface UX, not duplication, and TWO-25326's own
+     * "existing behaviour preserved" requirement means it stays local. Only
+     * the part that was genuinely byte-for-byte the same thing lives here:
+     * this is the Hyvä analogue of `company-search.js` in the base
+     * `magento-plugin` repo, which documents exactly the same split
+     * ("Only the genuinely identical parts live here").
+     *
+     * Not `Alpine.data()` — this is a plain object of pure functions, not a
+     * component. Each caller passes ITS OWN `this` (the Alpine component)
+     * as `state`, so a fix here is applied to whichever surface calls it
+     * without either surface owning a second copy.
+     */
+    window.twoCompanySearchCore = window.twoCompanySearchCore || {
+        /**
+         * Run one company search and write the outcome onto `state`
+         * (`items`, `isSearching`, `isSearchUnavailable`,
+         * `searchAbortController`). Supersedes any search already in
+         * flight on `state` first, so a slow response for an earlier term
+         * can never repopulate a dropdown the buyer has typed past.
+         *
+         * @param {Object} state the calling Alpine component (`this`)
+         * @param {Object} options passed through to `twoGatewayCompanySearch`
+         * @param {string} options.checkoutApiUrl
+         * @param {string} options.countryCode
+         * @param {string} options.term
+         * @param {number|string} options.limit
+         * @returns {Promise<boolean>} true iff a result was actually
+         *   applied to `state` — false when superseded, aborted, or the
+         *   caller was torn down while this was in flight. Callers that do
+         *   something with the outcome (e.g. opening the dropdown once
+         *   results/an error arrive) must check this rather than assuming
+         *   `state.items` reflects THIS call once it resolves.
+         */
+        async runSearch(state, options) {
+            this.abortCompanySearch(state);
+            const controller = new AbortController();
+            state.searchAbortController = controller;
+            state.isSearching = true;
+
+            // try/catch: the helper is a window global, and an absent one
+            // would throw out of this as an unhandled rejection with
+            // `isSearching` latched true — every caller renders a spinner
+            // off that flag. The helper swallows request failures itself,
+            // so reaching the catch means something structural.
+            let result;
+            try {
+                result = await window.twoGatewayCompanySearch({
+                    checkoutApiUrl: options.checkoutApiUrl,
+                    countryCode: options.countryCode,
+                    query: options.term,
+                    limit: options.limit,
+                    signal: controller.signal,
+                });
+            } catch (error) {
+                console.error('Company search failed:', error);
+                result = { status: 'failed', items: [] };
+            }
+
+            // The buyer typed on, or the component was torn down, while
+            // this was in flight. Writing anything now would fight the
+            // newer search, or write into a component no longer mounted —
+            // stay silent.
+            if (result.status === 'aborted' || state.searchAbortController !== controller) {
+                return false;
+            }
+
+            state.searchAbortController = null;
+            state.isSearching = false;
+            state.items = result.items;
+            // A timeout, non-2xx, network error or degraded 200 must not be
+            // rendered as "no companies found".
+            state.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+            return true;
+        },
+
+        /** Cancel any in-flight company search on `state`. Safe to call repeatedly. */
+        abortCompanySearch(state) {
+            if (state.searchAbortController) {
+                state.searchAbortController.abort();
+                state.searchAbortController = null;
+            }
+            state.isSearching = false;
+        },
+
+        /**
+         * The unique `x-for :key` for a result row. `companyId` is '' for
+         * every hit whose national identifier the search response omitted
+         * — which it is allowed to do — so two such hits in one response
+         * collide on '' and Alpine renders one row per distinct key,
+         * silently dropping a company that matched. Falls back to the list
+         * position, unique by construction and prefixed so it can never
+         * collide with a real identifier either.
+         *
+         * @param {{companyId?: string}} item
+         * @param {number} index
+         * @returns {string}
+         */
+        getCompanyRowKey(item, index) {
+            return (item && item.companyId) || `two-idx-${index}`;
+        },
+
+        /**
+         * Move the highlighted row on `state` one step forward. Returns
+         * whether it actually moved, so a caller only re-runs its own
+         * scroll-into-view logic (DOM-specific, so it stays local) when the
+         * index changed.
+         *
+         * @param {Object} state
+         * @returns {boolean}
+         */
+        nextItem(state) {
+            if (state.selectedIndex < state.items.length - 1) {
+                state.selectedIndex++;
+                return true;
+            }
+            return false;
+        },
+
+        /** The reverse of {@link nextItem}. */
+        prevItem(state) {
+            if (state.selectedIndex > 0) {
+                state.selectedIndex--;
+                return true;
+            }
+            return false;
+        },
+    };
+
+    /**
      * Compose `source` onto `target` KEEPING ACCESSORS AS ACCESSORS.
      *
      * TWO-25332. Object spread and Object.assign copy own enumerable
@@ -718,10 +871,15 @@ $quoteDetails = json_encode(
 
                             try {
                                 await this.validate();
-                                return true;
                             } catch (error) {
                                 return false;
                             }
+                            // TWO-25326 §7.4: hyva.formValidation() above only
+                            // examines elements carrying `required` /
+                            // `data-validate` — see hasRequiredCompanyCapture()'s
+                            // own docblock for the mode where that leaves company
+                            // capture unchecked.
+                            return this.hasRequiredCompanyCapture(form);
                         },
                         form
                     );
@@ -989,7 +1147,7 @@ $quoteDetails = json_encode(
             // which is unique by construction, and prefix it so it can never
             // collide with a real identifier either.
             <?= $gwBase ?>GetCompanyId() {
-                return this.item.companyId || `two-idx-${this.index}`;
+                return window.twoCompanySearchCore.getCompanyRowKey(this.item, this.index);
             },
             <?= $gwBase ?>GetCompanyDisplayName() {
                 return this.item.companyDisplayName;
@@ -1008,6 +1166,69 @@ $quoteDetails = json_encode(
                 return this.manualMode ? '' : '<?= $escaper->escapeJs(
                     __("Enter company name to search"),
                 ) ?>';
+            },
+
+            /**
+             * TWO-25326 §7.4 (2026-08-04): client-side enforcement that a
+             * company was actually captured, called from the payment form's
+             * validator (see `hyvaCheckout.validation.register` in
+             * `twoValidatePaymentForm()` above) alongside `this.validate()`.
+             *
+             * When THIS tile is the active company-search location
+             * (`isCompanySearchInPaymentTile`), the search/manual inputs
+             * above carry `required` + `data-validate` themselves, so
+             * `hyva.formValidation(form)` — which is what `this.validate()`
+             * runs — already covers it; nothing to add here.
+             *
+             * When the address step is the active location instead, this
+             * tile renders only the two HIDDEN mirror inputs
+             * (`#company_name` / `#company_id` in `gateway_method.phtml`)
+             * that `fillCompanyData()` / `initialize()` keep in step with
+             * whatever the address step captured, so the order can still
+             * read `payment[company_name]` / `payment[company_id]`. Those
+             * mirrors carry no `required` — a hidden field cannot use the
+             * browser's own required-field UI — and `hyva.formValidation()`
+             * only checks elements that DO carry `required` or
+             * `data-validate`, so it silently passes an empty pair.
+             * VERIFIED, not assumed: `data-validate` is absent from both
+             * inputs at `gateway_method.phtml` lines emitting them in this
+             * mode, and Hyvä's own validator (like native HTML5
+             * `checkValidity()`) does not validate a field it never
+             * examines.
+             *
+             * That gap is real whenever the address step's own control does
+             * not end up enforcing itself either — a saved address chosen
+             * without ever opening the address form, or a virtual cart with
+             * no shipping step at all — which is exactly the case the two
+             * mirror inputs exist to support in the first place (see the
+             * long comment on the search block above). So this checks the
+             * two mirrors directly and blocks placement with a visible
+             * message, the same way the other three plugins (Luma,
+             * WooCommerce, PrestaShop) enforce it.
+             *
+             * @param {HTMLFormElement} form
+             * @returns {boolean}
+             */
+            hasRequiredCompanyCapture(form) {
+                <?php if ($isCompanySearchInPaymentTile): ?>
+                return true;
+                <?php else: ?>
+                const nameEl = form.querySelector('#company_name');
+                const idEl = form.querySelector('#company_id');
+                const hasName = Boolean(nameEl && nameEl.value && nameEl.value.trim());
+                const hasId = Boolean(idEl && idEl.value && idEl.value.trim());
+                if (hasName && hasId) return true;
+
+                if (typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{
+                        type: 'error',
+                        text: '<?= $escaper->escapeJs(
+                            __('Please provide your company name and number before continuing.'),
+                        ) ?>',
+                    }], 5000);
+                }
+                return false;
+                <?php endif ?>
             },
             // Initialization
             initialize(quote) {
@@ -1234,56 +1455,26 @@ $quoteDetails = json_encode(
                 // throttles input; the prior setTimeout(200) was a
                 // redundant second-stage delay and is gone.
                 //
-                // Supersede any in-flight search so a slow response for an
-                // earlier query can never repopulate the dropdown.
-                this.abortCompanySearch();
-                const controller = new AbortController();
-                this.searchAbortController = controller;
+                // The request lifecycle itself — supersede any in-flight
+                // search, run it, map the response onto isSearching /
+                // isSearchUnavailable / items — is TWO-25326's shared core
+                // (window.twoCompanySearchCore), the same one the
+                // address-step picker calls. Only the term/gating around it
+                // stays here, because that is where the two surfaces
+                // genuinely differ.
                 const query = this.search;
-                this.isSearching = true;
-
-                // try/catch because the helper is a window global: if it were
-                // ever absent the await would throw, leaving this an unhandled
-                // rejection with `isSearching` latched true — and this picker
-                // DOES render a spinner off that flag, so it would spin
-                // forever. The helper swallows request failures itself, so
-                // reaching the catch means something structural.
-                let result;
-                try {
-                    result = await window.twoGatewayCompanySearch({
-                        checkoutApiUrl: this.checkoutApiUrl,
-                        countryCode: this.countryCode,
-                        query: query,
-                        limit: this.companySearchLimit,
-                        signal: controller.signal,
-                    });
-                } catch (error) {
-                    console.error('Company search failed:', error);
-                    result = { status: 'failed', items: [] };
-                }
-
-                // The buyer typed on, or Magewire re-rendered us, while this
-                // was in flight. Writing anything now would fight the newer
-                // search — stay silent.
-                if (result.status === 'aborted' || this.searchAbortController !== controller) return;
-
-                this.searchAbortController = null;
-                this.isSearching = false;
-                this.items = result.items;
-                // A timeout, a network error, a non-2xx, or a degraded 200
-                // must not read as "no companies found" — that is how a
-                // buyer with a valid company concludes we won't take them.
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
-                if (this.items.length > 0 || this.isSearchUnavailable) this.isOpen = true;
+                const applied = await window.twoCompanySearchCore.runSearch(this, {
+                    checkoutApiUrl: this.checkoutApiUrl,
+                    countryCode: this.countryCode,
+                    term: query,
+                    limit: this.companySearchLimit,
+                });
+                if (applied && (this.items.length > 0 || this.isSearchUnavailable)) this.isOpen = true;
             },
 
             /** Cancel any in-flight company search. Safe to call repeatedly. */
             abortCompanySearch() {
-                if (this.searchAbortController) {
-                    this.searchAbortController.abort();
-                    this.searchAbortController = null;
-                }
-                this.isSearching = false;
+                window.twoCompanySearchCore.abortCompanySearch(this);
             },
 
             handleItemClick(event) {
@@ -1484,19 +1675,14 @@ $quoteDetails = json_encode(
                 window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
 
-            // Keyboard navigation
+            // Keyboard navigation. The index move is the shared core's;
+            // `adjustScroll()` is DOM-specific to this markup and stays here.
             nextItem() {
-                if (this.selectedIndex < this.items.length - 1) {
-                    this.selectedIndex++;
-                    this.adjustScroll();
-                }
+                if (window.twoCompanySearchCore.nextItem(this)) this.adjustScroll();
             },
 
             prevItem() {
-                if (this.selectedIndex > 0) {
-                    this.selectedIndex--;
-                    this.adjustScroll();
-                }
+                if (window.twoCompanySearchCore.prevItem(this)) this.adjustScroll();
             },
 
             adjustScroll() {

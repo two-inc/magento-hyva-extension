@@ -982,19 +982,16 @@ function <?= $gwBase ?>CompanySearchField() {
         // back to the list position, unique by construction, prefixed so it can
         // never collide with a real identifier either.
         //
-        // Mirrors <?= $gwBase ?>GetCompanyId() on the payment tile. That surface
-        // was fixed on its own; this one is the same bug in the same shape.
+        // Shared with <?= $gwBase ?>GetCompanyId() on the payment tile via
+        // TWO-25326's shared core (window.twoCompanySearchCore) — one
+        // implementation of the dedup key, not a mirrored bug fix.
         <?= $gwBase ?>GetCompanyId() {
-            return this.item.companyId || `two-idx-${this.index}`;
+            return window.twoCompanySearchCore.getCompanyRowKey(this.item, this.index);
         },
 
         /** Cancel any in-flight company search. Safe to call repeatedly. */
         abortCompanySearch() {
-            if (this.searchAbortController) {
-                this.searchAbortController.abort();
-                this.searchAbortController = null;
-            }
-            this.isSearching = false;
+            window.twoCompanySearchCore.abortCompanySearch(this);
         },
 
         /**
@@ -1150,35 +1147,26 @@ function <?= $gwBase ?>CompanySearchField() {
             }
             this.countrySelectionShown = false;
 
-            // Supersede any in-flight search so a slow response for an
-            // earlier query cannot repopulate the dropdown.
-            this.abortCompanySearch();
-            const controller = new AbortController();
-            this.searchAbortController = controller;
-            this.isSearching = true;
-
-            // try/catch: the helper is a window global, and an absent one
-            // would throw out of getItems as an unhandled rejection with
-            // `isSearching` latched true. Request failures are handled inside
-            // the helper, so the catch means something structural.
-            let result;
-            try {
-                result = await window.twoGatewayCompanySearch({
-                    checkoutApiUrl: this.checkoutApiUrl,
-                    countryCode: countryCode,
-                    query: term,
-                    limit: 10,
-                    signal: controller.signal,
-                });
-            } catch (error) {
-                console.error('Company search failed:', error);
-                result = { status: 'failed', items: [] };
-            }
-
-            // The buyer typed on, or this component was torn down, while the
-            // request was in flight. Writing anything now would fight the
-            // newer search — stay silent.
-            if (result.status === 'aborted' || this.searchAbortController !== controller) return;
+            /*
+             * The request lifecycle itself — supersede any in-flight search,
+             * run it, map the response onto isSearching / isSearchUnavailable
+             * / items — is TWO-25326's shared core (window.twoCompanySearchCore,
+             * defined in gateway_method-csp-js.phtml), the same one the
+             * payment tile's picker calls. Only what is genuinely specific to
+             * this surface stays here below: the manual-mode / torn-down-
+             * component guards on what to do with a result that arrived late,
+             * and the `searchCompletedFor` bookkeeping "No matches found"
+             * depends on.
+             */
+            const applied = await window.twoCompanySearchCore.runSearch(this, {
+                checkoutApiUrl: this.checkoutApiUrl,
+                countryCode: countryCode,
+                term: term,
+                limit: 10,
+            });
+            // Superseded by a newer search, or this component was torn down
+            // before the response arrived — nothing of this call's own to do.
+            if (!applied) return;
             // enterManually() may have fired while this was in flight. Writing
             // `items` now would leave a populated result list behind the
             // manual-entry fields, ready to appear the moment the buyer goes
@@ -1187,8 +1175,7 @@ function <?= $gwBase ?>CompanySearchField() {
             // a manual-mode term, so nothing is rendered over those fields, but
             // the stale list is still wrong to keep.
             if (this.manualMode) {
-                this.isSearching = false;
-                this.searchAbortController = null;
+                this.items = [];
                 return;
             }
             // Magewire may have re-rendered the address form while this was in
@@ -1208,17 +1195,10 @@ function <?= $gwBase ?>CompanySearchField() {
             // `_x_dataStack` to walk up to, so `$root` is undefined — the state
             // this most needs to catch.
             if (!this.$root || !this.$root.isConnected) {
-                this.isSearching = false;
-                this.searchAbortController = null;
+                this.items = [];
                 return;
             }
 
-            this.searchAbortController = null;
-            this.isSearching = false;
-            this.items = result.items;
-            // A timeout, non-2xx, network error or degraded 200 must not be
-            // rendered as "no companies found".
-            this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
             /*
              * Record WHICH query this verdict belongs to (TWO-25326 §1). It is
              * what lets "No matches found" distinguish a completed empty search
@@ -1520,18 +1500,14 @@ function <?= $gwBase ?>CompanySearchField() {
                 : '';
         },
 
+        // The index move is the shared core's (window.twoCompanySearchCore);
+        // `adjustScroll()` is DOM-specific to this markup and stays here.
         nextItem() {
-            if (this.selectedIndex < this.items.length - 1) {
-                this.selectedIndex++;
-                this.adjustScroll();
-            }
+            if (window.twoCompanySearchCore.nextItem(this)) this.adjustScroll();
         },
 
         prevItem() {
-            if (this.selectedIndex > 0) {
-                this.selectedIndex--;
-                this.adjustScroll();
-            }
+            if (window.twoCompanySearchCore.prevItem(this)) this.adjustScroll();
         },
 
         adjustScroll() {
