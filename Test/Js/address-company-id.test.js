@@ -310,26 +310,24 @@ describe("address-step company number", () => {
       ).toBe("companyIdDisabled");
     });
 
-    test("the below-the-field manual-entry link is restored, gated on the complement of showDropdown (bug 4.2 round 2)", () => {
+    test("the below-the-field manual-entry link stays gone (2026-08-05 ruling, superseding bug 4.2 round 2)", () => {
       // 2026-07-28 first pass deleted this link outright: its old gate showed
       // it whenever the panel was shut, which included an untouched field and
       // a completed selection — both states its wording ("My company is not
-      // on the list") is false in. That much was right.
+      // on the list") is false in. That much was right, but deleting it with
+      // no replacement left an untouched/sub-threshold field with NO route
+      // into manual entry at all, so 2026-08-01 (adversarial review round 2)
+      // restored it, gated on `belowFieldManualEntryVisible`.
       //
-      // 2026-08-01 (adversarial review round 2) restored it, because deleting
-      // it with no replacement left an untouched/sub-threshold field with NO
-      // route into manual entry at all — the in-dropdown row cannot show
-      // until `search.length >= minSearchChars`. It is back, gated on
-      // `belowFieldManualEntryVisible`, the complement of `showDropdown()`
-      // (see company-manual-entry.test.js for the full behavioural proof that
-      // the two never show at once).
+      // 2026-08-05 (TWO-25326 tile bugfix batch, bug 2) removed it again for
+      // good instead: the panel now opens on click/keypress from zero typed
+      // characters, so the in-dropdown row is reachable immediately and there
+      // is no state left for a persistent second copy to cover. See
+      // company-manual-entry.test.js for the full behavioural proof.
       const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
       const doc = new DOMParser().parseFromString(markup, "text/html");
-      const link = doc.querySelector(".two-company-manual-entry");
 
-      expect(link).not.toBeNull();
-      const wrapper = link.closest("[x-show]");
-      expect(wrapper.getAttribute("x-show")).toBe("belowFieldManualEntryVisible");
+      expect(doc.querySelector(".two-company-manual-entry")).toBeNull();
     });
 
     test("the mode links resolve both ways round the search flag", () => {

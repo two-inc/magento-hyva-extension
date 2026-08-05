@@ -8,14 +8,19 @@
  * Company Number field nested below it inside the same `.two-company-search`
  * wrapper, reading as one focused control instead of two independent fields.
  *
- * `.two-company-search` contains both inputs (the search field directly, the
- * Company Number field one level further in, inside `.two-company-id`), so a
- * ring painted on the WRAPPER via `:focus-within` — the shared field/
- * input-group behaviour this module inherits, meant for an input+addon pair
- * reading as one control — frames both of them the moment the search input
- * gets focus. The fix suppresses that container-level ring and gives the
- * search input its own, scoped by the `>` combinator to exclude the nested
- * Company Number input.
+ * `.two-company-search` contains the name field and, below it, the captured
+ * company number, so a ring painted on the WRAPPER via `:focus-within` — the
+ * shared field/input-group behaviour this module used to inherit, meant for an
+ * input+addon pair reading as one control — frames both of them the moment the
+ * search input gets focus. The fix suppresses that container-level ring and
+ * gives the search input its own, scoped by the `>` combinator to exclude
+ * anything nested deeper.
+ *
+ * Two later developments, both 2026-08-05 / TWO-25326, moved where this bug
+ * lives and are pinned by the last four tests: §5 replaced the company-number
+ * INPUT with a plain-text display, and the tile bugfix batch's bug 3 took
+ * `.input-group` off the wrapper altogether — that class's own UNFOCUSED border
+ * was the remaining artefact and no `:focus-within` override could reach it.
  *
  * jsdom (the version this repo's Jest runs on) does not implement
  * `:focus-within` matching for `getComputedStyle` — verified empirically, not
@@ -135,20 +140,37 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(display.querySelector("input")).toBeNull();
   });
 
-  test("the focus ring is suppressed on the GRANDPARENT input-group too (TWO-25326 §7)", () => {
-    // The reported 6px blue border was painted one level further out than the
-    // rule this file already covered: Hyva's shared field styling rings an
-    // `.input-group` on `:focus-within`, and that element is the GRANDPARENT
-    // of the company-name input, so focusing the input framed the whole group.
-    // Suppressing it on `.two-company-search` alone never touched that.
-    const body = ruleBody(".input-group.two-company-search-group:focus-within");
+  test("the grandparent ring is suppressed on this module's OWN hook, not on input-group (TWO-25326 tile bugfix bug 3)", () => {
+    // REWRITTEN 2026-08-05 (TWO-25326 tile bugfix batch, bug 3). This test used
+    // to demand a `.input-group.two-company-search-group:focus-within` rule,
+    // because the control's wrapper carried Hyvä's `.input-group` class and that
+    // class's `:focus-within` ring framed the name field and the number display
+    // together.
+    //
+    // Suppressing the RING was never the whole bug. `.input-group` also paints a
+    // faint, PERMANENT container border when nothing is focused at all, and that
+    // unfocused border is what was actually reported. A CSS override cannot reach
+    // it, so the class is gone from the wrapper entirely
+    // (form/field/company-search-control.phtml) — the control is a name input, a
+    // results panel and a number display, three separately labelled things, not
+    // an input-plus-addon pair, so it was never an input-group to begin with.
+    //
+    // The suppression itself is KEPT, re-scoped to the hook this module puts on
+    // the element itself, so a merchant theme or branded overlay that rings a
+    // container on `:focus-within` by some other selector still cannot frame the
+    // two fields as one control.
+    const body = ruleBody(
+      ".two-company-search-group.two-company-search-group:focus-within",
+    );
 
     if (body === null) {
       throw new Error(
-        "no `.input-group.two-company-search-group:focus-within` rule in " +
+        "no `.two-company-search-group.two-company-search-group:focus-within` " +
+          "rule in " +
           STYLESHEET +
-          " — without it the input-group grandparent keeps painting a ring " +
-          "around both the company-name field and the number display.",
+          " — without it any theme that rings a container on :focus-within " +
+          "keeps painting a ring around both the company-name field and the " +
+          "number display.",
       );
     }
     expect(body).toMatch(/box-shadow:\s*none/);
@@ -161,22 +183,24 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(body).not.toMatch(/border-color/);
   });
 
-  test("the grandparent rule outranks the theme rule on specificity alone", () => {
-    // The theme ships `.input-group:focus-within` at (0,2,0). A selector of
-    // `.two-company-search-group:focus-within` ties it, and a tie is settled by
-    // stylesheet load order — which this module does not control. Doubling
-    // `.input-group` into the selector makes it (0,3,0) and removes load order
-    // from the question entirely.
-    //
-    // This is the defect shape the Luma leg of this ticket hit: a hide rule
-    // that lost on specificity, sat in the tree for weeks, and never applied.
-    const css = declarations();
-    expect(css).toMatch(
-      /\.input-group\.two-company-search-group:focus-within\s*\{/,
-    );
-    // And the bare, tie-ing form must NOT be what ships.
-    expect(css).not.toMatch(/(^|[^.\w-])\.two-company-search-group:focus-within/m);
-  });
+  /*
+   * DELETED 2026-08-05, not rewritten:
+   *
+   *  - "the focus ring is suppressed on the GRANDPARENT input-group too" — the
+   *    selector it named no longer ships. Its declaration-level half survives as
+   *    the test above; its structural half (that `.input-group` is not emitted at
+   *    all) is covered, for BOTH mount points rather than just this one, by
+   *    `company-search-one-control.test.js` → "the control is not an input-group
+   *    (bug 3)" → "no mount point emits the class".
+   *  - "the grandparent rule outranks the theme rule on specificity alone" — the
+   *    specificity claim moved with the selector, and the same suite's "the
+   *    focus-ring suppression matches the hook the control does emit" pins both
+   *    the doubled selector and the absence of the dead `.input-group` form.
+   *
+   * Both are gone from here rather than duplicated: a second copy of a structural
+   * guarantee in a suite scoped to one surface is how the two surfaces drifted
+   * apart in the first place.
+   */
 
   test("the hook the grandparent rule needs is actually on the shipped element", () => {
     // A CSS rule scoped to a class no element carries is a fix that never

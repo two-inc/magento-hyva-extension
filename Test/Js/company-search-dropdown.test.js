@@ -66,13 +66,17 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       // ORDER, and with no positive tabindex anywhere in this subtree tab order
       // IS document order — asserted below so that stays true.
       //
-      // jsdom runs no Alpine, so `x-show` hides nothing here. The two
-      // below-the-field affordances sit between the name input and the panel in
-      // the source but are hidden in every state where the panel is open —
-      // `manualModeActive` and `belowFieldManualEntryVisible` are both false
-      // then, the latter by an explicit `!showDropdown()` term. Excluding them
-      // is what makes this assertion about the state the requirement is about.
-      const HIDDEN_WHILE_OPEN = ["manualModeActive", "belowFieldManualEntryVisible"];
+      // jsdom runs no Alpine, so `x-show` hides nothing here. The "Search for
+      // company" link sits between the name input and the panel in the source but
+      // is hidden in every state where the panel is open — `manualModeActive` is
+      // false then. Excluding it is what makes this assertion about the state the
+      // requirement is about.
+      //
+      // `belowFieldManualEntryVisible` was the second entry in this list until
+      // 2026-08-05, when the below-the-field manual-entry link it gated was
+      // deleted (TWO-25326 tile bugfix batch, bug 2 — one manual-entry route now,
+      // the in-panel row).
+      const HIDDEN_WHILE_OPEN = ["manualModeActive"];
       const focusables = Array.from(
         doc.querySelectorAll("a[href], button, input, select, textarea"),
       ).filter(function (el) {
@@ -98,7 +102,9 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       const button = doc.querySelector("button.two-company-manual-entry-row");
       expect(button).not.toBeNull();
 
-      const HIDDEN_WHILE_OPEN = ["manualModeActive", "belowFieldManualEntryVisible"];
+      // See the note on the identical list in the test above: one gate now, since
+      // the below-the-field manual-entry link was deleted on 2026-08-05.
+      const HIDDEN_WHILE_OPEN = ["manualModeActive"];
       const focusables = Array.from(
         doc.querySelectorAll("a[href], button, input, select, textarea"),
       ).filter(function (el) {
@@ -124,24 +130,38 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       expect(results.className).toMatch(/overflow-y-auto/);
     });
 
-    test("§2 both manual-entry affordances are real buttons, not click-handler spans", () => {
-      const doc = shippedDoc();
-      ["two-company-manual-entry", "two-company-manual-entry-row"].forEach(
-        function (cls) {
-          const el = doc.querySelector("." + cls);
-          expect(el).not.toBeNull();
-          expect(el.tagName).toBe("BUTTON");
-          // `type="button"` inside an address form: the default is `submit`,
-          // which would place the buyer's order.
-          expect(el.getAttribute("type")).toBe("button");
-          // Enter and Space are native on a button, so there must be no
-          // hand-rolled key handlers left to disagree with the click path.
-          expect(el.getAttribute("@keydown.enter.stop.prevent")).toBeNull();
-          expect(el.getAttribute("@keydown.space.stop.prevent")).toBeNull();
-          expect(el.getAttribute("role")).toBeNull();
-          expect(el.getAttribute("tabindex")).toBeNull();
-        },
-      );
+    test("§2 the manual-entry affordance is a real button, not a click-handler span", () => {
+      // REWRITTEN 2026-08-05 (TWO-25326 tile bugfix batch, bug 2). This used to
+      // loop over TWO affordances — the in-panel row and a second, below-the-field
+      // `.two-company-manual-entry` link. That second copy is deleted: it was
+      // gated on the panel being SHUT, which is the state a freshly rendered
+      // checkout is in, so "My company is not on the list" painted immediately
+      // under the company field before the buyer had touched anything and read as
+      // a permanent link rather than a dropdown affordance.
+      //
+      // The in-panel row is the single route now, and it is reachable from zero
+      // typed characters because the panel opens on click/keypress rather than on
+      // results arriving. Reachability at zero characters is pinned in
+      // company-manual-entry.test.js; what is pinned here is that the one
+      // remaining affordance is still a native button.
+      const el = shippedDoc().querySelector(".two-company-manual-entry-row");
+
+      expect(el).not.toBeNull();
+      expect(el.tagName).toBe("BUTTON");
+      // `type="button"` inside an address form: the default is `submit`,
+      // which would place the buyer's order.
+      expect(el.getAttribute("type")).toBe("button");
+      // Enter and Space are native on a button, so there must be no
+      // hand-rolled key handlers left to disagree with the click path.
+      expect(el.getAttribute("@keydown.enter.stop.prevent")).toBeNull();
+      expect(el.getAttribute("@keydown.space.stop.prevent")).toBeNull();
+      expect(el.getAttribute("role")).toBeNull();
+      expect(el.getAttribute("tabindex")).toBeNull();
+
+      // And the deleted route must really be gone, not merely hidden: a hidden
+      // copy is still a second implementation to drift, and still a tab stop the
+      // moment its gate is wrong.
+      expect(shippedDoc().querySelector(".two-company-manual-entry")).toBeNull();
     });
 
     test("§1 the spinner sits inside the QUERY field's wrapper, not the name field's", () => {
@@ -209,9 +229,18 @@ describe("address-step company-search dropdown (TWO-25326 §1/§2/§4)", () => {
       // Comments stripped first: this template's own prose names the wrong
       // wording in order to warn against it, and a raw grep would read that as
       // the defect it is guarding.
+      //
+      // Read off the CONTROL template rather than this surface's own since
+      // 2026-08-05 (TWO-25326): the panel markup moved into the one shared control
+      // both mount points include, so the address step's template no longer
+      // contains the string at all — and `toContain` against it would have failed
+      // for the right reason with entirely the wrong diagnosis.
       const source = require("fs")
         .readFileSync(
-          require("path").join(H.REPO_ROOT, H.COMPANY_NAME_MARKUP_TEMPLATE),
+          require("path").join(
+            H.REPO_ROOT,
+            "view/frontend/templates/form/field/company-search-control.phtml",
+          ),
           "utf8",
         )
         .replace(/\/\*[\s\S]*?\*\//g, "")

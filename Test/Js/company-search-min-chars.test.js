@@ -72,13 +72,41 @@ const SHIPPING_COMPONENT = "searchInput";
 const ADDRESS_INPUT = "input[type=text]";
 const MIN_CHARS_SELECTOR = ".two-company-search__min-chars";
 
+/**
+ * The ONE company-search control's markup (TWO-25326, 2026-08-05).
+ *
+ * Both the hint and the company-name placeholder used to be emitted by each
+ * surface's own template. There is now exactly one control, included by both
+ * mount points, so both strings are emitted from here and nowhere else.
+ */
+const CONTROL_MARKUP_TEMPLATE =
+  "view/frontend/templates/form/field/company-search-control.phtml";
+
 /** Every template that carries a company-search threshold or hint. */
 const THRESHOLD_TEMPLATES = [
   H.COMPANY_NAME_TEMPLATE,
   H.COMPANY_NAME_MARKUP_TEMPLATE,
+  CONTROL_MARKUP_TEMPLATE,
   H.SHIPPING_COMPANY_TEMPLATE,
   H.GATEWAY_METHOD_TEMPLATE,
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+];
+
+/**
+ * `$twoControlInputAttributes` as the ADDRESS STEP supplies it.
+ *
+ * The harness's default rule resolves this parameter to the payment tile's
+ * value, because that surface is the one whose selectors need the exact
+ * `company_name` id/name. The address step builds it from the Hyvä entity
+ * field's own config instead — `renderAttributes()`, which the harness maps to
+ * `name="company"` — and that marker is what the attribute-ORDER assertion below
+ * measures its position against.
+ */
+const ADDRESS_CONTROL_ATTRS_RULE = [
+  [
+    /^\$twoControlInputAttributes$/,
+    'name="company" required data-validate=\'{"required":true}\'',
+  ],
 ];
 
 /**
@@ -219,43 +247,130 @@ describe("company-search threshold provenance", () => {
     expect(viewModel).toContain("return self::COMPANY_SEARCH_MIN_CHARS;");
   });
 
-  test("both hint strings use the exact English source text", () => {
-    // Character for character: these resolve against dictionaries maintained in
-    // the base Two Magento module, and a reworded key silently falls back to
-    // English in every other locale.
-    expect(templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE)).toContain(
-      "__('" + PLACEHOLDER_MSGID + "')",
-    );
+  test("ONE hint string, emitted from ONE file, in the exact English source text", () => {
+    // REWRITTEN 2026-08-05 (TWO-25326). This used to assert BOTH hint strings,
+    // because each surface emitted its own copy of the control markup and so its
+    // own copy of the copy. There is one control now
+    // (form/field/company-search-control.phtml, included by both mount points),
+    // so "both strings agree" is no longer a thing that can be true or false —
+    // there is one string, and this pins where it lives.
+    //
+    // Character for character, either way: these resolve against dictionaries
+    // maintained in the base Two Magento module, and a reworded key silently
+    // falls back to English in every other locale.
+    const control = templateSource(CONTROL_MARKUP_TEMPLATE);
+
+    expect(control).toContain("__('" + PLACEHOLDER_MSGID + "')");
+    // The JS side keeps its own copy of the placeholder msgid deliberately: it is
+    // the value `:placeholder` restores when the buyer leaves manual entry, so it
+    // has to reach the component as data. Same source text, or the hint changes
+    // when Alpine boots.
     expect(templateSource(H.COMPANY_NAME_TEMPLATE)).toContain(
       "__('" + PLACEHOLDER_MSGID + "')",
+    );
+
+    // And the string is emitted from the control ALONE. A second copy in a mount
+    // point's own markup is how the two surfaces drifted apart in the first place.
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, H.GATEWAY_METHOD_MARKUP_TEMPLATE].forEach(
+      (relPath) => {
+        expect(templateSource(relPath)).not.toContain(
+          "__('" + PLACEHOLDER_MSGID + "')",
+        );
+      },
     );
 
     // The min-characters key is the `%1` placeholder form, with the count passed
     // as an argument. A key that spelled the number would need one dictionary
     // entry per threshold and would drift the moment the threshold moved.
-    [H.COMPANY_NAME_MARKUP_TEMPLATE, H.GATEWAY_METHOD_MARKUP_TEMPLATE].forEach(
-      (relPath) => {
-        const source = templateSource(relPath);
-        expect(source).toContain(MIN_CHARS_MSGID);
-        expect(source).toMatch(
-          new RegExp(
-            "__\\(\\s*[\"']" +
-              MIN_CHARS_MSGID.replace(/[%$]/g, "\\$&") +
-              "[\"']\\s*,\\s*\\" +
-              PHP_THRESHOLD_VAR +
-              "\\s*,?\\s*\\)",
-          ),
-        );
-      },
+    expect(control).toContain(MIN_CHARS_MSGID);
+    expect(control).toMatch(
+      new RegExp(
+        "__\\(\\s*[\"']" +
+          MIN_CHARS_MSGID.replace(/[%$]/g, "\\$&") +
+          "[\"']\\s*,\\s*\\" +
+          PHP_THRESHOLD_VAR +
+          "\\s*,?\\s*,?\\s*\\)",
+      ),
     );
   });
 
-  test("this repo ships no translation dictionary of its own", () => {
-    // The keys above are translated by dictionaries the base Two Magento module
-    // ships; Magento merges module dictionaries globally, so `__()` here
-    // resolves against them. An i18n directory appearing in this repo would
-    // shadow that and is what this asserts against.
-    expect(fs.existsSync(path.join(H.REPO_ROOT, "i18n"))).toBe(false);
+  test("this repo's own dictionary does not shadow the company-search keys", () => {
+    // REWRITTEN 2026-08-05. The old assertion was that this repo ships NO `i18n`
+    // directory at all, on the reasoning that Magento merges module dictionaries
+    // globally so `__()` here resolves against the base Two module's. That is no
+    // longer true of the repo: it now ships CSVs for strings that exist ONLY
+    // here and therefore have no base-module entry to resolve against.
+    //
+    // The guarantee that survives is the narrower, real one — a LOCAL copy of a
+    // key the base module already translates is what shadows and drifts, so the
+    // company-search keys this suite pins must not appear in this repo's own
+    // dictionary.
+    const i18nDir = path.join(H.REPO_ROOT, "i18n");
+    if (!fs.existsSync(i18nDir)) return;
+
+    const dictionaries = fs
+      .readdirSync(i18nDir)
+      .filter((name) => name.endsWith(".csv"));
+    // A dictionary directory with no dictionaries in it is a packaging mistake
+    // that would make this test vacuous.
+    expect(dictionaries.length).toBeGreaterThan(0);
+
+    dictionaries.forEach((name) => {
+      const csv = fs.readFileSync(path.join(i18nDir, name), "utf8");
+
+      expect(csv).not.toContain(PLACEHOLDER_MSGID);
+      expect(csv).not.toContain(MIN_CHARS_MSGID);
+      // And never the count spelled into the key, in any locale: that needs one
+      // row per threshold value and silently misses the day the threshold moves.
+      expect(csv).not.toMatch(/Please enter \d+ or more characters/);
+    });
+  });
+
+  test("every locale in the set translates the same keys", () => {
+    // Added 2026-08-05 alongside the rewrite above. Once this repo ships a
+    // dictionary of its own, the failure mode it introduces is a string
+    // translated in some locales and missed in others — which renders as English
+    // for those buyers and is invisible to every other test here.
+    const i18nDir = path.join(H.REPO_ROOT, "i18n");
+    if (!fs.existsSync(i18nDir)) return;
+
+    /**
+     * The msgids one dictionary carries.
+     *
+     * Magento's CSV is `"<msgid>","<translation>"`, so the msgid is the first
+     * quoted field. Rows are compared as a SET: order is not meaningful and
+     * pinning it would fail on an unrelated re-sort.
+     *
+     * @param {string} name
+     * @returns {Array<string>}
+     */
+    function msgids(name) {
+      return fs
+        .readFileSync(path.join(i18nDir, name), "utf8")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => {
+          const match = /^"((?:[^"]|"")*)"\s*,/.exec(line);
+          if (match === null) {
+            throw new Error(
+              "i18n/" + name + ": row is not `\"msgid\",\"translation\"`: " + line,
+            );
+          }
+          return match[1];
+        })
+        .sort();
+    }
+
+    const dictionaries = fs
+      .readdirSync(i18nDir)
+      .filter((name) => name.endsWith(".csv"));
+    const reference = msgids(dictionaries[0]);
+
+    expect(reference.length).toBeGreaterThan(0);
+    dictionaries.forEach((name) => {
+      expect(msgids(name)).toEqual(reference);
+    });
   });
 });
 
@@ -312,7 +427,17 @@ describe("address field — empty-field hint (element 3)", () => {
     // config. Ours has to be emitted first or the hint is silently absent
     // wherever it does. `renderAttributes()` resolves to a `name="company"`
     // fixture, which is what marks its position in the tag.
-    const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+    //
+    // `ADDRESS_CONTROL_ATTRS_RULE` is what puts that marker in the tag at all
+    // (TWO-25326, 2026-08-05): the entity-field attributes are now passed INTO the
+    // shared control as `$twoControlInputAttributes`, and the harness's default
+    // rule for that parameter carries the payment tile's id/name instead. This is
+    // the address step's own value, so the ordering measured here is the ordering
+    // this surface actually ships.
+    const markup = H.renderTemplateMarkup(
+      H.COMPANY_NAME_MARKUP_TEMPLATE,
+      ADDRESS_CONTROL_ATTRS_RULE,
+    );
     const openTag = /<input\b[^>]*>/.exec(markup);
 
     expect(openTag).not.toBeNull();

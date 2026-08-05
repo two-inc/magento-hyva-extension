@@ -50,7 +50,28 @@ const STYLESHEET = "view/frontend/web/css/custom.css";
 const POSITION_CLASS = "two-company-search__spinner";
 const LEGACY_HOOK_CLASS = "two-term-chip__loading";
 
-const SPINNER_SELECTOR = "." + POSITION_CLASS;
+/**
+ * The SEARCH spinner, scoped to the query row it is positioned against.
+ *
+ * Scoping added 2026-08-05 (TWO-25326 tile bugfix batch). Two things changed
+ * under this suite at once and the bare `.two-company-search__spinner` selector
+ * stopped identifying one element:
+ *
+ *  - the payment tile gained a SECOND element carrying the same class, the
+ *    order-intent progress row (`[data-name="order_intent_checking"]`, bug 5).
+ *    It reuses the same GIF and the same childless-element mechanism, but it is
+ *    a different indicator with a different gate and its own coverage —
+ *    order-intent-spinner.test.js. It is not this suite's subject.
+ *  - the search spinner itself is no longer tile-local markup at all. Both
+ *    surfaces now include the ONE control, form/field/company-search-control.
+ *    phtml, so the element the tile renders and the element the address step
+ *    renders are the same source lines.
+ *
+ * `.two-company-search__query` is the control's own positioned ancestor — the
+ * element the stylesheet resolves the spinner's absolute position against — so
+ * scoping to it names exactly the search spinner on either surface.
+ */
+const SPINNER_SELECTOR = ".two-company-search__query ." + POSITION_CLASS;
 
 /** The component state property the spinner must be bound to. */
 const SEARCHING_STATE = "isSearching";
@@ -154,6 +175,26 @@ describe.each(SURFACES)("company-search spinner — $label", (surface) => {
     }
   });
 });
+
+/*
+ * On the two `describe.each` blocks above being NEAR-DUPLICATES since 2026-08-05:
+ * both surfaces `include` the same form/field/company-search-control.phtml, so
+ * every structural assertion up there is now made twice about one set of source
+ * lines.
+ *
+ * They are deliberately kept rather than collapsed to a single pass over the
+ * control template on its own, because what they still prove that a single pass
+ * cannot is that the include actually LANDS on both mount points. A control that
+ * stopped being included by the tile would leave that surface searching with no
+ * feedback at all — the original defect this file was written for — and a suite
+ * that only rendered the partial would pass right through it.
+ *
+ * A test asserting the two surfaces render BYTE-IDENTICAL spinner markup was
+ * written here and then deleted: `company-search-one-control.test.js` → "the
+ * control subtree they render is byte-identical" makes the same claim about the
+ * whole control rather than one element inside it, which is strictly stronger and
+ * is where that guarantee belongs.
+ */
 
 /**
  * The stylesheet is the entire spinner: the element is childless, so the image

@@ -481,9 +481,21 @@ describe("company-selection storage scoping", () => {
     let fetchStub;
 
     beforeEach(() => {
+      // Shaped after the shipped tile (TWO-25326, 2026-08-05): the payment form
+      // is the Alpine component, and the company-search control is a SUBTREE of
+      // it carrying `.two-company-search`. That class is how the shared control's
+      // `controlRoot()` finds itself on a surface whose `$root` is the whole
+      // form, and `.two-company-query` inside it is the panel's own search box —
+      // which is what `getItems()` reads the term from in search mode. Without
+      // both, every search below resolves an empty query and declines, which is
+      // exactly the failure this test exists to distinguish from.
       document.body.innerHTML = [
         '<div id="tile-root">',
-        '  <input type="text" id="company_name" value="" />',
+        '  <div class="two-company-search">',
+        '    <input type="text" id="company_name" value="" />',
+        '    <input type="text" class="two-company-query" id="company-query"',
+        '           value="" />',
+        "  </div>",
         '  <input type="text" id="company_id" value="" disabled />',
         "</div>",
       ].join("\n");
@@ -517,7 +529,11 @@ describe("company-selection storage scoping", () => {
 
       expect(component.manualMode).toBe(false);
 
-      input.value = "Exa";
+      // The term goes into the PANEL's query field, not the company-name field:
+      // since TWO-25326 §1 the two are separate inputs and `getItems()` reads the
+      // query one in search mode. Writing it into the name field would search for
+      // the empty string and this test would pass for the wrong reason.
+      document.getElementById("company-query").value = "Exa";
       component.getItems();
       await H.flushPromises();
 

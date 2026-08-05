@@ -42,13 +42,23 @@ describe("company-name field picker", () => {
     // shipped markup, which is what makes `companyNameField()`'s
     // `:not(.two-company-query)` exclusion do real work here rather than being
     // satisfied by document order.
+    //
+    // `class="two-company-search"` on the component root is load-bearing
+    // (TWO-25326, 2026-08-05): the shared control resolves its own root through
+    // `controlRoot()`, which returns `$root` only when `$root` itself carries
+    // that class and otherwise looks for a descendant carrying it. That is what
+    // lets ONE control serve both this surface (where the control IS the Alpine
+    // component) and the payment tile (where the control is a subtree of the
+    // form's component). Without the class here, `queryField()`,
+    // `companyNameField()` and `focusablesAfterComponent()` all resolve null and
+    // every assertion below degrades into "nothing happened".
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
       "  <div><div><div>",
-      '    <div id="company-root">',
+      '    <div id="company-root" class="two-company-search">',
       '      <input type="text" id="company-field" value="" />',
       '      <input type="text" class="two-company-query" id="company-query" value="" />',
       "    </div>",
