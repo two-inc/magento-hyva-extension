@@ -240,4 +240,84 @@ class CheckoutConfigTest extends TestCase
 
         return $viewModel->getOrderIntentApprovedNotice();
     }
+
+    /**
+     * TWO-25326 (WooCommerce-plugin port, PR #445): company search must be
+     * off when EITHER the merchant's `enable_company_search` setting is off
+     * OR the API key can't currently be verified — neither alone is
+     * sufficient to turn it on.
+     */
+    public function testCompanySearchEnabledRequiresBothTheCoreSettingAndAVerifiedKey(): void
+    {
+        $this->assertTrue($this->isCompanySearchEnabledFor(true, true));
+        $this->assertFalse($this->isCompanySearchEnabledFor(true, false));
+        $this->assertFalse($this->isCompanySearchEnabledFor(false, true));
+        $this->assertFalse($this->isCompanySearchEnabledFor(false, false));
+    }
+
+    public function testGetIsApiKeyVerifiedDelegatesToTheInjectedStatusService(): void
+    {
+        $this->assertTrue($this->isApiKeyVerifiedFor(true));
+        $this->assertFalse($this->isApiKeyVerifiedFor(false));
+    }
+
+    private function isCompanySearchEnabledFor(bool $coreEnableCompanySearch, bool $apiKeyVerified): bool
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class ($coreEnableCompanySearch) {
+            /** @var bool */
+            private $enabled;
+
+            public function __construct(bool $enabled)
+            {
+                $this->enabled = $enabled;
+            }
+
+            public function isCompanySearchEnabled(): bool
+            {
+                return $this->enabled;
+            }
+        };
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
+            $viewModel,
+            $this->apiKeyVerificationStatusFake($apiKeyVerified)
+        );
+
+        return $viewModel->getIsCompanySearchEnabled();
+    }
+
+    private function isApiKeyVerifiedFor(bool $verified): bool
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
+            $viewModel,
+            $this->apiKeyVerificationStatusFake($verified)
+        );
+
+        return $viewModel->getIsApiKeyVerified();
+    }
+
+    private function apiKeyVerificationStatusFake(bool $verified): object
+    {
+        return new class ($verified) {
+            /** @var bool */
+            private $verified;
+
+            public function __construct(bool $verified)
+            {
+                $this->verified = $verified;
+            }
+
+            public function isVerified(): bool
+            {
+                return $this->verified;
+            }
+        };
+    }
 }

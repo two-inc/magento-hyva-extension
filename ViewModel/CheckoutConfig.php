@@ -19,6 +19,7 @@ use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
+use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 class CheckoutConfig implements ArgumentInterface
 {
@@ -89,6 +90,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $brandedViewModel;
 
+    /**
+     * @var ApiKeyVerificationStatus
+     */
+    private $apiKeyVerificationStatus;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -97,6 +103,7 @@ class CheckoutConfig implements ArgumentInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
+        ApiKeyVerificationStatus $apiKeyVerificationStatus,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -105,6 +112,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
+        $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
     }
 
     /**
@@ -200,9 +208,48 @@ class CheckoutConfig implements ArgumentInterface
         ];
         return $orderIntentConfig;
     }
+    /**
+     * TWO-25326 (WooCommerce-plugin port, PR #445): "is company search
+     * switched on" and "can the merchant's API key currently be verified"
+     * are two independent reasons the SAME control must not run search —
+     * a merchant who never touched `enable_company_search` must not see
+     * company search silently keep working while their key is broken or
+     * Two is unreachable. Every consumer of this getter (the address-block
+     * control and the payment-tile control both read it through the same
+     * `twoGatewayCompanySearchEngine` options, and both already degrade to
+     * manual entry / a no-op when it is false — see
+     * companyName-csp-js.phtml and shipping_company.phtml) inherits the
+     * gate for free, with no template changes needed.
+     *
+     * This governs WHETHER company search runs, not WHERE it renders — the
+     * placement decision (getIsCompanySearchInPaymentTile() above) is a
+     * separate axis and is deliberately left untouched by this check.
+     */
     public function getIsCompanySearchEnabled()
     {
-        return $this->configRepository->isCompanySearchEnabled();
+        return $this->configRepository->isCompanySearchEnabled() && $this->getIsApiKeyVerified();
+    }
+
+    /**
+     * TWO-25326 (WooCommerce-plugin port, PR #445): whether the merchant's
+     * currently configured API key can be verified right now. Delegates to
+     * ApiKeyVerificationStatus, which reuses the base module's existing
+     * verify+fetch+cache pattern (Two\Gateway\Service\Merchant\RecordProvider)
+     * rather than this module inventing its own HTTP call.
+     *
+     * This module has no admin settings page of its own (Hyvä's only
+     * `Stores > Configuration > Two > Hyva Extension` field is a read-only
+     * version display) — the differentiated invalid/service-error/
+     * unreachable admin notice the WooCommerce PR added has no Hyvä-side
+     * surface to land on. This boolean gate is the whole of Hyvä's part of
+     * that fix; the base module's own admin page (Two\Gateway) already
+     * shows its own key-status field, and hiding the Two payment method
+     * itself from the checkout method list on a failed verification is
+     * that base module's isAvailable() gate, not reimplemented here.
+     */
+    public function getIsApiKeyVerified(): bool
+    {
+        return $this->apiKeyVerificationStatus->isVerified();
     }
 
     public function getIsAddressSearchEnabled()
