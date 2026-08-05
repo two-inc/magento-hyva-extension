@@ -2807,11 +2807,40 @@ $quoteDetails = json_encode(
             processOrderIntentSuccessResponse(response, requestedCompanyId) {
                 if (!response) return;
 
-                // Track the company ID for which this order intent was processed
-                this.lastOrderIntentCompanyId = typeof requestedCompanyId === 'string'
+                const decidedCompanyId = typeof requestedCompanyId === 'string'
                     && requestedCompanyId
                     ? requestedCompanyId
                     : this.companyId;
+
+                // Track the company ID for which this order intent was
+                // processed — UNCONDITIONALLY, even if the reply arrives after
+                // the buyer has moved on. This is the dedup gate's own memory
+                // (`fillCompanyData`'s `companyId !== this.lastOrderIntentCompanyId`
+                // check reads it), so it has to advance for `decidedCompanyId`
+                // regardless of what is on screen now, or that company's own
+                // check would be permanently stuck pending — which is the
+                // original bug 4 defect this whole mechanism exists to fix.
+                this.lastOrderIntentCompanyId = decidedCompanyId;
+
+                /*
+                 * The VISIBLE verdict is a separate concern from the dedup
+                 * bookkeeping above, and is guarded on its own (review round 4):
+                 * the dedup gate deliberately skips dispatching (and does not
+                 * advance `orderIntentSeq`) when the buyer re-picks a company
+                 * already decided — so pick A (decided) → pick B (dispatches)
+                 * → revert to A before B replies leaves this reply passing the
+                 * dispatcher's sequence/liveness guard even though it is about
+                 * a company no longer on screen. Painting it here would build
+                 * `resolveOrderIntentApprovedNotice()` from LIVE
+                 * `companyName`/`companyId` (A's) while filing the decision
+                 * under B — a verdict for one company displayed with another's
+                 * name on it. Dropping it here, after the bookkeeping above has
+                 * already run, is what makes a later re-pick of B free (its
+                 * `lastOrderIntentCompanyId` write already landed) without ever
+                 * showing the buyer a company/verdict pair that never happened
+                 * together.
+                 */
+                if (decidedCompanyId !== this.companyId) return;
 
                 if (response.approved) {
                     this.placeOrderIntentFlag = true;
@@ -2836,7 +2865,21 @@ $quoteDetails = json_encode(
                 }
             },
 
-            processOrderIntentErrorResponse(response) {
+            /**
+             * @param {Object} response
+             * @param {string} [requestedCompanyId] same contract as
+             *   `processOrderIntentSuccessResponse()`'s — but an ERROR never
+             *   advances `lastOrderIntentCompanyId` (a failed check must stay
+             *   eligible to retry), so this is used for the notice guard only:
+             *   a reply that arrives after the buyer has reverted to a
+             *   different, already-decided company must not blank that
+             *   company's approved notice on its way out.
+             */
+            processOrderIntentErrorResponse(response, requestedCompanyId) {
+                if (typeof requestedCompanyId === 'string' && requestedCompanyId
+                    && requestedCompanyId !== this.companyId) {
+                    return;
+                }
                 this.placeOrderIntentFlag = false;
                 // An intent that errored says nothing about approval; drop any
                 // notice left over from a previous, successful intent.
@@ -3144,23 +3187,62 @@ $quoteDetails = json_encode(
                 const requestedCompanyId = currentCompanyId;
                 component.orderIntentChecking = true;
 
+                /*
+                 * A second way a reply can be stale, beyond `seq` (review
+                 * round 4): a MAGEWIRE REMOUNT. `initialize()` reassigns
+                 * `twoPaymentComponentInstance` on every remount, but this
+                 * closure captured the OLD `component` when the request went
+                 * out. A re-render mid-flight (the tile's own comments
+                 * elsewhere name totals/address/term changes as triggers)
+                 * tears down that instance, and writing to it strands the
+                 * verdict on a component nothing renders any more — the live
+                 * one never learns it. Re-resolve against the CURRENT
+                 * `twoPaymentComponentInstance` and drop the reply if it no
+                 * longer matches, the same "fails closed" shape as the search
+                 * control's own `searchStillValid`.
+                 *
+                 * What this does NOT catch: the buyer picking B (dispatches)
+                 * then reverting to an already-decided A before B replies.
+                 * The dedup gate above skips a new dispatch for that revert —
+                 * by design, so re-selecting a decided company costs no
+                 * request — which means `seq` is unchanged and this guard
+                 * passes B's reply through. `processOrderIntentSuccessResponse()`
+                 * itself is what refuses to paint that reply's verdict under
+                 * A's live name; see its own comment.
+                 *
+                 * @returns {boolean} whether the reply is still safe to apply
+                 */
+                const stillLive = () => {
+                    if (seq !== orderIntentSeq) return false;
+                    if (twoPaymentComponentInstance !== component) return false;
+                    return true;
+                };
+
                 component.placeOrderIntent()
                     .then(response => {
-                        // Superseded by a newer selection: drop the result
-                        // silently rather than repainting the tile with a
-                        // decision about a company the buyer has moved on from.
-                        if (seq !== orderIntentSeq) return;
+                        // Superseded by a newer selection or a remount: drop
+                        // the result silently rather than writing it to a
+                        // component nothing renders any more.
+                        // `processOrderIntentSuccessResponse()` itself guards
+                        // the NOTICE (not the dedup bookkeeping) against the
+                        // dedup-skipped-revert case — see its own comment.
+                        if (!stillLive()) return;
                         component.processOrderIntentSuccessResponse(response, requestedCompanyId);
                     })
                     .catch(error => {
-                        if (seq !== orderIntentSeq) return;
-                        component.processOrderIntentErrorResponse(error);
+                        if (!stillLive()) return;
+                        component.processOrderIntentErrorResponse(error, requestedCompanyId);
                     })
                     .finally(() => {
-                        // Only the CURRENT request takes the spinner down. A
-                        // stale one finishing late must not, or the tile stops
-                        // showing progress while a live check is still running.
-                        if (seq !== orderIntentSeq) return;
+                        // Only the CURRENT request on the CURRENT instance
+                        // takes the spinner down. A stale one finishing late
+                        // must not, or the tile stops showing progress while a
+                        // live check is still running — and a dead instance
+                        // has no spinner left to take down at all. Unlike the
+                        // two branches above, this runs regardless of which
+                        // company is live: the spinner belongs to "is a check
+                        // in flight", not to any one company's verdict.
+                        if (!stillLive()) return;
                         component.orderIntentChecking = false;
                     });
                 return true;

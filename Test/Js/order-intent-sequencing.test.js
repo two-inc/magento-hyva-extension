@@ -249,6 +249,126 @@ describe("order-intent sequencing (bug 4)", () => {
       // would suppress that company's own check forever.
       expect(component.lastOrderIntentCompanyId).toBe("111111111");
     });
+
+    /**
+     * Review round 4 (Vader). `seq` alone answers "is this the newest
+     * DISPATCH", not "is this still about the company on screen" — and those
+     * diverge exactly here: reverting to an already-DECIDED company costs no
+     * new dispatch (the test above this one, and "re-picking the company
+     * already decided costs no request"), so `orderIntentSeq` does not
+     * advance for the revert. A reply for a company the buyer has since
+     * moved away from must not be resolved against LIVE
+     * `companyName`/`companyId` — that is what
+     * `resolveOrderIntentApprovedNotice()` reads — or it paints one
+     * company's verdict under another's name.
+     */
+    test("a reply for a company the buyer has reverted away from does not paint its verdict", async () => {
+      const first = deferred();
+      const second = deferred();
+      let call = 0;
+      component.placeOrderIntent = function () {
+        call += 1;
+        return call === 1 ? first.promise : second.promise;
+      };
+
+      capture("Company A", "111111111");
+      first.resolve({ approved: true });
+      await H.flushPromises();
+      const noticeForA = component.orderIntentApprovedNotice;
+      expect(noticeForA).toBe("Approved for Company A (111111111)");
+
+      // B is captured — a real request goes out and is left outstanding.
+      capture("Company B", "222222222");
+
+      // The buyer reverts to A — already decided, so the dedup gate skips a
+      // new dispatch and `orderIntentSeq` does not advance for it.
+      capture("Company A", "111111111");
+      expect(call).toBe(2); // still just A's original request and B's — no third
+
+      // B's reply lands late. It must not paint under A's live name.
+      second.resolve({ approved: true });
+      await H.flushPromises();
+
+      expect(component.orderIntentApprovedNotice).toBe(noticeForA);
+      expect(component.orderIntentApprovedNotice).not.toContain("Company B");
+      // The dedup bookkeeping still advances to B, though — B's own gate is
+      // satisfied, so re-picking B later costs no extra request either. This
+      // is the SAME behaviour "the decision is filed against the company it
+      // was REQUESTED for" pins for the live-edit case above.
+      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+    });
+
+    test("a stale reply for a reverted-away company does not clear the live company's approval via the error path either", async () => {
+      const first = deferred();
+      const second = deferred();
+      let call = 0;
+      component.placeOrderIntent = function () {
+        call += 1;
+        return call === 1 ? first.promise : second.promise;
+      };
+
+      capture("Company A", "111111111");
+      first.resolve({ approved: true });
+      await H.flushPromises();
+      const noticeForA = component.orderIntentApprovedNotice;
+
+      capture("Company B", "222222222");
+      capture("Company A", "111111111");
+
+      second.reject(new Error("B timed out"));
+      await H.flushPromises();
+
+      // A's already-approved notice must survive a failure that was never
+      // about A in the first place.
+      expect(component.orderIntentApprovedNotice).toBe(noticeForA);
+      expect(component.placeOrderIntentFlag).toBe(true);
+    });
+  });
+
+  describe("a Magewire remount mid-flight (review round 4, Han)", () => {
+    /**
+     * `initialize()` reassigns the module-level `twoPaymentComponentInstance`
+     * on every call, which is exactly what a Magewire re-render of this tile
+     * does in production. A request dispatched against the OLD instance must
+     * not write its reply to that dead instance once a new one has taken
+     * over — the live instance would never learn the verdict at all.
+     */
+    test("a reply that arrives after a remount is not written to the dead instance, and is not lost either", async () => {
+      const first = deferred();
+      component.placeOrderIntent = function () {
+        return first.promise;
+      };
+
+      capture("Company A", "111111111");
+
+      // The remount: a fresh component takes over as THE instance before A's
+      // reply lands. Real Alpine would tear the old element down; this
+      // suite's harness only needs the module-level pointer to move, which is
+      // the exact thing `initialize()` does.
+      const freshRoot = document.createElement("form");
+      document.body.appendChild(freshRoot);
+      const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: freshRoot,
+        root: freshRoot,
+      });
+      fresh.$watch = function () {};
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+      fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
+
+      first.resolve({ approved: true });
+      await H.flushPromises();
+
+      // The dead instance never got the write — its notice never left the
+      // empty default `resolveOrderIntentApprovedNotice()` would only fill in
+      // on a real write, which is the observable half of "did not write".
+      expect(component.orderIntentApprovedNotice).toBe("");
+      // Nor did the live one — the reply was ABOUT company A on the OLD
+      // instance, and the new instance has no company captured at all, so it
+      // must not be repainted with a verdict for a company it never asked
+      // about.
+      expect(fresh.orderIntentApprovedNotice).toBe("");
+      expect(fresh.lastOrderIntentCompanyId).toBe("");
+    });
   });
 
   describe("the mutex is gone, not merely bypassed", () => {
