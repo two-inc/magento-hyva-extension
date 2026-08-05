@@ -522,9 +522,20 @@ $form = $block->getData("form");
          * entity-field config, so it submits and restores exactly as any
          * other Hyvä address field does; nothing here is company-search
          * specific.
+         *
+         * TWO-25326 tile bugfix batch, bug 2: no `input-group` class here.
+         * That class is Hyvä's shared field styling for a container that
+         * groups an input with a real addon (the `:focus-within` ring the
+         * `two-company-search-group`-scoped rule above exists to suppress on
+         * the search variant's own genuine group). This wrapper holds exactly
+         * ONE bare input and no addon at all, so it is not an input-group in
+         * the first place — carrying the class only re-adds the unscoped ring
+         * this rendering mode has no CSS override for (the override above is
+         * scoped to `two-company-search-group`, which this branch never
+         * emits). `group`/`flex`/`gap-4` are layout-only and stay.
          */
         ?>
-        <div class="group input-group flex gap-4">
+        <div class="group flex gap-4">
             <input
                 type="text"
                 class="<?= $escaper->escapeHtmlAttr(

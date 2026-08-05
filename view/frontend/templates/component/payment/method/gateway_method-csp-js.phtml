@@ -1469,6 +1469,99 @@ $quoteDetails = json_encode(
             <?= $gwBase ?>OnCompanySearchFocus() {
                 if (!this.manualMode) this.isOpen = true;
             },
+
+            /*
+             * TWO-25326 tile bugfix batch, bug 5 follow-up — the commit/reset
+             * path the always-visible search field needs.
+             *
+             * With the "Change company" swap gone (bug 5, 2026-08-05 ruling)
+             * the field stays editable after a company has been captured, so
+             * typing over it is now the buyer's ONLY route to a different
+             * company — and nothing used to notice. `getItems()` recomputed
+             * `companyIdEntryRequired` but dropped neither the captured
+             * `companyId` nor `companyName`, so the tile label kept showing
+             * company A's name and number, the intent-approved notice earned by
+             * A survived, and the hidden `company_id` input — written
+             * imperatively by fillCompanyData(), not bound to state — still
+             * submitted A's registry number alongside the name the buyer had
+             * typed. An order could be placed with a company/registry-number
+             * pair that describes two different companies.
+             *
+             * So this is the tile's equivalent of the address step's
+             * `onNameFieldInput()` -> `commitManualCompany()` clear: the shared
+             * engine's `forgetStaleCompanyId()` drops the identifier from state
+             * AND the billing blob together, and blanking `companyName`
+             * re-fires the two watchers that clear the approved and
+             * not-available notices (see initialize()).
+             *
+             * It deliberately does NOT publish the typed text as
+             * `company_name`: in search mode that text is a QUERY, and
+             * publishing a half-typed query as the order's company name is the
+             * bug TWO-25326 §1 removed. Clearing is enough — the visible field
+             * IS the canonical `payment[company_name]` input, so the name the
+             * buyer typed submits either way; only the number that no longer
+             * belongs to it has to go.
+             */
+            <?= $gwBase ?>ForgetCompanyIfNameDiverged() {
+                const capturedName = (this.companyName || '').trim();
+                if (!capturedName) return;
+                if ((this.search || '').trim() === capturedName) return;
+
+                // Compares `search` against `companyName`, so it has to run
+                // BEFORE `companyName` is blanked. No-op when no identifier was
+                // captured, which is why the DOM clear below is not conditional
+                // on it.
+                this.forgetStaleCompanyId();
+                this.companyName = '';
+                this.isCompanySelected = false;
+
+                /*
+                 * The stored name has to go with it (follow-up to the same bug
+                 * — the first fix cleared only the identifier pair).
+                 * `forgetStaleCompanyId()` blanks `company_id` /
+                 * `company_id_source` in the billing blob but leaves
+                 * `company_name` holding the company the buyer has just typed
+                 * over, and initialize() restores `search` FROM that key on
+                 * every Magewire re-render (term change, address change, totals
+                 * refresh). The typed text was therefore silently reverted to
+                 * the abandoned company's name in the field that IS
+                 * `payment[company_name]`.
+                 *
+                 * Still not a publish of the typed text (see above) — a blank,
+                 * so the restore finds no stored name and falls back to reading
+                 * the live field, which is what the buyer typed. Writing the
+                 * blank rather than skipping the write is also what stops the
+                 * shipping-company fallback in initialize() re-adopting a name
+                 * the buyer has explicitly typed over; the record's presence is
+                 * the signal, and company-name-payment.phtml's fallback already
+                 * requires a record to CARRY both name and id before it counts.
+                 */
+                window.twoGatewayWriteBillingCompany({ company_name: '' });
+
+                const companyIdInput = document.getElementById('company_id');
+                if (companyIdInput) companyIdInput.value = '';
+
+                this.applyCompanyIdEditability();
+            },
+
+            /*
+             * `@blur` on the search field, as well as the `getItems()` typing
+             * path, because the typing path is debounced 300ms: a buyer who
+             * types over the captured name and goes straight for Place Order
+             * inside that window would otherwise submit with the previous
+             * company's identifier still attached. Reads the live field value
+             * rather than trusting `search` for exactly the same reason — the
+             * debounced handler may not have run yet.
+             *
+             * Safe against the dropdown-click sequence (mousedown -> blur ->
+             * click): this clears, and `selectItem()` then writes the newly
+             * picked pair over the cleared state a moment later.
+             */
+            <?= $gwBase ?>OnCompanySearchBlur() {
+                if (this.manualMode) return;
+                this.search = this.$el.value;
+                this.<?= $gwBase ?>ForgetCompanyIfNameDiverged();
+            },
             <?= $gwBase ?>OnArrowDown() {
                 this.nextItem();
             },
@@ -1481,8 +1574,30 @@ $quoteDetails = json_encode(
             <?= $gwBase ?>OnItemMouseover(event) {
                 this.selectedIndex = parseInt(event.currentTarget.dataset.index);
             },
+            // TWO-25326 tile bugfix batch, bug 1 (follow-up). Gated on the
+            // buyer having typed, for exactly the same reason
+            // `manualEntryLinkVisible` below is: this tile's dropdown opens on
+            // mere FOCUS, and `search.length < minSearchChars` is trivially
+            // true for the empty string, so the hint painted on focus alone —
+            // telling a buyer who has typed nothing that they have not typed
+            // enough. The address step is deliberately NOT changed: there the
+            // panel opens on click and the hint on an empty query is the
+            // documented §1 behaviour (its own
+            // `ShouldShowMinCharsMessage` in companyName-csp-js.phtml).
             <?= $gwBase ?>ShouldShowMinCharsMessage() {
-                return this.search.length < this.minSearchChars;
+                return Boolean(this.search) && this.search.length < this.minSearchChars;
+            },
+
+            // TWO-25326 tile bugfix batch, bug 1. The dropdown's own
+            // `x-show="isOpen"` opens on mere FOCUS (OnCompanySearchFocus),
+            // before the buyer has typed a single character — at which point
+            // there is no search to have "not found a match" for yet. Without
+            // this extra gate the "Enter details manually" link painted the
+            // instant the field was focused, indistinguishable from a link
+            // sitting permanently below the field. `Boolean(this.search)`
+            // requires the buyer to have actually typed something first.
+            get manualEntryLinkVisible() {
+                return Boolean(this.search);
             },
 
             // Manual / search dual-mode toggle for the company-name + company-id pair.
@@ -1747,6 +1862,13 @@ $quoteDetails = json_encode(
                 }
 
                 this.search = this.$el.value;
+
+                // The buyer has typed over whatever was captured, so drop a
+                // captured company the text no longer names before anything
+                // else looks at it (bug 5 follow-up — see
+                // <?= $gwBase ?>ForgetCompanyIfNameDiverged).
+                this.<?= $gwBase ?>ForgetCompanyIfNameDiverged();
+
                 /*
                  * The buyer has EDITED the name, so re-derive whether they have
                  * to be able to type the company number in themselves. This is
@@ -1785,138 +1907,31 @@ $quoteDetails = json_encode(
             },
 
             /*
-             * TWO-25326 §7 follow-up: the way BACK out of a captured company.
+             * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling, supersedes
+             * §7's capture-state hide/show design below). Doug's exact words,
+             * carried over from the identical Magento ruling (PR #324): the
+             * search control "is controlled ONLY by the state of the 'enable
+             * search in address' admin setting ... and search control
+             * visibility is not changed for any other reason."
              *
-             * Once captured, the tile hides the search control and the whole
-             * Company Number block and shows the read-only label instead. The
-             * only "Enter details manually" link lives INSIDE the hidden
-             * search block, and nothing outside it can set `showManual`, so
-             * without this the captured company is unchangeable from the tile.
-             * Two real dead ends it closes:
+             * `clearCapturedCompany()` / `focusCompanySearchInput()` /
+             * `OnChangeCompanyClick` — the "Change company" button and its
+             * hide-the-search-block-then-show-a-link-back apparatus — are
+             * REMOVED, not merely rewired. With `companySearchBlockVisible` no
+             * longer hiding on capture (see that getter below), the search
+             * field is the SAME always-visible, always-editable control before
+             * and after a pick — a buyer who wants a different company types
+             * over it directly, exactly as address-autocomplete.js's own
+             * always-visible select2 field already works on Magento. There is
+             * nothing left for a "Change company" button to do: it existed
+             * only to reveal a control this ruling keeps visible unconditionally.
              *
-             *  - the buyer unticks "billing same as shipping": the shipping
-             *    sync stops, the tile keeps showing the SHIPPING company, and
-             *    there is no control left to enter the billing company;
-             *  - the buyer picked the wrong company on the address step and is
-             *    now on payment, with no way to correct it from here.
-             *
-             * Reached ONLY from the explicit "Change company" button. An
-             * automatic trigger on the untick was written and then withdrawn in
-             * review — see the note in Test/Js/payment-company-tile-label.test.js.
-             *
-             * Storage is cleared as well as component state. `initialize()`
-             * restores from storage on every Magewire re-render, so leaving
-             * the captured pair there would put the company — and the hidden
-             * controls — straight back.
+             * Superseded design, kept here as history rather than silently
+             * dropped: capturing used to hide the search block and the whole
+             * Company Number block, showing a "Change company" link as the
+             * only way back — found in live testing (2026-08-04/05) to read as
+             * a confusing hide-and-reshow rather than a stable control.
              */
-            clearCapturedCompany() {
-                this.abortCompanySearch();
-                this.isSearchUnavailable = false;
-                this.isOpen = false;
-                this.items = [];
-                this.selectedIndex = -1;
-                this.isSelecting = false;
-
-                // Before the mode flags: the `manualMode` watcher runs
-                // applyCompanyIdEditability(), and this flag has to be current
-                // when it does (same ordering selectItem() relies on).
-                this.companyIdEntryRequired = true;
-                this.companyName = '';
-                this.companyId = '';
-                this.search = '';
-                this.manualMode = false;
-
-                /*
-                 * TWO-25345. Forget which company the last order intent was
-                 * for, so the NEXT pick dispatches a fresh one even when the
-                 * buyer picks the same company again.
-                 *
-                 * Two independent dedup gates read this — fillCompanyData()'s
-                 * `companyId !== lastOrderIntentCompanyId` before it dispatches,
-                 * and the window listener's own "already processed for this
-                 * company" check — and both have to pass for a notice to be
-                 * re-emitted. Clearing it here is one write that opens both.
-                 *
-                 * Without it, re-picking the identical company after "Change
-                 * company" left the tile showing a bare "Change company" button
-                 * and nothing else: the `companyName` / `companyId` watchers had
-                 * already blanked `orderIntentApprovedNotice` on the way
-                 * through, the dedup then suppressed the intent that would have
-                 * re-set it, and the §7 label follows that notice by design
-                 * (TWO-25326, 2026-08-03) so it went with it.
-                 *
-                 * Deliberately HERE and not in enableSearch() or
-                 * enterManually(): those two flip mode only, they never write
-                 * `companyName` / `companyId`, so the watchers do not fire and
-                 * the notice survives them intact. Resetting there would buy
-                 * nothing — and neither method dispatches, so the cost is not
-                 * the toggle itself but the DISARMED dedup it leaves behind,
-                 * which the next unrelated trigger then pays for with a
-                 * redundant intent for a company that never changed. This method is
-                 * reached only from the explicit "Change company" button, and it
-                 * has just blanked the company — so the one extra call it can
-                 * cause is for a company the buyer has genuinely re-chosen.
-                 */
-                this.lastOrderIntentCompanyId = '';
-                // Back to the search control, not manual entry: search is the
-                // route that can still produce a registry-vouched number.
-                // (`manualMode`, set to `false` above — `showManual` is now a
-                // read-only alias over it, not a second flag to assign.)
-                this.applyCompanyIdEditability();
-
-                const nameInput = document.getElementById('company_name');
-                if (nameInput) nameInput.value = '';
-                const idInput = document.getElementById('company_id');
-                if (idInput) idInput.value = '';
-
-                /*
-                 * The BILLING record, and a removal rather than a write of
-                 * blanks — see twoGatewayClearBillingCompany().
-                 *
-                 * The shipping record is deliberately untouched. Before the key
-                 * split this cleared the single shared blob, so pressing
-                 * "Change company" also destroyed the shipping company's
-                 * identifier and the address step's read-only number label went
-                 * with it. That was the known limitation this PR carried; it is
-                 * now closed rather than documented.
-                 */
-                window.twoGatewayClearBillingCompany();
-
-                this.focusCompanySearchInput();
-            },
-
-            /*
-             * Put the caret in the control the clear just revealed.
-             *
-             * `$nextTick` because the search block is revealed by `x-show`,
-             * and an element still carrying `display: none` cannot take focus
-             * — a bare `.focus()` on the same tick is a silent no-op. The
-             * result is then CHECKED rather than assumed, and retried once on
-             * a macrotask, because Alpine's own transition can leave the
-             * element unfocusable for a further frame.
-             */
-            focusCompanySearchInput() {
-                const focus = () => {
-                    const input = document.getElementById('company_name');
-                    if (!input) return false;
-                    input.focus();
-                    return document.activeElement === input;
-                };
-                this.$nextTick(() => {
-                    if (focus()) return;
-                    setTimeout(focus, 0);
-                });
-            },
-
-            <?= $gwBase ?>OnChangeCompanyClick() {
-                this.clearCapturedCompany();
-            },
-
-            // Kept as its own named method — the engine's enterManually()/
-            // enableSearch() call `cfg.writeSelection` directly rather than
-            // through this name, but it is part of this tile's own API
-            // surface (clearCapturedCompany() does not use it either, by
-            // design — see that method's own comment on why).
             saveManualModeToStorage(manualMode) {
                 window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
@@ -2012,28 +2027,6 @@ $quoteDetails = json_encode(
                 return Boolean(this.orderIntentNotAvailableNotice);
             },
 
-            // TWO-25326 §7: the "Change company" button beside the label.
-            //
-            // Gated on CAPTURED — `companyIdHintVisible`, i.e. a
-            // registry-supplied number is locked in for the name beside it —
-            // which is the exact negation of the search block's own gate, and
-            // deliberately NOT the label's intent-message gate above. Capture
-            // is what hides the search block, and the only "Enter details
-            // manually" link lives inside it, so a button that followed the
-            // label would leave a buyer with a captured company and no approved
-            // intent holding neither control: an unchangeable company, which is
-            // order-blocking rather than cosmetic.
-            //
-            // Deliberately not `companyName` truthiness either: `companyName`
-            // has no clearing writer, so a later shipping sync or re-render can
-            // leave it holding a PREVIOUS pick. The derived gate drops the
-            // moment `getItems()` recomputes `companyIdEntryRequired` for text
-            // that no longer matches the locked pick, which is the "buyer typed
-            // after selecting" case this must not go stale on.
-            get companyChangeControlVisible() {
-                return this.companyIdHintVisible;
-            },
-
             // "<name> (<number>)", built here rather than in the template:
             // bound attribute expressions are looked up as a KEY on the
             // component, never evaluated, so a concatenation in the markup
@@ -2053,24 +2046,28 @@ $quoteDetails = json_encode(
                 return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
-            // TWO-25326 §7: the editable company-name search control is shown
-            // only while NOTHING is captured yet. Once captured, the
-            // "Change company" button beside the label is the route back to it.
-            //
-            // Gated on captured, NOT on mode. On Magento this control is a
-            // company-capture route in its own right for buyers who never see
-            // the address-step company field (a logged-in buyer picking a
-            // saved address; a virtual cart with no shipping step), so hiding
-            // it on anything broader than "we already have the company" blocks
-            // those orders outright.
+            // TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the
+            // editable company-name search control's visibility is governed
+            // ONLY by mode (search vs manual), never by capture state. This
+            // SUPERSEDES the §7 design, which additionally hid the block once
+            // `companyIdHintVisible` (a registry number locked in), reached
+            // back out of via a "Change company" button — found in live
+            // testing to read as a confusing hide-and-reshow rather than a
+            // stable control. The field itself is the buyer's route to a
+            // different company now: typing over it re-runs `getItems()`
+            // exactly as it always did before any company was captured.
             get companySearchBlockVisible() {
-                return !this.showManual && !this.companyIdHintVisible;
+                return !this.showManual;
             },
 
             // Companion to `companyIdHiddenClass`, hiding the whole Company
             // Number block — its static caption included — rather than only
             // the input. Class-NAME STRING for the same reason: `:class` here
-            // is a key lookup, not expression evaluation.
+            // is a key lookup, not expression evaluation. UNCHANGED by the
+            // 2026-08-05 ruling above: that ruling is about the EDITABLE
+            // search control and the "Change company" swap specifically, and
+            // this block's own capture gate is not part of it — see the
+            // comment on the markup that binds this.
             get companyNumberBlockHiddenClass() {
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
@@ -2341,9 +2338,9 @@ $quoteDetails = json_encode(
      * which evaluated each of PaymentMethodBase()'s getters once and copied
      * the frozen result, so on the component the form actually mounted
      * `orderIntentMessageVisible`, `companyTileLabelText`,
-     * `companySearchBlockVisible`, `companyChangeControlVisible`,
-     * `companyIdHintVisible`, `companyIdHiddenClass` and
-     * `companyNumberBlockHiddenClass` were all dead data properties holding
+     * `companySearchBlockVisible`, `companyIdHintVisible`,
+     * `companyIdHiddenClass` and `companyNumberBlockHiddenClass` were all
+     * dead data properties holding
      * their pre-interaction value. Every §7 company-search behaviour tied to
      * them was inert in production, and no test saw it because the suites
      * mounted the BASE component, where the getters are real.
