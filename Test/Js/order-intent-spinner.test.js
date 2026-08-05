@@ -187,6 +187,32 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentFailures["111111111"]).toBeUndefined();
     });
 
+    test("a rejected check reports through the real dispatcher", () => {
+      // The ONLY production route to the error box: the dispatcher's `.catch`
+      // records the failure while a check is still in flight, and its `.finally`
+      // lowers the row, which is what re-derives the box. Every other test in
+      // this file calls the error handler directly with the row already down — a
+      // state the live dispatcher never produces at that point — so without this
+      // the whole path was uncovered (round 7).
+      component.generalErrorMessage = "SENTINEL-general-error";
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.placeOrderIntent = function () {
+        return Promise.reject({});
+      };
+
+      component.fillCompanyData("111111111", "Alpha Ltd");
+      jest.advanceTimersByTime(500);
+
+      return H.flushPromises().then(() => {
+        expect(component.orderIntentChecking).toBe(false);
+        expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
+        expect(component.twoTileErrorVisible).toBe(true);
+        // And it stays retryable: a failure is never a decision.
+        expect(component.orderIntentDecisions["111111111"]).toBeUndefined();
+      });
+    });
+
     test("comes down when the payment method changes inside the debounce", () => {
       // Round-3 finding. The row goes up optimistically on the pick, so every
       // path that then declines to make a request has to take it back down. Two
@@ -421,11 +447,27 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
         // In the tile's flow, never a page overlay (requirement 11).
         const tileRoot = doc.querySelector(".payment-method-custom-form");
+        expect(tileRoot).not.toBeNull();
         expect(tileRoot.contains(el)).toBe(true);
         expect(classes).not.toContain("fixed");
         expect(classes).not.toContain("inset-0");
+
+        // `x-cloak`, so nothing `x-show` will hide is visible before Alpine
+        // boots. The error box is emitted unconditionally and its border and
+        // background come from this module's stylesheet rather than from
+        // possibly-uncompiled utilities, which made the pre-Alpine flash of an
+        // empty red bordered strip certain rather than merely possible.
+        expect(el.hasAttribute("x-cloak")).toBe(true);
       },
     );
+
+    test("the stylesheet carries the rule x-cloak depends on", () => {
+      // The attribute alone does nothing. Nothing else in this module used
+      // `x-cloak`, so the rule it needs had to be declared here — and if it goes
+      // missing the four boxes flash on every checkout load, which is the exact
+      // defect the attribute was added to fix.
+      expect(CSS_SOURCE).toMatch(/\[x-cloak\]\s*\{[^}]*display:\s*none/);
+    });
 
     test.each(STATES)(
       "%s gets its colour from this module's own stylesheet",
@@ -812,6 +854,29 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(() => component.refreshOrderIntentVerdict()).not.toThrow();
     });
 
+    test("a copy with no no-company sentence yields '' , not 'undefined'", () => {
+      // The sibling guard, and a different failure from the one above: the old
+      // code returned `undefined` here rather than throwing, and `x-text` renders
+      // that as the literal word "undefined" in the buyer's tile.
+      component.companyName = "";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "YES {{companyName}}",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "",
+      );
+      component.setOrderIntentChecking(false);
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentApprovedNotice).not.toContain("undefined");
+    });
+
     test("an errored check is not painted under an open panel either", () => {
       // Round 6: the two paint paths have to agree. The error path used to paint
       // regardless, justified by there being no record to repaint from later —
@@ -947,7 +1012,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       component.generalErrorMessage = "SENTINEL-general-error";
 
       component.processOrderIntentErrorResponse({}, "111111111");
-      expect(component.lastOrderIntentCompanyId).toBe("");
+      // No DECISION record — a failure must stay eligible for retry, and the
+      // dedup gate reads the decisions, so filing it there would suppress the
+      // retry the failure exists to invite.
+      expect(component.orderIntentDecisions["111111111"]).toBeUndefined();
 
       component.orderIntentApprovedNoticeCopy = {
         withCompany: "YES {{companyName}}",
@@ -1002,7 +1070,6 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // A reply for B arrives with no name while A is on screen.
       component.processOrderIntentSuccessResponse({ approved: true }, "222222222");
 
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
       expect(component.orderIntentDecisions["222222222"].name).toBeNull();
 
       // B cannot be painted from that record…
@@ -1010,8 +1077,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       component.companyId = "222222222";
       component.refreshOrderIntentVerdict();
       expect(component.orderIntentApprovedNotice).toBe("");
-      // …but the dedup memory still advanced, so TWO-25345 still holds.
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      // …but a decision IS on record for B, so TWO-25345 still holds: B is not
+      // asked about again just because its name could not be established.
+      expect(component.orderIntentDecisions["222222222"]).toBeDefined();
     });
   });
 });

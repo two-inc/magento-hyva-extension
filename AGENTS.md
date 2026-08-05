@@ -135,29 +135,45 @@ The tile shows **at most one VERDICT** — available, not available, could not b
 determined — plus an in-progress row that is a separate fact and may legitimately
 be up alongside nothing. All four are one box style in one place. Two rules bite:
 
-- **Clearing and painting go through one method each.** `clearOrderIntentNotices()`
-  takes all states down; `refreshOrderIntentVerdict()` clears and then repaints
-  from the recorded verdict. Assignment lists that name only the siblings a caller
-  remembers are how a state gets forgotten when a fifth one is added.
-  `clearOrderIntentNotices()` deliberately does NOT touch the in-progress row;
-  `refreshOrderIntentVerdict()` lowers it only when it actually paints a verdict
-  for the company on screen, since the two cannot both be true of one company.
-- **A verdict is recorded against (id, name, decision), and a new search clears
-  the box.** Those two are one mechanism: the dedup gate refuses to re-ask for a
-  decision already reached, so without the record a buyer who searched again and
-  re-picked the same company would be left with a blank box nothing could refill.
-  The name is part of the match because the notice text embeds it — a name edited
-  by hand must fail closed rather than repaint an approval for a company that was
-  never approved. The recorded name must always describe the recorded id: derive
-  it from live state only when the reply is provably about the company on screen,
-  otherwise record it as unknown. Never guess, because for a late reply the screen
-  is showing somebody else.
-- **A FAILED check is recorded separately, and deliberately not in the dedup
-  gate.** It needs a record for the same reason a decline does — a search started
-  and abandoned takes the box down, and the failure is still a failure — but that
-  gate keys on `lastOrderIntentCompanyId`, so filing an error there would suppress
-  the very retry the error invites. Hence a second, parallel (id, name) record that
-  a later decision for the same company clears.
+- **ONE PAINTER.** `refreshOrderIntentVerdict()` is the only thing that writes a
+  verdict notice. The reply handlers RECORD and then call it; they do not paint.
+  `clearOrderIntentNotices()` takes all three states down and deliberately does
+  NOT touch the in-progress row. Assignment lists that name only the siblings a
+  caller happens to remember are how a state gets forgotten when a fourth one is
+  added — that is how this feature spent six review rounds.
+- **A CHECK IN PROGRESS OUTRANKS EVERY RECORDED VERDICT.** `refresh` paints
+  nothing while `orderIntentChecking` is true, and nothing under an open results
+  panel. "Checking availability" and a conclusion may never be on screen together.
+  The corollary is the part that bites: because a verdict can be *suppressed*,
+  something must repaint it when the check stops — so `setOrderIntentChecking()`
+  is the ONLY way the row goes down, and it re-derives the box. Lowering the flag
+  by hand reintroduces a blank box that nothing can refill. Rounds 4-7 each found
+  one more route to a verdict beside a progress row, because each fix guarded a
+  route instead of stating the rule.
+- **Records are PER COMPANY, keyed by id.** `orderIntentDecisions[id] =
+  { name, approved }` and `orderIntentFailures[id] = { name }`. A single slot
+  cannot represent approve A, check B, come back to A — B overwrites it and A's
+  verdict is gone. The name is stored beside the decision, not used as the key: the
+  notice text embeds it, so a company renamed by hand must fail closed rather than
+  be shown a verdict reached under the old name. The recorded name must always
+  describe the recorded id — derive it from live state only when the reply is
+  provably about the company on screen, otherwise record it as unknown, never
+  guessed, because for a late reply the screen is showing somebody else.
+- **The dedup gate reads those same records** (`hasOrderIntentDecisionFor()`), in
+  both places that gate a dispatch. It used to consult a separate single-slot "last
+  company dispatched for", which meant "already decided" and "has a verdict to
+  show" could disagree — and did, so a company whose answer was known got asked
+  about again.
+- **A FAILED check is recorded, but never in the decisions map.** It needs a record
+  for the same reason a decline does: a search started and abandoned takes the box
+  down, and the failure is still a failure. But the dedup gate reads decisions, so
+  filing a failure there would suppress the retry the failure exists to invite. A
+  decision for a company clears its failure; so does a fresh check reaching the
+  wire.
+- **Both maps are emptied by a Magewire re-render**, because `initialize()` rebuilds
+  the component. Acceptable — a decision is only as good as the quote it was made
+  against — but it means the come-back-and-see-your-verdict property holds only
+  until the next totals/address/term change.
 
 ### Magewire Components
 

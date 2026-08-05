@@ -108,9 +108,19 @@ const NOTICE_COPY = {
  *
  * @param {Object} component
  */
+/**
+ * A whole intent check, reply AND settle — which is what production does.
+ *
+ * The reply handler only RECORDS now; the box is painted when the check stops
+ * being in flight, because a verdict may never share the tile with a progress
+ * row. So a fixture that delivers a reply without settling leaves the row up and
+ * the box (correctly) empty, and every label assertion below would read as a
+ * regression when it is really a fixture that stops half way.
+ */
 function approveIntent(component) {
   component.orderIntentApprovedNoticeCopy = NOTICE_COPY;
   component.processOrderIntentSuccessResponse({ approved: true });
+  component.setOrderIntentChecking(false);
 }
 
 /**
@@ -776,12 +786,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         intents.push(fresh.companyId);
         fresh.processOrderIntentSuccessResponse({ approved: true });
         // The real dispatcher's `finally` too, not just its reply handling:
-        // nothing is in flight any more, so the progress row comes down and the
-        // box is re-derived from the record. Without these two the fixture leaves
-        // the row up forever, and a component that (correctly) refuses to paint a
-        // verdict while a check is running then looks broken.
-        fresh.orderIntentChecking = false;
-        fresh.refreshOrderIntentVerdict();
+        // lowering the row is what re-derives the box, so a fixture that stops at
+        // the reply leaves the row up forever and a component that (correctly)
+        // refuses to paint a verdict beside a progress row looks broken.
+        fresh.setOrderIntentChecking(false);
       };
       window.addEventListener("dispatch-order-intent", listener);
 
@@ -847,7 +855,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         live.component.enableSearch();
 
         expect(live.intents).toEqual([SAME[1]]);
-        expect(live.component.lastOrderIntentCompanyId).toBe(SAME[1]);
+        expect(live.component.orderIntentDecisions[SAME[1]]).toBeDefined();
       } finally {
         live.stop();
       }
@@ -865,16 +873,26 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // property by name, which stays green with a real gate deleted — the
       // opposite of what this test is for.
       //
+      // Both now ask the ONE question, of the ONE set of records the box is
+      // painted from (review round 7): the gate used to consult a separate
+      // single-slot "last company dispatched for", which meant "already
+      // decided" and "has a verdict to show" could disagree — and did, so a
+      // company whose answer was known was asked about again.
+      //
       // fillCompanyData()'s gate, before it dispatches:
-      expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
+      expect(js).toContain(
+        "!this.hasOrderIntentDecisionFor(companyId, companyName)",
+      );
       // and the top-level listener's own "already processed" gate — read via
       // a local alias (`component`) rather than the global directly, because
       // bug 5's local-spinner rework wrapped this in executeOrderIntent(),
       // but it is still the SAME global instance under that name:
       expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(
-        "currentCompanyId === component.lastOrderIntentCompanyId",
+        "component.hasOrderIntentDecisionFor(currentCompanyId, component.companyName)",
       );
+      // And the slot they used to read is gone, not merely unused.
+      expect(js).not.toContain("lastOrderIntentCompanyId");
     });
   });
 

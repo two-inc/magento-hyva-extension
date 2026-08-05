@@ -276,6 +276,7 @@ describe("the payment tile's mounted control (integration)", () => {
       "111111111",
       "Example Trading Ltd",
     );
+    component.setOrderIntentChecking(false);
     expect(component.orderIntentApprovedNotice).not.toBe("");
 
     // A different company is picked.
@@ -315,10 +316,10 @@ describe("the payment tile's mounted control (integration)", () => {
       "Example Trading Ltd",
     );
     // The pick raised the progress row optimistically and this suite runs no
-    // dispatcher to settle it, so the row is lowered here as the real one's
-    // `finally` does — a verdict is never painted while a check is in flight.
-    component.orderIntentChecking = false;
-    component.refreshOrderIntentVerdict();
+    // dispatcher to settle it, so it is settled here as the real one's `finally`
+    // does — lowering the row is what paints the box, since a verdict may never
+    // share the tile with a progress row.
+    component.setOrderIntentChecking(false);
     expect(component.orderIntentApprovedNotice).not.toBe("");
 
     // Search again — the box goes down.
