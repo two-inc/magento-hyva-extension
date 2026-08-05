@@ -10,7 +10,7 @@ namespace Two\GatewayHyva\Service;
 
 use Magento\Framework\App\CacheInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Api\Adapter;
 
 /**
  * Whether the merchant's currently configured API key can be verified right
@@ -18,26 +18,36 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * so it never renders against a key Two cannot actually authenticate
  * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix).
  *
- * This module has no HTTP client of its own, so the check is delegated to
- * the base module's Two\Gateway\Service\Merchant\RecordProvider — the
- * existing verify-then-fetch-then-cache pattern already used for the
- * min-order gate and admin surcharge/terms config, rather than a second,
- * Hyvä-local copy of the same verify_api_key round trip.
+ * Built directly on Adapter — already injected elsewhere in this module
+ * (ViewModel\CheckoutConfig::getOrderIntentConfig()) for the exact same
+ * `/v1/merchant/verify_api_key` endpoint — rather than the base module's
+ * Two\Gateway\Service\Merchant\RecordProvider, which would have been the
+ * more natural existing verify+fetch+cache pattern to reuse. RecordProvider
+ * is NOT usable here: it exists only on magento-plugin's `origin/staging`,
+ * not in any published `two-inc/magento2` release this module's composer
+ * constraint (`^2.0`) can resolve, and depending on it breaks
+ * `setup:di:compile` on every base version a merchant can currently install
+ * (caught by this PR's own CI, di-compile job, PHP 8.3 leg). This mirrors
+ * the documented precedent in this repo's AGENTS.md for
+ * Model\Provenance — a base-module class not yet in a release gets a
+ * small local equivalent, not a dependency on it, until a release exists.
  *
- * RecordProvider deliberately caches only a SUCCESSFUL resolution (a
- * failure must not hide a real recovery for up to its own TTL). Left alone,
- * that means a persistent failure re-runs RecordProvider's verify+fetch
- * round trip on every single call — exactly the "naive live check on every
- * page load" latency risk the WooCommerce port of this same fix caught in
- * its own review round, because this can be evaluated inline while
- * rendering checkout. This class adds a short, boolean-only cache on top of
- * that outcome, scoped to this one gate, so a Two outage costs at most one
- * live round trip per CACHE_LIFETIME window here — without touching
- * RecordProvider's own cache contract for its other, unrelated consumers.
+ * The failure-detection check below (`error_code` / `http_status` markers)
+ * duplicates a few lines of Adapter::execute()'s own documented contract,
+ * which RecordProvider also duplicates for the same reason: Adapter itself
+ * has no boolean "did this succeed" helper.
  *
- * No base-module service exposing this categorized/cached status existed
- * at the time this was written (checked origin/staging on magento-plugin);
- * if one lands later, this class is the one place to repoint at it.
+ * Adapter::execute() catches every Throwable internally and always returns
+ * an array (see its own catch-all in magento-plugin), so this class needs
+ * no try/catch of its own around the live call.
+ *
+ * Caches the categorized-into-boolean outcome for CACHE_LIFETIME seconds,
+ * keyed on the API key, so a Two outage costs at most one live round trip
+ * per key per TTL window rather than one per checkout render — the "naive
+ * live check on every page load" latency risk the WooCommerce port of this
+ * same fix (PR #445) caught in its own review round, and which
+ * getOrderIntentConfig() above still has today (pre-existing, out of this
+ * PR's scope).
  */
 class ApiKeyVerificationStatus
 {
@@ -51,9 +61,9 @@ class ApiKeyVerificationStatus
     private const CACHE_LIFETIME = 300;
 
     /**
-     * @var RecordProvider
+     * @var Adapter
      */
-    private $recordProvider;
+    private $adapter;
 
     /**
      * @var ConfigRepository
@@ -67,20 +77,22 @@ class ApiKeyVerificationStatus
 
     /**
      * Request-scoped memo so a single render never consults the cache (or
-     * RecordProvider) more than once, mirroring
-     * CheckoutConfig::$api_key_verification_memo-style guards elsewhere in
-     * this plugin family.
+     * fires a live call) more than once per store — keyed like the cache
+     * itself (by store id, defaulting to a sentinel for "no store given")
+     * rather than a single flat scalar, so evaluating this for two
+     * different stores within one request can never return one store's
+     * verdict for another's.
      *
-     * @var bool|null
+     * @var array<int|string, bool>
      */
-    private $memo;
+    private $memo = [];
 
     public function __construct(
-        RecordProvider $recordProvider,
+        Adapter $adapter,
         ConfigRepository $configRepository,
         CacheInterface $cache
     ) {
-        $this->recordProvider = $recordProvider;
+        $this->adapter = $adapter;
         $this->configRepository = $configRepository;
         $this->cache = $cache;
     }
@@ -96,24 +108,32 @@ class ApiKeyVerificationStatus
      */
     public function isVerified(?int $storeId = null): bool
     {
-        if ($this->memo !== null) {
-            return $this->memo;
+        $memoKey = $storeId ?? '__default__';
+        if (isset($this->memo[$memoKey])) {
+            return $this->memo[$memoKey];
         }
 
-        $apiKey = (string) $this->configRepository->getApiKey($storeId);
+        $apiKey = trim((string) $this->configRepository->getApiKey($storeId));
         if ($apiKey === '') {
-            return $this->memo = false;
+            return $this->memo[$memoKey] = false;
         }
 
         $cacheKey = self::CACHE_KEY_PREFIX . hash('sha256', $apiKey);
         $cached = $this->cache->load($cacheKey);
         if ($cached !== false) {
-            return $this->memo = ($cached === '1');
+            return $this->memo[$memoKey] = ($cached === '1');
         }
 
-        $verified = $this->recordProvider->getRecord($storeId) !== null;
+        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', $storeId);
+        // Adapter::execute() signals a non-2xx response (or a caught
+        // request/response translator failure) by adding an `http_status`
+        // or `error_code` key to the decoded body — never both alongside a
+        // real success payload — so their absence is a real, 2xx merchant
+        // record, matching the same contract magento-plugin's own
+        // RecordProvider relies on for the same endpoint.
+        $verified = is_array($result) && !isset($result['error_code']) && !isset($result['http_status']);
         $this->cache->save($verified ? '1' : '0', $cacheKey, [], self::CACHE_LIFETIME);
 
-        return $this->memo = $verified;
+        return $this->memo[$memoKey] = $verified;
     }
 }

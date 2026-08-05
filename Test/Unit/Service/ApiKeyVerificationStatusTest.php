@@ -9,46 +9,67 @@ use ReflectionClass;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 /**
- * TWO-25326 (WooCommerce-plugin port, PR #445). Hyvä has no HTTP client of
- * its own, so the live check is delegated to RecordProvider — these tests
- * assert (a) that delegation, (b) the "no key configured" short-circuit
- * never reaches RecordProvider at all, and (c) the short cache this class
- * adds on top so a persistent failure does not re-run RecordProvider's own
- * verify+fetch round trip on every call — the exact latency risk the
- * WooCommerce port's own review round caught (a naive live check inline in
- * a customer-facing request).
+ * TWO-25326 (WooCommerce-plugin port, PR #445). Built directly on Adapter
+ * (see the class doc on ApiKeyVerificationStatus for why RecordProvider
+ * isn't usable here) — these tests assert (a) the empty/whitespace-only
+ * key short-circuit never reaches Adapter at all, (b) success/failure
+ * detection off Adapter::execute()'s error_code/http_status contract, (c)
+ * the short cache this class adds so a persistent failure does not re-run
+ * the live call on every call — the exact latency risk the WooCommerce
+ * port's own review round caught — and (d) the per-store memo, so
+ * evaluating this for two different stores in one request can't return
+ * one store's verdict for another's.
  *
- * Built via newInstanceWithoutConstructor() + reflection property injection,
- * matching CheckoutConfigTest's convention in this repo: the constructor's
- * real parameter types (RecordProvider, ConfigRepository, CacheInterface —
- * classes/interfaces from the base module this repo depends on via
- * composer, not present in this repo's own autoloader/stubs) would reject a
- * lightweight anonymous fake at the type-check, so the test never calls the
- * constructor at all.
+ * Built via newInstanceWithoutConstructor() + reflection property
+ * injection, matching CheckoutConfigTest's convention in this repo: the
+ * constructor's real parameter types (Adapter, ConfigRepository,
+ * CacheInterface — classes/interfaces from the base module this repo
+ * depends on via composer, not present in this repo's own
+ * autoloader/stubs) would reject a lightweight anonymous fake at the
+ * type-check, so the test never calls the constructor at all.
  */
 class ApiKeyVerificationStatusTest extends TestCase
 {
-    public function testNoApiKeyConfiguredIsFalseAndNeverCallsRecordProvider(): void
+    public function testNoApiKeyConfiguredIsFalseAndNeverCallsAdapter(): void
     {
-        $recordProviderCalls = 0;
+        $adapterCalls = 0;
         $status = $this->build(
             apiKey: '',
-            getRecord: function () use (&$recordProviderCalls) {
-                $recordProviderCalls++;
+            execute: function () use (&$adapterCalls) {
+                $adapterCalls++;
                 return ['id' => 'merchant-1'];
             },
         );
 
         $this->assertFalse($status->isVerified());
-        $this->assertSame(0, $recordProviderCalls);
+        $this->assertSame(0, $adapterCalls);
     }
 
-    public function testVerifiedKeyIsTrueWhenRecordProviderResolvesARecord(): void
+    /**
+     * A key of literal whitespace must not reach Adapter as if it were a
+     * real key — it's trimmed to empty and treated as "not configured".
+     */
+    public function testWhitespaceOnlyApiKeyIsFalseAndNeverCallsAdapter(): void
+    {
+        $adapterCalls = 0;
+        $status = $this->build(
+            apiKey: "  \t ",
+            execute: function () use (&$adapterCalls) {
+                $adapterCalls++;
+                return ['id' => 'merchant-1'];
+            },
+        );
+
+        $this->assertFalse($status->isVerified());
+        $this->assertSame(0, $adapterCalls);
+    }
+
+    public function testVerifiedKeyIsTrueWhenAdapterReturnsASuccessPayload(): void
     {
         $saved = [];
         $status = $this->build(
             apiKey: 'a-valid-key',
-            getRecord: fn () => ['id' => 'merchant-1'],
+            execute: fn () => ['id' => 'merchant-1', 'short_name' => 'Acme'],
             cacheSave: function (string $value) use (&$saved) {
                 $saved[] = $value;
             },
@@ -58,12 +79,15 @@ class ApiKeyVerificationStatusTest extends TestCase
         $this->assertSame(['1'], $saved);
     }
 
-    public function testUnverifiableKeyIsFalseWhenRecordProviderResolvesNull(): void
+    /**
+     * @dataProvider adapterFailureShapes
+     */
+    public function testUnverifiableKeyIsFalseForEachAdapterFailureShape(array $adapterResult): void
     {
         $saved = [];
         $status = $this->build(
             apiKey: 'a-broken-key',
-            getRecord: fn () => null,
+            execute: fn () => $adapterResult,
             cacheSave: function (string $value) use (&$saved) {
                 $saved[] = $value;
             },
@@ -73,24 +97,33 @@ class ApiKeyVerificationStatusTest extends TestCase
         $this->assertSame(['0'], $saved);
     }
 
+    public static function adapterFailureShapes(): array
+    {
+        return [
+            'invalid/expired key (401)' => [['error' => 'invalid_api_key', 'http_status' => 401]],
+            'Two 5xx' => [['http_status' => 503]],
+            'caught translator/transport failure' => [['error_code' => 400, 'error_message' => 'timed out']],
+        ];
+    }
+
     /**
      * The whole point of this class: a cached outcome (positive OR
-     * negative) must not re-trigger RecordProvider's live round trip.
+     * negative) must not re-trigger Adapter's live round trip.
      */
-    public function testCachedOutcomeSkipsRecordProviderEntirely(): void
+    public function testCachedOutcomeSkipsAdapterEntirely(): void
     {
-        $recordProviderCalls = 0;
+        $adapterCalls = 0;
         $status = $this->build(
             apiKey: 'a-broken-key',
-            getRecord: function () use (&$recordProviderCalls) {
-                $recordProviderCalls++;
-                return null;
+            execute: function () use (&$adapterCalls) {
+                $adapterCalls++;
+                return ['http_status' => 503];
             },
             cacheLoad: fn () => '0',
         );
 
         $this->assertFalse($status->isVerified());
-        $this->assertSame(0, $recordProviderCalls);
+        $this->assertSame(0, $adapterCalls);
     }
 
     /**
@@ -100,23 +133,49 @@ class ApiKeyVerificationStatusTest extends TestCase
      */
     public function testMemoizesWithinASingleRequest(): void
     {
-        $recordProviderCalls = 0;
+        $adapterCalls = 0;
         $status = $this->build(
             apiKey: 'a-valid-key',
-            getRecord: function () use (&$recordProviderCalls) {
-                $recordProviderCalls++;
+            execute: function () use (&$adapterCalls) {
+                $adapterCalls++;
                 return ['id' => 'merchant-1'];
             },
         );
 
         $this->assertTrue($status->isVerified());
         $this->assertTrue($status->isVerified());
-        $this->assertSame(1, $recordProviderCalls);
+        $this->assertSame(1, $adapterCalls);
+    }
+
+    /**
+     * The memo (and the cache lookup feeding it) must be keyed per store —
+     * evaluating this for store 1 then store 2 in the same request must
+     * not let store 1's verdict leak into store 2's answer, and
+     * re-querying an already-resolved store must not re-hit the adapter.
+     */
+    public function testMemoIsScopedPerStoreNotSharedAcrossStores(): void
+    {
+        $apiKeyByStore = [1 => 'store-1-valid-key', 2 => 'store-2-broken-key'];
+        $adapterCallsByStore = [];
+
+        $status = $this->buildMultiStore($apiKeyByStore, function (?int $storeId) use (&$adapterCallsByStore) {
+            $adapterCallsByStore[$storeId] = ($adapterCallsByStore[$storeId] ?? 0) + 1;
+            return $storeId === 1 ? ['id' => 'merchant-1'] : ['http_status' => 401];
+        });
+
+        $this->assertTrue($status->isVerified(1));
+        $this->assertFalse($status->isVerified(2));
+        // Re-querying store 1 must still be true (not clobbered by store
+        // 2's later, different-valued call) and must not re-hit the
+        // adapter (memo hit).
+        $this->assertTrue($status->isVerified(1));
+        $this->assertSame(1, $adapterCallsByStore[1]);
+        $this->assertSame(1, $adapterCallsByStore[2]);
     }
 
     private function build(
         string $apiKey,
-        callable $getRecord,
+        callable $execute,
         ?callable $cacheLoad = null,
         ?callable $cacheSave = null,
     ): ApiKeyVerificationStatus {
@@ -138,22 +197,81 @@ class ApiKeyVerificationStatusTest extends TestCase
             }
         };
 
-        $recordProvider = new class ($getRecord) {
+        $adapter = new class ($execute) {
             /** @var callable */
-            private $getRecord;
+            private $execute;
 
-            public function __construct(callable $getRecord)
+            public function __construct(callable $execute)
             {
-                $this->getRecord = $getRecord;
+                $this->execute = $execute;
             }
 
-            public function getRecord(): ?array
+            public function execute(): array
             {
-                return ($this->getRecord)();
+                return ($this->execute)();
             }
         };
 
-        $cache = new class ($cacheLoad, $cacheSave) {
+        $cache = $this->cacheFake($cacheLoad, $cacheSave);
+
+        $reflection->getProperty('adapter')->setValue($instance, $adapter);
+        $reflection->getProperty('configRepository')->setValue($instance, $configRepository);
+        $reflection->getProperty('cache')->setValue($instance, $cache);
+
+        return $instance;
+    }
+
+    /**
+     * @param array<int,string> $apiKeyByStore
+     */
+    private function buildMultiStore(array $apiKeyByStore, callable $executeForStore): ApiKeyVerificationStatus
+    {
+        $reflection = new ReflectionClass(ApiKeyVerificationStatus::class);
+        $instance = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class ($apiKeyByStore) {
+            /** @var array<int,string> */
+            private $apiKeyByStore;
+
+            public function __construct(array $apiKeyByStore)
+            {
+                $this->apiKeyByStore = $apiKeyByStore;
+            }
+
+            public function getApiKey(?int $storeId = null): string
+            {
+                return $this->apiKeyByStore[$storeId] ?? '';
+            }
+        };
+
+        $adapter = new class ($executeForStore) {
+            /** @var callable */
+            private $executeForStore;
+
+            public function __construct(callable $executeForStore)
+            {
+                $this->executeForStore = $executeForStore;
+            }
+
+            public function execute(string $endpoint, array $payload, string $method, ?int $storeId = null): array
+            {
+                return ($this->executeForStore)($storeId);
+            }
+        };
+
+        $cache = $this->cacheFake(fn () => false, function () {
+        });
+
+        $reflection->getProperty('adapter')->setValue($instance, $adapter);
+        $reflection->getProperty('configRepository')->setValue($instance, $configRepository);
+        $reflection->getProperty('cache')->setValue($instance, $cache);
+
+        return $instance;
+    }
+
+    private function cacheFake(?callable $onLoad, ?callable $onSave): object
+    {
+        return new class ($onLoad, $onSave) {
             /** @var callable|null */
             private $onLoad;
 
@@ -180,11 +298,5 @@ class ApiKeyVerificationStatusTest extends TestCase
                 return true;
             }
         };
-
-        $reflection->getProperty('recordProvider')->setValue($instance, $recordProvider);
-        $reflection->getProperty('configRepository')->setValue($instance, $configRepository);
-        $reflection->getProperty('cache')->setValue($instance, $cache);
-
-        return $instance;
     }
 }
