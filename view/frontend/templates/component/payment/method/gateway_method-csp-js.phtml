@@ -656,8 +656,10 @@ $quoteDetails = json_encode(
      *   focus-placement hook run after enterManually()/enableSearch() flips
      *   mode — each surface's manual-entry field is a different element.
      * @param {Function} [options.onLoaderStart] fired before a network search
-     *   starts (shipping's magewire loader integration; address/tile render
-     *   their own in-field spinner off `isSearching` instead and pass none).
+     *   starts. Shipping uses it for its magewire loader; address and tile render
+     *   their own in-field spinner off `isSearching` instead, and the TILE also
+     *   uses it as the "a new search has begun" signal that takes its
+     *   order-intent verdict off screen.
      * @param {Function} [options.onLoaderDone] sibling of onLoaderStart, fired
      *   exactly once per OWNING start — never for a search that was
      *   superseded, always for one that was aborted with no successor. See
@@ -1194,7 +1196,9 @@ $quoteDetails = json_encode(
      * Everything genuinely per-surface arrives through `options` and is passed
      * straight down to the engine — storage accessors, the quote, whether
      * address lookup is offered, whether the number field is editable. Two
-     * options are the control's own:
+     * options are the control's own — one it consumes, and two it WRAPS so a
+     * surface supplying them cannot silently switch off work the control has to
+     * do on the same event:
      *
      * @param {Object} options
      * @param {string} [options.companyNamePlaceholder] hint shown while the
@@ -1203,6 +1207,12 @@ $quoteDetails = json_encode(
      *   company-captured hook. Wrapped rather than forwarded: the control's own
      *   focus restoration has to run on that event too, and a surface passing
      *   this option must not silently disable it.
+     * @param {Function} [options.onDropdownClear] the SURFACE's panel-closed
+     *   hook, run AFTER the control has blanked its own query box. Wrapped for
+     *   the same reason: the control owns this option, because the query box is
+     *   its own, so a surface's copy was previously discarded outright by the
+     *   options merge below. The payment tile uses it to put back an order-intent
+     *   verdict that starting a search took down.
      * @returns {Object} an Alpine component body — compose a surface's own
      *   members OVER it with `twoGatewayComposeLive`.
      */
@@ -2155,7 +2165,19 @@ $quoteDetails = json_encode(
              * anything for a company it holds no decision for.
              */
             onDropdownClear: function () {
-                this.refreshOrderIntentVerdict();
+                /*
+                 * Deferred a tick on purpose. selectItem() closes the panel
+                 * BEFORE it writes the new `companyName`/`companyId`, so running
+                 * this synchronously would evaluate against the OUTGOING company
+                 * — briefly painting the verdict for the company the buyer is
+                 * replacing, and lowering the progress row of the request that
+                 * just went out for its replacement. A tick later the pick has
+                 * finished writing and this sees the company the buyer actually
+                 * chose, which for an abandoned search is the unchanged one.
+                 */
+                this.$nextTick(() => {
+                    this.refreshOrderIntentVerdict();
+                });
             },
             onCompanyCommitted: function (companyName, companyId) {
                 this.fillCompanyData(companyId, companyName);
@@ -2202,6 +2224,22 @@ $quoteDetails = json_encode(
             // an approval next to a company that was never approved, so a
             // name-only edit has to fail closed exactly as it did before.
             lastOrderIntentCompanyName: null,
+            // The company whose check FAILED, kept separately from the record
+            // above rather than as a third value of it.
+            //
+            // Separate because the two records answer different questions. A
+            // decision is remembered so it is never re-asked; a failure must
+            // stay eligible for retry, which means it must NOT reach the dedup
+            // gate — and that gate reads `lastOrderIntentCompanyId`. So an error
+            // cannot be filed there without suppressing its own retry.
+            //
+            // It exists at all for the reason the decline notice does: a search
+            // started and abandoned takes the box down, and without a record
+            // there is nothing to put back, so the report of a failed check
+            // would vanish while the check is still failed and
+            // `placeOrderIntentFlag` still false.
+            lastOrderIntentErrorCompanyId: null,
+            lastOrderIntentErrorCompanyName: null,
 
             // Config from PHP
             isProjectFieldEnabled: '<?= $configModel->getIsProjectFieldEnabled() ?>',
@@ -2683,18 +2721,58 @@ $quoteDetails = json_encode(
              * gets an empty box, and so does a hand-typed company, which has no
              * identifier to match on.
              *
-             * Called from the `companyName`/`companyId` watchers AND from
-             * fillCompanyData()'s suppressed-dispatch branch, so the answer is
-             * the same whichever of the two runs last — the reason it clears and
-             * repaints in one place rather than clearing in one and repainting
-             * in another.
+             * Called from three places: the `companyName`/`companyId` watchers,
+             * fillCompanyData()'s suppressed-dispatch branch, and the control's
+             * `onDropdownClear` (a search that ended without changing anything).
+             * All three go through here so the answer is the same whichever runs
+             * last — the reason it clears and repaints in one place rather than
+             * clearing in one and repainting in another.
              */
+            forgetOrderIntentError(companyId) {
+                if (this.lastOrderIntentErrorCompanyId !== companyId) return;
+                this.lastOrderIntentErrorCompanyId = null;
+                this.lastOrderIntentErrorCompanyName = null;
+            },
+
+            /**
+             * @returns {boolean} whether the recorded FAILURE, if any, is about
+             *   the company on screen right now.
+             */
+            orderIntentErrorIsCurrent() {
+                return Boolean(this.companyId)
+                    && this.companyId === this.lastOrderIntentErrorCompanyId
+                    && this.companyName === this.lastOrderIntentErrorCompanyName;
+            },
+
             refreshOrderIntentVerdict() {
                 this.clearOrderIntentNotices();
+
+                // A failed check is a verdict too, and the same reasoning that
+                // brings a decline back brings this back: the check is still
+                // failed and the order is still blocked, so the buyer must not be
+                // left with an empty tile that looks like nothing was ever tried.
+                if (this.orderIntentErrorIsCurrent()) {
+                    if (!this.generalErrorMessage) return;
+                    this.orderIntentChecking = false;
+                    this.orderIntentErrorNotice = this.generalErrorMessage;
+                    return;
+                }
 
                 if (!this.companyId || this.companyId !== this.lastOrderIntentCompanyId) return;
                 if (this.companyName !== this.lastOrderIntentCompanyName) return;
                 if (this.lastOrderIntentApproved === null) return;
+
+                /*
+                 * Resolved BEFORE the row comes down, because a brand that
+                 * switched this notice off resolves to '' — and lowering the row
+                 * for a verdict that then paints nothing leaves the tile blank
+                 * with no explanation, which is worse than a row that lingers
+                 * until the request settles on its own.
+                 */
+                const text = this.lastOrderIntentApproved
+                    ? this.resolveOrderIntentApprovedNotice()
+                    : this.resolveOrderIntentNotAvailableNotice();
+                if (!text) return;
 
                 /*
                  * A verdict for the company on screen and a "checking" row
@@ -2708,9 +2786,9 @@ $quoteDetails = json_encode(
                 this.orderIntentChecking = false;
 
                 if (this.lastOrderIntentApproved) {
-                    this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
+                    this.orderIntentApprovedNotice = text;
                 } else {
-                    this.orderIntentNotAvailableNotice = this.resolveOrderIntentNotAvailableNotice();
+                    this.orderIntentNotAvailableNotice = text;
                 }
             },
 
@@ -2999,6 +3077,12 @@ $quoteDetails = json_encode(
              *   `this.companyId` here is what let a late decision for company A
              *   be filed against company B — and then permanently suppress B's
              *   own check, because the dedup gate compares against this value.
+             * @param {string} [requestedCompanyName] the NAME that company had
+             *   when the request went out, captured by the dispatcher for the
+             *   same reason the id is. Omit it and the record's name is derived
+             *   only when it provably belongs to the recorded id (the reply is
+             *   about the company on screen); otherwise it is recorded as
+             *   unknown, never guessed from live state.
              */
             processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName) {
                 if (!response) return;
@@ -3016,27 +3100,57 @@ $quoteDetails = json_encode(
                 // regardless of what is on screen now, or that company's own
                 // check would be permanently stuck pending — which is the
                 // original bug 4 defect this whole mechanism exists to fix.
-                this.lastOrderIntentCompanyId = decidedCompanyId;
-                // The verdict and the NAME it was reached for advance in the
-                // same breath as the id, unconditionally, so the triple cannot
-                // come apart. Writing the id here and the other two below the
-                // paint guard was a real defect: pick A (approved), pick B,
-                // revert to A before B replies, and B's reply advanced the id to
-                // B while leaving A's name and A's decision in place. B was then
-                // unreachable — the dedup gate refused to re-ask because the id
-                // said B was decided, and refresh() refused to paint because the
-                // name said A — and a hand-edited number could pair B's id with
-                // A's approval on screen, which is exactly the wrong-company
-                // verdict the sequence guard exists to prevent.
+                // The verdict record — id, name and decision — advances as ONE
+                // write, unconditionally. Writing the id here and the other two
+                // below the paint guard was a real defect: pick A (approved),
+                // pick B, revert to A before B replies, and B's reply advanced
+                // the id to B while leaving A's name and A's decision in place. B
+                // was then unreachable in both directions — the dedup gate
+                // refused to re-ask because the id said B was decided, and
+                // refresh() refused to paint because the name said A — and a
+                // hand-edited number could pair B's id with A's approval on
+                // screen, which is the wrong-company verdict the sequence guard
+                // exists to prevent.
                 //
                 // The name comes from the DISPATCHER, captured when the request
                 // went out, for the same reason the id does: `this.companyName`
                 // here is whatever is on screen NOW, which for a late reply is
                 // another company's.
-                this.lastOrderIntentApproved = Boolean(response.approved);
-                this.lastOrderIntentCompanyName = typeof requestedCompanyName === 'string'
+                //
+                // The invariant is that the recorded NAME always describes the
+                // recorded ID. There are exactly three ways to satisfy it, and no
+                // fallback to "whatever name is on screen" among them — that
+                // guess is what let the record come apart, because for a LATE
+                // reply the screen is showing another company.
+                //
+                //   - the dispatcher said which name it asked about: use it;
+                //   - it did not, but this reply is about the company on screen,
+                //     so the live name provably belongs to this id: use that;
+                //   - it did not and the reply is late: the name is genuinely
+                //     UNKNOWN, so record it as such.
+                //
+                // `null` is not a name any company has, so refresh() can never
+                // match it and the box stays empty — fail-closed, and the id
+                // still advances, which is what the dedup gate (TWO-25345)
+                // needs so a decided company is never re-asked about.
+                const recordedName = typeof requestedCompanyName === 'string'
                     ? requestedCompanyName
-                    : this.companyName;
+                    : (decidedCompanyId === this.companyId ? this.companyName : null);
+
+                this.lastOrderIntentCompanyId = decidedCompanyId;
+                this.lastOrderIntentCompanyName = recordedName;
+                this.lastOrderIntentApproved = Boolean(response.approved);
+                // A decision supersedes any earlier FAILED check for the same
+                // company: the question has been answered now.
+                this.forgetOrderIntentError(decidedCompanyId);
+
+                // Recorded here rather than inside the paint branches below —
+                // whether the order may be placed is a fact about the ANSWER,
+                // not about what is on screen, so a reply that declines to paint
+                // (panel open, or a company no longer current) must not leave it
+                // stale. Unconditional, unlike the record above: this is about
+                // this reply, not about a company to come back to.
+                this.placeOrderIntentFlag = Boolean(response.approved);
 
                 /*
                  * The VISIBLE verdict is a separate concern from the dedup
@@ -3074,24 +3188,7 @@ $quoteDetails = json_encode(
                  */
                 if (this.showDropdown()) return;
 
-                /*
-                 * Past the guard, this decision is about the company currently
-                 * on screen — which is the only point at which the name to file
-                 * it under is knowable, since the dispatcher passes down the id
-                 * and not the name. Recorded as one triple with the id above so
-                 * refreshOrderIntentVerdict() can put this verdict back on
-                 * screen if the buyer leaves this company and returns to it.
-                 *
-                 * The id's own write is deliberately still UNCONDITIONAL, above
-                 * the guard: it is the dedup gate's memory and has to advance
-                 * even for a decision the buyer has already moved on from. So a
-                 * decision filed for a company no longer on screen leaves the id
-                 * advanced and this pair untouched, and refresh() then finds no
-                 * verdict on record for it and shows an empty box — the same
-                 * fail-closed outcome as before this method existed.
-                 */
                 if (response.approved) {
-                    this.placeOrderIntentFlag = true;
                     // Persistent inline notice inside the payment tile, not a
                     // window.dispatchMessages() toast. The toast was visible
                     // but self-dismissed after 5 seconds, so a buyer still
@@ -3104,7 +3201,6 @@ $quoteDetails = json_encode(
                     this.clearOrderIntentNotices();
                     this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
                 } else {
-                    this.placeOrderIntentFlag = false;
                     this.clearOrderIntentNotices();
                     // Persistent inline "not available" text (TWO-25326 §7.2),
                     // alongside the existing self-dismissing toast rather than
@@ -3175,6 +3271,16 @@ $quoteDetails = json_encode(
                 // show: SCHEMA_ERROR sets `message` to '' and toasts one message
                 // per offending field instead.
                 this.orderIntentErrorNotice = message ? this.generalErrorMessage : '';
+
+                // Recorded so the panel closing can put it back, exactly as a
+                // decline is. Keyed by company and name like the decision
+                // record, but kept OUT of the dedup gate so the check stays
+                // retryable. Only when there is something to show: a schema
+                // error toasts per field and has no box, so it has no record.
+                if (message) {
+                    this.lastOrderIntentErrorCompanyId = this.companyId;
+                    this.lastOrderIntentErrorCompanyName = this.companyName;
+                }
 
                 if (message) {
                     window.dispatchMessages([{ type: 'error', text: message }], 3000);

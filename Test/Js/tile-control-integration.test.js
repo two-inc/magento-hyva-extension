@@ -293,8 +293,11 @@ describe("the payment tile's mounted control (integration)", () => {
     await pending;
 
     // …and abandoning it puts the box back, because the company on screen is
-    // still the one the verdict was reached for.
+    // still the one the verdict was reached for. Deferred a tick on purpose (a
+    // pick closes the panel BEFORE writing the new company), so the flush is
+    // part of the contract, not test scaffolding.
     component.closeDropdown();
+    await H.flushPromises();
 
     expect(component.orderIntentApprovedNotice).not.toBe("");
     expect(component.orderIntentMessageVisible).toBe(true);

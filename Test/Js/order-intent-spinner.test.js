@@ -393,7 +393,11 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
           stateClass === "two-order-intent-checking"
             ? "." + stateClass
             : ".two-order-intent-message." + stateClass;
-        expect(CSS_SOURCE).toContain(selector + " {");
+        // Whitespace-tolerant: the claim is that this module's stylesheet
+        // declares the state, not that it is formatted a particular way.
+        expect(CSS_SOURCE).toMatch(
+          new RegExp(selector.replace(/[.]/g, "\\.") + "\\s*\\{"),
+        );
 
         const el = doc.querySelector('[data-name="' + dataName + '"]');
         const classes = el.getAttribute("class") || "";
@@ -620,20 +624,145 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a decided verdict clears the other two states", () => {
+      // Real copy objects. `beforeEach` nulls both, which makes every resolver
+      // return '' — so asserting a notice is '' after a verdict would pass with
+      // the clearing deleted. With copy installed, each verdict paints its OWN
+      // non-empty string and the exclusivity is a real claim.
+      component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "YES {{companyName}}",
+        withoutCompany: "YES",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.orderIntentNotAvailableCopy = {
+        withCompany: "NO {{companyName}}",
+        withoutCompany: "NO",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+
       component.orderIntentErrorNotice = "stale error";
       component.orderIntentNotAvailableNotice = "stale not-available";
 
-      component.processOrderIntentSuccessResponse({ approved: true }, "111111111");
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
 
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
       expect(component.orderIntentErrorNotice).toBe("");
       expect(component.orderIntentNotAvailableNotice).toBe("");
 
       component.orderIntentErrorNotice = "stale error";
-      component.processOrderIntentSuccessResponse({ approved: false }, "111111111");
+      component.processOrderIntentSuccessResponse(
+        { approved: false },
+        "111111111",
+        "Alpha Ltd",
+      );
 
+      expect(component.orderIntentNotAvailableNotice).toBe("NO Alpha Ltd");
       expect(component.orderIntentErrorNotice).toBe("");
       expect(component.orderIntentApprovedNotice).toBe("");
+    });
+
+    test("a failed check is repainted too, not lost with the box", () => {
+      // Round-4 finding: the abandoned-search repaint covered the two decided
+      // verdicts but not the failed one, which is written by the error handler
+      // and was never recorded — so a buyer who searched and abandoned lost the
+      // report of a failure that was still failing, with the order still blocked.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.generalErrorMessage = "SENTINEL-general-error";
+
+      component.processOrderIntentErrorResponse({}, "111111111");
+      expect(component.twoTileErrorVisible).toBe(true);
+
+      // A search starts and is then abandoned.
+      component.clearOrderIntentNotices();
+      expect(component.twoTileErrorVisible).toBe(false);
+      component.refreshOrderIntentVerdict();
+
+      expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
+      expect(component.twoTileErrorVisible).toBe(true);
+    });
+
+    test("a failure stays retryable, and a later decision supersedes it", () => {
+      // The failure record is deliberately kept OUT of the dedup gate: that gate
+      // reads `lastOrderIntentCompanyId`, so filing an error there would suppress
+      // the retry the error exists to invite.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.generalErrorMessage = "SENTINEL-general-error";
+
+      component.processOrderIntentErrorResponse({}, "111111111");
+      expect(component.lastOrderIntentCompanyId).toBe("");
+
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "YES {{companyName}}",
+        withoutCompany: "YES",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+
+      // The retry's answer replaces the failure everywhere, including on a
+      // later repaint — the question has been answered now.
+      expect(component.orderIntentErrorNotice).toBe("");
+      component.clearOrderIntentNotices();
+      component.refreshOrderIntentVerdict();
+      expect(component.twoTileErrorVisible).toBe(false);
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
+    });
+
+    test("a brand-suppressed notice leaves the progress row alone", () => {
+      // Round-4 finding: the repaint lowered the row before knowing whether it
+      // would paint anything, so a brand that switched the copy off got a tile
+      // that went blank instead of one that kept showing progress until the
+      // request settled on its own.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = null;
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+
+      component.orderIntentChecking = true;
+      component.refreshOrderIntentVerdict();
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentChecking).toBe(true);
+    });
+
+    test("a late reply never pairs one company's id with another's name", () => {
+      // Round-4 finding on round-3's fix: the fallback for a missing name used
+      // live state, which for a late reply is the WRONG company. The record now
+      // says "unknown" instead, which no company name can match, so the box
+      // stays empty rather than mispainting.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+
+      // A reply for B arrives with no name while A is on screen.
+      component.processOrderIntentSuccessResponse({ approved: true }, "222222222");
+
+      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.lastOrderIntentCompanyName).toBeNull();
+
+      // B cannot be painted from that record…
+      component.companyName = "Beta Ltd";
+      component.companyId = "222222222";
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentApprovedNotice).toBe("");
+      // …but the id still advanced, so the dedup gate (TWO-25345) still works.
+      expect(component.lastOrderIntentCompanyId).toBe("222222222");
     });
   });
 });

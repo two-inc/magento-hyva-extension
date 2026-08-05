@@ -378,10 +378,12 @@ summary::marker {
  * unification).
  *
  * ONE box in ONE place in the tile, in four states: the in-progress row and the
- * three verdicts an intent check can reach. Only the colours differ, so only
- * the colours are stated per state — geometry is declared once here rather than
- * four times in four class lists, which is how the states drifted apart in the
- * first place. There is deliberately no title element in any of them: the box
+ * three verdicts an intent check can reach. Between the STATES only the colours
+ * differ, so only the colours are stated per state — geometry is declared once
+ * here rather than four times in four class lists, which is how the states
+ * drifted apart in the first place. (Against the previous markup the radius also
+ * changes, 6px to 3px, deliberately: it matches `.two-company-search__unavailable`
+ * above, so the tile's boxes and the control's agree.) There is deliberately no title element in any of them: the box
  * holds the message and nothing else, matching the other three platforms'
  * treatment.
  *

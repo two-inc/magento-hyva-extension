@@ -148,7 +148,16 @@ be up alongside nothing. All four are one box style in one place. Two rules bite
   re-picked the same company would be left with a blank box nothing could refill.
   The name is part of the match because the notice text embeds it — a name edited
   by hand must fail closed rather than repaint an approval for a company that was
-  never approved.
+  never approved. The recorded name must always describe the recorded id: derive
+  it from live state only when the reply is provably about the company on screen,
+  otherwise record it as unknown. Never guess, because for a late reply the screen
+  is showing somebody else.
+- **A FAILED check is recorded separately, and deliberately not in the dedup
+  gate.** It needs a record for the same reason a decline does — a search started
+  and abandoned takes the box down, and the failure is still a failure — but that
+  gate keys on `lastOrderIntentCompanyId`, so filing an error there would suppress
+  the very retry the error invites. Hence a second, parallel (id, name) record that
+  a later decision for the same company clears.
 
 ### Magewire Components
 
