@@ -129,6 +129,53 @@ After changing templates, Tailwind CSS must be rebuilt to include new utility cl
 - Use `x-data`, `x-show`, `x-on:click` etc. in templates
 - Alpine components can communicate via `$dispatch` and `@event-name.window`
 
+### Company search: ONE control, three mount points
+
+There is **exactly one** company-search control implementation and it is reused
+wherever it is mounted. Never add a second one, and never patch a surface by
+copying part of it — that duplication is what produced a batch of "three
+independent cosmetic bugs" on the payment tile that turned out to be one bug.
+
+Three layers, innermost first:
+
+| Layer | Where | Owns |
+|---|---|---|
+| Engine — `twoGatewayCompanySearchEngine()` | `component/payment/method/gateway_method-csp-js.phtml` | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula |
+| Control — `twoGatewayCompanySearchControl()` | same file, layered over the engine | everything the buyer sees and touches: the query/name split, the dropdown panel, keyboard and focus management, the manual-entry route, the min-chars / no-matches / unavailable verdicts |
+| Markup — `form/field/company-search-control.phtml` | included by each mount point | the control's DOM. The behaviour layer's selectors are this file's classes; the two are one unit |
+
+Mount points, each a thin **adapter** supplying only what is genuinely
+per-surface (which storage record, which quote, whether address lookup is
+offered, what happens on capture):
+
+- the address step — `form/field/companyName.phtml` + `companyName-csp-js.phtml`
+- the payment tile — `component/payment/method/gateway_method.phtml` + its
+  `-csp-js` component. It mounts the control with **no `x-data` of its own**, so
+  the control's state lives on the payment form's component alongside the tile
+  label and the order-intent dispatch.
+- the address-book modal — `component/payment/method/shipping_company.phtml`,
+  which composes the ENGINE directly under the Alpine name `searchInput`
+  (Hyvä Checkout's own closed-source modal requires that literal name and
+  renders the visible input itself, so there is no markup here to mount the
+  control's into).
+
+Which of the first two renders is decided by the core module's
+`enable_company_search` setting — never both, never neither. See
+`CheckoutConfig::getIsCompanySearchInPaymentTile()`.
+
+Two things that bite:
+
+- **The markup is included with `include $block->getTemplateFile(…)`**, not as a
+  layout child. The address-step mount point is a Hyvä entity-form field
+  *renderer* block created at runtime, so there is no layout node to hang a child
+  off. `Test/Js/hyva-harness.js` inlines that include (`TEMPLATE_INCLUDE_PATTERN`)
+  so the Jest suites render what the page renders.
+- **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
+  A company with no number in its home registry gets an internal placeholder
+  identifier prefixed `TWO:`. It must reach the API and must never reach the
+  screen; the helper answers `''` for one, which is the same case as "no number",
+  so surrounding parentheses drop with it.
+
 ### Staging Cache Refresh (git-sync workflow)
 
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:

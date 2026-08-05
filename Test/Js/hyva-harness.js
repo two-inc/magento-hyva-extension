@@ -142,7 +142,37 @@ const PHP_VALUE_RULES = [
   [/^\$element ?->getRenderer\(\) ?->render(Tooltip|After)\(\$element\)$/, ""],
   [/^\$element->renderClass\([\s\S]*\)$/, "form-input"],
   [/^\$element->renderAttributes\(\$escaper\)$/, 'name="company"'],
+  // form/field/company-search-control.phtml's contract (TWO-25326, 2026-08-05):
+  // the ONE company-search control, included by BOTH the address step and the
+  // payment tile. Its three parameters are the only thing that differs between
+  // the two mount points, so they resolve here to one value that satisfies both
+  // surfaces' selectors — the address step's `form-input` from Hyva's field
+  // renderer AND the tile's `company_name` hook, plus the canonical
+  // id/name/validation the tile supplies.
+  //
+  // A suite that needs the other surface's exact value overrides it through
+  // `extraRules`, the same way the min-chars suite overrides the threshold.
+  [/^\$twoControlAlpineData$/, 'x-data="twoGatewayHyvaCompanySearchField"'],
+  [/^\$twoControlInputClass$/, "form-input company_name"],
+  [
+    /^\$twoControlInputAttributes$/,
+    'id="company_name" name="payment[company_name]" data-name="company_name"' +
+      " required data-validate='{\"required\":true}'",
+  ],
 ];
+
+/**
+ * `include $block->getTemplateFile('Two_GatewayHyva::…')` — the mechanism the
+ * ONE company-search control is mounted with at both of its mount points.
+ *
+ * Matched as a whole `<?php … ?>` block, because the block carrying the include
+ * also carries the `$twoControl*` assignments that parameterise it, and neither
+ * is anything this harness evaluates. `(?:(?!\?>)[\s\S])` rather than a lazy
+ * `[\s\S]*?` so a match can never span a `?>` and swallow an unrelated earlier
+ * block along with it.
+ */
+const TEMPLATE_INCLUDE_PATTERN =
+  /<\?php(?:(?!\?>)[\s\S])*?include\s+\$block->getTemplateFile\(\s*['"]Two_GatewayHyva::([^'"]+)['"]\s*,?\s*\)\s*;?(?:(?!\?>)[\s\S])*\?>/g;
 
 /**
  * Resolve a normalized PHP expression to its test value, or null if no rule
@@ -363,6 +393,18 @@ function renderTemplate(relPath, extraRules) {
     );
   }
 
+  // Splice in any INCLUDED template before the naive strip below, which has no
+  // concept of an include and would drop the control the page actually renders —
+  // leaving a suite that asserts on markup nothing emitted. Recursive through
+  // renderTemplate(), so the partial gets the same fail-loud substitution as its
+  // caller, and it is the real shipped file rather than a hand-copied excerpt.
+  source = source.replace(
+    TEMPLATE_INCLUDE_PATTERN,
+    function (_match, included) {
+      return renderTemplate("view/frontend/templates/" + included, extraRules);
+    },
+  );
+
   // `<?php … ?>` blocks are the template's PHP preamble and its trailing
   // registerInlineScript() call — they emit nothing, so they are dropped
   // whole rather than substituted.
@@ -578,6 +620,11 @@ const SHARED_HELPER_GLOBALS = [
   // Alpine component composes with. Listed for the same leak-between-tests
   // reason as its neighbours: `window.X = window.X || …`.
   "twoGatewayCompanySearchEngine",
+  // The control layered over that engine (TWO-25326, 2026-08-05) and the ONE
+  // placeholder-identifier display filter — same `window.X = window.X || …`
+  // idiom, same leak-between-files reason.
+  "twoGatewayCompanySearchControl",
+  "twoGatewayDisplayCompanyNumber",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.

@@ -214,10 +214,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              *
              * The label is consequently NOT a swap with the tile's company
              * controls any more either. TWO-25326 tile bugfix batch, bug 5
-             * (2026-08-05 ruling): the search block's visibility (and the
-             * whole Company Number block's) is no longer conditioned on
-             * capture at all — see `companySearchBlockVisible` in
-             * gateway_method-csp-js.phtml. The "Change company" button that
+             * (2026-08-05 ruling): the search control's visibility is no
+             * longer conditioned on capture at all — it is decided solely by
+             * the admin setting that says WHERE the one control renders. The
+             * "Change company" button that
              * used to sit beside this label, as the only route back out of a
              * hidden search block, is REMOVED along with that hiding: the
              * search field is now the buyer's route to a different company at
@@ -239,6 +239,42 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 ></span>
             </div>
             <?php endif ?>
+            <?php
+            /*
+             * TWO-25326 tile bugfix batch, bug 5: the order-intent check had no
+             * visible progress indicator at all on Hyvä, so a buyer who picked
+             * a company sat looking at an unchanged tile for however long the
+             * decision took and had no way to tell it was working.
+             *
+             * LOCAL to the tile, never a page overlay — the standing
+             * cross-platform rule (requirement 11), and the same reason the
+             * company-search spinner is an in-field element rather than
+             * `magewire:loader:start`: a full-screen overlay over a checkout the
+             * buyer is still filling in blocks interaction for a background
+             * check they did not ask for. This element sits in the tile's own
+             * flow, exactly where the verdict will appear a moment later, so it
+             * is replaced by its own result rather than by nothing.
+             *
+             * `role="status"` and a real text label, not a bare spinner: the two
+             * notices it precedes are announced the same way, and a decorative
+             * GIF alone tells a screen-reader user nothing at all. The GIF is
+             * `.two-company-search__spinner`, the same asset and the same
+             * childless-element mechanism the search field uses — it is
+             * positioned absolutely against this row.
+             *
+             * Rendered in BOTH company-search-location modes: the intent check
+             * runs whichever surface captured the company.
+             */
+            ?>
+            <div
+                class="two-order-intent-checking relative bg-gray-50 border border-gray-200 text-gray-800 text-sm p-2 pr-8 rounded-md"
+                role="status"
+                data-name="order_intent_checking"
+                x-show="orderIntentChecking"
+            >
+                <span><?= $escaper->escapeHtml(__('Checking your company…')) ?></span>
+                <span class="two-company-search__spinner" aria-hidden="true"></span>
+            </div>
             <?php
             /*
              * Persistent inline "order intent approved" notice, inside the
@@ -322,236 +358,50 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <input type="hidden" id="company_name" name="payment[company_name]" />
             <input type="hidden" id="company_id" name="payment[company_id]" />
             <?php else: ?>
-            <!-- Company Name (manual / search dual-mode) -->
-            <div class="min-h-108 min-w-0">
-                <div class="flex flex-col field required gap-2" x-show="showManual">
-                    <div class="field required">
-                        <label for="company_name" class="font-semibold text-gray-700">
-                            <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
-                        </label>
-                        <input
-                            type="text"
-                            :id="<?= $gwBase ?>GetManualCompanyNameId"
-                            :name="<?= $gwBase ?>GetManualCompanyNameField"
-                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                            autocomplete="off"
-                            required
-                            data-manual="true"
-                            data-validate='{"required": true}'
-                          />
-                    </div>
-                    <div class="search_for_company w-full text-right" @click="<?= $gwBase ?>OnSearchModeClick" title="Search for company">
-                        <span class="text-blue-600 text-sm cursor-pointer">
-                            <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
-                        </span>
-                    </div>
-                </div>
-                <?php
-                /*
-                 * `companySearchBlockVisible` = the old `!showManual` AND "no
-                 * company captured yet" (TWO-25326 §7). Once a company IS
-                 * captured the tile shows the single read-only label at the
-                 * top of the fieldset instead of this editable search control.
-                 *
-                 * Gated on CAPTURED, never on mode. This control is a
-                 * company-capture route in its own right for buyers who never
-                 * see the address-step company field — a logged-in buyer
-                 * picking a saved address, or a virtual cart with no shipping
-                 * step. Removing it, or hiding it whenever the address step
-                 * could have collected the company, is an order-blocking
-                 * regression. Uncaptured, the block behaves exactly as before.
-                 *
-                 * `x-show` hides rather than removes, so `payment[company_name]`
-                 * is still in the DOM and still submits.
-                 */
-                ?>
-                <div class="flex flex-col field required w-full relative" x-show="companySearchBlockVisible">
-                    <div class="flex flex-col items-center w-full">
-                        <div class="bg-white w-full gap-2 flex-col flex">
-                            <div class="field required">
-                                <label class="font-semibold text-gray-700">
-                                    <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
-                                </label>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
-                                </p>
-                                <?php
-                                /*
-                                 * The two inline hints TWO-25288 added here
-                                 * (`company_name_hint` / `company_id_hint`)
-                                 * are deliberately gone: TWO-25326 §7 asks for
-                                 * ONE read-only line for a captured company,
-                                 * and these were the "extra text labels" it
-                                 * names. Superseded by
-                                 * `two-company-tile-label` at the top of the
-                                 * fieldset — do not reinstate them alongside
-                                 * it.
-                                 */
-                                ?>
-                            </div>
-                        </div>
-                        <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
-                            <!--
-                                `two-company-search` wraps ONLY the input, so
-                                it does not become the containing block for
-                                the absolutely-positioned dropdown below and
-                                change how its `w-full` resolves.
-                            -->
-                            <span class="two-company-search block w-full">
-                            <input
-                                type="text"
-                                @input.debounce.300ms="getItems"
-                                @focus="<?= $gwBase ?>OnCompanySearchFocus"
-                                <?php
-                                /*
-                                 * Commit/reset path for the always-visible
-                                 * field (bug 5 follow-up): typing over a
-                                 * captured company must drop that company's
-                                 * registry number, and `@input` alone is
-                                 * debounced 300ms — long enough for a buyer to
-                                 * reach Place Order with the previous
-                                 * company's number still attached.
-                                 */
-                                ?>
-                                @blur="<?= $gwBase ?>OnCompanySearchBlur"
-                                @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
-                                @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
-                                @keydown.enter.prevent="<?= $gwBase ?>OnEnterSelect"
-                                @keydown.tab="closeCompanyList"
-                                placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>"
-                                :value="search"
-                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                                :id="<?= $gwBase ?>GetCompanyNameId"
-                                :name="<?= $gwBase ?>GetCompanyNameField"
-                                autocomplete="off"
-                                data-manual="false"
-                                data-name="company_name"
-                                required
-                                data-validate='{"required": true}'
-                                >
-                            <!--
-                                In-field searching indicator (TWO-25288): an
-                                animated loading GIF, applied by custom.css as a
-                                `background-image` on this one childless element.
-                                A background image rather than an `<img>` so the
-                                asset URL resolves relative to the stylesheet and
-                                needs no asset-helper plumbing here; childless
-                                because a background image needs no child nodes.
-
-                                `two-company-search__spinner` is the class that
-                                does the work — position, size and the image.
-                                `two-term-chip__loading` paints nothing here: it
-                                is the shared loading hook this markup has always
-                                carried, kept as a legacy/overlay hook so a
-                                merchant or brand overlay styling that class
-                                still reaches this element. Its own declarations
-                                are inert on a childless element with a fixed box
-                                and a background image.
-
-                                Deliberately NOT the global magewire loader —
-                                a full-screen overlay on every keystroke is
-                                the bug that pattern replaced.
-                            -->
-                            <span
-                                x-show="isSearching"
-                                class="two-company-search__spinner two-term-chip__loading"
-                                aria-hidden="true"
-                            ></span>
-                            </span>
-                            <!-- Search Results Dropdown -->
-                            <div
-                                x-show="isOpen"
-                                x-transition
-                                class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
-                            >
-                                <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
-                                    <template
-                                        x-for="(item, index) in items"
-                                        :key="<?= $gwBase ?>GetCompanyId"
-                                    >
-                                        <div
-                                            :data-index="index"
-                                            @click="<?= $gwBase ?>OnCompanyItemClick"
-                                            @mouseover="<?= $gwBase ?>OnItemMouseover"
-                                            :class="<?= $gwBase ?>GetItemClass"
-                                            class="cursor-pointer hover:bg-gray-100 p-2"
-                                        >
-                                            <div class="flex items-center">
-                                                <div>
-                                                    <span x-html="<?= $gwBase ?>GetCompanyDisplayName"></span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                                <?php
-                                /*
-                                 * The count is INTERPOLATED from the same value
-                                 * ShouldShowMinCharsMessage compares against
-                                 * (TWO-25288) — it used to be a literal in the
-                                 * copy and a second literal in the guard, so the
-                                 * number claimed here and the number enforced
-                                 * could drift apart with nothing to catch it.
-                                 * Do not restate the number.
-                                 */
-                                ?>
-                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" data-name="company_search_min_chars" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtml(
-                                    __("Please enter %1 or more characters", $companySearchMinChars),
-                                ) ?>
-                                </div>
-                                <!--
-                                    A timed-out, failed or degraded search must
-                                    not look like "no companies matched" — that
-                                    is how a buyer with a valid company decides
-                                    we won't take them. Points at the manual
-                                    entry that already sits below.
-                                -->
-                                <div
-                                    x-show="isSearchUnavailable"
-                                    role="alert"
-                                    class="two-company-search__unavailable mx-2 mt-3 px-2 py-2 text-sm"
-                                ><?= $escaper->escapeHtmlAttr(__("Company search is unavailable. Try again, or enter details manually.")) ?>
-                                </div>
-                                <?php
-                                /*
-                                 * TWO-25326 tile bugfix batch, bug 1. Gated on
-                                 * `manualEntryLinkVisible` (`Boolean(search)`) IN
-                                 * ADDITION to the parent's `x-show="isOpen"`.
-                                 *
-                                 * The parent alone opens on mere FOCUS
-                                 * (`OnCompanySearchFocus`), before the buyer has
-                                 * typed anything — at which point `items` is
-                                 * still empty and no search has run. Under that
-                                 * gate alone this link (and the min-chars hint
-                                 * above it) painted the instant the field was
-                                 * focused, which reads to a buyer as "a link
-                                 * permanently sitting below the field" rather
-                                 * than a genuine dropdown/results-area
-                                 * affordance. Requiring a non-empty `search`
-                                 * defers it until the buyer has actually typed —
-                                 * real interaction with search, not merely
-                                 * focus — matching how the address step's own
-                                 * in-dropdown manual-entry row behaves (opened
-                                 * only once a search is underway).
-                                 */
-                                ?>
-                                <div
-                                    id="billing_enter_company"
-                                    class="enter_for_company w-full px-2 py-3"
-                                    x-show="manualEntryLinkVisible"
-                                    @click="<?= $gwBase ?>OnManualEntryClick"
-                                    title="Enter details manually">
-                                    <span class="text-blue-600 text-sm cursor-pointer">
-                                        <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php
+            /*
+             * THE company-search control, mounted from the ONE file that
+             * defines it (TWO-25326, 2026-08-05 ruling). This tile used to
+             * carry a second, divergent control of its own — its own dropdown
+             * markup, its own "Enter details manually" link, its own
+             * min-characters guard, and a manual/search dual-input pair whose
+             * `:id`/`:name` bindings swapped between two copies of each field.
+             * That duplication is what produced the three cosmetic bugs
+             * reported against this surface (a control wider than the tile, a
+             * manual-entry link painted before any interaction, a stray border
+             * around the field pair), so it is deleted rather than patched.
+             *
+             * No `x-data`: the control's state lives on THIS form's component
+             * (`PaymentFormWithValidation`, which composes
+             * `twoGatewayCompanySearchControl`), because the tile label, the
+             * order-intent dispatch and the Company Number block below all read
+             * the same captured-company state. `$twoControlAlpineData` is
+             * therefore empty and the control inherits this scope.
+             *
+             * The input carries the canonical `payment[company_name]` in BOTH
+             * modes — there is one field now, not a visible/hidden mirror pair —
+             * so `twoValidatePaymentForm()`'s doSave() and fillCompanyData()
+             * keep reading it by exactly the name and id they always did.
+             */
+            $twoControlAlpineData = '';
+            $twoControlInputClass = 'company_name block w-full form-input grow renderer-text'
+                . ' border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate';
+            $twoControlInputAttributes = 'id="company_name" name="payment[company_name]"'
+                . ' data-name="company_name" required data-validate=\'{"required": true}\'';
+            ?>
+            <div class="w-full min-w-0">
+                <label for="company_name" class="font-semibold text-gray-700">
+                    <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
+                </label>
+                <p class="text-xs text-gray-500 mt-1 mb-1">
+                    <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
+                </p>
+                <?php include $block->getTemplateFile(
+                    'Two_GatewayHyva::form/field/company-search-control.phtml',
+                ) ?>
             </div>
 
-            <!-- Company Number (dual-input — exactly one is visible per mode) -->
+            <!-- Company Number -->
             <?php
             /*
              * TWO-25326 §7: once a company is captured the whole block —
@@ -594,57 +444,44 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                   applyCompanyIdEditability()) with exactly one writer.
 
                   The greyed-out look is `input.company_id:disabled` in
-                  custom.css, NOT a `:style` binding. Two reasons: CSP-friendly
-                  Alpine does not EVALUATE an attribute expression at all — it
-                  looks the whole string up as a key on the component, so an
-                  object literal `:style="{ backgroundColor: … }"` is not
-                  something it can compute (that lookup is also why the sibling
-                  `x-show="!showManual"` resolves — against the `['!showManual']`
-                  getter, not by negating anything). And a
-                  STRING `:style` sets the whole style attribute, which is
-                  where `x-show` writes `display: none`. Since the two
-                  bindings re-run on their own dependencies, a state change
-                  that re-ran only `:style` would drop the hidden mirror
-                  input's `display: none` and reveal it.
+                  custom.css, NOT a `:style` binding: CSP-friendly Alpine does
+                  not EVALUATE an attribute expression at all — it looks the
+                  whole string up as a key on the component — so an object
+                  literal `:style="{ backgroundColor: … }"` is not something it
+                  can compute, and a STRING `:style` would set the whole style
+                  attribute, which is where `x-show` writes `display: none`.
+
+                  `:class="companyIdHiddenClass"` hides the input once the
+                  number is locked AND actually present, because the captured
+                  number is then carried by the tile label above instead.
+                  `companyIdDisabled` can only be true when NOT in manual mode
+                  (see applyCompanyIdEditability()), so this never hides the
+                  field while the buyer still needs to fill it in (empty,
+                  enabled, required); the non-empty `companyId` term (see
+                  `companyIdHintVisible`) is what stops it being hidden a tick
+                  before its value has arrived. A class-name STRING, not an
+                  object literal, for the same CSP reason as above.
               -->
-              <!--
-                  Additive (TWO-25288): once `companyIdDisabled` is true the
-                  number is locked AND now shown via the inline hint next to
-                  the company name field above, so the input itself is
-                  redundant — hide it with a class layered on top of the
-                  existing `x-show="!showManual"` mechanism. `companyIdDisabled`
-                  can only be true when NOT in manual mode (see
-                  applyCompanyIdEditability()), so this never hides the field
-                  while the buyer still needs to interact with it (empty,
-                  enabled, required). `companyIdHiddenClass` additionally
-                  requires a non-empty `companyId` (see `companyIdHintVisible`
-                  in gateway_method-csp-js.phtml) so the field cannot be hidden
-                  a tick before its value has actually arrived. Does not touch
-                  the existing `x-show` or `:disabled` bindings. `:class` binds
-                  to a getter returning a plain class-name string
-                  (`companyIdHiddenClass`), matching this file's other `:class`
-                  bindings (`chipClasses`, GetItemClass) — the CSP-friendly
-                  Alpine build here does not evaluate object-literal
-                  expressions, only looks a bound string up as a key on the
-                  component (see the `:style` note below).
-              -->
+              <?php
+              /*
+               * ONE input, not the visible/hidden mirror pair this block used
+               * to carry (TWO-25326, 2026-08-05). The pair existed because the
+               * old tile-local search control duplicated every field between a
+               * search-mode copy and a manual-mode copy and swapped their
+               * `:id`/`:name` bindings so that only the visible one submitted
+               * canonically. The shared control has ONE company-name field in
+               * both modes, so the number needs one too — and eight
+               * id/name-resolution getters, each a place for the two copies to
+               * disagree about which is canonical, are gone with it.
+               */
+              ?>
               <input
                 type="text"
-                x-show="!showManual"
                 :class="companyIdHiddenClass"
-                :id="<?= $gwBase ?>GetCompanyIdFieldId"
-                :name="<?= $gwBase ?>GetCompanyIdFieldName"
+                id="company_id"
+                name="payment[company_id]"
                 :disabled="companyIdDisabled"
                 data-name="company_id"
-                required
-                data-validate='{"required": true}'
-                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
-              />
-              <input
-                type="text"
-                x-show="showManual"
-                :id="<?= $gwBase ?>GetManualCompanyIdFieldId"
-                :name="<?= $gwBase ?>GetManualCompanyIdFieldName"
                 required
                 data-validate='{"required": true}'
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"

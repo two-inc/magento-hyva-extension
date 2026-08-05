@@ -110,38 +110,35 @@ const COMPANY_CAPTURE_GATE_BINDING = H.readAlpineBinding(
   ":class",
 );
 
-/**
- * TWO-25326 tile bugfix batch, bug 1. The "Enter details manually" link's own
- * `x-show`, read out of the shipped markup — nested inside the dropdown's own
- * `x-show="isOpen"`, so the effective visibility is both together.
+/*
+ * DELETED 2026-08-05 (TWO-25326, the one-control consolidation):
+ *
+ *  - `MANUAL_ENTRY_LINK_SHOW_BINDING`, read off `#billing_enter_company`. That
+ *    element was the TILE'S OWN "Enter details manually" link, part of the
+ *    second, divergent control this surface used to carry. The tile now includes
+ *    the one shared control, whose single manual-entry route is the in-panel
+ *    `.two-company-manual-entry-row`; there is no `#billing_enter_company` in the
+ *    shipped markup for a binding to be read off, which is why this file could
+ *    not even LOAD until the constant went.
+ *  - `COMPANY_SEARCH_BLUR_BINDING`, read off the search field's `@blur`. The
+ *    handler behind it (`OnCompanySearchBlur`) is deleted with the rest of the
+ *    tile-local control. See the note where its describe used to be for why the
+ *    guarantee it protected is now structural rather than behavioural.
  */
-const MANUAL_ENTRY_LINK_SHOW_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  "#billing_enter_company",
-  "x-show",
-);
 
 /**
- * TWO-25326 tile bugfix batch, bug 1 follow-up. The min-characters hint's own
- * `x-show`, read out of the shipped markup for the same reason as the link's
- * above: the hint is the OTHER thing nested inside the dropdown's
- * `x-show="isOpen"`, and the dropdown opens on mere focus.
+ * The min-characters hint's own `x-show`, read out of the shipped markup.
+ *
+ * Survives the consolidation because the hint does: it is emitted by the shared
+ * control on both surfaces, and this is still the only place the TILE'S wire —
+ * that this component defines what the tile's copy of that markup names — is
+ * checked. Its BEHAVIOUR is the shared control's and is covered once, in
+ * company-search-min-chars.test.js.
  */
 const MIN_CHARS_HINT_SHOW_BINDING = H.readAlpineBinding(
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
   '[data-name="company_search_min_chars"]',
   "x-show",
-);
-
-/**
- * TWO-25326 tile bugfix batch, bug 5 follow-up. The search field's own commit
- * hook. `@input` is debounced 300ms, so this is the binding that catches a
- * buyer who types over a captured company and goes straight for Place Order.
- */
-const COMPANY_SEARCH_BLUR_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  'input[data-name="company_name"]',
-  "@blur",
 );
 
 describe("payment component company selection", () => {
@@ -327,18 +324,27 @@ describe("payment component company selection", () => {
     test("is the only Alpine binding carrying it — no second :style copy", () => {
       // The greyed-out look derives from `input.company_id:disabled` in
       // custom.css. A `:style` string binding here would set the whole style
-      // attribute, which is where the element's own `x-show` writes
-      // `display: none` — and the two bindings re-run on their own
-      // dependencies, so a state change that re-ran only `:style` would reveal
-      // the hidden mirror input.
+      // attribute — which is where `x-show` writes `display: none` — and the two
+      // bindings re-run on their own dependencies, so a state change that re-ran
+      // only `:style` would reveal an element something else had hidden.
       const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
       const input = new DOMParser()
         .parseFromString(markup, "text/html")
         .querySelector('input[data-name="company_id"]');
 
-      expect(input.hasAttribute("x-show")).toBe(true);
       expect(input.hasAttribute(":style")).toBe(false);
       expect(component.companyIdBgStyle).toBeUndefined();
+
+      // REWRITTEN 2026-08-05 (TWO-25326). This used to require an `x-show` on
+      // this input, because the tile carried a visible/hidden MIRROR PAIR of
+      // company-number inputs and `x-show` was what chose between them. There is
+      // one input now, and hiding it once its value is carried by the tile label
+      // is a CLASS (`companyIdHiddenClass`) rather than an inline style — so the
+      // two mechanisms cannot be confused for one another, which is the whole
+      // reason the production comment gives for the choice.
+      expect(input.hasAttribute("x-show")).toBe(false);
+      expect(input.getAttribute(":class")).toBe("companyIdHiddenClass");
+      expect(typeof component.companyIdHiddenClass).toBe("string");
     });
 
     test("defaults to locked before initialize() runs", () => {
@@ -525,82 +531,78 @@ describe("payment component company selection", () => {
     syncCompanyTileLabel(component);
   }
 
-  describe("a name typed without picking a dropdown hit", () => {
-    test("leaves the company-number field enabled and fillable", () => {
-      // The checkout blocker: `:disabled="companyIdDisabled"` with a declared
-      // default of `true` means the field starts locked, and a buyer who types
-      // a name and never picks a hit had no way out — the "Enter details
-      // manually" link lives inside the dropdown's `x-show="isOpen"`, so it is
-      // gone the moment they tab away. Empty AND disabled AND required.
-      typeCompanyName("Example Trading");
+  /**
+   * Edit the company-name field IN MANUAL MODE, the way the shipped
+   * `@input.debounce.300ms="onNameFieldInput"` binding does.
+   *
+   * Added 2026-08-05 (TWO-25326). This is now the ONLY path on which the field's
+   * text can diverge from the captured company, so it is the path every
+   * stale-company assertion in this file has to take. In search mode the field is
+   * `readonly` and every editing key is prevented, and `getItems()` deliberately
+   * touches neither the captured pair nor its editability — see the note above
+   * describe("a captured company cannot be typed over").
+   *
+   * `$el` is pointed at the input because `onNameFieldInput()` resolves the field
+   * through `companyNameField()`, which reads `$el` first: that is how one method
+   * can be reached from the field's own binding and from a mode button and mean
+   * the right element in both cases.
+   *
+   * @param {string} text what the buyer has left in the field
+   * @returns {void}
+   */
+  function editNameInManualMode(text) {
+    if (!component.manualMode) component.enterManually();
+    const nameInput = document.getElementById("company_name");
+    nameInput.value = text;
+    const previousEl = component.$el;
+    component.$el = nameInput;
+    try {
+      component.onNameFieldInput();
+    } finally {
+      component.$el = previousEl;
+    }
+    syncCompanyIdField(component);
+    syncCompanyTileLabel(component);
+  }
 
-      expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
-
-      // Fillable, not merely unlocked — the buyer can get a number in.
-      companyIdInput().value = "12345678";
-      expect(companyIdInput().value).toBe("12345678");
-    });
-
-    test("is enabled even below the search minimum length", () => {
-      // The `search.length < 3` early return is upstream of any request but
-      // downstream of the recompute, so the field must already be open while
-      // the buyer is still on their first two characters.
-      typeCompanyName("Ex");
-
-      expect(document.getElementById("company_id").disabled).toBe(false);
-    });
-
-    test("re-enables it after an identified company had locked it", () => {
-      // The stale-number case: the buyer picks a company, then edits the name.
-      // The registry number on screen belongs to the OLD name, so it must stop
-      // being locked in beside the new text.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      syncCompanyIdField(component);
-      expect(companyIdInput().disabled).toBe(true);
-
-      typeCompanyName("Other Example");
-
-      expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
-    });
-
-    test("keeps it locked while the text still matches the picked company", () => {
-      // The hole the binding exists to close. Re-running the edit handler with
-      // the selected company's own name unchanged must NOT hand the buyer an
-      // editable registry-supplied organisation number.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-
-      typeCompanyName("Example Trading Ltd");
-
-      expect(component.companyIdEntryRequired).toBe(false);
-      expect(document.getElementById("company_id").disabled).toBe(true);
-    });
-
-    test("keeps it enabled while the text matches an identifier-less pick", () => {
-      // Same path, the other way: a pick that carried no identifier must stay
-      // open even though the name still matches it.
-      component.selectItem(pickerItem("Example Trading Ltd", ""));
-
-      typeCompanyName("Example Trading Ltd");
-
-      expect(component.companyIdEntryRequired).toBe(true);
-      expect(document.getElementById("company_id").disabled).toBe(false);
-    });
-
-    test("does not unlock the field on the selection keystroke itself", () => {
-      // `selectItem()` sets `isSelecting`, which getItems() consumes in an
-      // early return ABOVE the recompute. If the recompute ran there it would
-      // undo the lock the selection had just applied.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      expect(component.isSelecting).toBe(true);
-
-      typeCompanyName("Something Else Entirely", { keepSelecting: true });
-
-      expect(component.companyIdEntryRequired).toBe(false);
-      expect(document.getElementById("company_id").disabled).toBe(true);
-    });
-  });
+  /*
+   * DELETED 2026-08-05 — describe("a name typed without picking a dropdown hit"),
+   * all six tests.
+   *
+   * Every one of them drove `typeCompanyName()`, which writes into the
+   * company-name field and calls `getItems()`, and then asserted on the
+   * company-number field's editability. That worked because the name field WAS
+   * the search box and `getItems()` recomputed editability from its text on every
+   * keystroke.
+   *
+   * Neither half is true any more (TWO-25326 §1 and the 2026-08-05
+   * consolidation). The search term lives in the panel's own query field, and
+   * `getItems()` deliberately touches neither the captured pair nor its
+   * editability in search mode — running a search is not evidence the buyer
+   * edited anything, and since the name field is `readonly` there it cannot be
+   * edited at all. So these tests did not merely fail; the four that still passed
+   * passed VACUOUSLY, asserting a state `selectItem()` had already set and that
+   * `typeCompanyName()` no longer had any way to disturb.
+   *
+   * The guarantees they were written for all survive, driven by the paths that
+   * actually reach them:
+   *
+   *  - a buyer who has picked nothing gets an editable, fillable number field —
+   *    describe("the company-number field's locked state") above, "is open once
+   *    the component has initialized with nothing stored".
+   *  - a pick with no identifier leaves it open, one with an identifier locks it —
+   *    same describe, "writes the name and leaves the id field empty but
+   *    editable" / "writes name and id, and leaves the id field locked".
+   *  - editing the name away from a captured company re-opens it — describe("a
+   *    captured company cannot be typed over") below, "and re-opens the
+   *    company-number field, so the buyer can supply one", on the manual-mode path
+   *    that is now the only one where the text can diverge.
+   *
+   * Also gone with them: "does not unlock the field on the selection keystroke
+   * itself". It pinned `isSelecting`, a flag whose entire job was an early return
+   * in `getItems()` ABOVE the editability recompute. There is no recompute in
+   * `getItems()` for it to guard, and the flag is deleted.
+   */
 
   describe("synced from the shipping step", () => {
     /**
@@ -722,14 +724,19 @@ describe("payment component company selection", () => {
    * point, not just first paint. `mountPaymentComponent()` is exactly that
    * rebuild: a fresh instance over the same DOM and the same browser storage.
    *
-   * The recompute in `getItems()` writes component state only. Storage is
-   * written by `selectItem()` alone, so a typed-but-unpicked name survives a
-   * re-render as nothing at all — which is precisely why `initialize()` has to
-   * derive the flag from the same invariant rather than from
-   * `Boolean(company_name) && !company_id`.
+   * In search mode `getItems()` writes NOTHING — not state, not storage.
+   * Storage is written by `selectItem()` and by the manual-entry commit alone, so
+   * a search run without a pick survives a re-render as nothing at all — which is
+   * precisely why `initialize()` has to derive the flag from the same invariant
+   * rather than from `Boolean(company_name) && !company_id`.
    */
   describe("re-initialized by a Magewire re-render", () => {
-    test("keeps the field open after a name typed without picking", () => {
+    test("keeps the field open after a search run without picking", () => {
+      // RENAMED from "after a name typed without picking" (TWO-25326,
+      // 2026-08-05): the company-name field is `readonly` in search mode, so
+      // "typed" is no longer a thing that can happen on this path. Running a
+      // search and picking nothing is, and it leaves storage untouched — which is
+      // the premise the assertion below actually rests on.
       typeCompanyName("Example Trading");
       expect(companyIdInput().disabled).toBe(false);
       expect(storedSelection().company_name).toBeUndefined();
@@ -741,21 +748,22 @@ describe("payment component company selection", () => {
     });
 
     test("stays open across a re-render after editing a picked company's name", () => {
-      // REPLACES "re-locks after editing a picked company's name, and restores
-      // that company", whose premise WAS the bug-5 follow-up defect: the
-      // recompute in `getItems()` used to write component state only, so
-      // storage kept the picked company's identifier and the rebuild restored
-      // it wholesale — re-locking the field and, worse, putting company A's
-      // registry number back beside a name the buyer had typed over.
+      // REWRITTEN 2026-08-05 (TWO-25326) — driven through the MANUAL-mode edit
+      // path instead of `typeCompanyName()`. The guarantee is unchanged and is the
+      // one that costs money: a rebuild must never restore a name/number pair
+      // describing two different companies. What changed is that a search-mode
+      // keystroke is no longer a way to reach the divergence — the field is
+      // `readonly` there — so the only path that can is the manual one, and that
+      // is what this now drives.
       //
-      // The typing path now runs the stale-company clear (see
-      // `twoGatewayHyvaForgetCompanyIfNameDiverged`), so the identifier is
-      // dropped from storage as well as from state, and the rebuild has nothing
-      // to re-lock with. The name/number pair still never disagrees — which is
-      // the property that costs money — it is now consistent as "this name, no
-      // registry number" rather than as the previous company's pair.
+      // The original defect this replaced: the recompute in `getItems()` wrote
+      // component state only, so storage kept the picked company's identifier and
+      // the rebuild restored it wholesale, re-locking the field and putting
+      // company A's registry number back beside a name the buyer had typed over.
+      // `commitManualCompany()` → `forgetStaleCompanyId()` drops the identifier
+      // from STORAGE as well as state, so the rebuild has nothing to re-lock with.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      typeCompanyName("Other Example");
+      editNameInManualMode("Other Example");
       expect(companyIdInput().disabled).toBe(false);
       expect(storedSelection().company_id).toBe("");
       expect(storedSelection().company_id_source).toBe("");
@@ -774,13 +782,22 @@ describe("payment component company selection", () => {
       // `payment[company_name]` — so a term change, an address change or a
       // totals refresh silently put company A's name back over the text the
       // buyer had typed, and the order would have been placed for A.
+      //
+      // REWRITTEN 2026-08-05 (TWO-25326), for the same reason as the test above,
+      // and with one assertion corrected rather than merely re-routed. It used to
+      // require the record's `company_name` to be BLANKED. `commitManualCompany()`
+      // writes the buyer's own text there instead, which is strictly better: the
+      // name the order carries is the one in the field, so the rebuild restores
+      // that rather than restoring nothing and depending on the DOM value
+      // surviving. What must not happen — company A's name coming back — is
+      // asserted directly.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       expect(storedSelection().company_name).toBe("Example Trading Ltd");
 
-      typeCompanyName("Other Example");
+      editNameInManualMode("Other Example");
 
-      expect(component.companyName).toBe("");
-      expect(storedSelection().company_name).toBe("");
+      expect(storedSelection().company_name).toBe("Other Example");
+      expect(storedSelection().company_id).toBe("");
 
       const rebuilt = mountPaymentComponent().component;
 
@@ -992,10 +1009,15 @@ describe("payment component company selection", () => {
      * on `companyName` directly would still show the OLD company here, because
      * `companyName` has no clearing writer. Gated on `companyIdHintVisible`
      * instead, it must disappear the instant the buyer's edit reopens the
-     * id field — same tick `getItems()` recomputes `companyIdEntryRequired`
-     * for text that no longer matches the locked pick.
+     * id field.
+     *
+     * REWRITTEN 2026-08-05 (TWO-25326): driven through the manual-mode edit path
+     * rather than `typeCompanyName()`. In search mode the name field is `readonly`
+     * and `getItems()` deliberately recomputes nothing, so a keystroke there can
+     * no longer reach this state at all — the assertion would have held vacuously
+     * off `selectItem()` alone.
      */
-    test("goes stale-safe: drops when the buyer types after a pick, before any new pick exists", () => {
+    test("goes stale-safe: drops when the buyer edits the name after a pick, before any new pick exists", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
@@ -1004,12 +1026,12 @@ describe("payment component company selection", () => {
         "Example Trading Ltd",
       );
 
-      typeCompanyName("Other Example");
+      editNameInManualMode("Other Example");
 
       // The field is open again (companyIdEntryRequired recomputed true), and
-      // the name hint — still reading `this.companyName`, which typing alone
-      // never clears — must have gone with it rather than keep showing
-      // "Example Trading Ltd" beside a field the buyer can now edit freely.
+      // the capture gate — which would otherwise keep the whole Company Number
+      // block hidden beside a field the buyer can now edit freely — has gone
+      // with it.
       expect(component.companyIdEntryRequired).toBe(true);
       expect(companyIdInput().disabled).toBe(false);
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
@@ -1017,7 +1039,8 @@ describe("payment component company selection", () => {
 
     test("re-trips once the buyer picks a new identified company", () => {
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      typeCompanyName("Other Example");
+      // Manual-mode edit, for the same reason as the test above.
+      editNameInManualMode("Other Example");
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
@@ -1065,57 +1088,47 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the 'Enter details manually' link (TWO-25326 tile bugfix batch, bug 1)", () => {
-    test("is a real binding, not just component state", () => {
-      // Pins the wire: a rename on one side only must fail here, not silently
-      // paint nothing.
-      expect(MANUAL_ENTRY_LINK_SHOW_BINDING).toBe("manualEntryLinkVisible");
-      expect(MANUAL_ENTRY_LINK_SHOW_BINDING in component).toBe(true);
-    });
-
-    test("stays hidden on mere focus, before the buyer has typed anything", () => {
-      // OnCompanySearchFocus opens the dropdown (isOpen = true) on FOCUS
-      // ALONE, before any search has run — at which point `items` is empty
-      // and there is nothing to have "not found a match" for yet. Without the
-      // fix this link (nested inside `x-show="isOpen"`) painted the instant
-      // the field was focused, reading as a link sitting permanently below
-      // the field rather than a genuine dropdown/results-area affordance.
-      component.twoGatewayHyvaOnCompanySearchFocus();
-
-      expect(component.isOpen).toBe(true);
-      expect(component.search).toBe("");
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
-    });
-
-    test("appears once the buyer has actually typed something", () => {
-      component.twoGatewayHyvaOnCompanySearchFocus();
-      typeCompanyName("E");
-
-      expect(component.isOpen).toBe(true);
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
-    });
-
-    test("goes back to hidden once the buyer clears the field again", () => {
-      typeCompanyName("Example");
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
-
-      typeCompanyName("");
-
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
-    });
-
-    test("does not affect the dropdown opening on real results — isOpen is separate", () => {
-      // The fix adds a SECOND gate; it must not change when the dropdown
-      // itself opens.
-      component.items = [{ companyName: "Example Trading Ltd", companyId: "" }];
-      component.isOpen = true;
-
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(false);
-      component.search = "Example";
-      expect(component[MANUAL_ENTRY_LINK_SHOW_BINDING]).toBe(true);
-    });
-  });
-
+  /*
+   * DELETED 2026-08-05 — describe("the 'Enter details manually' link (TWO-25326
+   * tile bugfix batch, bug 1)"), all five tests.
+   *
+   * Every one of them asserted that the tile's own manual-entry link stayed
+   * HIDDEN until the buyer had typed something, on the reasoning that the link
+   * sat inside a dropdown which opened on mere FOCUS, so an unguarded link
+   * painted the instant the field was focused and read as permanent furniture.
+   *
+   * All three premises are gone, and the requirement is now the OPPOSITE of what
+   * these tests pinned:
+   *
+   *  - there is no tile-local link. The tile includes the one shared control,
+   *    whose single manual-entry route is the in-panel
+   *    `.two-company-manual-entry-row`.
+   *  - the panel no longer opens on focus. `onCompanyNameClick` opens it on CLICK
+   *    or keypress, deliberately not on focus, so merely tabbing through leaves it
+   *    shut — which is what removed the "paints on focus" artefact structurally.
+   *  - the row is now REQUIRED to be on offer from zero typed characters. It has
+   *    to be reachable exactly when the buyer cannot find their company, which
+   *    includes before they have typed and when a search matched nothing; gating
+   *    it on a typed length made it unreachable in the cases it exists for.
+   *
+   * Not rewritten here because the replacement guarantee is not tile-specific:
+   * `company-search-one-control.test.js` pins it once for both surfaces — "there
+   * is exactly one manual-entry control, and it is inside the panel", "the
+   * below-the-field copy and its gate are gone", and "the panel is still
+   * reachable, and the row with it, before anything is typed".
+   *
+   * DELETED with them — describe("the min-characters hint (TWO-25326 tile bugfix
+   * batch, bug 1)"), four of its five tests. They drove the hint through
+   * `twoGatewayHyvaOnCompanySearchFocus()` (deleted) and measured it against
+   * `search`, the company-name field's text. The shared control's hint measures
+   * the PANEL'S QUERY instead and, like the row, deliberately shows from ZERO
+   * characters — so "stays hidden before the buyer has typed anything" is now a
+   * statement of the defect rather than the fix. The behaviour is covered once, on
+   * the shared getter, in company-search-min-chars.test.js.
+   *
+   * The WIRE test is kept below, because that part is genuinely per-surface: it is
+   * the tile's copy of the markup and the tile's component that have to agree.
+   */
   describe("the min-characters hint (TWO-25326 tile bugfix batch, bug 1)", () => {
     test("is a real binding, not just component state", () => {
       expect(MIN_CHARS_HINT_SHOW_BINDING).toBe(
@@ -1123,192 +1136,145 @@ describe("payment component company selection", () => {
       );
       expect(typeof component[MIN_CHARS_HINT_SHOW_BINDING]).toBe("function");
     });
-
-    test("stays hidden on mere focus, before the buyer has typed anything", () => {
-      // The same defect as the manual-entry link's, in the sibling element:
-      // `search.length < minSearchChars` is trivially true for the empty
-      // string, so focusing the field (which opens the dropdown all by itself)
-      // told a buyer who had typed NOTHING that they had not typed enough.
-      component.twoGatewayHyvaOnCompanySearchFocus();
-
-      expect(component.isOpen).toBe(true);
-      expect(component.search).toBe("");
-      expect(component[MIN_CHARS_HINT_SHOW_BINDING]()).toBe(false);
-    });
-
-    test("appears once the buyer has typed but is still below the minimum", () => {
-      component.twoGatewayHyvaOnCompanySearchFocus();
-      typeCompanyName("E");
-
-      expect(component.search.length).toBeLessThan(component.minSearchChars);
-      expect(component[MIN_CHARS_HINT_SHOW_BINDING]()).toBe(true);
-    });
-
-    test("goes away once the minimum is reached", () => {
-      typeCompanyName("x".repeat(component.minSearchChars));
-
-      expect(component[MIN_CHARS_HINT_SHOW_BINDING]()).toBe(false);
-    });
-
-    test("comes back if the buyer deletes back below the minimum, and goes once the field is empty", () => {
-      typeCompanyName("x".repeat(component.minSearchChars));
-      typeCompanyName("x");
-      expect(component[MIN_CHARS_HINT_SHOW_BINDING]()).toBe(true);
-
-      typeCompanyName("");
-
-      expect(component[MIN_CHARS_HINT_SHOW_BINDING]()).toBe(false);
-    });
   });
 
   /**
-   * TWO-25326 tile bugfix batch, bug 5 follow-up — the order-integrity half of
-   * the always-visible search field.
+   * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation) — was
+   * describe("typing over a captured company (TWO-25326 bug 5 follow-up)").
    *
-   * Bug 5 removed the "Change company" swap, so the field stays editable after
-   * a company has been captured and typing over it is the buyer's only route to
-   * a different one. Nothing used to notice: `getItems()` recomputed the number
-   * field's editability but dropped neither `companyId` nor `companyName`, so
-   * the label kept naming company A, the approved-intent notice earned by A
-   * survived, and the hidden `#company_id` input — written imperatively by
-   * fillCompanyData(), not bound to state — still submitted A's registry number
-   * beside the name the buyer had typed. An order could be placed carrying a
-   * company/registry-number pair describing two different companies.
+   * The requirement is unchanged and is the one the money rides on: an order must
+   * never carry a company name and a registry number describing two different
+   * companies. What changed is the MECHANISM, and every one of the eight tests
+   * here drove the old one.
+   *
+   * Bug 5 removed the "Change company" swap, leaving the search field visible and
+   * apparently editable after a capture. The tile's answer was a pair of
+   * tile-local handlers — `@blur` → `OnCompanySearchBlur` and
+   * `ForgetCompanyIfNameDiverged` — that watched for the field's text diverging
+   * from the captured name and dropped `companyId`/`companyName` when it did.
+   * Both are deleted with the rest of the tile-local control, and the harness
+   * cannot even read a `@blur` binding off the shipped markup any more.
+   *
+   * The replacement is structural, and strictly stronger than a handler that has
+   * to notice divergence after the fact: in SEARCH mode the name field is
+   * `:readonly="searchModeActive"` AND `onCompanyNameKeydown` prevents every
+   * editing key, so the text cannot diverge at all. `readonly` is what covers the
+   * routes a keydown guard cannot see — paste, text drag-drop, browser autofill —
+   * which were live holes in the old handler-based approach: it only ran on blur,
+   * so a buyer who pasted a name and hit Place Order inside the same interaction
+   * submitted the mismatched pair the old tests were written to prevent.
+   *
+   * Divergence remains possible in MANUAL mode, where the field IS the capture
+   * control, and there `onNameFieldInput()` → the engine's
+   * `commitManualCompany()` → `forgetStaleCompanyId()` is the one writer. That is
+   * what the tests below drive.
    */
-  describe("typing over a captured company (TWO-25326 bug 5 follow-up)", () => {
-    /**
-     * Blur the search field the way Alpine's `@blur` binding does, WITHOUT the
-     * debounced `@input` handler having run — the Place-Order-within-300ms case.
-     *
-     * @param {string} text what is in the field at blur time
-     * @returns {void}
-     */
-    function blurSearchField(text) {
-      const nameInput = document.getElementById("company_name");
-      nameInput.value = text;
-      const previousEl = component.$el;
-      component.$el = nameInput;
-      try {
-        component[COMPANY_SEARCH_BLUR_BINDING]();
-      } finally {
-        component.$el = previousEl;
-      }
-      syncCompanyIdField(component);
-      syncCompanyTileLabel(component);
-    }
-
-    test("the blur commit hook is a real binding on the search field", () => {
-      expect(COMPANY_SEARCH_BLUR_BINDING).toBe(
-        "twoGatewayHyvaOnCompanySearchBlur",
+  describe("a captured company cannot be typed over (TWO-25326 bug 5 follow-up)", () => {
+    test("in search mode the field is readonly, so there is no divergence to catch", () => {
+      // The wire AND the state, because either half alone passes vacuously: a
+      // `:readonly` binding naming a getter the component does not define resolves
+      // to undefined and the field is typeable, and a getter nothing binds locks
+      // nothing.
+      const bound = H.readAlpineBinding(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        'input[data-name="company_name"]',
+        ":readonly",
       );
-      expect(typeof component[COMPANY_SEARCH_BLUR_BINDING]).toBe("function");
+      expect(bound).toBe("searchModeActive");
+
+      component.manualMode = false;
+      expect(component[bound]).toBe(true);
+
+      // And no `@blur` handler is left behind claiming to do this job. A second,
+      // stale mechanism alongside the readonly one is how the two disagreed.
+      expect(() =>
+        H.readAlpineBinding(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          'input[data-name="company_name"]',
+          "@blur",
+        ),
+      ).toThrow(/has no `@blur` binding/);
     });
 
-    test("drops the captured company from state, storage and the hidden input", () => {
+    test("running a search does NOT drop the captured pair", () => {
+      // The inverse of what the deleted tests asserted, and deliberate: reopening
+      // the panel to look at alternatives is not evidence the buyer edited
+      // anything, and `getItems()` used to recompute editability off the name
+      // field's text. Since the name field cannot be edited in search mode, a
+      // stale-identifier clear here could only ever throw away a good pick.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      syncCompanyTileLabel(component);
       expect(companyIdInput().value).toBe("12345678");
-      expect(storedSelection().company_id).toBe("12345678");
 
       typeCompanyName("Other Example");
 
+      expect(component.companyId).toBe("12345678");
+      expect(companyIdInput().value).toBe("12345678");
+      expect(storedSelection().company_id).toBe("12345678");
+    });
+
+    test("a manual-mode name edit drops the identifier from state, storage and the submitted input", () => {
+      // Manual mode is where the field genuinely IS the capture control, so this
+      // is the one path on which the text can diverge from the captured company.
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      syncCompanyIdField(component);
+      expect(companyIdInput().value).toBe("12345678");
+      expect(storedSelection().company_id).toBe("12345678");
+
+      editNameInManualMode("Other Example");
+
       expect(component.companyId).toBe("");
       expect(component.companyIdSource).toBe("");
-      expect(component.companyName).toBe("");
       expect(component.isCompanySelected).toBe(false);
       // The one the money rides on: the submitted registry number.
       expect(companyIdInput().value).toBe("");
       expect(storedSelection().company_id).toBe("");
       expect(storedSelection().company_id_source).toBe("");
+      // And the typed name is what the order will carry, published under the
+      // buyer's own text rather than the abandoned company's.
+      expect(storedSelection().company_name).toBe("Other Example");
     });
 
-    test("blanks the captured-company label so it cannot name the old company", () => {
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      component.orderIntentApprovedNotice = "Approved";
-      syncCompanyTileLabel(component);
-      expect(companyTileLabel().textContent).toBe(
-        "Example Trading Ltd (12345678)",
-      );
-
-      typeCompanyName("Other Example");
-
-      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toBe("");
-      expect(companyTileLabel().textContent).toBe("");
-    });
-
-    test("moves both properties the notice watchers observe", () => {
-      // The approved / not-available notices are persistent inline elements,
-      // cleared by the `companyName` and `companyId` watchers registered in
-      // initialize(). This suite mounts with a RECORDING $watch, so firing them
-      // by hand is what proves the pair the fix moves is the pair those
-      // watchers are registered on.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      component.orderIntentApprovedNotice = "Approved";
-      component.orderIntentNotAvailableNotice = "Not available";
-
-      typeCompanyName("Other Example");
-
-      expect(watchers.companyName).toBeDefined();
-      expect(watchers.companyId).toBeDefined();
-      // Both watched properties actually MOVED — without this the assertions
-      // below hold whether or not the fix is present, since the recorded
-      // callbacks are fired by hand.
-      expect(component.companyName).toBe("");
-      expect(component.companyId).toBe("");
-      watchers.companyName();
-      watchers.companyId();
-      expect(component.orderIntentApprovedNotice).toBe("");
-      expect(component.orderIntentNotAvailableNotice).toBe("");
-    });
-
-    test("clears on blur even when the debounced input handler never ran", () => {
+    test("and re-opens the company-number field, so the buyer can supply one", () => {
+      // Dropping the identifier without unlocking the field leaves a required
+      // input that is empty AND uneditable — the checkout blocker this ticket's
+      // editability rule exists for.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
-      component.isSelecting = false;
+      expect(companyIdInput().disabled).toBe(true);
 
-      blurSearchField("Other Example");
+      editNameInManualMode("Other Example");
 
-      expect(component.companyId).toBe("");
-      expect(component.companyName).toBe("");
-      expect(companyIdInput().value).toBe("");
-      expect(storedSelection().company_id).toBe("");
+      expect(component.companyIdEntryRequired).toBe(true);
+      expect(companyIdInput().disabled).toBe(false);
     });
 
-    test("keeps the captured company when the text still names it", () => {
-      // The guard rail. Reopening the dropdown to look at alternatives, or a
-      // synthetic re-fire of the edit handler, must not throw away a perfectly
-      // good pick.
+    test("a manual-mode edit back to the SAME name keeps the pick", () => {
+      // The guard rail, and the reason `forgetStaleCompanyId()` compares the text
+      // against the captured name rather than clearing unconditionally. A
+      // synthetic re-fire of the edit handler must not throw away a good pick.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      component.enterManually();
 
-      typeCompanyName("Example Trading Ltd");
-      blurSearchField("Example Trading Ltd");
+      editNameInManualMode("Example Trading Ltd");
 
       expect(component.companyId).toBe("12345678");
       expect(component.companyName).toBe("Example Trading Ltd");
       expect(storedSelection().company_id).toBe("12345678");
     });
 
-    test("does not publish the typed query as the captured company name", () => {
-      // TWO-25326 §1: in search mode the text is a QUERY. Clearing is the whole
-      // job — publishing a half-typed query as `company_name` is the bug that
-      // ticket removed, and the visible field is itself the canonical
-      // `payment[company_name]` input, so the buyer's name submits either way.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-
-      typeCompanyName("Oth");
-
-      expect(component.companyName).toBe("");
-      expect(storedSelection().company_name).not.toBe("Oth");
-    });
-
-    test("leaves an untouched pick alone on a blur with no edit at all", () => {
+    test("the identifier the buyer never touched survives a mode bounce", () => {
+      // enterManually() deliberately does not clear a previous pick, so entering
+      // and leaving manual mode without typing must leave everything as it was.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
       syncCompanyIdField(component);
 
-      blurSearchField("Example Trading Ltd");
+      component.enterManually();
+      component.enableSearch();
+      syncCompanyIdField(component);
 
       expect(component.companyId).toBe("12345678");
+      expect(companyIdInput().value).toBe("12345678");
       expect(companyIdInput().disabled).toBe(true);
     });
   });

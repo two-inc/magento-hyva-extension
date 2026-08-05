@@ -95,19 +95,20 @@ $quoteDetailsJson = json_encode(
 
 function <?= $gwBase ?>CompanySearchField() {
     /*
-     * TWO-25326 rebuild. The search/dropdown/manual-entry/keyboard-nav/
-     * address-lookup behaviour below comes from the ONE shared engine
-     * (twoGatewayCompanySearchEngine, gateway_method-csp-js.phtml) —
-     * `isOpen`, `items`, `manualMode`, `companyName`, `companyId`,
-     * `companyIdSource`, `companyIdEntryRequired`, `companyIdDisabled`,
-     * `selectItem()`, `enterManually()`, `enableSearch()`,
-     * `nextItem()`/`prevItem()`, `hasVouchedCompanyId()`,
-     * `forgetStaleCompanyId()` and friends all live there now. What follows
-     * is ONLY what is genuinely specific to this surface: the query/search
-     * SPLIT (TWO-25326 §1 — the dropdown's own query box is a separate,
-     * uncontrolled element from the company-name field) and the keyboard-
-     * trap/focus-management system built around it (§1/§4), neither of
-     * which any other surface has a use for.
+     * TWO-25326, 2026-08-05 ruling: this is an ADAPTER, not a control.
+     *
+     * The whole of the company-search control — the query/name split, the
+     * dropdown, the keyboard and focus management, the manual-entry route, the
+     * min-chars / no-matches / unavailable verdicts — is
+     * `twoGatewayCompanySearchControl()` in gateway_method-csp-js.phtml, layered
+     * over `twoGatewayCompanySearchEngine()`. The payment tile mounts the SAME
+     * factory with the same markup; there is exactly one implementation and this
+     * file is not it.
+     *
+     * What follows is only what is genuinely specific to the ADDRESS STEP: which
+     * storage record it reads and writes, which container an address lookup
+     * fills in, and restoring a captured company across the Magewire re-renders
+     * that destroy and rebuild this component.
      */
     // Both cross-file globals guarded the same way as twoAddressReadSelection/
     // twoAddressWriteSelection above: gateway_method-csp-js.phtml's inline
@@ -116,91 +117,40 @@ function <?= $gwBase ?>CompanySearchField() {
     // out of it.
     const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
         || function(target) { return target; };
-    const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
+    const twoGatewayCompanySearchControlFn = window.twoGatewayCompanySearchControl
         || function() { return {}; };
-    return twoGatewayComposeLiveFn(twoGatewayCompanySearchEngineFn({
+    return twoGatewayComposeLiveFn(twoGatewayCompanySearchControlFn({
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
         companySearchLimit: 10,
-        manualModeSupported: true,
-        querySplit: true,
         editableCompanyId: true,
         // The address step unlocks the (unused, provenance-only —
         // companyName.phtml binds nothing to it, see the doc comment there)
         // id-lock formula whenever search itself is off, a term the payment
         // tile's own formula does not carry.
         editableCompanyIdExtraUnlock: function () { return !this.isCompanySearchEnabled; },
-        dropdownSelector: '.two-company-search__results',
-        itemSelector: '[data-index]',
-        scopeItemLookupToRoot: true,
         countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
-        dispatchSearchUnavailableToast: false,
         selectEventName: 'shipping-company-selected',
+        companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
         getQuote: function () { return this.quoteData; },
         readSelection: function () { return twoAddressReadSelection(); },
         writeSelection: function (patch) { return twoAddressWriteSelection(patch); },
-        resolveNameField: function () { return this.companyNameField(); },
-        // Traverse up levels from the component root to find the container
-        // with all the address inputs — unchanged from the original: still
-        // 4 parentElement hops, still from `$root`.
+        // Traverse up levels from the control root to find the container with
+        // all the address inputs — still 4 parentElement hops, and the control
+        // root is still this component's own `$root`, because on this surface
+        // the control IS the Alpine component.
         resolveAddressContainer: function () {
-            let container = this.$root;
+            let container = this.controlRoot();
             for (let i = 0; i < 4 && container; i++) {
                 container = container.parentElement;
             }
             return container;
         },
         addressContainerWarning: 'Could not find address container',
-        // Magewire may have re-rendered the address form while a search was
-        // in flight and replaced the node this component is bound to.
-        // Writing `items` into a detached component leaves no dropdown on
-        // the page and a dead copy holding search state. Checked here rather
-        // than `wire:ignore` on the x-data node, which is the payment form's
-        // remedy for the same class of problem — this subtree is NOT
-        // equivalent, since it wraps a Magewire-bound address field rendered
-        // by Hyvä's own form renderer, and opting it out of the diff-merge
-        // cycle would stop the field updating. Fails CLOSED: once Alpine has
-        // torn the subtree down there is no `_x_dataStack` to walk up to, so
-        // `$root` is undefined — the state this most needs to catch.
-        searchStillValid: function () { return Boolean(this.$root) && this.$root.isConnected; },
-        // Cleared alongside the engine's own `query` state: the dropdown's
-        // query box is a plain, uncontrolled input, so blanking component
-        // state alone leaves whatever the buyer last typed sitting on
-        // screen — and a later reopen would re-search it (TWO-25326 §1).
-        onDropdownClear: function () {
-            const q = this.queryField();
-            if (q) q.value = '';
-        },
-        afterManualToggle: function (entering) {
-            if (entering) {
-                this.$nextTick(() => {
-                    this.focusAndVerify(this.companyNameField());
-                });
-            } else {
-                this.openDropdown('');
-            }
-        },
-        // Focus returns to the company-name field after a pick (TWO-25326
-        // §1/§4): the panel that held focus has just been closed, and focus
-        // left on a removed element falls to `<body>`, which is where every
-        // keyboard trap on this ticket has started. Placement is confirmed,
-        // not assumed. Also runs after a manual commit, harmlessly — the
-        // name field already has focus on that path (it is the field being
-        // typed into), so re-verifying it is a no-op.
-        onCompanyCommitted: function () {
-            this.$nextTick(() => {
-                this.focusAndVerify(this.companyNameField());
-            });
-        },
     }), {
         quoteData: <?= $quoteDetailsJson ?>,
-        // Placeholder copy (TWO-25288). Held as state, not written inline in
-        // the markup only, because the manual-entry mode has to be able to
-        // blank it: "Enter company name to search" over a field the buyer is
-        // typing into by hand is wrong.
-        companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
 
         init() {
             // Restore manualMode from storage
@@ -236,11 +186,9 @@ function <?= $gwBase ?>CompanySearchField() {
             this.applyCompanyIdEditability();
             /*
              * A restored pick with a valid identifier is a completed selection,
-             * exactly like one made this page load via selectItem() (TWO-25288
-             * element 5 round 2). Without this, `isCompanySelected` stayed at
-             * its `false` default across a reload, and `persistentManualEntryVisible`
-             * showed "my company is not on the list" beside a field that
-             * already held a valid, restored answer.
+             * exactly like one made this page load via selectItem(). Without
+             * this, `isCompanySelected` stayed at its `false` default across a
+             * reload.
              *
              * Keyed off `companyId` alone, not `hasVouchedCompanyId()`: a
              * restored MANUAL identifier is just as complete a pick as a
@@ -273,524 +221,15 @@ function <?= $gwBase ?>CompanySearchField() {
              */
         },
 
-        /*
-         * `items.length > 0` is deliberately NOT a term any more (TWO-25288
-         * element 5).
-         *
-         * The manual-entry row is this dropdown's last row, and it has to be
-         * there exactly when a buyer cannot find their company: a search that
-         * matched nothing, one that failed, or one that has not come back yet.
-         * Gating the panel on a non-empty result set made the row unreachable
-         * in precisely those cases — the only cases it exists for.
-         *
-         * `searchModeActive` carries the manual-mode and lookup-disabled terms,
-         * so the panel still cannot open over the manual-entry fields or on a
-         * store with the lookup switched off. That is a term the old expression
-         * did NOT have, and the reason it was safe without one was the results
-         * gate now being removed.
-         */
-        showDropdown() {
-            return this.isOpen && this.searchModeActive;
-        },
-
         /**
-         * Undebounced `input` handler on the DROPDOWN'S QUERY FIELD, running
-         * alongside the debounced getItems() (TWO-25288 element 5, re-pointed
-         * by TWO-25326 §1).
+         * The buyer typed into a company-number field.
          *
-         * The `awaitingSelectionEcho` / `isSelecting` machinery this comment
-         * used to describe is gone. It existed only because the company-name
-         * field was both the search box and the thing selectItem() wrote back
-         * into, so a pick echoed as a keystroke. With the query field separate
-         * there is no echo to tell apart from a real edit.
-         *
-         * Bound as a SECOND `@input` attribute rather than folded into
-         * getItems(): `@input` and `@input.debounce.300ms` are distinct
-         * attribute names, so Alpine registers both listeners, and the debounce
-         * has to stay on the request half — an undebounced search would put one
-         * request per keystroke on the wire. This half is what keeps the
-         * min-characters hint and the "No matches found" verdict answering the
-         * keystroke rather than the debounce behind it.
-         *
-         * Nothing is aborted, cleared or requested here beyond that. The
-         * debounced handler owns the whole request lifecycle, and duplicating
-         * any part of it is how `isSearching` ends up latched on.
-         */
-        noteCompanyQuery() {
-            this.query = this.$el.value;
-            /*
-             * Any keystroke invalidates the previous search's verdict, so
-             * "No matches found" comes down until the NEXT search completes for
-             * the text now in the box. Without this the message would sit under
-             * a query the buyer has already changed.
-             */
-            this.searchCompletedFor = null;
-            if (this.query.length < this.minSearchChars) {
-                // Below the threshold there is nothing to show but the
-                // min-characters hint; a stale result list underneath it reads
-                // as matches for a query that was never run.
-                this.items = [];
-                this.selectedIndex = -1;
-            }
-        },
-
-        /**
-         * The dropdown's query input, or null when the panel is not rendered.
-         *
-         * @returns {HTMLInputElement|null}
-         */
-        queryField() {
-            const root = this.$root;
-            return root && typeof root.querySelector === 'function'
-                ? root.querySelector('.two-company-query')
-                : null;
-        },
-
-        /**
-         * Focus an element and CONFIRM it took focus.
-         *
-         * `.focus()` on an element that is not rendered — `display: none`, or
-         * not yet flushed into the document by Alpine — silently no-ops and
-         * returns undefined, so a caller that assumes it worked reports a fix
-         * that was never applied. That exact assumption has now cost two
-         * revisions on WooCommerce and one on Luma, both on this ticket.
-         *
-         * One retry on the next frame, because a layout-dependent state change
-         * (a panel that has only just been un-hidden) can leave the element
-         * un-focusable for a frame.
-         *
-         * @param {HTMLElement|null} el
-         * @returns {boolean} whether focus is on `el` after the synchronous try
-         */
-        focusAndVerify(el) {
-            if (!el || typeof el.focus !== 'function') return false;
-            el.focus();
-            if (document.activeElement === el) return true;
-            if (typeof requestAnimationFrame === 'function') {
-                requestAnimationFrame(() => {
-                    if (document.activeElement !== el) el.focus();
-                });
-            }
-            return false;
-        },
-
-        /**
-         * Open the dropdown and move focus into its query field (TWO-25326 §1).
-         *
-         * Focus is placed AFTER Alpine has flushed `isOpen` — the panel is
-         * `x-show`n, so before that flush the query field is `display: none`
-         * and focusing it does nothing at all.
-         *
-         * @param {string} seed a character to seed the query field with, or ''
-         */
-        openDropdown(seed) {
-            if (!this.searchModeActive) return;
-            this.isOpen = true;
-            this.$nextTick(() => {
-                const q = this.queryField();
-                if (!q) return;
-                if (typeof seed === 'string' && seed.length > 0) {
-                    q.value = q.value + seed;
-                    this.query = q.value;
-                    this.searchCompletedFor = null;
-                }
-                this.focusAndVerify(q);
-                if (this.query.length >= this.minSearchChars) {
-                    this.getItems().catch(function (error) {
-                        console.error('Company search failed:', error);
-                    });
-                }
-            });
-        },
-
-        /**
-         * Clicking the company-name field opens the dropdown (TWO-25326 §1).
-         * FOCUS alone deliberately does not — the ticket is explicit that
-         * merely tabbing into the field must leave the panel shut.
-         */
-        onCompanyNameClick() {
-            if (!this.searchModeActive) return;
-            if (this.isOpen) {
-                this.focusAndVerify(this.queryField());
-                return;
-            }
-            this.openDropdown('');
-        },
-
-        /**
-         * Keyboard on the company-name field, in SEARCH mode (TWO-25326 §1/§4).
-         *
-         * Any key other than Tab opens the panel and is routed into the query
-         * field; the company-name field itself must not change until a result
-         * is selected, which is why every editing key is prevented here.
-         *
-         * Deliberate exceptions:
-         *  - Tab and the bare modifier keys pass through untouched, or the
-         *    field becomes a keyboard trap (§4).
-         *  - Ctrl/Cmd/Alt combinations pass through, so browser shortcuts and
-         *    paste-by-keyboard are not swallowed.
-         *  - Enter passes through, so it still submits the address form. There
-         *    is no highlighted row to select while focus is on THIS field.
-         *  - Escape closes an open panel rather than opening one.
-         */
-        onCompanyNameKeydown(event) {
-            if (!this.searchModeActive) return;
-            const key = event.key;
-            if (key === 'Tab' || key === 'Shift' || key === 'Control'
-                || key === 'Alt' || key === 'Meta' || key === 'Enter') {
-                return;
-            }
-            if (event.ctrlKey || event.metaKey || event.altKey) return;
-            if (key === 'Escape') {
-                if (!this.isOpen) return;
-                event.preventDefault();
-                this.closeDropdownAndFocusName();
-                return;
-            }
-            // The field must be left exactly as it was.
-            event.preventDefault();
-            // A bare Space opens the panel but is not seeded: a query that
-            // begins with a space is never what the buyer meant, and Space is
-            // the conventional "open the combobox" key rather than a character
-            // in this position.
-            const seed = (typeof key === 'string' && key.length === 1 && key !== ' ')
-                ? key
-                : '';
-            if (this.isOpen) {
-                const q = this.queryField();
-                if (q) {
-                    if (seed) {
-                        q.value = q.value + seed;
-                        this.query = q.value;
-                        this.searchCompletedFor = null;
-                        this.getItems().catch(function (error) {
-                            console.error('Company search failed:', error);
-                        });
-                    }
-                    this.focusAndVerify(q);
-                }
-                return;
-            }
-            this.openDropdown(seed);
-        },
-
-        /**
-         * Escape from the query field: close the panel and put focus back on
-         * the company-name field (TWO-25326 §1). Focus placement is CONFIRMED,
-         * not assumed.
-         */
-        onQueryEscape() {
-            this.closeDropdownAndFocusName();
-        },
-
-        closeDropdownAndFocusName() {
-            this.closeDropdown();
-            this.$nextTick(() => {
-                this.focusAndVerify(this.companyNameField());
-            });
-        },
-
-        /**
-         * Shift+Tab out of the query field closes the panel and returns to the
-         * company-name field. Plain Tab is left to the browser: the "not on the
-         * list" button is the very next focusable element in document order,
-         * which is the §4 shortcut, and the panel must stay open for it.
-         */
-        onQueryTab(event) {
-            if (!event.shiftKey) return;
-            event.preventDefault();
-            this.closeDropdownAndFocusName();
-        },
-
-        /**
-         * Tab off the "not on the list" button (TWO-25326 §4).
-         *
-         * Forward Tab must land on the next real control on the page AND close
-         * the panel. Both halves have to happen here rather than being left to
-         * the browser: closing removes the focused button from the document, so
-         * a native Tab computed afterwards has no reference element and lands
-         * on `<body>`.
-         *
-         * Shift+Tab goes back into the query field, which is the natural
-         * previous stop, so the panel is left open and the browser handles it.
-         */
-        onManualEntryTab(event) {
-            if (event.shiftKey) return;
-            /*
-             * `preventDefault()` unconditionally, INCLUDING when there is
-             * nothing after this component to move to (review round 1).
-             * Letting the native Tab run in that case does not help: Alpine's
-             * reactive flush drains on the microtask queue, which runs before
-             * the browser performs the default action, so the focused button is
-             * already `display: none` by the time the next stop is computed and
-             * focus lands on `<body>` regardless. Falling back to the
-             * company-name field keeps focus somewhere the buyer can see.
-             */
-            event.preventDefault();
-            const candidates = this.focusablesAfterComponent();
-            this.closeDropdown();
-            this.$nextTick(() => {
-                /*
-                 * Walk the list rather than trusting the first entry. A
-                 * candidate can still refuse focus for a reason no attribute
-                 * check catches, and `.focus()` failing silently is what turns
-                 * this into a keyboard trap — so the fallback is tried, and the
-                 * company-name field is the last resort.
-                 */
-                for (let i = 0; i < candidates.length; i++) {
-                    if (this.focusAndVerify(candidates[i])) return;
-                }
-                this.focusAndVerify(this.companyNameField());
-            });
-        },
-
-        /**
-         * Is this element, or any ancestor, hidden the way `x-show` hides
-         * things — an inline `display: none`?
-         *
-         * Deliberately NOT `offsetParent === null`, which is the usual idiom.
-         * `x-show` writes exactly this inline style, so reading it back is the
-         * precise question; `offsetParent` also answers null for a
-         * `position: fixed` element, and it is unimplemented in jsdom, so a
-         * test written against it would silently pass while proving nothing.
-         *
-         * @param {HTMLElement} el
-         * @returns {boolean}
-         */
-        isDisplayNone(el) {
-            let node = el;
-            while (node && node.style) {
-                if (node.style.display === 'none') return true;
-                /*
-                 * `hidden` and Tailwind's `.hidden` as well as the inline
-                 * style. Review round 1: this codebase hides things with a
-                 * CLASS at least twice (`companyIdHiddenClass`,
-                 * `companyNumberBlockHiddenClass` on the payment tile), so an
-                 * inline-style-only check would hand back an invisible element,
-                 * focusAndVerify() would fail silently and focus would fall to
-                 * `<body>` — the exact WooCommerce defect this resolver exists
-                 * to prevent.
-                 */
-                if (node.hidden) return true;
-                if (node.classList && node.classList.contains('hidden')) return true;
-                node = node.parentElement;
-            }
-            return false;
-        },
-
-        /**
-         * Every focusable control that follows this whole component in document
-         * order — i.e. the candidates for where Tab should land on the way OUT,
-         * best first.
-         *
-         * A LIST rather than a single answer (review round 1): a candidate can
-         * refuse focus for a reason no attribute check catches, and
-         * `.focus()` failing silently is what turns Tab-out into a keyboard
-         * trap. The caller walks the list until one actually takes focus.
-         *
-         * Resolved against the document rather than the form, so this works on
-         * the Hyvä address step whether or not the field happens to sit in a
-         * `<form>`.
-         *
-         * Document order is assumed to be tab order, which holds because
-         * nothing in the Hyvä checkout ships a positive `tabindex`. If that
-         * ever changes this resolver is where it has to be handled.
-         *
-         * @returns {Array<HTMLElement>}
-         */
-        focusablesAfterComponent() {
-            const root = this.$root;
-            const doc = root && root.ownerDocument;
-            if (!doc) return [];
-            const all = Array.prototype.slice.call(doc.querySelectorAll(
-                'a[href], area[href], button, input, select, textarea,'
-                + ' summary, iframe, [contenteditable], [tabindex]'
-            ));
-            const after = [];
-            let seenRoot = false;
-            for (let i = 0; i < all.length; i++) {
-                const el = all[i];
-                if (root.contains(el)) {
-                    seenRoot = true;
-                    continue;
-                }
-                if (!seenRoot) continue;
-                if (el.disabled) continue;
-                if (el.closest && el.closest('fieldset[disabled]')) continue;
-                if (el.type === 'hidden') continue;
-                if (el.getAttribute('tabindex') === '-1') continue;
-                if (this.isDisplayNone(el)) continue;
-                after.push(el);
-            }
-            return after;
-        },
-
-        /**
-         * The single best Tab-out target, or null. Kept as a named member
-         * because it is the question the requirement is phrased in.
-         *
-         * @returns {HTMLElement|null}
-         */
-        nextFocusableAfterComponent() {
-            const after = this.focusablesAfterComponent();
-            return after.length > 0 ? after[0] : null;
-        },
-
-        /**
-         * `@input` on the COMPANY-NAME field.
-         *
-         * In search mode the field is not editable by hand (every editing key
-         * is prevented in onCompanyNameKeydown), so the only `input` event it
-         * sees is the non-bubbling synthetic one selectItem() dispatches to get
-         * the chosen name into Hyvä's own form state — nothing to do but keep
-         * `search` in step.
-         *
-         * In manual mode this IS the capture field, and the typed name is the
-         * only name the order will ever carry, so it takes the same
-         * commit/clear path getItems() used to run for the manual case.
-         */
-        onNameFieldInput() {
-            const field = this.companyNameField();
-            this.search = field ? field.value : '';
-            if (!this.manualMode && Boolean(this.isCompanySearchEnabled)) return;
-            // The shared engine's commitManualCompany(): forgetStaleCompanyId(),
-            // write+announce the pair with no identifier vouched for it.
-            this.commitManualCompany(this.search);
-        },
-
-        /**
-         * The company-name input this component owns.
-         *
-         * `$el` FIRST, then a lookup under `$root`. The two are not
-         * interchangeable: Alpine resolves `$el` per expression, so it is the
-         * input when a method is reached from the field's own `@input` binding
-         * and the clicked link when the same method is reached from a mode
-         * link. Reading `$el.value` unconditionally is therefore only correct
-         * on the typing path — everywhere else it reads `undefined` off an
-         * element that has no value.
-         *
-         * The fallback selector EXCLUDES `.company_id`, and that exclusion is
-         * load-bearing rather than defensive: the company-number input is a
-         * second `type="text"` inside this same component root, so an
-         * unanchored `input[type="text"]` is correct only by document order.
-         * This resolver decides what getItems() reads as the SEARCH TERM, and
-         * commitCompanyName() publishes that term as `company_name` in the
-         * shared selection blob the payment step and placement read — so a
-         * markup edit, or a `placeholder`/attribute reshuffle out of Hyvä's own
-         * field renderer, reordering the two would write an organisation number
-         * into the company-name field of an order. Naming the class the number
-         * input already carries for its `:disabled` styling is cheaper than a
-         * new hook and cannot silently stop matching.
-         *
-         * @returns {HTMLInputElement|null}
-         */
-        companyNameField() {
-            const selector = 'input[type="text"]:not(.company_id):not(.two-company-query)';
-            const el = this.$el;
-            if (el && typeof el.matches === 'function' && el.matches(selector)) {
-                return el;
-            }
-            const root = this.$root;
-            return root && typeof root.querySelector === 'function'
-                ? root.querySelector(selector)
-                : null;
-        },
-
-        /*
-         * Mode-link visibility. Bare getters because CSP-friendly Alpine looks
-         * the whole attribute string up as a key on the component rather than
-         * evaluating it, so `!manualMode` and `manualMode && flag` are both
-         * things the template cannot express.
-         */
-        get manualModeActive() {
-            return Boolean(this.isCompanySearchEnabled) && this.manualMode;
-        },
-
-        get searchModeActive() {
-            return Boolean(this.isCompanySearchEnabled) && !this.manualMode;
-        },
-
-        /*
-         * `persistentManualEntryVisible`, the below-the-field copy of the
-         * manual-entry affordance, was deleted outright on 2026-07-28 (bug
-         * 4.2 first pass) because its old gate — visible whenever the panel
-         * was shut — included two states where the claim is false: an
-         * already-completed selection, and manual mode itself (which has its
-         * own "Search for company" reverse link). That much of the deletion
-         * was right.
-         *
-         * It was also wrong: with no replacement, an untouched or
-         * sub-threshold field lost its ONLY route into manual entry, because
-         * the in-dropdown row (gated on `showDropdown()`) cannot show until
-         * `search.length >= minSearchChars`. A buyer who already knows their
-         * company is not in the registry had no way to say so without first
-         * typing a query that was never going to match (adversarial review
-         * round 2, 2026-08-01).
-         *
-         * `belowFieldManualEntryVisible` restores the affordance with a
-         * narrower gate than either the original bug or the first-pass fix:
-         * visible while search mode is active, no company is selected yet,
-         * AND the dropdown is not currently open. That last term is what
-         * makes this safe against the duplication problem the first-pass
-         * fix was guarding against — this link and the in-dropdown row are
-         * gated on exactly complementary conditions (`!showDropdown()` vs
-         * `showDropdown()`), so precisely one of the two manual-entry routes
-         * is ever on screen at once, in every state including untouched.
-         */
-        get belowFieldManualEntryVisible() {
-            return this.searchModeActive
-                && !this.isCompanySelected
-                && !this.showDropdown();
-        },
-
-        /**
-         * Bug 4.3 (2026-07-28): gates the plain-text company-number display
-         * in companyName.phtml. A registry-vouched number is what "a result
-         * is selected" means on this surface — a hand-typed one is not a
-         * selection at all, so it keeps the real editable input rather than
-         * being read out as text. Delegates to `hasVouchedCompanyId()`
-         * rather than restating its terms so the two cannot drift apart: the
-         * display and the input it replaces must never both be visible, and
-         * must never both be hidden.
-         *
-         * @returns {boolean}
-         */
-        get companyIdDisplayVisible() {
-            /*
-             * TWO-25326 §5 adds the manual-mode term, and it is not
-             * redundant: enterManually() deliberately does not clear a
-             * previously picked company, and getItems()'s stale-pair clear
-             * only fires when the typed name has actually diverged. So a buyer
-             * who picked a company and then chose "my company is not on the
-             * list" still held a registry-vouched number, and the label went on
-             * showing it beside a name they were about to retype — while §5
-             * requires manual entry to show no number at all.
-             */
-            return !this.manualMode && this.hasVouchedCompanyId();
-        },
-
-        // CSP-friendly Alpine forbids the `!` operator in attribute
-        // expressions. `x-show="!companyIdDisplayVisible"` on the real
-        // input resolves this magic getter (bare identifier
-        // `!companyIdDisplayVisible`) instead of evaluating the negation
-        // inline — same pattern as `['!showManual']` on the payment tile.
-        ['!companyIdDisplayVisible']() {
-            return !this.companyIdDisplayVisible;
-        },
-
-        // forgetStaleCompanyId() and applyCompanyIdEditability() moved to
-        // the shared engine.
-
-        /**
-         * The buyer typed into the company-number field.
-         *
-         * Bound to NOTHING in companyName.phtml any more (TWO-25326 §5
-         * removed the editable company-number input this surface used to
-         * have) but kept as a real, working method rather than deleted: it
-         * still maintains the `company_id_source` provenance the payment
-         * step reads out of the shared selection blob, on the chance a
-         * future revision of this surface (or a branded overlay) re-adds a
-         * binding for it.
+         * Bound to NOTHING in companyName.phtml (TWO-25326 §5 removed the
+         * editable company-number input this surface used to have) but kept as
+         * a real, working method rather than deleted: it still maintains the
+         * `company_id_source` provenance the payment step reads out of the
+         * shared selection blob, on the chance a future revision of this
+         * surface (or a branded overlay) re-adds a binding for it.
          *
          * Debounced by whichever template binds it. Writes through the
          * store-view-keyed accessor and re-announces the pair on the same
@@ -811,186 +250,6 @@ function <?= $gwBase ?>CompanySearchField() {
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: companyData
             }));
-        },
-
-        /**
-         * Bound as `:placeholder` (TWO-25288). The markup also carries a static
-         * `placeholder` attribute with the same source string, so the hint is
-         * present in the server-rendered HTML before Alpine boots; this getter
-         * is what lets manual mode clear it afterwards.
-         */
-        <?= $gwBase ?>GetCompanyNamePlaceholder() {
-            return this.manualMode ? '' : this.companyNamePlaceholder;
-        },
-
-        /**
-         * Bound as `x-show` on the min-characters hint (TWO-25288).
-         *
-         * Below the threshold getItems() returns early and this surface used to
-         * render nothing at all, so a buyer typing one or two characters got
-         * silence and no way to tell a too-short query from a broken search.
-         *
-         * NOT rendered at zero length: an empty field is the placeholder's job,
-         * and stacking both reads as an error on a field nobody has touched.
-         * Suppressed in manual mode, where no search runs at all, and after a
-         * selection: a chosen company whose registered name is shorter than the
-         * threshold is a complete, valid answer, so instructing the buyer to
-         * type more over a field they have just finished with is wrong.
-         *
-         * A bare method rather than an inline expression because Hyvä's
-         * CSP-friendly Alpine build resolves an attribute expression as a
-         * property lookup and cannot evaluate operators.
-         *
-         * TWO-25326 §1 rewrote the terms. It now measures the DROPDOWN QUERY,
-         * not the company-name field, and it fires from ZERO characters — the
-         * ticket's complaint was that the hint appeared only once the buyer had
-         * typed at least one letter, so a freshly-opened panel explained
-         * nothing. The `search.length > 0` and `isCompanySelected` terms are
-         * gone with it: this element now lives inside the panel, so being open
-         * at all is the condition those terms were standing in for.
-         */
-        <?= $gwBase ?>ShouldShowMinCharsMessage() {
-            return !this.manualMode
-                && this.query.length < this.minSearchChars;
-        },
-
-        /**
-         * "No matches found" (TWO-25326 §1).
-         *
-         * Requires a search to have actually COMPLETED for the text currently
-         * in the query field. Gating on `items.length === 0` alone would show
-         * it in the gap between a keystroke and its response — i.e. it would
-         * tell a buyer there are no matches while the search for those matches
-         * is still on the wire.
-         *
-         * A failed or degraded search is excluded: `isSearchUnavailable` owns
-         * that state and says something different and true.
-         *
-         * @returns {boolean}
-         */
-        get noMatchesVisible() {
-            return this.searchModeActive
-                && !this.isSearching
-                && !this.isSearchUnavailable
-                && this.query.length >= this.minSearchChars
-                && this.searchCompletedFor === this.query
-                && this.items.length === 0;
-        },
-
-        // Bound as the dropdown's `x-for :key`, so it must be UNIQUE per row.
-        // `companyId` is '' for every hit whose national identifier the search
-        // response omitted — which it is allowed to do — so two such hits in
-        // one response collided on '', and Alpine renders one row per distinct
-        // key: the buyer lost a company that matched, term-dependently. Fall
-        // back to the list position, unique by construction, prefixed so it can
-        // never collide with a real identifier either.
-        //
-        // Mirrors <?= $gwBase ?>GetCompanyId() on the payment tile. That surface
-        // was fixed on its own; this one is the same bug in the same shape.
-        <?= $gwBase ?>GetCompanyId() {
-            return this.item.companyId || `two-idx-${this.index}`;
-        },
-
-        // abortCompanySearch(), commitCompanyName()/announceCompanyPair()
-        // (now commitManualCompany() — see onNameFieldInput()),
-        // handleItemClick(), selectItem(), addressLookup()/setAddressData(),
-        // enterManually()/enableSearch(), saveManualModeToStorage() and
-        // closeDropdown() all moved to the shared engine. What differs on
-        // THIS surface from the engine's generic selectItem()/enterManually()
-        // is expressed as the `resolveNameField` / `writeSelection` /
-        // `onDropdownClear` / `afterManualToggle` options passed into
-        // `twoGatewayCompanySearchEngine()` above — not a second copy of any
-        // of this logic.
-        async getItems() {
-            /*
-             * TWO-25326 §1 split the two texts this used to conflate.
-             *
-             * In SEARCH mode the term comes from the dropdown's query field and
-             * the company-name field is not read at all — reading it here is
-             * what used to publish a half-typed query as the order's company
-             * name.
-             *
-             * In manual mode, and on a store with the lookup switched off, the
-             * company-name field IS the capture field, so it is still read and
-             * still committed: placement needs a name, and there is no other
-             * route to one in those two configurations.
-             */
-            if (this.manualMode || !this.isCompanySearchEnabled) {
-                const nameField = this.companyNameField();
-                if (nameField) this.search = nameField.value;
-                this.abortCompanySearch();
-                /*
-                 * Kept for callers that reach getItems() directly (the suite
-                 * does), but NOT the live manual path: getItems() is bound only
-                 * on the query input, which lives inside the panel, and the
-                 * panel cannot open in manual mode or with the lookup off. The
-                 * live announcement on those paths is onNameFieldInput()'s.
-                 */
-                this.commitManualCompany(this.search);
-                return;
-            }
-
-            /*
-             * SEARCH mode. The term is the dropdown query field's text, read
-             * from the DOM rather than trusted from state so a debounced tick
-             * always searches for what is actually in the box.
-             *
-             * Nothing here touches the company name, the stored identifier or
-             * its editability any more (TWO-25326 §1). Running a search is no
-             * longer evidence that the buyer edited the captured company — the
-             * company-name field cannot be edited in this mode — so the
-             * stale-identifier clear that used to live here would drop a
-             * perfectly good registry number the moment the panel was reopened
-             * to look at alternatives. selectItem() is now the only writer of
-             * the captured pair in search mode.
-             */
-            const q = this.queryField();
-            if (q) this.query = q.value;
-            await this.runCompanySearch(this.query);
-            // The panel is already open — it opens on click or keypress, not on
-            // results arriving (TWO-25326 §1) — so there is nothing to open
-            // here.
-        },
-
-        // Arrow-key result navigation — nextItem()/prevItem()/adjustScroll()
-        // are the shared engine's, configured above with this surface's own
-        // `.two-company-search__results` / `[data-index]` selectors.
-        <?= $gwBase ?>OnArrowDown() {
-            this.nextItem();
-        },
-        <?= $gwBase ?>OnArrowUp() {
-            this.prevItem();
-        },
-        <?= $gwBase ?>OnEnterSelect(event) {
-            // This input is shared between search AND manual-entry mode —
-            // unlike the payment tile, where the two modes are separate
-            // elements — so Enter has to keep submitting the address form
-            // exactly as it always did, EXCEPT when there is a highlighted
-            // row VISIBLY on offer to select. Only that one case calls
-            // `preventDefault()`; every other Enter press falls through to
-            // the native submit unchanged.
-            //
-            // `showDropdown()` is the gate, not a bare `manualMode` check —
-            // it already folds that in via `searchModeActive`, and it is the
-            // only term that answers "is a row VISIBLY on offer". The race it
-            // used to be justified by is gone: `noteCompanyQuery()` no longer
-            // closes the panel, and it now clears `items`/`selectedIndex`
-            // synchronously below the threshold rather than leaving that to
-            // the debounced tick. The gate stays because the three terms are
-            // still the honest question, not because of that race.
-            if (!this.showDropdown() || this.selectedIndex < 0 || this.items.length === 0) {
-                return;
-            }
-            event.preventDefault();
-            this.selectHighlightedItem();
-        },
-        <?= $gwBase ?>OnItemMouseover(event) {
-            this.selectedIndex = parseInt(event.currentTarget.dataset.index, 10);
-        },
-        <?= $gwBase ?>GetItemClass() {
-            return this.selectedIndex === this.index
-                ? 'bg-gray-100'
-                : '';
         },
     });
 }

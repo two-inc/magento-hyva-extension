@@ -25,8 +25,11 @@
  *
  * The consequence for this file:
  *
- *   - `SEARCH_BLOCK_SHOW_BINDING` now follows MODE (search vs manual) only —
- *     every "hides the search block" assertion below became "stays visible";
+ *   - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a
+ *     binding that now reads `true` always, an absent one. Doug's ruling is
+ *     "controlled ONLY by the admin setting", so the block carries no
+ *     `x-show` of its own in this branch at all; `searchBlockHasNoOwnGate()`
+ *     pins the DOM fact instead of a component getter that does not exist;
  *   - the "Change company" button, `CHANGE_BUTTON_SHOW_BINDING`,
  *     `CHANGE_BUTTON_CLICK_BINDING` and `clearCapturedCompany()` are all
  *     REMOVED, along with every test whose only subject was that round trip;
@@ -64,16 +67,6 @@ const LABEL_TEXT_BINDING = H.readAlpineBinding(
   "x-text",
 );
 
-/**
- * The gate on the editable search control, read from the block that wraps the
- * search input. Selected via that input's `data-name`, then walked up to the
- * `x-show` ancestor, so a markup reshuffle that moves the gate off this block
- * fails here rather than passing silently.
- *
- * Since the 2026-08-05 ruling (bug 5) this follows MODE only — it is `true`
- * whenever the buyer is not in manual entry, regardless of capture.
- */
-const SEARCH_BLOCK_SHOW_BINDING = readSearchBlockShowBinding();
 
 /**
  * The gate on the whole Company Number block, caption included. UNCHANGED by
@@ -145,19 +138,25 @@ function parsedMarkup() {
 }
 
 /**
- * @returns {string} the bare getter name the search-control block's `x-show`
- *   binds to
+ * Doug's exact-words ruling (carried over from Magento PR #324): the search
+ * control "is controlled ONLY by the state of the 'enable search in address'
+ * admin setting ... and search control visibility is not changed for any
+ * other reason." Pinned as the absence of any `x-show` between the
+ * company-name input and the `<form>` — the input's own ancestor chain is the
+ * only place a reintroduced capture- or mode-based gate could hide.
+ *
+ * @returns {void}
  */
-function readSearchBlockShowBinding() {
+function expectSearchBlockHasNoOwnVisibilityGate() {
   const input = parsedMarkup().querySelector('input[data-name="company_name"]');
   if (!input) {
     throw new Error("the search-mode company_name input is gone from the tile");
   }
-  const block = input.closest("[x-show]");
-  if (!block) {
-    throw new Error("the company search control has no x-show gate");
+  let node = input.parentElement;
+  while (node && node.tagName !== "FORM") {
+    expect(node.hasAttribute("x-show")).toBe(false);
+    node = node.parentElement;
   }
-  return block.getAttribute("x-show");
 }
 
 /**
@@ -241,11 +240,14 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     test.each([
       ["label x-show", () => LABEL_SHOW_BINDING],
       ["label x-text", () => LABEL_TEXT_BINDING],
-      ["search block x-show", () => SEARCH_BLOCK_SHOW_BINDING],
       ["number block :class", () => NUMBER_BLOCK_HIDDEN_CLASS_BINDING],
       ["intent message x-show", () => INTENT_MESSAGE_SHOW_BINDING],
     ])("%s names a key the component actually defines", (_label, binding) => {
       expect(binding() in component).toBe(true);
+    });
+
+    test("the search block carries no visibility gate of its own (2026-08-05 ruling, bug 5)", () => {
+      expectSearchBlockHasNoOwnVisibilityGate();
     });
 
     test("the label row is the first child of the payment fieldset", () => {
@@ -297,7 +299,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // search control is the only capture route for a buyer who never sees
       // the address-step company field.
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
@@ -307,7 +308,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // number, so nothing may be hidden.
       component.selectItem(pickerItem("Example Trading Ltd", ""));
 
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
@@ -320,7 +320,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       component.companyName = "Example Trading Ltd";
       component.applyCompanyIdEditability();
 
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
@@ -360,8 +359,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
     test("keeps the editable search control visible (2026-08-05 ruling, bug 5)", () => {
       // THE fix. Before it, capture hid this block and the only way back was
-      // the now-removed "Change company" button.
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
+      // the now-removed "Change company" button. There is no gate to flip
+      // any more, which is the structural pin at the top of this file — this
+      // test names the SCENARIO the fix targets.
+      expectSearchBlockHasNoOwnVisibilityGate();
     });
 
     test("hides the whole Company Number block, caption included", () => {
@@ -388,7 +389,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // The reverse transition. `companyName` has no clearing writer, so a gate
       // keyed on it directly would leave the block hidden for a company the
       // buyer has just typed away from.
-      component.isSelecting = false;
+      //
+      // The name field is now the ONE input, shared between modes (TWO-25326,
+      // 2026-08-05 ruling) and `readonly` while `searchModeActive` — a
+      // registry pick was made in SEARCH mode above, so editing the name by
+      // hand is only reachable through manual mode, exactly as the shipped
+      // control gates it.
+      component.enterManually();
       const nameInput = document.getElementById("company_name");
       nameInput.value = "Other Example";
       const previousEl = component.$el;
@@ -397,17 +404,14 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         component.getItems().catch(() => {});
       } finally {
         component.$el = previousEl;
-        component.abortCompanySearch();
       }
 
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
     test("gives the Company Number block back when a later pick carries no identifier", () => {
       component.selectItem(pickerItem("Other Example Ltd", ""));
 
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
     });
 
@@ -422,7 +426,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(component[LABEL_TEXT_BINDING]).toBe(
         "Other Example Ltd (987654321)",
       );
-      expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
     });
   });
 
@@ -452,12 +455,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe(
           captured ? "hidden" : "",
         );
-        // The search control's own gate no longer depends on capture at all
-        // (2026-08-05 ruling, bug 5) — it is visible whenever the buyer is not
-        // in manual mode, captured or not.
-        expect(component[SEARCH_BLOCK_SHOW_BINDING]).toBe(
-          !component.showManual,
-        );
+        // The search control's own gate no longer depends on capture OR mode
+        // (2026-08-05 ruling, bug 5) — there is no gate at all, pinned
+        // structurally above rather than against component state here.
       });
     });
 
@@ -527,9 +527,8 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
   describe("the label is shown exactly when the intent notice is", () => {
     test("both bindings are the same getter, not two that merely agree", () => {
       expect(LABEL_SHOW_BINDING).toBe(INTENT_MESSAGE_SHOW_BINDING);
-      // And it is the notice's own gate that both read, not the search
-      // block's or the Company Number block's.
-      expect(LABEL_SHOW_BINDING).not.toBe(SEARCH_BLOCK_SHOW_BINDING);
+      // And it is the notice's own gate that both read, not the Company
+      // Number block's (the search block has no gate at all to compare).
       expect(LABEL_SHOW_BINDING).not.toBe(NUMBER_BLOCK_HIDDEN_CLASS_BINDING);
     });
 
@@ -816,9 +815,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       //
       // fillCompanyData()'s gate, before it dispatches:
       expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
-      // and the top-level listener's own "already processed" gate:
+      // and the top-level listener's own "already processed" gate — read via
+      // a local alias (`component`) rather than the global directly, because
+      // bug 5's local-spinner rework wrapped this in executeOrderIntent(),
+      // but it is still the SAME global instance under that name:
+      expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(
-        "currentCompanyId === twoPaymentComponentInstance.lastOrderIntentCompanyId",
+        "currentCompanyId === component.lastOrderIntentCompanyId",
       );
     });
   });
@@ -907,7 +910,6 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(fresh.companyId).toBe("");
       expect(fresh[LABEL_SHOW_BINDING]).toBe(false);
       // And the capture route is available, which is the whole point.
-      expect(fresh[SEARCH_BLOCK_SHOW_BINDING]).toBe(true);
     });
 
     test("falls back when the toggle does not exist at all", () => {

@@ -19,8 +19,12 @@
  *    — the affordances are real `<button type="button">` elements now, so
  *    Enter and Space activate them natively and the hand-rolled keydown
  *    handlers are gone.
- *  - DUPLICATION. There are two routes into manual entry on this surface and
- *    they now carry identical copy, so exactly one may be on screen at a time.
+ *  - DUPLICATION. A below-the-field second route was tried twice (removed
+ *    2026-07-28, restored 2026-08-01) and finally deleted for good on
+ *    2026-08-05: once the panel opens from zero typed characters, the
+ *    in-dropdown row alone is reachable throughout, so a persistent second
+ *    copy has nothing left to cover. There is exactly ONE route into manual
+ *    entry on this surface now.
  *
  * Two traps this suite has to stay out of, both proven in this repo:
  *
@@ -47,10 +51,11 @@ const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
 /**
  * The exact English source string, character for character.
  *
- * It resolves against dictionaries the base Two Magento module ships — this
- * repo carries no catalogue of its own — so a reworded key falls silently back
- * to English in every other locale. The same string is used by both routes into
- * manual entry deliberately: one dictionary row serves both.
+ * It resolves against dictionaries the base Two Magento module ships. This
+ * repo does carry its own i18n directory now (bug 5's "Checking your
+ * company…" spinner text), but neither this msgid nor the reverse link's is
+ * a row in it, so a reworded key here still falls silently back to English in
+ * every other locale — pinned in the "wording" describe below.
  */
 const MANUAL_ENTRY_MSGID = "My company is not on the list";
 
@@ -77,11 +82,12 @@ const INJECT_RULE = [
  * The in-dropdown row and the way back.
  *
  * `.two-company-manual-entry` (the second, below-the-field copy of this
- * affordance) was removed 2026-07-28 (bug 4.2) and RESTORED 2026-08-01 with a
+ * affordance) was removed 2026-07-28 (bug 4.2), RESTORED 2026-08-01 with a
  * narrower gate — `belowFieldManualEntryVisible`, the exact complement of
- * `showDropdown()` — because deleting it left an untouched field with no route
- * into manual entry at all. Its old name is kept here rather than renamed
- * mid-suite: the class is what the shipped markup carries.
+ * `showDropdown()` — and removed again for good on 2026-08-05: with the panel
+ * reachable from zero typed characters, the row alone covers every state the
+ * restored link existed for. `REMOVED_PERSISTENT_SELECTOR` is kept as a
+ * negative-assertion target — the class this suite must never find again.
  */
 const ROW_SELECTOR = ".two-company-manual-entry-row";
 const REMOVED_PERSISTENT_SELECTOR = ".two-company-manual-entry";
@@ -155,8 +161,14 @@ describe("address-step manual-entry affordance", () => {
     // panel's own query field (TWO-25326 §1). Searching and the min-characters
     // hint both key off the second one now, so a fixture with only the first
     // would measure a value the component never reads.
+    // `two-company-search` is load-bearing on the wrapper, not decoration:
+    // `controlRoot()` resolves the component's own root by that class (see
+    // gateway_method-csp-js.phtml), and focusablesAfterComponent() — the §4
+    // Tab handler's candidate list — reads document order from it. A fixture
+    // without it makes controlRoot() resolve to null and every Tab-handling
+    // assertion below pass for the wrong reason (an empty candidate list).
     document.body.innerHTML = [
-      '<div id="root">',
+      '<div id="root" class="two-company-search">',
       '  <input type="text" id="field" value="" />',
       '  <input type="text" class="two-company-query" id="query" value="" />',
       "</div>",
@@ -220,40 +232,68 @@ describe("address-step manual-entry affordance", () => {
   }
 
   describe("wording", () => {
-    test("both routes use the exact English source string", () => {
+    /**
+     * The msgid lives in the shared control markup now, not in
+     * companyName.phtml itself (TWO-25326, 2026-08-05 ruling — the control is
+     * ONE implementation, included via `include $block->getTemplateFile(…)`
+     * from every mount point). `templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE)`
+     * only ever sees companyName.phtml's own bytes — `include` is a runtime
+     * PHP statement, not something a raw-source read follows — so the
+     * source-level wording checks have to read the control file directly.
+     */
+    const CONTROL_TEMPLATE =
+      "view/frontend/templates/form/field/company-search-control.phtml";
+
+    test("the affordance uses the exact English source string, once", () => {
       // Asserted at SOURCE level, not on rendered text: the harness resolves
       // every `__()` to one placeholder, so a rendered-text assertion would
       // pass over any wording whatsoever, the old one included.
-      const source = templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE);
-      const occurrences = source.split('__("' + MANUAL_ENTRY_MSGID + '")');
+      const source = templateSource(CONTROL_TEMPLATE);
+      const occurrences = source.split("__('" + MANUAL_ENTRY_MSGID + "')");
 
-      // Exactly twice — the in-dropdown row AND the restored below-the-field
-      // link (bug 4.2 round 2). One occurrence would mean the below-field
-      // copy is missing again; three would mean a genuine duplicate.
-      expect(occurrences).toHaveLength(3);
+      // Exactly once — the in-dropdown row is the ONLY route now (2026-08-05
+      // ruling, superseding the below-the-field link bug 4.2 round 2 had
+      // restored). Zero would mean the affordance is missing; two would mean
+      // a duplicate route back.
+      expect(occurrences).toHaveLength(2);
     });
 
     test("the replaced wording is gone from this surface", () => {
-      // Both routes previously read "Enter details manually". Leaving either on
-      // the old string is the failure this catches, and it is invisible to any
-      // assertion on rendered text.
-      expect(templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE)).not.toContain(
-        REPLACED_MSGID,
+      // The row previously read "Enter details manually". Leaving it on the
+      // old string as an ACTUAL msgid is the failure this catches — the old
+      // string does still appear once, in this file's own doc comment
+      // narrating the history, which is not a `__()` call and must not be
+      // confused for one.
+      expect(templateSource(CONTROL_TEMPLATE)).not.toContain(
+        "__('" + REPLACED_MSGID + "')",
       );
     });
 
     test("the reverse link keeps its existing wording", () => {
       // Already translated in the base module's catalogues on every locale, so
       // rewording it would strand it in English for no reason.
-      expect(templateSource(H.COMPANY_NAME_MARKUP_TEMPLATE)).toContain(
-        '__("' + SEARCH_AGAIN_MSGID + '")',
+      expect(templateSource(CONTROL_TEMPLATE)).toContain(
+        "__('" + SEARCH_AGAIN_MSGID + "')",
       );
     });
 
-    test("this repo still ships no translation dictionary of its own", () => {
+    test("this repo's own i18n directory carries no dictionary entry for these msgids", () => {
       // The msgid resolves against the base module's catalogues, which Magento
-      // merges per locale. An i18n directory here would shadow that.
-      expect(fs.existsSync(path.join(H.REPO_ROOT, "i18n"))).toBe(false);
+      // merges per locale. This repo DOES now ship an i18n directory of its
+      // own (TWO-25326 tile bugfix batch, bug 5 — the local "Checking your
+      // company…" spinner text), so the premise this test pins is narrower
+      // than "no i18n directory at all": neither manual-entry msgid may be
+      // shadowed by a row in this repo's own catalogues, which would silently
+      // stop them resolving against the base module's translations instead.
+      const i18nDir = path.join(H.REPO_ROOT, "i18n");
+      if (!fs.existsSync(i18nDir)) return;
+      fs.readdirSync(i18nDir)
+        .filter((name) => name.endsWith(".csv"))
+        .forEach((name) => {
+          const csv = fs.readFileSync(path.join(i18nDir, name), "utf8");
+          expect(csv).not.toContain(MANUAL_ENTRY_MSGID);
+          expect(csv).not.toContain(SEARCH_AGAIN_MSGID);
+        });
     });
   });
 
@@ -277,22 +317,17 @@ describe("address-step manual-entry affordance", () => {
       expect(results.contains(row)).toBe(false);
     });
 
-    test("the below-the-field copy is restored, gated on the complement of showDropdown (bug 4.2 round 2)", () => {
-      // The mutation this guards against: gating the restored link on the
-      // SAME condition as the row (`showDropdown`) would put two identical
-      // links on screen whenever the dropdown is open — the exact defect the
-      // 2026-07-28 first-pass deletion was (rightly) avoiding. Asserting the
-      // literal `x-show` attribute string, not just "it exists" or "it's
-      // sometimes hidden", is what catches that mutation.
+    test("the below-the-field copy stays gone (2026-08-05 ruling, superseding bug 4.2 round 2)", () => {
+      // Round 2 (2026-07-28 first pass, then restored 2026-08-01) tried a
+      // below-the-field `.two-company-manual-entry` link as the affordance's
+      // route when the panel is shut. The 2026-08-05 ruling removes it for
+      // good instead: the panel opens on click/keypress from zero typed
+      // characters (pinned in the "timing" describe below), so the in-panel
+      // row is reachable immediately and there is nothing left for a second,
+      // persistent copy to cover.
       const doc = renderDoc();
-      const link = doc.querySelector(REMOVED_PERSISTENT_SELECTOR);
 
-      expect(link).not.toBeNull();
-      // The gate lives on the wrapping `<div>`, not the `<span>` itself —
-      // same structure as the "Search for company" reverse link above it.
-      const wrapper = link.closest("[x-show]");
-      expect(wrapper.getAttribute("x-show")).toBe("belowFieldManualEntryVisible");
-      expect(wrapper.getAttribute("x-show")).not.toBe("showDropdown");
+      expect(doc.querySelector(REMOVED_PERSISTENT_SELECTOR)).toBeNull();
     });
   });
 
@@ -649,299 +684,16 @@ describe("address-step manual-entry affordance", () => {
     });
   });
 
-  describe("manual entry is reachable in every non-selected search state, exactly once (bug 4.2 round 2)", () => {
-    /**
-     * Is the min-characters hint showing, as the shipped `x-show` binding
-     * decides it? Read out of the markup rather than named here, so
-     * renaming the getter without repointing the binding fails instead of
-     * silently passing.
-     *
-     * @returns {boolean}
-     */
-    function hintVisible() {
-      const hint = renderDoc().querySelector(MIN_CHARS_SELECTOR);
-      expect(hint).not.toBeNull();
-      const bound = hint.getAttribute("x-show");
-      expect(typeof component[bound]).toBe("function");
-      return component[bound]();
-    }
-
-    /**
-     * Would the in-dropdown manual-entry row be on screen right now? Reads
-     * the row's own gate out of the shipped markup — `showDropdown` —
-     * rather than assuming it.
-     *
-     * @returns {boolean}
-     */
-    function rowVisible() {
-      const row = renderDoc().querySelector(ROW_SELECTOR);
-      expect(row).not.toBeNull();
-      const gate = row.closest("[x-show]");
-      expect(gate).not.toBeNull();
-      const bound = gate.getAttribute("x-show");
-      expect(typeof component[bound]).toBe("function");
-      return component[bound]();
-    }
-
-    /**
-     * Would the restored below-the-field manual-entry link be on screen
-     * right now? Same pattern as `rowVisible()`, reading
-     * `REMOVED_PERSISTENT_SELECTOR`'s own gate out of the shipped markup.
-     *
-     * @returns {boolean}
-     */
-    function belowFieldVisible() {
-      const link = renderDoc().querySelector(REMOVED_PERSISTENT_SELECTOR);
-      expect(link).not.toBeNull();
-      const gate = link.closest("[x-show]");
-      expect(gate).not.toBeNull();
-      const bound = gate.getAttribute("x-show");
-      expect(typeof component[bound]).toBe("boolean");
-      return component[bound];
-    }
-
-    /**
-     * Is EITHER manual-entry affordance visible right now? Asserts the two
-     * are mutually exclusive on every call — this is what a mutated re-gate
-     * (e.g. binding the restored link onto the SAME condition as the row)
-     * would break, rather than merely "at least one is offered".
-     *
-     * @returns {boolean}
-     */
-    function manualEntryVisible() {
-      const row = rowVisible();
-      const belowField = belowFieldVisible();
-
-      expect(row && belowField).toBe(false);
-
-      return row || belowField;
-    }
-
-    /*
-     * Bug 4.2 named two states the affordance must NOT read as "not on the
-     * list": manual mode (the wording would be nonsensical) and a completed
-     * selection (the claim is simply false). Round 2 added a third
-     * constraint of its own: the affordance must be reachable in EVERY
-     * OTHER state, including an untouched field and a sub-threshold query —
-     * the exact states the first-pass fix (2026-07-28) left with nothing at
-     * all.
-     */
-    test("an untouched field: the below-field link is the reachable affordance", () => {
-      expect(rowVisible()).toBe(false);
-      expect(belowFieldVisible()).toBe(true);
-      expect(manualEntryVisible()).toBe(true);
-    });
-
-    test("a closed panel: the below-field link stays the reachable affordance", () => {
-      // REPLACES "a sub-threshold query: …". Query length no longer decides
-      // whether the panel is open (TWO-25326 §1) — interaction does — so the
-      // state this row covers is "panel shut", reached here by opening and
-      // dismissing it rather than by typing too little.
-      openPanel();
-      type("xx");
-      component.closeDropdown();
-
-      expect(rowVisible()).toBe(false);
-      expect(belowFieldVisible()).toBe(true);
-      expect(manualEntryVisible()).toBe(true);
-    });
-
-    test("an open panel: the row takes over from the below-field link, from zero characters", () => {
-      // REPLACES the same test driven by typing to the threshold. The handover
-      // happens on the panel opening, with nothing typed at all.
-      openPanel();
-
-      expect(component.query).toBe("");
-      expect(rowVisible()).toBe(true);
-      expect(belowFieldVisible()).toBe(false);
-      expect(manualEntryVisible()).toBe(true);
-    });
-
-    test("the row and the below-field link are exact complements, across the whole length range", () => {
-      // The invariant restated without a helper to hide behind: whatever the
-      // typed length, exactly one of the two conditions holds, never both
-      // and never neither (while a company remains unselected). A gate stuck
-      // on either value, or a mutation that drops the `!showDropdown()` term
-      // from one side, fails half this sweep.
-      //
-      // Swept over the panel's OPEN state as well as the length now, because
-      // the two are independent since §1 — a sweep over length alone would
-      // never leave `showDropdown()` false and so would only ever exercise one
-      // side of the complement.
-      [false, true].forEach((open) => {
-        for (let n = 0; n <= INJECTED_MIN + 3; n += 1) {
-          component.isOpen = open;
-          type("x".repeat(n));
-
-          expect(component.showDropdown()).toBe(open);
-          expect(rowVisible()).toBe(open);
-          expect(belowFieldVisible()).toBe(!open);
-          expect(manualEntryVisible()).toBe(true);
-        }
-      });
-    });
-
-    describe("states the length sweep cannot reach", () => {
-      const CHOSEN = { companyName: "Acme Widgets Ltd", companyId: "111" };
-
-      /**
-       * Pick a company the way the dropdown does.
-       *
-       * No follow-up `getItems()` tick any more: it used to be needed to
-       * consume the `isSelecting` one-shot guard, and TWO-25326 §1 deleted
-       * that guard along with the search path through the company-name field.
-       *
-       * @returns {Promise<void>}
-       */
-      async function pickFromDropdown() {
-        openPanel();
-        component.items = [CHOSEN];
-        component.selectItem(CHOSEN);
-        await H.flushPromises();
-        expect(component.isCompanySelected).toBe(true);
-        expect(component.search).toBe(CHOSEN.companyName);
-        expect(component.showDropdown()).toBe(false);
-      }
-
-      test("a completed selection: BOTH affordances are shut", async () => {
-        // The exact bug 4.2 case: "after a company is already selected" —
-        // the one state where the below-field link's `!isCompanySelected`
-        // term earns its keep, since `!showDropdown()` alone would show it.
-        await pickFromDropdown();
-
-        expect(rowVisible()).toBe(false);
-        expect(belowFieldVisible()).toBe(false);
-      });
-
-      test("the chosen name cannot be edited by hand in search mode — every editing key is prevented", async () => {
-        // REPLACES "editing the chosen name re-opens the below-field link on
-        // the keystroke, not the row", which typed into the company-name field
-        // and expected the keystroke to clear the selection. TWO-25326 §1
-        // forbids that edit outright: the name field must not change until a
-        // result is selected, so the key is prevented and routed into the
-        // panel instead. The way back to manual entry after a pick is the
-        // panel, which the same keystroke opens.
-        await pickFromDropdown();
-        expect(rowVisible()).toBe(false);
-        expect(belowFieldVisible()).toBe(false);
-
-        const event = { key: "J", preventDefault: jest.fn() };
-        component.onCompanyNameKeydown(event);
-        await H.flushPromises();
-
-        expect(event.preventDefault).toHaveBeenCalled();
-        expect(field.value).toBe(CHOSEN.companyName);
-        expect(component.search).toBe(CHOSEN.companyName);
-        // …and the panel it opened is where manual entry lives again.
-        expect(component.query).toBe("J");
-        expect(rowVisible()).toBe(true);
-        expect(belowFieldVisible()).toBe(false);
-      });
-
-      describe("correcting the query after a pick", () => {
-        /**
-         * Pick a company, then reopen the panel — the only route back to a
-         * query once a selection has been made, since the company-name field
-         * is not typeable in search mode.
-         *
-         * @returns {Promise<void>}
-         */
-        async function pickThenReopen() {
-          openPanel();
-          component.items = [CHOSEN];
-          component.selectItem(CHOSEN);
-          await H.flushPromises();
-          expect(component.isCompanySelected).toBe(true);
-          expect(component.query).toBe("");
-          openPanel();
-          await H.flushPromises();
-        }
-
-        test("a short query shows the min-chars hint AND keeps the row on offer", async () => {
-          // REPLACES "a short correction shows the min-chars hint AND the
-          // below-field link". The hint moved inside the panel (§1), so it is
-          // the ROW that accompanies it now, not the below-field link — the
-          // two are complements and the panel is open.
-          await pickThenReopen();
-
-          type("Jo");
-
-          expect(component.showDropdown()).toBe(true);
-          expect(hintVisible()).toBe(true);
-          expect(rowVisible()).toBe(true);
-          expect(belowFieldVisible()).toBe(false);
-        });
-
-        test("a full-length query drops the hint and searches on the tick behind it", async () => {
-          await pickThenReopen();
-
-          type("y".repeat(INJECTED_MIN + 1));
-
-          expect(component.showDropdown()).toBe(true);
-          expect(hintVisible()).toBe(false);
-          expect(rowVisible()).toBe(true);
-          expect(belowFieldVisible()).toBe(false);
-
-          const pending = component.getItems();
-          await H.flushPromises();
-          expect(fetchStub.calls.length).toBeGreaterThan(0);
-          fetchStub.last().respond({ items: [] });
-          await pending;
-        });
-      });
-
-      test("reopening the panel after a pick puts the row back on offer", async () => {
-        // REPLACES "retyping past the threshold re-opens the row" — retyping
-        // into the name field is no longer possible, and the row's gate is the
-        // panel rather than the query length.
-        await pickFromDropdown();
-        expect(rowVisible()).toBe(false);
-        expect(belowFieldVisible()).toBe(false);
-
-        openPanel();
-
-        expect(component.showDropdown()).toBe(true);
-        expect(rowVisible()).toBe(true);
-        expect(belowFieldVisible()).toBe(false);
-      });
-
-      test("a click outside shuts the panel and hands manual entry to the below-field link", async () => {
-        // This is the exact state bug 4.2's first-pass fix (2026-07-28) left
-        // with NOTHING: closeDropdown() is bound as `@click.outside`, so a
-        // panel dismissed by a click elsewhere used to be a dead end. Round
-        // 2's below-field link takes over here instead, exactly as the pre-4.2
-        // persistent link once did.
-        openPanel();
-        type("x".repeat(INJECTED_MIN));
-        expect(component.showDropdown()).toBe(true);
-        expect(rowVisible()).toBe(true);
-        expect(belowFieldVisible()).toBe(false);
-
-        component.closeDropdown();
-
-        expect(component.showDropdown()).toBe(false);
-        expect(rowVisible()).toBe(false);
-        expect(belowFieldVisible()).toBe(true);
-      });
-    });
-
-    test("manual mode: BOTH affordances are shut, the reverse link takes over", () => {
-      component.enterManually();
-
-      expect(component.showDropdown()).toBe(false);
-      expect(rowVisible()).toBe(false);
-      expect(belowFieldVisible()).toBe(false);
-      expect(component.manualModeActive).toBe(true);
-    });
-
-    test("with the lookup switched off, neither affordance renders", () => {
-      component.isCompanySearchEnabled = "";
-      openPanel();
-      type("x".repeat(INJECTED_MIN));
-
-      expect(component.showDropdown()).toBe(false);
-      expect(rowVisible()).toBe(false);
-      expect(belowFieldVisible()).toBe(false);
-    });
-  });
+  /*
+   * The old "two affordances, exactly one reachable" model this described
+   * (bug 4.2 round 2 restoring a below-the-field `.two-company-manual-entry`
+   * link) is superseded by the 2026-08-05 ruling: there is exactly ONE
+   * manual-entry affordance now (the in-dropdown row above), permanently,
+   * because the panel opens on click/keypress from zero typed characters —
+   * see company-search-control.phtml's own comment on bug 2. Reachability at
+   * zero characters is pinned above ("opening the panel shows the row...");
+   * that the removed link stays removed is pinned in
+   * company-search-dropdown.test.js ("the deleted route must really be
+   * gone").
+   */
 });

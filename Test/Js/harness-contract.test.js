@@ -156,11 +156,22 @@ describe("template renderer contract", () => {
 
     test("a binding that is not a bare property name is a hard error", () => {
       // The harness resolves a binding as `component[name]`, so that is all it
-      // accepts — narrower ON PURPOSE than CSP-friendly Alpine, which looks the
-      // whole expression up as a key and so happily evaluates the sibling
-      // `x-show="!showManual"` against the `['!showManual']` getter in
-      // gateway_method-csp-js.phtml. That binding is CSP-legal; it is just not
-      // resolvable this way, which is why the guard rejects it here.
+      // accepts — narrower ON PURPOSE than CSP-friendly Alpine, which is happy
+      // with directives this cannot reduce to a property lookup.
+      //
+      // REWRITTEN 2026-08-05 (TWO-25326). The negative case used to be
+      // `x-show="!showManual"` on the tile's company-number input, resolved by an
+      // `['!showManual']` getter. The 2026-08-05 consolidation deleted the
+      // manual/search mirror pair that binding gated, so no `!`-prefixed
+      // expression is emitted by any shipped template any more and the old
+      // example resolves to no attribute at all — which trips the WRONG guard
+      // (the missing-binding one) and proved nothing about this one.
+      //
+      // The replacement is a VALUELESS directive, which is the same class of
+      // thing and is still shipped: `@keydown.window.prevent.enter` on the
+      // payment form suppresses stray Enter presses and takes no expression, so
+      // `getAttribute` returns the empty string. CSP-legal, deliberate, and not
+      // something `component[name]` can resolve.
       expect(() =>
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,
@@ -171,8 +182,8 @@ describe("template renderer contract", () => {
       expect(() =>
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-          'input[data-name="company_id"]',
-          "x-show",
+          "form",
+          "@keydown.window.prevent.enter",
         ),
       ).toThrow(/is not a bare property name/);
     });
