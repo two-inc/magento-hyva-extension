@@ -133,7 +133,7 @@ the template.
 
 The tile shows **at most one VERDICT** — available, not available, could not be
 determined — plus an in-progress row that is a separate fact and may legitimately
-be up alongside nothing. All four are one box style in one place. Two rules bite:
+be up alongside nothing. All four are one box style in one place. The rules that bite:
 
 - **ONE PAINTER.** `refreshOrderIntentVerdict()` is the only thing that writes a
   verdict notice. The reply handlers RECORD and then call it; they do not paint.

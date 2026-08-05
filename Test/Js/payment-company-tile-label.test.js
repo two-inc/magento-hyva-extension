@@ -101,21 +101,18 @@ const NOTICE_COPY = {
 };
 
 /**
- * Put `component` in the state where the inline notice is on screen, through
- * the REAL success handler rather than by assigning the observable. A test that
- * wrote `orderIntentApprovedNotice` by hand would still pass if
- * processOrderIntentSuccessResponse() stopped setting it.
+ * Put `component` in the state where the inline notice is on screen, by driving a
+ * WHOLE intent check — reply AND settle — through the real handlers rather than
+ * by assigning the observable. A test that wrote `orderIntentApprovedNotice` by
+ * hand would still pass if the production path stopped setting it.
+ *
+ * Both halves are needed because the reply handler only RECORDS: the box is
+ * painted when the check stops being in flight, since a verdict may never share
+ * the tile with a progress row. A fixture that stopped at the reply would leave
+ * the row up and the box correctly empty, and every label assertion below would
+ * then read as a regression when it is really a fixture that stops half way.
  *
  * @param {Object} component
- */
-/**
- * A whole intent check, reply AND settle — which is what production does.
- *
- * The reply handler only RECORDS now; the box is painted when the check stops
- * being in flight, because a verdict may never share the tile with a progress
- * row. So a fixture that delivers a reply without settling leaves the row up and
- * the box (correctly) empty, and every label assertion below would read as a
- * regression when it is really a fixture that stops half way.
  */
 function approveIntent(component) {
   component.orderIntentApprovedNoticeCopy = NOTICE_COPY;

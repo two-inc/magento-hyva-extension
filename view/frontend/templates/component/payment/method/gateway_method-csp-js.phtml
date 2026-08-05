@@ -2845,11 +2845,11 @@ $quoteDetails = json_encode(
                 }
 
                 /*
-                 * Resolved BEFORE the row comes down, because a brand that
-                 * switched this notice off resolves to '' — and lowering the row
-                 * for a verdict that then paints nothing leaves the tile blank
-                 * with no explanation, which is worse than a row that lingers
-                 * until the request settles on its own.
+                 * A brand that switched this notice off resolves to '', and an
+                 * empty string is not a verdict — so nothing is painted and the
+                 * box stays hidden rather than becoming an empty bordered strip.
+                 * (This used to also decide whether to lower the progress row;
+                 * the row is the setter's business now, and only its business.)
                  */
                 const text = record.approved
                     ? this.resolveOrderIntentApprovedNotice()
@@ -3719,11 +3719,13 @@ $quoteDetails = json_encode(
                 // it was ASKED about, name included. Read off the component
                 // rather than the DOM so it matches the name the verdict's copy
                 // will be built from.
-                // `undefined` when there is no name, NOT '': the record treats a
-                // missing name as UNKNOWN and stores null, which no company name
-                // can match. Coercing to '' handed it a value that IS matchable,
-                // which made the documented fail-closed branch dead for every
-                // real dispatch (round 5).
+                // `undefined` when there is no name, NOT ''. The two differ only
+                // for a LATE reply, which is the case that matters: `undefined`
+                // reaches the "name genuinely unknown" branch and records `null`,
+                // which no live name can match, whereas '' is a value the record
+                // WOULD match. For a reply about the company still on screen both
+                // end up recording '' — that company is simply nameless, and the
+                // gate then treats it as decided while it stays that way.
                 const requestedCompanyName = component.companyName || undefined;
                 component.setOrderIntentChecking(true);
 
@@ -3791,21 +3793,11 @@ $quoteDetails = json_encode(
                         // company is live: the spinner belongs to "is a check
                         // in flight", not to any one company's verdict.
                         if (!stillLive()) return;
+                        // Lowering the row IS the re-derive — see
+                        // setOrderIntentChecking(). A second explicit refresh here
+                        // was the same "two things to remember to pair" duality
+                        // that rule exists to remove.
                         component.setOrderIntentChecking(false);
-                        /*
-                         * Nothing is in flight any more, so the box is re-derived
-                         * from the record — the single point where "what should be
-                         * showing" is recomputed rather than assumed.
-                         *
-                         * Idempotent after a reply that already painted (the
-                         * record and the paint agree). It EARNS its place on the
-                         * replies that deliberately did not paint: one for a
-                         * company the buyer had left, and one that arrived under
-                         * an open results panel. Without this, reverting to an
-                         * already-decided company while another company's check
-                         * was in flight left that company with no verdict at all.
-                         */
-                        component.refreshOrderIntentVerdict();
                     });
                 return true;
             };

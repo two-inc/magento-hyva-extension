@@ -407,7 +407,13 @@ summary::marker {
  * empty bordered red strip on every page load. Nothing else in this module used
  * `x-cloak`, so the rule it depends on has to be declared here (round 6).
  */
-[x-cloak] {
+/*
+ * Scoped to this module's own boxes, not page-wide: Hyvä's base stylesheet
+ * already declares the unscoped rule on the checkout, and a module has no
+ * business shipping a global `!important` for an attribute it uses on four
+ * elements (round 8).
+ */
+.two-order-intent-box[x-cloak] {
   display: none !important;
 }
 

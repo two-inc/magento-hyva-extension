@@ -854,27 +854,61 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(() => component.refreshOrderIntentVerdict()).not.toThrow();
     });
 
-    test("a copy with no no-company sentence yields '' , not 'undefined'", () => {
+    test("a copy with no no-company sentence resolves to '', not 'undefined'", () => {
       // The sibling guard, and a different failure from the one above: the old
       // code returned `undefined` here rather than throwing, and `x-text` renders
       // that as the literal word "undefined" in the buyer's tile.
+      //
+      // Asserted on the RESOLVER, not on the painted notice. Round 8 caught the
+      // first version of this test being vacuous: refresh's `if (!text) return`
+      // swallows `undefined` and '' identically, so the notice is '' either way
+      // and the defect the test names could not be observed through it.
       component.companyName = "";
-      component.companyId = "111111111";
       component.orderIntentApprovedNoticeCopy = {
         withCompany: "YES {{companyName}}",
         companyNameToken: "{{companyName}}",
         companyNumberToken: "{{companyNumber}}",
       };
+      component.orderIntentNotAvailableCopy = {
+        withCompany: "NO {{companyName}}",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
 
-      component.processOrderIntentSuccessResponse(
-        { approved: true },
-        "111111111",
-        "",
-      );
-      component.setOrderIntentChecking(false);
+      expect(component.resolveOrderIntentApprovedNotice()).toBe("");
+      expect(component.resolveOrderIntentNotAvailableNotice()).toBe("");
+    });
 
-      expect(component.orderIntentApprovedNotice).toBe("");
-      expect(component.orderIntentApprovedNotice).not.toContain("undefined");
+    test("the dedup gate will not reuse a decision reached under another name", () => {
+      // The name half of `hasOrderIntentDecisionFor`, which round 8 found had no
+      // coverage at all — the gate's own JSDoc and AGENTS.md both call it
+      // load-bearing. A company renamed by hand after its check must be asked
+      // about again rather than inheriting the old name's answer, because the
+      // notice text embeds the name.
+      component.orderIntentDecisions["111111111"] = {
+        name: "Old Ltd",
+        approved: true,
+      };
+
+      expect(
+        component.hasOrderIntentDecisionFor("111111111", "Old Ltd"),
+      ).toBe(true);
+      expect(
+        component.hasOrderIntentDecisionFor("111111111", "Renamed Ltd"),
+      ).toBe(false);
+
+      // And through the gate that matters: a dispatch DOES go out for the
+      // renamed company.
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+      try {
+        component.isOrderIntentEnabled = "1";
+        component.fillCompanyData("111111111", "Renamed Ltd");
+        expect(dispatched).toEqual(["intent"]);
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
     });
 
     test("an errored check is not painted under an open panel either", () => {
