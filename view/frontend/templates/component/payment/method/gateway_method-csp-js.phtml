@@ -1008,7 +1008,6 @@ $quoteDetails = json_encode(
                 this.selectedIndex = -1;
                 this.query = '';
                 this.searchCompletedFor = null;
-                cfg.onDropdownClear.call(this);
 
                 this.search = item.companyName;
                 this.isCompanySelected = true;
@@ -1019,6 +1018,26 @@ $quoteDetails = json_encode(
                 this.companyIdSource = this.companyId ? 'registry' : '';
                 this.companyIdEntryRequired = !this.hasVouchedCompanyId();
                 this.applyCompanyIdEditability();
+
+                /*
+                 * The panel is dismissed AFTER the pick's own state is written,
+                 * not before it (review round 5). `onDropdownClear` is a hook a
+                 * SURFACE can chain onto — the payment tile does, to put back an
+                 * order-intent verdict a search took down — and firing it while
+                 * `companyName`/`companyId` still held the OUTGOING company meant
+                 * every such hook evaluated the company the buyer was replacing.
+                 * The tile's did exactly that: it briefly painted the previous
+                 * company's verdict and lowered the progress row of the request
+                 * that had just gone out for its replacement.
+                 *
+                 * Ordering, not deferral, is the fix. A `$nextTick` here would
+                 * paper over it, leave the wrong-company window open for anything
+                 * running in between, and be untestable under a harness whose
+                 * `$nextTick` is synchronous. Nothing between the old call site
+                 * and this one touches the DOM or the query box, so moving it is
+                 * inert for the engine's own use of the hook.
+                 */
+                cfg.onDropdownClear.call(this);
 
                 const field = cfg.resolveNameField.call(this);
                 if (field) {
@@ -2165,19 +2184,7 @@ $quoteDetails = json_encode(
              * anything for a company it holds no decision for.
              */
             onDropdownClear: function () {
-                /*
-                 * Deferred a tick on purpose. selectItem() closes the panel
-                 * BEFORE it writes the new `companyName`/`companyId`, so running
-                 * this synchronously would evaluate against the OUTGOING company
-                 * — briefly painting the verdict for the company the buyer is
-                 * replacing, and lowering the progress row of the request that
-                 * just went out for its replacement. A tick later the pick has
-                 * finished writing and this sees the company the buyer actually
-                 * chose, which for an abandoned search is the unchanged one.
-                 */
-                this.$nextTick(() => {
-                    this.refreshOrderIntentVerdict();
-                });
+                this.refreshOrderIntentVerdict();
             },
             onCompanyCommitted: function (companyName, companyId) {
                 this.fillCompanyData(companyId, companyName);
@@ -2702,31 +2709,15 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Put the box into whatever state the CURRENT company's decision
-             * says it should be in: empty when that company has no decision,
-             * and its decision re-painted when it has one.
+             * Drop the recorded FAILURE for one company, if that is the company
+             * it was recorded for.
              *
-             * This exists because clearing on a company change is only half
-             * right. The dedup gate in fillCompanyData() refuses to re-ask for a
-             * decision the tile already has, so on its own a clear-on-change
-             * left the buyer who returned to an already-decided company — by
-             * searching again and picking the same one, or by picking A, then B,
-             * then A — with a blank box and no route to a verdict for the rest
-             * of the session. The decision is still known; it just was not being
-             * shown.
+             * Called when a decision for it lands (the question has been
+             * answered) and when a fresh check for it goes out (the question is
+             * being asked again) — in both cases the old failure must stop being
+             * repainted.
              *
-             * Fails closed, in the two ways that matter: a company with no
-             * decision on record (including one whose only check ERRORED, since
-             * an error deliberately does not advance `lastOrderIntentCompanyId`)
-             * gets an empty box, and so does a hand-typed company, which has no
-             * identifier to match on.
-             *
-             * Called from three places: the `companyName`/`companyId` watchers,
-             * fillCompanyData()'s suppressed-dispatch branch, and the control's
-             * `onDropdownClear` (a search that ended without changing anything).
-             * All three go through here so the answer is the same whichever runs
-             * last — the reason it clears and repaints in one place rather than
-             * clearing in one and repainting in another.
+             * @param {string} companyId
              */
             forgetOrderIntentError(companyId) {
                 if (this.lastOrderIntentErrorCompanyId !== companyId) return;
@@ -2744,8 +2735,43 @@ $quoteDetails = json_encode(
                     && this.companyName === this.lastOrderIntentErrorCompanyName;
             },
 
+            /**
+             * Put the box into whatever state the CURRENT company's record says
+             * it should be in: empty when that company has no record, and its
+             * verdict re-painted when it has one — a decision, or a failure.
+             *
+             * This exists because clearing on a company change is only half
+             * right. The dedup gate in fillCompanyData() refuses to re-ask for a
+             * decision the tile already has, so on its own a clear-on-change
+             * left the buyer who returned to an already-decided company — by
+             * searching again and picking the same one, or by picking A, then B,
+             * then A — with a blank box and no route to a verdict for the rest
+             * of the session. The decision is still known; it just was not being
+             * shown.
+             *
+             * Fails closed: a company with nothing on record gets an empty box,
+             * and so does a hand-typed company, which has no identifier to match
+             * on. A recorded FAILURE is repainted too (round 4) — the check is
+             * still failed and the order still blocked, so an empty tile would
+             * read as "nothing was ever tried" — but a failure being retried
+             * right now is not, because dispatching forgets it first.
+             *
+             * Called from three kinds of place: the `companyName`/`companyId` watchers,
+             * fillCompanyData()'s suppressed-dispatch branch, and the control's
+             * `onDropdownClear` (a search that ended without changing anything).
+             * All go through here so the answer is the same whichever runs last —
+             * the reason it clears and repaints in one place rather than clearing
+             * in one and repainting in another.
+             */
             refreshOrderIntentVerdict() {
                 this.clearOrderIntentNotices();
+
+                // Same rule as the reply path's: no verdict appears under an open
+                // results panel. Without this the two paint paths disagreed, and
+                // the disagreement was reachable — this tile's company-number
+                // field is editable, so typing a decided company's number back in
+                // while the panel is open repainted through here (round 5).
+                if (this.showDropdown()) return;
 
                 // A failed check is a verdict too, and the same reasoning that
                 // brings a decline back brings this back: the check is still
@@ -2879,6 +2905,15 @@ $quoteDetails = json_encode(
                     // 500ms and half a second of a tile that has visibly not
                     // reacted to the pick is the complaint. Every path that
                     // then declines to make a request takes it back down.
+                    // A check going out for this company supersedes its previous
+                    // FAILURE: the question is being asked again, so the old
+                    // answer must not be repainted over the attempt. Without this
+                    // the panel-closed repaint fired a moment later, killed the
+                    // optimistic progress row and put "the check failed" back on
+                    // screen while the retry had not yet left the browser — and
+                    // the dispatcher then raised the row again 500ms later, so
+                    // both were up together.
+                    this.forgetOrderIntentError(companyId);
                     this.orderIntentChecking = true;
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 } else {
@@ -3144,13 +3179,6 @@ $quoteDetails = json_encode(
                 // company: the question has been answered now.
                 this.forgetOrderIntentError(decidedCompanyId);
 
-                // Recorded here rather than inside the paint branches below —
-                // whether the order may be placed is a fact about the ANSWER,
-                // not about what is on screen, so a reply that declines to paint
-                // (panel open, or a company no longer current) must not leave it
-                // stale. Unconditional, unlike the record above: this is about
-                // this reply, not about a company to come back to.
-                this.placeOrderIntentFlag = Boolean(response.approved);
 
                 /*
                  * The VISIBLE verdict is a separate concern from the dedup
@@ -3171,6 +3199,26 @@ $quoteDetails = json_encode(
                  * together.
                  */
                 if (decidedCompanyId !== this.companyId) return;
+
+                // Past the guard, and only past it. This bit says whether THE
+                // ORDER may be placed, and the order is for the company on
+                // screen — so a late reply about a company the buyer has left
+                // must not touch it (round 5). It is still set before the
+                // panel-open guard below, because a reply that merely declines to
+                // PAINT has still decided, and leaving it stale would let a
+                // declined company through on a flag set by an earlier approval.
+                this.placeOrderIntentFlag = Boolean(response.approved);
+
+                // The toast fires whatever happens to the box: it is the signal
+                // for a buyer whose attention is on the fields, and the
+                // panel-open guard below deliberately defers only the BOX. Above
+                // the guard so the two cannot get out of step (round 5).
+                if (!response.approved) {
+                    window.dispatchMessages(
+                        [{ type: 'error', text: this.orderIntentDeclinedMessage }],
+                        5000
+                    );
+                }
 
                 /*
                  * Not underneath an open results panel. A reply can land while
@@ -3209,7 +3257,6 @@ $quoteDetails = json_encode(
                     // location) and a buyer's attention is on the fields, not
                     // the text below them.
                     this.orderIntentNotAvailableNotice = this.resolveOrderIntentNotAvailableNotice();
-                    window.dispatchMessages([{ type: 'error', text: this.orderIntentDeclinedMessage }], 5000);
                 }
             },
 
@@ -3223,7 +3270,7 @@ $quoteDetails = json_encode(
              *   different, already-decided company must not blank that
              *   company's approved notice on its way out.
              */
-            processOrderIntentErrorResponse(response, requestedCompanyId) {
+            processOrderIntentErrorResponse(response, requestedCompanyId, requestedCompanyName) {
                 if (typeof requestedCompanyId === 'string' && requestedCompanyId
                     && requestedCompanyId !== this.companyId) {
                     return;
@@ -3279,7 +3326,13 @@ $quoteDetails = json_encode(
                 // error toasts per field and has no box, so it has no record.
                 if (message) {
                     this.lastOrderIntentErrorCompanyId = this.companyId;
-                    this.lastOrderIntentErrorCompanyName = this.companyName;
+                    // The name the check actually RAN for, not whatever the field
+                    // holds now: the guard above pins the id, but a name
+                    // hand-edited while the request was out would otherwise file
+                    // the failure under a name it was never about (round 5).
+                    this.lastOrderIntentErrorCompanyName = typeof requestedCompanyName === 'string'
+                        ? requestedCompanyName
+                        : this.companyName;
                 }
 
                 if (message) {
@@ -3575,7 +3628,12 @@ $quoteDetails = json_encode(
                 // it was ASKED about, name included. Read off the component
                 // rather than the DOM so it matches the name the verdict's copy
                 // will be built from.
-                const requestedCompanyName = component.companyName || '';
+                // `undefined` when there is no name, NOT '': the record treats a
+                // missing name as UNKNOWN and stores null, which no company name
+                // can match. Coercing to '' handed it a value that IS matchable,
+                // which made the documented fail-closed branch dead for every
+                // real dispatch (round 5).
+                const requestedCompanyName = component.companyName || undefined;
                 component.orderIntentChecking = true;
 
                 /*
@@ -3626,7 +3684,11 @@ $quoteDetails = json_encode(
                     })
                     .catch(error => {
                         if (!stillLive()) return;
-                        component.processOrderIntentErrorResponse(error, requestedCompanyId);
+                        component.processOrderIntentErrorResponse(
+                            error,
+                            requestedCompanyId,
+                            requestedCompanyName
+                        );
                     })
                     .finally(() => {
                         // Only the CURRENT request on the CURRENT instance

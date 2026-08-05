@@ -256,6 +256,41 @@ describe("the payment tile's mounted control (integration)", () => {
     await pending;
   });
 
+  test("picking a new company evaluates against the INCOMING one", async () => {
+    // Round-5 finding. The engine dismissed the panel BEFORE writing the pick's
+    // company, so the tile's panel-closed repaint ran against the OUTGOING one —
+    // briefly repainting the previous company's verdict and lowering the progress
+    // row of the request that had just gone out for its replacement. Ordering was
+    // the fix, so this is assertable synchronously.
+    component.onCompanyNameClick();
+    await search("alpha", "111111111");
+    component.selectItem(component.items[0]);
+    component.orderIntentApprovedNoticeCopy = {
+      withCompany: "Available for {{companyName}}",
+      withoutCompany: "Available",
+      companyNameToken: "{{companyName}}",
+      companyNumberToken: "{{companyNumber}}",
+    };
+    component.processOrderIntentSuccessResponse(
+      { approved: true },
+      "111111111",
+      "Example Trading Ltd",
+    );
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+
+    // A different company is picked.
+    component.onCompanyNameClick();
+    await search("beta", "222222222");
+    component.selectItem(component.items[0]);
+
+    // The previous company's verdict is not on screen next to the new company,
+    // and the new company's check is visibly running.
+    expect(component.companyId).toBe("222222222");
+    expect(component.orderIntentApprovedNotice).toBe("");
+    expect(component.orderIntentMessageVisible).toBe(false);
+    expect(component.orderIntentChecking).toBe(true);
+  });
+
   test("abandoning a search puts the standing verdict back", async () => {
     // Round-3 finding: clearing on search start had no counterpart for a search
     // that ENDS without changing the company. The buyer opens the panel, types,

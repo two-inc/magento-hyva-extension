@@ -340,6 +340,26 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(TILE_SOURCE).not.toContain("Checking your company");
     });
 
+    test("the dispatcher passes an absent company name as absent, not as ''", () => {
+      // A CONTRACT assertion, deliberately at source level. The record treats a
+      // missing name as UNKNOWN and stores `null`, which no company name can
+      // match; coercing to '' hands it a value that IS matchable and quietly
+      // kills that fail-closed branch. The only behavioural difference is on a
+      // late nameless reply, which the sequence guard makes very hard to reach
+      // from a test — so this pins the contract instead of simulating the path,
+      // and it fails if the coercion comes back.
+      const jsSource = fs.readFileSync(
+        path.join(H.REPO_ROOT, H.GATEWAY_METHOD_TEMPLATE),
+        "utf8",
+      );
+      expect(jsSource).toContain(
+        "const requestedCompanyName = component.companyName || undefined;",
+      );
+      expect(jsSource).not.toContain(
+        "const requestedCompanyName = component.companyName || '';",
+      );
+    });
+
     test("every locale has a row for that exact key", () => {
       const catalogues = fs
         .readdirSync(path.join(H.REPO_ROOT, "i18n"))
@@ -460,6 +480,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     test("an errored check replaces a standing approval with the error box", () => {
       component.companyId = "111111111";
       component.orderIntentApprovedNotice = "Available for Company A";
+      // Seeded so the clearing assertion below can actually fail: an assertion
+      // that a property is '' when nothing ever set it passes vacuously.
+      component.orderIntentNotAvailableNotice = "stale not-available";
       // A sentinel, not the component's own `generalErrorMessage`: this harness
       // collapses every translation call to ONE constant, so asserting the box
       // equals `generalErrorMessage` would pass for any translated string at all
@@ -495,6 +518,92 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // are toasted instead, exactly as before.
       expect(component.orderIntentErrorNotice).toBe("");
       expect(component.twoTileErrorVisible).toBe(false);
+      // And no RECORD either — otherwise the panel-closed repaint would invent a
+      // box for it out of `generalErrorMessage`, which is precisely the sentence
+      // this path decided it did not have.
+      expect(component.lastOrderIntentErrorCompanyId).toBeNull();
+      component.refreshOrderIntentVerdict();
+      expect(component.twoTileErrorVisible).toBe(false);
+    });
+
+    test("a late reply does not decide whether the ORDER may be placed", () => {
+      // Round-5 finding on round-4's fix: hoisting the flag above the
+      // on-screen guard meant a reply about a company the buyer had left could
+      // still set it. The flag says whether THIS order may be placed, and the
+      // order is for the company on screen.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+      expect(component.placeOrderIntentFlag).toBe(true);
+
+      // B's decline lands late, while A is still on screen.
+      component.processOrderIntentSuccessResponse(
+        { approved: false },
+        "222222222",
+        "Beta Ltd",
+      );
+
+      expect(component.placeOrderIntentFlag).toBe(true);
+      // …but B's decision is still recorded, so B is not stuck.
+      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.lastOrderIntentApproved).toBe(false);
+    });
+
+    test("no verdict is repainted underneath an open results panel", () => {
+      // The repaint path has to obey the same rule the reply path does, or the
+      // two disagree — reachable here because this tile's company-number field
+      // is editable, so a decided number can be typed back in with the panel up.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "YES {{companyName}}",
+        withoutCompany: "YES",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
+
+      component.clearOrderIntentNotices();
+      component.showDropdown = function () {
+        return true;
+      };
+      component.refreshOrderIntentVerdict();
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+    });
+
+    test("a retry in flight is not overpainted by the failure it is retrying", () => {
+      // Round-5 finding. The repaint fired on the panel closing, a moment after
+      // the re-pick had already raised the progress row and dispatched — so it
+      // killed the row and put the stale failure back while the retry was still
+      // on its way, and the dispatcher then raised the row again, leaving both on
+      // screen at once.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.generalErrorMessage = "SENTINEL-general-error";
+      component.isOrderIntentEnabled = "1";
+
+      component.processOrderIntentErrorResponse({}, "111111111", "Alpha Ltd");
+      expect(component.twoTileErrorVisible).toBe(true);
+
+      // The buyer re-picks the same company: a retry goes out.
+      component.fillCompanyData("111111111", "Alpha Ltd");
+      expect(component.orderIntentChecking).toBe(true);
+
+      // The panel closing must not resurrect the failure over the attempt.
+      component.refreshOrderIntentVerdict();
+
+      expect(component.twoTileErrorVisible).toBe(false);
+      expect(component.orderIntentChecking).toBe(true);
     });
 
     test("the box never carries the API's own diagnostic text", () => {
