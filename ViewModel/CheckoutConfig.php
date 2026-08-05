@@ -19,6 +19,7 @@ use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
+use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 class CheckoutConfig implements ArgumentInterface
 {
@@ -89,6 +90,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $brandedViewModel;
 
+    /**
+     * @var ApiKeyVerificationStatus
+     */
+    private $apiKeyVerificationStatus;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -97,6 +103,7 @@ class CheckoutConfig implements ArgumentInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
+        ApiKeyVerificationStatus $apiKeyVerificationStatus,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -105,6 +112,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
+        $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
     }
 
     /**
@@ -200,9 +208,39 @@ class CheckoutConfig implements ArgumentInterface
         ];
         return $orderIntentConfig;
     }
+
+    /**
+     * TWO-25326 (WooCommerce-plugin port, PR #445): company search must
+     * not run while a merchant's API key can't be verified, on top of
+     * (not instead of) the existing `enable_company_search` toggle — see
+     * getIsApiKeyVerified()/ApiKeyVerificationStatus for the full
+     * rationale. Both consumers of this getter (address-block and
+     * payment-tile controls, via the shared twoGatewayCompanySearchEngine
+     * options) already degrade to manual entry when it's false, so no
+     * template changes were needed.
+     *
+     * This governs WHETHER company search runs, not WHERE it renders — the
+     * placement decision (getIsCompanySearchInPaymentTile() above) is a
+     * separate axis and is deliberately left untouched by this check.
+     */
     public function getIsCompanySearchEnabled()
     {
-        return $this->configRepository->isCompanySearchEnabled();
+        return $this->configRepository->isCompanySearchEnabled() && $this->getIsApiKeyVerified();
+    }
+
+    /**
+     * TWO-25326 (WooCommerce-plugin port, PR #445): whether the merchant's
+     * currently configured API key can be verified right now. Delegates
+     * to ApiKeyVerificationStatus — see its class doc for why this is a
+     * standalone gate rather than a shared base-module service, and for
+     * why this module's part of the WooCommerce PR's fix is limited to
+     * this one boolean (no admin surface of its own to show a
+     * differentiated reason on; hiding the Two payment method itself is
+     * the base module's isAvailable() gate, not this repo's).
+     */
+    public function getIsApiKeyVerified(): bool
+    {
+        return $this->apiKeyVerificationStatus->isVerified();
     }
 
     public function getIsAddressSearchEnabled()
