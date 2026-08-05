@@ -251,6 +251,127 @@ describe("payment-fields template method code", () => {
         "Billing Wins Ltd",
       );
     });
+
+    /**
+     * TWO-25326 tile bugfix batch, bug 3 follow-up.
+     *
+     * "Prefer the billing record" was implemented as "prefer the billing record
+     * if it has any keys at all", and a billing record can be non-empty while
+     * naming no company whatsoever: `{manual_mode}`, the `{quote_id}` stamp
+     * clearStaleBillingCompanyIfNeeded leaves behind, and the blanked
+     * `company_id`/`company_id_source` pair forgetStaleCompanyId writes are all
+     * of that shape. Each of them shadowed a perfectly good shipping fallback,
+     * silently reinstating the very "no order intent ever fired" bug the
+     * billing-first preference was added to fix.
+     */
+    describe("a billing record that names no company", () => {
+      /**
+       * @param {Object} billingRecord the company-less billing record
+       * @returns {void}
+       */
+      function activateWithBillingRecord(billingRecord) {
+        env.browserStorage.setItem(
+          H.BILLING_COMPANY_KEY,
+          JSON.stringify(billingRecord),
+        );
+
+        renderPaymentForm(BRAND_METHOD);
+        run(BRAND_RULES);
+        // Isolate this event's own fallback from the page-load path's write,
+        // exactly as the two tests above do.
+        document.getElementById("company_name").value = "";
+        document.getElementById("company_id").value = "";
+        intents.length = 0;
+
+        window.dispatchEvent(
+          new CustomEvent("checkout:payment:method-activate", {
+            detail: { method: BRAND_METHOD },
+          }),
+        );
+      }
+
+      test("does not shadow the shipping fallback when it only carries a quote id", () => {
+        // The stamp clearStaleBillingCompanyIfNeeded leaves behind.
+        activateWithBillingRecord({ quote_id: "test-quote-1" });
+
+        expect(document.getElementById("company_name").value).toBe(
+          "Example Trading Ltd",
+        );
+        expect(document.getElementById("company_id").value).toBe("12345678");
+        expect(intents.length).toBeGreaterThan(0);
+      });
+
+      test("does not shadow the shipping fallback when it only carries manual_mode", () => {
+        activateWithBillingRecord({ manual_mode: true });
+
+        expect(document.getElementById("company_name").value).toBe(
+          "Example Trading Ltd",
+        );
+        expect(intents.length).toBeGreaterThan(0);
+      });
+
+      test("does not shadow the shipping fallback when its identifier has been blanked", () => {
+        // What forgetStaleCompanyId() writes when the buyer types over a
+        // captured company: present record, no company named.
+        activateWithBillingRecord({
+          quote_id: "test-quote-1",
+          company_id: "",
+          company_id_source: "",
+        });
+
+        expect(document.getElementById("company_name").value).toBe(
+          "Example Trading Ltd",
+        );
+        expect(intents.length).toBeGreaterThan(0);
+      });
+
+      test("does not shadow the shipping fallback when it has a name but no identifier", () => {
+        // Half a company is not a company as far as this retry is concerned:
+        // the downstream guard requires both, so treating it as a hit would
+        // just mean no intent at all.
+        activateWithBillingRecord({
+          quote_id: "test-quote-1",
+          company_name: "Half Captured Ltd",
+        });
+
+        expect(document.getElementById("company_name").value).toBe(
+          "Example Trading Ltd",
+        );
+        expect(intents.length).toBeGreaterThan(0);
+      });
+    });
+
+    test("does not adopt the shipping company when billing-as-shipping is unticked", () => {
+      // The second half of the gate the tile's own initialize() uses, and the
+      // reason it is two terms rather than one: once the buyer has said the
+      // billing address differs from the shipping one, the shipping company is
+      // not theirs to adopt — and firing an order intent for it is worse than
+      // firing none.
+      //
+      // NO billing record at all, deliberately: with a company-less one present
+      // the pre-fix code declined to fall back for the wrong reason (any
+      // non-empty record won), and the test would pass while pinning nothing.
+      renderPaymentForm(BRAND_METHOD);
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = "billing-as-shipping";
+      checkbox.checked = false;
+      document.body.appendChild(checkbox);
+
+      run(BRAND_RULES);
+      document.getElementById("company_name").value = "";
+      document.getElementById("company_id").value = "";
+      intents.length = 0;
+
+      window.dispatchEvent(
+        new CustomEvent("checkout:payment:method-activate", {
+          detail: { method: BRAND_METHOD },
+        }),
+      );
+
+      expect(document.getElementById("company_name").value).toBe("");
+      expect(intents).toEqual([]);
+    });
   });
 
   test("the template carries no hardcoded method code in its logic", () => {

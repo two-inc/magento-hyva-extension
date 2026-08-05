@@ -1469,6 +1469,76 @@ $quoteDetails = json_encode(
             <?= $gwBase ?>OnCompanySearchFocus() {
                 if (!this.manualMode) this.isOpen = true;
             },
+
+            /*
+             * TWO-25326 tile bugfix batch, bug 5 follow-up — the commit/reset
+             * path the always-visible search field needs.
+             *
+             * With the "Change company" swap gone (bug 5, 2026-08-05 ruling)
+             * the field stays editable after a company has been captured, so
+             * typing over it is now the buyer's ONLY route to a different
+             * company — and nothing used to notice. `getItems()` recomputed
+             * `companyIdEntryRequired` but dropped neither the captured
+             * `companyId` nor `companyName`, so the tile label kept showing
+             * company A's name and number, the intent-approved notice earned by
+             * A survived, and the hidden `company_id` input — written
+             * imperatively by fillCompanyData(), not bound to state — still
+             * submitted A's registry number alongside the name the buyer had
+             * typed. An order could be placed with a company/registry-number
+             * pair that describes two different companies.
+             *
+             * So this is the tile's equivalent of the address step's
+             * `onNameFieldInput()` -> `commitManualCompany()` clear: the shared
+             * engine's `forgetStaleCompanyId()` drops the identifier from state
+             * AND the billing blob together, and blanking `companyName`
+             * re-fires the two watchers that clear the approved and
+             * not-available notices (see initialize()).
+             *
+             * It deliberately does NOT publish the typed text as
+             * `company_name`: in search mode that text is a QUERY, and
+             * publishing a half-typed query as the order's company name is the
+             * bug TWO-25326 §1 removed. Clearing is enough — the visible field
+             * IS the canonical `payment[company_name]` input, so the name the
+             * buyer typed submits either way; only the number that no longer
+             * belongs to it has to go.
+             */
+            <?= $gwBase ?>ForgetCompanyIfNameDiverged() {
+                const capturedName = (this.companyName || '').trim();
+                if (!capturedName) return;
+                if ((this.search || '').trim() === capturedName) return;
+
+                // Compares `search` against `companyName`, so it has to run
+                // BEFORE `companyName` is blanked. No-op when no identifier was
+                // captured, which is why the DOM clear below is not conditional
+                // on it.
+                this.forgetStaleCompanyId();
+                this.companyName = '';
+                this.isCompanySelected = false;
+
+                const companyIdInput = document.getElementById('company_id');
+                if (companyIdInput) companyIdInput.value = '';
+
+                this.applyCompanyIdEditability();
+            },
+
+            /*
+             * `@blur` on the search field, as well as the `getItems()` typing
+             * path, because the typing path is debounced 300ms: a buyer who
+             * types over the captured name and goes straight for Place Order
+             * inside that window would otherwise submit with the previous
+             * company's identifier still attached. Reads the live field value
+             * rather than trusting `search` for exactly the same reason — the
+             * debounced handler may not have run yet.
+             *
+             * Safe against the dropdown-click sequence (mousedown -> blur ->
+             * click): this clears, and `selectItem()` then writes the newly
+             * picked pair over the cleared state a moment later.
+             */
+            <?= $gwBase ?>OnCompanySearchBlur() {
+                if (this.manualMode) return;
+                this.search = this.$el.value;
+                this.<?= $gwBase ?>ForgetCompanyIfNameDiverged();
+            },
             <?= $gwBase ?>OnArrowDown() {
                 this.nextItem();
             },
@@ -1481,8 +1551,18 @@ $quoteDetails = json_encode(
             <?= $gwBase ?>OnItemMouseover(event) {
                 this.selectedIndex = parseInt(event.currentTarget.dataset.index);
             },
+            // TWO-25326 tile bugfix batch, bug 1 (follow-up). Gated on the
+            // buyer having typed, for exactly the same reason
+            // `manualEntryLinkVisible` below is: this tile's dropdown opens on
+            // mere FOCUS, and `search.length < minSearchChars` is trivially
+            // true for the empty string, so the hint painted on focus alone —
+            // telling a buyer who has typed nothing that they have not typed
+            // enough. The address step is deliberately NOT changed: there the
+            // panel opens on click and the hint on an empty query is the
+            // documented §1 behaviour (its own
+            // `ShouldShowMinCharsMessage` in companyName-csp-js.phtml).
             <?= $gwBase ?>ShouldShowMinCharsMessage() {
-                return this.search.length < this.minSearchChars;
+                return Boolean(this.search) && this.search.length < this.minSearchChars;
             },
 
             // TWO-25326 tile bugfix batch, bug 1. The dropdown's own
@@ -1759,6 +1839,13 @@ $quoteDetails = json_encode(
                 }
 
                 this.search = this.$el.value;
+
+                // The buyer has typed over whatever was captured, so drop a
+                // captured company the text no longer names before anything
+                // else looks at it (bug 5 follow-up — see
+                // <?= $gwBase ?>ForgetCompanyIfNameDiverged).
+                this.<?= $gwBase ?>ForgetCompanyIfNameDiverged();
+
                 /*
                  * The buyer has EDITED the name, so re-derive whether they have
                  * to be able to type the company number in themselves. This is

@@ -402,6 +402,18 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                 type="text"
                                 @input.debounce.300ms="getItems"
                                 @focus="<?= $gwBase ?>OnCompanySearchFocus"
+                                <?php
+                                /*
+                                 * Commit/reset path for the always-visible
+                                 * field (bug 5 follow-up): typing over a
+                                 * captured company must drop that company's
+                                 * registry number, and `@input` alone is
+                                 * debounced 300ms — long enough for a buyer to
+                                 * reach Place Order with the previous
+                                 * company's number still attached.
+                                 */
+                                ?>
+                                @blur="<?= $gwBase ?>OnCompanySearchBlur"
                                 @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
                                 @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
                                 @keydown.enter.prevent="<?= $gwBase ?>OnEnterSelect"
@@ -483,7 +495,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                                  * Do not restate the number.
                                  */
                                 ?>
-                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtml(
+                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" data-name="company_search_min_chars" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtml(
                                     __("Please enter %1 or more characters", $companySearchMinChars),
                                 ) ?>
                                 </div>

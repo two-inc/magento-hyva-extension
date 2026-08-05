@@ -357,13 +357,30 @@ $methodCode = $brandedViewModel->getMethodCode();
              * Guarded on the billing helper existing for the same reason the
              * accessors at the top of this file are: this template can run
              * before gateway_method-csp-js.phtml has published it.
+             *
+             * Presence of the record is NOT enough to select it (review round
+             * follow-up): a billing record can be non-empty while naming no
+             * company at all — `{manual_mode}`, the `{quote_id}` stamp
+             * clearStaleBillingCompanyIfNeeded leaves behind, or the blanked
+             * `company_id`/`company_id_source` pair forgetStaleCompanyId
+             * writes. Any of those would shadow a perfectly good shipping
+             * fallback and silently reinstate the very bug this block fixes,
+             * so the test is whether the record actually CARRIES a company.
+             *
+             * And the fallback itself is gated on twoGatewayIsBillingAsShipping()
+             * for the same reason the tile's own initialize() gates it (see
+             * gateway_method-csp-js.phtml): once the buyer has unticked
+             * "billing same as shipping", adopting the shipping company as the
+             * billing one is wrong, and firing order intent for it is worse.
              */
             const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
                 || function () { return {}; })();
-            const hasBillingRecord = Object.keys(billingCompanySelectionData).length > 0;
-            const capturedCompanySelectionData = hasBillingRecord
+            const billingRecordNamesCompany = Boolean(
+                billingCompanySelectionData.company_name && billingCompanySelectionData.company_id,
+            );
+            const capturedCompanySelectionData = billingRecordNamesCompany
                 ? billingCompanySelectionData
-                : twoPaymentReadSelection();
+                : (isBillingAsShipping() ? twoPaymentReadSelection() : {});
             const capturedCompany = capturedCompanySelectionData.company_name || "";
             const capturedCompanyId = capturedCompanySelectionData.company_id || "";
 
