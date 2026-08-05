@@ -116,6 +116,36 @@ After changing templates, Tailwind CSS must be rebuilt to include new utility cl
 
 **Important**: New Tailwind classes in templates won't appear until CSS is rebuilt.
 
+And the rebuild is the **merchant's**, not ours — so a utility only this module asks
+for may never be generated on a real store. That failure is silent: a
+`bg-red-50 border border-red-200` box renders as an unstyled, colourless box that
+still claims whatever it says. So **colour, border and the geometry of any element
+this module owns go in `view/frontend/web/css/custom.css`**, not in a class list.
+Precedents in that file: `input.company_id:disabled`,
+`.two-company-search__unavailable`, `.two-company-search__spinner`, and the
+four-state `.two-order-intent-box` (the order-intent verdict box — one box, one
+place in the tile, states differing only in colour, geometry declared once on the
+shared class so the states cannot drift apart). Layout utilities that the theme
+certainly generates (`flex`, `w-full`, `min-w-0`, `space-y-4`) are fine to keep in
+the template.
+
+### Order intent: one box, and a verdict that can be repainted
+
+The tile shows exactly one order-intent box at a time, in four states — checking,
+available, not available, could not be determined. Two rules bite:
+
+- **Clearing and painting go through one method each.** `clearOrderIntentNotices()`
+  takes all states down; `refreshOrderIntentVerdict()` clears and then repaints
+  from the recorded verdict. Assignment lists that name only the siblings a caller
+  remembers are how a state gets forgotten when a fifth one is added.
+- **A verdict is recorded against (id, name, decision), and a new search clears
+  the box.** Those two are one mechanism: the dedup gate refuses to re-ask for a
+  decision already reached, so without the record a buyer who searched again and
+  re-picked the same company would be left with a blank box nothing could refill.
+  The name is part of the match because the notice text embeds it — a name edited
+  by hand must fail closed rather than repaint an approval for a company that was
+  never approved.
+
 ### Magewire Components
 
 - Located in `Magewire/` directory
