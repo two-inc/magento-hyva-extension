@@ -161,6 +161,32 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component[CHECKING_SHOW_BINDING]).toBe(true);
     });
 
+    test("a check going on the wire clears whatever verdict was showing", () => {
+      // The invariant enforced where the request actually leaves, which is the
+      // only place that covers ALL of the dispatch sites. The address-area company
+      // sync fires this event directly, changing neither company name nor id, so
+      // no watcher runs and nothing else would clear the box — round 6 found a
+      // stale verdict sitting beside the progress row for the whole request.
+      component.placeOrderIntent = function () {
+        return deferred().promise;
+      };
+      component.generalErrorMessage = "SENTINEL-general-error";
+
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNotice = "YES Alpha Ltd";
+      // …and a previous FAILURE for the same company, which a fresh check must
+      // forget, because the question is being asked again.
+      component.orderIntentFailures["111111111"] = { name: "Alpha Ltd" };
+
+      window.dispatchEvent(new Event("dispatch-order-intent"));
+      jest.advanceTimersByTime(500);
+
+      expect(component.orderIntentChecking).toBe(true);
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentFailures["111111111"]).toBeUndefined();
+    });
+
     test("comes down when the payment method changes inside the debounce", () => {
       // Round-3 finding. The row goes up optimistically on the pick, so every
       // path that then declines to make a request has to take it back down. Two
@@ -521,7 +547,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // And no RECORD either — otherwise the panel-closed repaint would invent a
       // box for it out of `generalErrorMessage`, which is precisely the sentence
       // this path decided it did not have.
-      expect(component.lastOrderIntentErrorCompanyId).toBeNull();
+      expect(component.orderIntentFailures).toEqual({});
       component.refreshOrderIntentVerdict();
       expect(component.twoTileErrorVisible).toBe(false);
     });
@@ -549,8 +575,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
       expect(component.placeOrderIntentFlag).toBe(true);
       // …but B's decision is still recorded, so B is not stuck.
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
-      expect(component.lastOrderIntentApproved).toBe(false);
+      expect(component.orderIntentDecisions["222222222"]).toEqual({
+        name: "Beta Ltd",
+        approved: false,
+      });
     });
 
     test("no verdict is repainted underneath an open results panel", () => {
@@ -651,10 +679,17 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         "Beta Ltd",
       );
 
-      // The record is entirely B's — id, name and decision together.
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
-      expect(component.lastOrderIntentCompanyName).toBe("Beta Ltd");
-      expect(component.lastOrderIntentApproved).toBe(false);
+      // B's record is entirely B's — name and decision filed under B's id, and
+      // A's own record is untouched beside it. One slot could not do this: B
+      // overwrote it, and A's verdict was gone for the session.
+      expect(component.orderIntentDecisions["222222222"]).toEqual({
+        name: "Beta Ltd",
+        approved: false,
+      });
+      expect(component.orderIntentDecisions["111111111"]).toEqual({
+        name: "Alpha Ltd",
+        approved: true,
+      });
 
       // Nothing about B is painted while A is on screen…
       component.refreshOrderIntentVerdict();
@@ -699,7 +734,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
       expect(component.orderIntentApprovedNotice).toBe("");
       // But it is on record, so closing the panel shows it.
-      expect(component.lastOrderIntentApproved).toBe(true);
+      expect(component.orderIntentDecisions["111111111"].approved).toBe(true);
       component.showDropdown = function () {
         return false;
       };
@@ -707,10 +742,107 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentApprovedNotice).not.toBe("");
     });
 
-    test("repainting a verdict takes the in-progress row down with it", () => {
-      // The row may still be up for a DIFFERENT company's request. It says
-      // nothing true about the company now on screen, so a verdict for that
-      // company replaces it rather than sitting beside it.
+    test("two companies' verdicts coexist, and coming back shows yours", () => {
+      // THE reason the record is a map. Six review rounds were spent patching a
+      // single slot that could not represent this: approve A, check B, come back
+      // to A, and A's verdict was gone for the session because B had overwritten
+      // the only slot there was.
+      const copy = (word) => ({
+        withCompany: word + " {{companyName}}",
+        withoutCompany: word,
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      });
+      component.orderIntentApprovedNoticeCopy = copy("YES");
+      component.orderIntentNotAvailableCopy = copy("NO");
+
+      // A is approved.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
+
+      // B is declined.
+      component.companyName = "Beta Ltd";
+      component.companyId = "222222222";
+      component.processOrderIntentSuccessResponse(
+        { approved: false },
+        "222222222",
+        "Beta Ltd",
+      );
+      expect(component.orderIntentNotAvailableNotice).toBe("NO Beta Ltd");
+
+      // Back to A: A's own approval, not B's decline, and no new check needed.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+
+      // And back to B: B's decline is still B's.
+      component.companyName = "Beta Ltd";
+      component.companyId = "222222222";
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentNotAvailableNotice).toBe("NO Beta Ltd");
+      expect(component.orderIntentApprovedNotice).toBe("");
+    });
+
+    test("a malformed notice copy yields a silent box, never a throw", () => {
+      // The box is re-derived from the dispatcher's `finally` now, so a throw in
+      // a resolver is an unhandled rejection that takes the rest of that handler
+      // with it — including lowering the progress row. A brand supplies this copy
+      // through config, so a missing sentence must degrade, not detonate.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = { withoutCompany: "YES" };
+
+      expect(() => {
+        component.processOrderIntentSuccessResponse(
+          { approved: true },
+          "111111111",
+          "Alpha Ltd",
+        );
+      }).not.toThrow();
+      expect(component.orderIntentApprovedNotice).toBe("");
+
+      expect(() => component.refreshOrderIntentVerdict()).not.toThrow();
+    });
+
+    test("an errored check is not painted under an open panel either", () => {
+      // Round 6: the two paint paths have to agree. The error path used to paint
+      // regardless, justified by there being no record to repaint from later —
+      // there is one now, so the justification is gone.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.generalErrorMessage = "SENTINEL-general-error";
+      component.showDropdown = function () {
+        return true;
+      };
+
+      component.processOrderIntentErrorResponse({}, "111111111", "Alpha Ltd");
+
+      expect(component.orderIntentErrorNotice).toBe("");
+      // On record, so closing the panel reports it.
+      expect(component.orderIntentFailures["111111111"]).toEqual({
+        name: "Alpha Ltd",
+      });
+      component.showDropdown = function () {
+        return false;
+      };
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
+    });
+
+    test("a check in progress outranks every recorded verdict", () => {
+      // The invariant, stated once instead of guarded per route (round 6).
+      // "Checking availability" and a conclusion cannot both be true, and after
+      // three rounds of guarding one more path to that state this is the rule
+      // that removes the class: while a check is running, nothing paints. The
+      // dispatcher re-derives the box the moment it settles, so nothing is lost.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
       component.orderIntentApprovedNoticeCopy = {
@@ -728,8 +860,16 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       component.orderIntentChecking = true;
       component.refreshOrderIntentVerdict();
 
-      expect(component.orderIntentChecking).toBe(false);
-      expect(component.orderIntentApprovedNotice).not.toBe("");
+      // The row is left alone, and no verdict is painted beside it.
+      expect(component.orderIntentChecking).toBe(true);
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.twoTileNotAvailableVisible).toBe(false);
+      expect(component.twoTileErrorVisible).toBe(false);
+
+      // Settled, and the same record now paints.
+      component.orderIntentChecking = false;
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentApprovedNotice).toBe("Yes: Alpha Ltd");
     });
 
     test("a decided verdict clears the other two states", () => {
@@ -863,14 +1003,14 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       component.processOrderIntentSuccessResponse({ approved: true }, "222222222");
 
       expect(component.lastOrderIntentCompanyId).toBe("222222222");
-      expect(component.lastOrderIntentCompanyName).toBeNull();
+      expect(component.orderIntentDecisions["222222222"].name).toBeNull();
 
       // B cannot be painted from that record…
       component.companyName = "Beta Ltd";
       component.companyId = "222222222";
       component.refreshOrderIntentVerdict();
       expect(component.orderIntentApprovedNotice).toBe("");
-      // …but the id still advanced, so the dedup gate (TWO-25345) still works.
+      // …but the dedup memory still advanced, so TWO-25345 still holds.
       expect(component.lastOrderIntentCompanyId).toBe("222222222");
     });
   });

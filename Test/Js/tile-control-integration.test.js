@@ -314,6 +314,11 @@ describe("the payment tile's mounted control (integration)", () => {
       "123456789",
       "Example Trading Ltd",
     );
+    // The pick raised the progress row optimistically and this suite runs no
+    // dispatcher to settle it, so the row is lowered here as the real one's
+    // `finally` does — a verdict is never painted while a check is in flight.
+    component.orderIntentChecking = false;
+    component.refreshOrderIntentVerdict();
     expect(component.orderIntentApprovedNotice).not.toBe("");
 
     // Search again — the box goes down.
@@ -328,11 +333,10 @@ describe("the payment tile's mounted control (integration)", () => {
     await pending;
 
     // …and abandoning it puts the box back, because the company on screen is
-    // still the one the verdict was reached for. Deferred a tick on purpose (a
-    // pick closes the panel BEFORE writing the new company), so the flush is
-    // part of the contract, not test scaffolding.
+    // still the one the verdict was reached for. Synchronous: the engine
+    // dismisses the panel AFTER writing the pick's company, so the hook needs no
+    // deferral (round 5).
     component.closeDropdown();
-    await H.flushPromises();
 
     expect(component.orderIntentApprovedNotice).not.toBe("");
     expect(component.orderIntentMessageVisible).toBe(true);

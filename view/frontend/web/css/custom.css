@@ -398,6 +398,19 @@ summary::marker {
  * positioned ancestor `.two-company-search__spinner` resolves its absolute
  * placement against, and the row reserves space on the right for it.
  */
+/*
+ * Until Alpine boots, nothing that `x-show` will hide may be visible.
+ *
+ * The error box is the only one of the four emitted unconditionally, and moving
+ * its border and background from (possibly uncompiled) Tailwind utilities into
+ * this file made the pre-Alpine flash CERTAIN rather than merely possible: an
+ * empty bordered red strip on every page load. Nothing else in this module used
+ * `x-cloak`, so the rule it depends on has to be declared here (round 6).
+ */
+[x-cloak] {
+  display: none !important;
+}
+
 .two-order-intent-box {
   border: 1px solid;
   border-radius: 3px;

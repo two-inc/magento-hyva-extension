@@ -279,6 +279,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             ?>
             <div
                 class="two-order-intent-box two-order-intent-checking"
+                x-cloak
                 role="status"
                 data-name="order_intent_checking"
                 x-show="orderIntentChecking"
@@ -313,6 +314,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php if ($configModel->getOrderIntentApprovedNotice() !== null): ?>
                 <div
                     class="two-order-intent-box two-order-intent-message approved"
+                x-cloak
                     role="status"
                     data-name="order_intent_message"
                     x-show="orderIntentMessageVisible"
@@ -339,6 +341,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
                 <div
                     class="two-order-intent-box two-order-intent-message unavailable"
+                x-cloak
                     role="status"
                     data-name="order_intent_not_available_message"
                     x-show="twoTileNotAvailableVisible"
@@ -373,6 +376,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             ?>
             <div
                 class="two-order-intent-box two-order-intent-message error"
+                x-cloak
                 role="alert"
                 data-name="order_intent_error_message"
                 x-show="twoTileErrorVisible"

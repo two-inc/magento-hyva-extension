@@ -775,6 +775,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       const listener = function () {
         intents.push(fresh.companyId);
         fresh.processOrderIntentSuccessResponse({ approved: true });
+        // The real dispatcher's `finally` too, not just its reply handling:
+        // nothing is in flight any more, so the progress row comes down and the
+        // box is re-derived from the record. Without these two the fixture leaves
+        // the row up forever, and a component that (correctly) refuses to paint a
+        // verdict while a check is running then looks broken.
+        fresh.orderIntentChecking = false;
+        fresh.refreshOrderIntentVerdict();
       };
       window.addEventListener("dispatch-order-intent", listener);
 
