@@ -2145,6 +2145,27 @@ $quoteDetails = json_encode(
             orderIntentChecking: false,
             placeOrderIntentFlag: true,
             lastOrderIntentCompanyId: '', // Track last company ID for which order intent was triggered
+            // The verdict that was reached FOR `lastOrderIntentCompanyId`, so a
+            // buyer who lands back on an already-decided company can be shown
+            // its decision again without re-asking for one (the dedup gate in
+            // fillCompanyData() deliberately refuses to re-ask).
+            //
+            // Written only beside `lastOrderIntentCompanyId`, in the one place
+            // that advances it, so the pair cannot disagree about which company
+            // the verdict belongs to. `placeOrderIntentFlag` is NOT usable for
+            // this: it is a single "may this order be placed" bit with no
+            // company attached, so an error for company B would misreport
+            // company A's standing decision. `null` means "nothing decided
+            // yet", which is not the same as "decided, and the answer was no".
+            lastOrderIntentApproved: null,
+            // The NAME that verdict was reached for, matched alongside the id.
+            // The id alone is not the identity of a decided company here: the
+            // notice text embeds the name, and the buyer can change the name
+            // without changing the id (hand-editing it in manual entry). A
+            // verdict repainted against a name it was not decided for would put
+            // an approval next to a company that was never approved, so a
+            // name-only edit has to fail closed exactly as it did before.
+            lastOrderIntentCompanyName: null,
 
             // Config from PHP
             isProjectFieldEnabled: '<?= $configModel->getIsProjectFieldEnabled() ?>',
@@ -2409,10 +2430,10 @@ $quoteDetails = json_encode(
                 // by hand in manual mode changes `companyName` without any
                 // search ever running.
                 this.$watch('companyName', () => {
-                    this.clearOrderIntentNotices();
+                    this.refreshOrderIntentVerdict();
                 });
                 this.$watch('companyId', () => {
-                    this.clearOrderIntentNotices();
+                    this.refreshOrderIntentVerdict();
                 });
 
                 // Watch manualMode and update derived state reactively. Goes
@@ -2606,6 +2627,46 @@ $quoteDetails = json_encode(
                 this.orderIntentErrorNotice = '';
             },
 
+            /**
+             * Put the box into whatever state the CURRENT company's decision
+             * says it should be in: empty when that company has no decision,
+             * and its decision re-painted when it has one.
+             *
+             * This exists because clearing on a company change is only half
+             * right. The dedup gate in fillCompanyData() refuses to re-ask for a
+             * decision the tile already has, so on its own a clear-on-change
+             * left the buyer who returned to an already-decided company — by
+             * searching again and picking the same one, or by picking A, then B,
+             * then A — with a blank box and no route to a verdict for the rest
+             * of the session. The decision is still known; it just was not being
+             * shown.
+             *
+             * Fails closed, in the two ways that matter: a company with no
+             * decision on record (including one whose only check ERRORED, since
+             * an error deliberately does not advance `lastOrderIntentCompanyId`)
+             * gets an empty box, and so does a hand-typed company, which has no
+             * identifier to match on.
+             *
+             * Called from the `companyName`/`companyId` watchers AND from
+             * fillCompanyData()'s suppressed-dispatch branch, so the answer is
+             * the same whichever of the two runs last — the reason it clears and
+             * repaints in one place rather than clearing in one and repainting
+             * in another.
+             */
+            refreshOrderIntentVerdict() {
+                this.clearOrderIntentNotices();
+
+                if (!this.companyId || this.companyId !== this.lastOrderIntentCompanyId) return;
+                if (this.companyName !== this.lastOrderIntentCompanyName) return;
+                if (this.lastOrderIntentApproved === null) return;
+
+                if (this.lastOrderIntentApproved) {
+                    this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
+                } else {
+                    this.orderIntentNotAvailableNotice = this.resolveOrderIntentNotAvailableNotice();
+                }
+            },
+
             // "<name> (<number>)", built here rather than in the template:
             // bound attribute expressions are looked up as a KEY on the
             // component, never evaluated, so a concatenation in the markup
@@ -2695,6 +2756,21 @@ $quoteDetails = json_encode(
                     // then declines to make a request takes it back down.
                     this.orderIntentChecking = true;
                     window.dispatchEvent(new Event("dispatch-order-intent"));
+                } else {
+                    /*
+                     * No request is going out — either intent is off, or this
+                     * company has already been decided. In the second case the
+                     * verdict is known and must go back on screen: a search
+                     * starting took the box down (see the control's
+                     * `onLoaderStart`), and without this a buyer who searched
+                     * again and re-picked the SAME company would be left with a
+                     * blank box that nothing could ever refill, because the
+                     * dedup gate above will never re-ask.
+                     *
+                     * Safe when intent is off or there is no decision: the
+                     * method clears and then declines to paint anything.
+                     */
+                    this.refreshOrderIntentVerdict();
                 }
             },
 
@@ -2914,6 +2990,25 @@ $quoteDetails = json_encode(
                  * together.
                  */
                 if (decidedCompanyId !== this.companyId) return;
+
+                /*
+                 * Past the guard, this decision is about the company currently
+                 * on screen — which is the only point at which the name to file
+                 * it under is knowable, since the dispatcher passes down the id
+                 * and not the name. Recorded as one triple with the id above so
+                 * refreshOrderIntentVerdict() can put this verdict back on
+                 * screen if the buyer leaves this company and returns to it.
+                 *
+                 * The id's own write is deliberately still UNCONDITIONAL, above
+                 * the guard: it is the dedup gate's memory and has to advance
+                 * even for a decision the buyer has already moved on from. So a
+                 * decision filed for a company no longer on screen leaves the id
+                 * advanced and this pair untouched, and refresh() then finds no
+                 * verdict on record for it and shows an empty box — the same
+                 * fail-closed outcome as before this method existed.
+                 */
+                this.lastOrderIntentApproved = Boolean(response.approved);
+                this.lastOrderIntentCompanyName = this.companyName;
 
                 if (response.approved) {
                     this.placeOrderIntentFlag = true;

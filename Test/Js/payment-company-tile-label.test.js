@@ -612,6 +612,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // suite's shared component stubs `$watch` to a no-op, so a fresh instance
       // is mounted with a recording one — which also proves the watchers are
       // actually registered rather than assuming it.
+      //
+      // The company is really EDITED before the watcher is fired, rather than
+      // the callback being invoked over unchanged state. Alpine only calls a
+      // watcher when the value changed, so invoking it over an unchanged company
+      // asserts on an artefact of the simulation — and since 2026-08-05 the
+      // watchers repaint a verdict that is still valid for the company on
+      // screen, so an unchanged company legitimately keeps its label.
       const watchers = {};
       const root = document.getElementById("payment-root");
       const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
@@ -629,12 +636,50 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
       expect(watchers.companyName).toBeDefined();
       expect(watchers.companyId).toBeDefined();
+      fresh.companyName = "Example Trading Limited";
       watchers.companyName.forEach(function (callback) {
         callback();
       });
 
       expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
       expect(fresh[LABEL_SHOW_BINDING]).toBe(false);
+    });
+
+    test("returning to the same company puts its verdict back", () => {
+      // The other side of the watcher, and the reason the edit above has to be
+      // a real edit. A buyer who searches again — which takes the box down —
+      // and then picks the SAME company gets no new decision, because the dedup
+      // gate refuses to re-ask for one it already has. Without a repaint the box
+      // would stay blank for the rest of the session.
+      const watchers = {};
+      const root = document.getElementById("payment-root");
+      const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: root,
+        root: root,
+      });
+      fresh.$watch = function (property, callback) {
+        (watchers[property] = watchers[property] || []).push(callback);
+      };
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+
+      fresh.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      approveIntent(fresh);
+      expect(fresh[LABEL_SHOW_BINDING]).toBe(true);
+
+      // A search starting is what empties the box. The first pick left the
+      // in-progress flag up (this suite runs no dispatcher to lower it), so it
+      // is reset here too — otherwise it could not show that the re-pick
+      // dispatches nothing.
+      fresh.clearOrderIntentNotices();
+      fresh.orderIntentChecking = false;
+      expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
+
+      // Re-picking the same company dispatches nothing, and repaints.
+      fresh.fillCompanyData("123456789", "Example Trading Ltd");
+
+      expect(fresh.orderIntentChecking).toBe(false);
+      expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(true);
+      expect(fresh[LABEL_SHOW_BINDING]).toBe(true);
     });
   });
 
