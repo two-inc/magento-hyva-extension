@@ -374,6 +374,68 @@ summary::marker {
 }
 
 /*
+ * The order-intent box (2026-08-05, cross-platform order-intent UI
+ * unification).
+ *
+ * ONE box in ONE place in the tile, in four states: the in-progress row and the
+ * three verdicts an intent check can reach. Only the colours differ, so only
+ * the colours are stated per state — geometry is declared once here rather than
+ * four times in four class lists, which is how the states drifted apart in the
+ * first place. There is deliberately no title element in any of them: the box
+ * holds the message and nothing else, matching the other three platforms'
+ * treatment.
+ *
+ * CSS rather than Tailwind utilities, for the reason
+ * `input.company_id:disabled` gives at the bottom of this file: the module must
+ * not depend on the merchant's Tailwind build having generated a colour only
+ * this module asks for. That dependency fails SILENTLY — an uncompiled
+ * `bg-red-50` renders a borderless, colourless box that still says the check
+ * failed, which is worse than the loud failure a missing stylesheet would be.
+ *
+ * `position: relative` is load-bearing on the in-progress row: it is the
+ * positioned ancestor `.two-company-search__spinner` resolves its absolute
+ * placement against, and the row reserves space on the right for it.
+ */
+.two-order-intent-box {
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.two-order-intent-checking {
+  position: relative;
+  padding-right: 2rem;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+.two-order-intent-message.approved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+/*
+ * "Not available" is not an error — the check completed and the answer was no.
+ * Same amber the search control's own unavailable notice uses, so the two
+ * "we cannot offer this right now" surfaces in this tile read as one thing.
+ */
+.two-order-intent-message.unavailable {
+  border-color: #f5deb0;
+  background: #fdf0d5;
+  color: #6f4900;
+}
+
+.two-order-intent-message.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+/*
  * Company-number field, locked state (TWO-25253).
  *
  * The field is greyed out exactly when it is disabled, by construction —

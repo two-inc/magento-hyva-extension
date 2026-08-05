@@ -220,6 +220,62 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.companyTileLabelText).toBe("Unlisted Trading Ltd");
   });
 
+  test("starting a new search takes the previous verdict off the tile", async () => {
+    // 2026-08-05, cross-platform order-intent UI unification: a buyer searching
+    // again is replacing the company the standing verdict was about, so the
+    // verdict is stale from the moment the search starts — not from the moment
+    // the replacement is picked, and not from the moment the next decision
+    // arrives. The live notice properties are assigned directly rather than
+    // resolved from brand copy: what is under test is the clearing, and the
+    // three of them are the whole visible verdict.
+    //
+    // `$watch` is a no-op in this suite (see beforeEach), so the `companyName` /
+    // `companyId` watchers cannot be what clears these — this isolates the
+    // search-start path the engine's `onLoaderStart` hook drives.
+    component.orderIntentApprovedNotice = "Available for Example Trading Ltd";
+    component.orderIntentNotAvailableNotice = "stale not-available";
+    component.orderIntentErrorNotice = "stale error";
+
+    component.onCompanyNameClick();
+    queryField.value = "example";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    const pending = component.getItems();
+    await H.flushPromises();
+
+    // A request is on the wire and NOTHING has come back yet.
+    expect(fetchStub.calls.length).toBe(1);
+    expect(component.orderIntentApprovedNotice).toBe("");
+    expect(component.orderIntentNotAvailableNotice).toBe("");
+    expect(component.orderIntentErrorNotice).toBe("");
+    expect(component.orderIntentMessageVisible).toBe(false);
+    expect(component.twoTileNotAvailableVisible).toBe(false);
+    expect(component.twoTileErrorVisible).toBe(false);
+
+    fetchStub.last().respond({ items: [] });
+    await pending;
+  });
+
+  test("a search too short to go on the wire leaves the verdict standing", async () => {
+    // The complement of the test above, and what stops it from passing for the
+    // wrong reason. Clearing is hung on a search actually starting, so a buyer
+    // who opens the panel and types one character has not replaced anything
+    // yet and must not lose the verdict for the company they still have.
+    component.orderIntentApprovedNotice = "Available for Example Trading Ltd";
+
+    component.onCompanyNameClick();
+    queryField.value = "e";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    await component.getItems();
+    await H.flushPromises();
+
+    expect(fetchStub.calls.length).toBe(0);
+    expect(component.orderIntentApprovedNotice).toBe(
+      "Available for Example Trading Ltd",
+    );
+  });
+
   test("the control's own number display stays down on this surface", async () => {
     component.onCompanyNameClick();
     await search("example", "123456789");

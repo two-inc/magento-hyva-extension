@@ -2103,6 +2103,30 @@ $quoteDetails = json_encode(
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             readSelection: function () { return window.twoGatewayReadBillingCompany(); },
             writeSelection: function (patch) { return window.twoGatewayWriteBillingCompany(patch); },
+            /*
+             * A NEW SEARCH INVALIDATES THE LAST VERDICT (2026-08-05).
+             *
+             * The engine calls this immediately before a company search goes on
+             * the wire, with the component as `this`. A buyer searching again is
+             * replacing the company the previous verdict was about, so that
+             * verdict is stale from this moment — not from the moment the
+             * replacement is picked, and certainly not from the moment the next
+             * decision comes back. Leaving it up meant the tile showed an
+             * approval for company A underneath a dropdown of candidates to
+             * replace A with.
+             *
+             * This is the SEARCH half of the clearing; the `companyName` /
+             * `companyId` watchers in initialize() are the other half and cover
+             * manual entry, which changes the company with no search at all. See
+             * the note there for why both are needed.
+             *
+             * The tile passes no loader hook otherwise — it renders the in-field
+             * spinner off `isSearching`, so this hook was free (shipping is the
+             * surface that uses it for the magewire loader).
+             */
+            onLoaderStart: function () {
+                this.clearOrderIntentNotices();
+            },
             onCompanyCommitted: function (companyName, companyId) {
                 this.fillCompanyData(companyId, companyName);
             },
@@ -2176,6 +2200,15 @@ $quoteDetails = json_encode(
                 | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
             ) ?: 'null' ?>,
             orderIntentNotAvailableNotice: '',
+            // The third verdict state (2026-08-05, cross-platform order-intent
+            // UI unification): the check itself could not be completed. Same
+            // ''-means-hidden / always-defined contract as the two above, and
+            // for the same reason — an undefined property would make Alpine
+            // throw on every x-show evaluation. Unlike them it has no
+            // brand-configurable copy behind it: the text is whatever the error
+            // response resolved to, which is the wording the toast on this path
+            // already carried.
+            orderIntentErrorNotice: '',
             orderIntentDeclinedMessage: '<?= $escaper->escapeJs(
                 __($orderIntentDeclinedMessage),
             ) ?>',
@@ -2358,17 +2391,28 @@ $quoteDetails = json_encode(
                 // clear first and processOrderIntentSuccessResponse re-sets
                 // afterwards; a company edited by hand clears the notice and
                 // leaves it cleared, which is the correct fail-closed outcome.
-                // The not-available notice (TWO-25326 §7.2/§7.3) is the same
-                // persistent-inline-element shape and clears on the same two
-                // watchers, for the same reason: a declined/no-intent verdict
-                // was for the PREVIOUS company and must not survive an edit.
+                // The not-available notice (TWO-25326 §7.2/§7.3) and the error
+                // notice are the same persistent-inline-element shape and clear
+                // on the same two watchers, for the same reason: a
+                // declined/no-intent/failed verdict was for the PREVIOUS
+                // company and must not survive an edit.
+                //
+                // These watchers are only HALF the clearing story, and
+                // deliberately the later half. They fire when the company
+                // CHANGES, which is when the buyer has already picked the next
+                // one; a buyer who has opened the panel and started searching
+                // has not changed anything yet, so a stale verdict for the
+                // company they are visibly replacing would sit under the
+                // dropdown until the pick landed. The control's `onLoaderStart`
+                // hook (see PaymentMethodBase's control options) clears at
+                // search time for that case. Both, not either: a company edited
+                // by hand in manual mode changes `companyName` without any
+                // search ever running.
                 this.$watch('companyName', () => {
-                    this.orderIntentApprovedNotice = '';
-                    this.orderIntentNotAvailableNotice = '';
+                    this.clearOrderIntentNotices();
                 });
                 this.$watch('companyId', () => {
-                    this.orderIntentApprovedNotice = '';
-                    this.orderIntentNotAvailableNotice = '';
+                    this.clearOrderIntentNotices();
                 });
 
                 // Watch manualMode and update derived state reactively. Goes
@@ -2531,6 +2575,35 @@ $quoteDetails = json_encode(
             // unavailable), so the template needs to ask which one.
             get twoTileNotAvailableVisible() {
                 return Boolean(this.orderIntentNotAvailableNotice);
+            },
+
+            // Third sibling, for the "the check could not be completed" box
+            // (2026-08-05). Same reasoning as the pair above — a third element
+            // with a third colour, so the template has to be able to ask about
+            // this state on its own.
+            get twoTileErrorVisible() {
+                return Boolean(this.orderIntentErrorNotice);
+            },
+
+            /**
+             * Take every intent verdict off the tile.
+             *
+             * The three notices are one box in three states, so they are cleared
+             * together, always — a verdict left standing beside a NEWER one is
+             * the failure this exists to make impossible, and three
+             * independently-cleared properties is how that becomes possible.
+             * Every caller wanting "no verdict on screen" goes through here
+             * rather than assigning the properties it happens to remember.
+             *
+             * Does NOT touch `orderIntentChecking`: whether a check is running
+             * is a separate fact from what the last one concluded, and the two
+             * are legitimately true together (a fresh check in flight over a
+             * cleared box is exactly the state this method is usually creating).
+             */
+            clearOrderIntentNotices() {
+                this.orderIntentApprovedNotice = '';
+                this.orderIntentNotAvailableNotice = '';
+                this.orderIntentErrorNotice = '';
             },
 
             // "<name> (<number>)", built here rather than in the template:
@@ -2849,11 +2922,15 @@ $quoteDetails = json_encode(
                     // but self-dismissed after 5 seconds, so a buyer still
                     // filling in the form never saw the reassurance at the
                     // moment it was useful.
+                    // Clear FIRST, then set the one state this verdict reaches:
+                    // exactly one of the three boxes may be up at a time, and
+                    // an assignment list that names only the siblings it
+                    // remembers is how a third state gets forgotten.
+                    this.clearOrderIntentNotices();
                     this.orderIntentApprovedNotice = this.resolveOrderIntentApprovedNotice();
-                    this.orderIntentNotAvailableNotice = '';
                 } else {
                     this.placeOrderIntentFlag = false;
-                    this.orderIntentApprovedNotice = '';
+                    this.clearOrderIntentNotices();
                     // Persistent inline "not available" text (TWO-25326 §7.2),
                     // alongside the existing self-dismissing toast rather than
                     // instead of it — the toast still serves the surfaces where
@@ -2883,8 +2960,7 @@ $quoteDetails = json_encode(
                 this.placeOrderIntentFlag = false;
                 // An intent that errored says nothing about approval; drop any
                 // notice left over from a previous, successful intent.
-                this.orderIntentApprovedNotice = '';
-                this.orderIntentNotAvailableNotice = '';
+                this.clearOrderIntentNotices();
                 let message = this.generalErrorMessage;
 
                 if (response?.responseJSON) {
@@ -2908,6 +2984,14 @@ $quoteDetails = json_encode(
                             break;
                     }
                 }
+
+                // The persistent box, alongside the existing toast rather than
+                // instead of it — same pairing the declined verdict above
+                // already ships. SCHEMA_ERROR sets `message` to '' and toasts
+                // one message per offending field instead, so the box stays
+                // empty (and hidden) exactly in the case where there is no
+                // single sentence to put in it.
+                this.orderIntentErrorNotice = message || '';
 
                 if (message) {
                     window.dispatchMessages([{ type: 'error', text: message }], 3000);

@@ -247,4 +247,220 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(env.loaderEvents).toEqual([]);
     });
   });
+
+  /*
+   * 2026-08-05, cross-platform order-intent UI unification.
+   *
+   * The in-progress row and the three verdicts are ONE box in four states, in
+   * one place in the tile, differing only in colour and carrying no title —
+   * the treatment the other three platforms render. What is checkable here is
+   * the structure and the source of the wording; the rendered TEXT is not,
+   * because this harness collapses every translation call to one constant, so
+   * wording is pinned at template-source level instead.
+   */
+  describe("the one order-intent box, four states", () => {
+    const fs = require("fs");
+    const path = require("path");
+
+    const TILE_SOURCE = fs.readFileSync(
+      path.join(H.REPO_ROOT, H.GATEWAY_METHOD_MARKUP_TEMPLATE),
+      "utf8",
+    );
+    const CSS_SOURCE = fs.readFileSync(
+      path.join(H.REPO_ROOT, "view/frontend/web/css/custom.css"),
+      "utf8",
+    );
+
+    /** The four states, by the `data-name` each element is found under. */
+    const STATES = [
+      ["order_intent_checking", "two-order-intent-checking"],
+      ["order_intent_message", "approved"],
+      ["order_intent_not_available_message", "unavailable"],
+      ["order_intent_error_message", "error"],
+    ];
+
+    let doc;
+
+    beforeAll(() => {
+      doc = new DOMParser().parseFromString(
+        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
+        "text/html",
+      );
+    });
+
+    test("the in-progress row says exactly 'Checking availability'", () => {
+      // Source-level, because the harness resolves every `__()` to one
+      // constant — a rendered-text assertion here could not fail. The old
+      // wording is asserted ABSENT too: a translation key left behind in the
+      // template is a string no catalogue has a row for any more, which
+      // degrades silently to English.
+      expect(TILE_SOURCE).toContain("__('Checking availability')");
+      expect(TILE_SOURCE).not.toContain("Checking your company");
+    });
+
+    test("every locale has a row for that exact key", () => {
+      const catalogues = fs
+        .readdirSync(path.join(H.REPO_ROOT, "i18n"))
+        .filter((name) => name.endsWith(".csv"));
+
+      // Guards the rename against the half-done case: the template asking for
+      // a key none of the four catalogues answers.
+      expect(catalogues.length).toBeGreaterThan(0);
+      catalogues.forEach((name) => {
+        const csv = fs.readFileSync(
+          path.join(H.REPO_ROOT, "i18n", name),
+          "utf8",
+        );
+        expect(csv).toContain('"Checking availability","');
+        expect(csv).not.toContain("Checking your company");
+      });
+    });
+
+    test.each(STATES)(
+      "%s is a bordered colour box with no title, in the tile's own flow",
+      (dataName, stateClass) => {
+        const el = doc.querySelector('[data-name="' + dataName + '"]');
+        expect(el).not.toBeNull();
+
+        const classes = (el.getAttribute("class") || "").split(/\s+/);
+        expect(classes).toContain("two-order-intent-box");
+        expect(classes).toContain(stateClass);
+
+        // No title, no heading, no second line of chrome: the box holds the
+        // message and nothing else. The in-progress row's own children are its
+        // sentence and the spinner, neither of which is a heading.
+        expect(el.querySelector("h1,h2,h3,h4,h5,h6,strong,legend")).toBeNull();
+
+        // In the tile's flow, never a page overlay (requirement 11).
+        const tileRoot = doc.querySelector(".payment-method-custom-form");
+        expect(tileRoot.contains(el)).toBe(true);
+        expect(classes).not.toContain("fixed");
+        expect(classes).not.toContain("inset-0");
+      },
+    );
+
+    test.each(STATES)(
+      "%s gets its colour from this module's own stylesheet",
+      (dataName, stateClass) => {
+        // Not a Tailwind utility. The merchant owns the Tailwind build, so a
+        // colour only this module asks for may never be generated — and the
+        // failure is silent: a borderless, colourless box that still claims a
+        // verdict. `input.company_id:disabled` and
+        // `.two-company-search__unavailable` are CSS here for the same reason.
+        const selector =
+          stateClass === "two-order-intent-checking"
+            ? "." + stateClass
+            : ".two-order-intent-message." + stateClass;
+        expect(CSS_SOURCE).toContain(selector + " {");
+
+        const el = doc.querySelector('[data-name="' + dataName + '"]');
+        const classes = el.getAttribute("class") || "";
+        expect(classes).not.toMatch(/\bbg-[a-z]+-\d{2,3}\b/);
+        expect(classes).not.toMatch(/\btext-[a-z]+-\d{2,3}\b/);
+        expect(classes).not.toMatch(/\bborder-[a-z]+-\d{2,3}\b/);
+      },
+    );
+
+    test("the geometry is declared once, on the shared class", () => {
+      // The four states drifted apart when each restated its own padding and
+      // radius in a class list. Only `.two-order-intent-box` may declare them.
+      expect(CSS_SOURCE).toMatch(
+        /\.two-order-intent-box \{[^}]*border-radius:[^}]*\}/,
+      );
+      STATES.forEach(([, stateClass]) => {
+        if (stateClass === "two-order-intent-checking") return;
+        const rule = CSS_SOURCE.match(
+          new RegExp("\\.two-order-intent-message\\." + stateClass + " \\{[^}]*\\}"),
+        );
+        expect(rule).not.toBeNull();
+        expect(rule[0]).not.toContain("border-radius");
+      });
+    });
+  });
+
+  describe("the three verdicts are mutually exclusive", () => {
+    let env;
+    let component;
+
+    beforeEach(() => {
+      env = H.installHyvaEnvironment();
+      H.loadSharedHelpers();
+      env.fireAlpineInit();
+      component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {});
+      component.orderIntentApprovedNoticeCopy = null;
+      component.orderIntentNotAvailableCopy = null;
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    test("clearOrderIntentNotices() takes all three down together", () => {
+      component.orderIntentApprovedNotice = "a";
+      component.orderIntentNotAvailableNotice = "b";
+      component.orderIntentErrorNotice = "c";
+
+      component.clearOrderIntentNotices();
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+      expect(component.orderIntentErrorNotice).toBe("");
+      // Whether a check is RUNNING is a separate fact and is not touched.
+      component.orderIntentChecking = true;
+      component.clearOrderIntentNotices();
+      expect(component.orderIntentChecking).toBe(true);
+    });
+
+    test("an errored check replaces a standing approval with the error box", () => {
+      component.companyId = "111111111";
+      component.orderIntentApprovedNotice = "Available for Company A";
+
+      component.processOrderIntentErrorResponse({}, "111111111");
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+      // The error is now REPORTED in the tile, not only in a toast that
+      // self-dismisses: a tile that goes back to showing nothing is
+      // indistinguishable from a check that never ran.
+      expect(component.orderIntentErrorNotice).toBe(component.generalErrorMessage);
+      expect(component.twoTileErrorVisible).toBe(true);
+      expect(component.placeOrderIntentFlag).toBe(false);
+    });
+
+    test("a schema error with per-field messages leaves the box empty", () => {
+      component.companyId = "111111111";
+
+      component.processOrderIntentErrorResponse(
+        {
+          responseJSON: {
+            error_code: "SCHEMA_ERROR",
+            error_json: [{ msg: "field one is wrong" }],
+          },
+        },
+        "111111111",
+      );
+
+      // There is no single sentence to put in the box; the per-field messages
+      // are toasted instead, exactly as before.
+      expect(component.orderIntentErrorNotice).toBe("");
+      expect(component.twoTileErrorVisible).toBe(false);
+    });
+
+    test("a decided verdict clears the other two states", () => {
+      component.companyId = "111111111";
+      component.orderIntentErrorNotice = "stale error";
+      component.orderIntentNotAvailableNotice = "stale not-available";
+
+      component.processOrderIntentSuccessResponse({ approved: true }, "111111111");
+
+      expect(component.orderIntentErrorNotice).toBe("");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+
+      component.orderIntentErrorNotice = "stale error";
+      component.processOrderIntentSuccessResponse({ approved: false }, "111111111");
+
+      expect(component.orderIntentErrorNotice).toBe("");
+      expect(component.orderIntentApprovedNotice).toBe("");
+    });
+  });
 });
