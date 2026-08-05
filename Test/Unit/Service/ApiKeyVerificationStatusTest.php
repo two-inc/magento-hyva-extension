@@ -103,6 +103,13 @@ class ApiKeyVerificationStatusTest extends TestCase
             'invalid/expired key (401)' => [['error' => 'invalid_api_key', 'http_status' => 401]],
             'Two 5xx' => [['http_status' => 503]],
             'caught translator/transport failure' => [['error_code' => 400, 'error_message' => 'timed out']],
+            // translatorFailure() (Adapter::execute()) sets BOTH keys at
+            // once — the shape that would slip through if the check were
+            // ever "simplified" to assume the two markers are mutually
+            // exclusive.
+            'translator failure (both markers set)' => [
+                ['error_code' => 502, 'http_status' => 502, 'error_message' => 'translation failed'],
+            ],
         ];
     }
 

@@ -208,6 +208,7 @@ class CheckoutConfig implements ArgumentInterface
         ];
         return $orderIntentConfig;
     }
+
     /**
      * TWO-25326 (WooCommerce-plugin port, PR #445): company search must
      * not run while a merchant's API key can't be verified, on top of

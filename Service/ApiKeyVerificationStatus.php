@@ -16,38 +16,18 @@ use Two\Gateway\Service\Api\Adapter;
  * Whether the merchant's currently configured API key can be verified right
  * now — the gate the address-block/tile company-search control must respect
  * so it never renders against a key Two cannot actually authenticate
- * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix).
+ * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix,
+ * PR #445).
  *
- * Built directly on Adapter — already injected elsewhere in this module
- * (ViewModel\CheckoutConfig::getOrderIntentConfig()) for the exact same
- * `/v1/merchant/verify_api_key` endpoint — rather than the base module's
- * Two\Gateway\Service\Merchant\RecordProvider, which would have been the
- * more natural existing verify+fetch+cache pattern to reuse. RecordProvider
- * is NOT usable here: it exists only on magento-plugin's `origin/staging`,
- * not in any published `two-inc/magento2` release this module's composer
- * constraint (`^2.0`) can resolve, and depending on it breaks
- * `setup:di:compile` on every base version a merchant can currently install
- * (caught by this PR's own CI, di-compile job, PHP 8.3 leg). This mirrors
- * the documented precedent in this repo's AGENTS.md for
- * Model\Provenance — a base-module class not yet in a release gets a
- * small local equivalent, not a dependency on it, until a release exists.
- *
- * The failure-detection check below (`error_code` / `http_status` markers)
- * duplicates a few lines of Adapter::execute()'s own documented contract,
- * which RecordProvider also duplicates for the same reason: Adapter itself
- * has no boolean "did this succeed" helper.
- *
- * Adapter::execute() catches every Throwable internally and always returns
- * an array (see its own catch-all in magento-plugin), so this class needs
- * no try/catch of its own around the live call.
- *
- * Caches the categorized-into-boolean outcome for CACHE_LIFETIME seconds,
- * keyed on the API key, so a Two outage costs at most one live round trip
- * per key per TTL window rather than one per checkout render — the "naive
- * live check on every page load" latency risk the WooCommerce port of this
- * same fix (PR #445) caught in its own review round, and which
- * getOrderIntentConfig() above still has today (pre-existing, out of this
- * PR's scope).
+ * Built directly on Adapter rather than the base module's
+ * Two\Gateway\Service\Merchant\RecordProvider — see the note above the
+ * constructor for why. Mirrors this repo's own AGENTS.md precedent for
+ * Model\Provenance: a base-module class not yet in a release gets a small
+ * local equivalent, not a dependency on it, until a release exists. As with
+ * Provenance, once a `two-inc/magento2` release carries RecordProvider (or an
+ * equivalent categorized/cached status service) and this module's composer
+ * constraint has a floor at that release, delete this class and inject the
+ * base one instead.
  */
 class ApiKeyVerificationStatus
 {
@@ -55,8 +35,14 @@ class ApiKeyVerificationStatus
 
     /**
      * Seconds. Matches WC_Twoinc::API_KEY_VERIFICATION_TTL in the
-     * woocommerce-plugin port of this fix (TWO-25326) — a wrong key or an
-     * outage should surface within minutes, not sit behind a long TTL.
+     * woocommerce-plugin port of this fix (TWO-25326) — deliberately short,
+     * and deliberately applied to a FAILED verification the same as a
+     * successful one (unlike RecordProvider's own cache, which only caches
+     * success): this is a binary availability gate, not a config-value
+     * cache with a safe "not configured" fallback, so both a key that just
+     * broke and a key that just got fixed need to surface within minutes,
+     * symmetrically. WC_Twoinc applies the same TTL to every outcome for
+     * the same reason.
      */
     private const CACHE_LIFETIME = 300;
 
@@ -127,10 +113,11 @@ class ApiKeyVerificationStatus
         $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', $storeId);
         // Adapter::execute() signals a non-2xx response (or a caught
         // request/response translator failure) by adding an `http_status`
-        // or `error_code` key to the decoded body — never both alongside a
-        // real success payload — so their absence is a real, 2xx merchant
-        // record, matching the same contract magento-plugin's own
-        // RecordProvider relies on for the same endpoint.
+        // and/or `error_code` key to the decoded body — either one present
+        // (translatorFailure() sets both at once) signals failure; a real
+        // 2xx success payload never carries either, matching the same
+        // contract magento-plugin's own RecordProvider relies on for the
+        // same endpoint.
         $verified = is_array($result) && !isset($result['error_code']) && !isset($result['http_status']);
         $this->cache->save($verified ? '1' : '0', $cacheKey, [], self::CACHE_LIFETIME);
 
