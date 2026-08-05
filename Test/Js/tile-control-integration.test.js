@@ -256,6 +256,38 @@ describe("the payment tile's mounted control (integration)", () => {
     await pending;
   });
 
+  test("the panel-closed hook fires with the INCOMING company already written", async () => {
+    // Round 9: the outcome-only version of this test below cannot fail on the
+    // ordering it names, because fillCompanyData() clears or re-derives in the
+    // same synchronous call and erases the wrong-company repaint before anything
+    // can observe it. So observe the hook ITSELF: what the company was at the
+    // moment it ran is the whole claim.
+    component.onCompanyNameClick();
+    await search("alpha", "111111111");
+    component.selectItem(component.items[0]);
+
+    const seenAtHookTime = [];
+    const real = component.refreshOrderIntentVerdict.bind(component);
+    component.refreshOrderIntentVerdict = function () {
+      seenAtHookTime.push({ id: this.companyId, name: this.companyName });
+      return real();
+    };
+
+    component.onCompanyNameClick();
+    await search("beta", "222222222");
+    component.selectItem(component.items[0]);
+
+    // It did fire — otherwise this test would pass by observing nothing.
+    expect(seenAtHookTime.length).toBeGreaterThan(0);
+    // And every time it fired, the pick had already been written. Before the
+    // engine's call was moved below the state writes, this was the OUTGOING
+    // company and the hook painted its verdict over the new one.
+    seenAtHookTime.forEach((seen) => {
+      expect(seen.id).toBe("222222222");
+      expect(seen.name).toBe("Example Trading Ltd");
+    });
+  });
+
   test("picking a new company evaluates against the INCOMING one", async () => {
     // Round-5 finding. The engine dismissed the panel BEFORE writing the pick's
     // company, so the tile's panel-closed repaint ran against the OUTGOING one —

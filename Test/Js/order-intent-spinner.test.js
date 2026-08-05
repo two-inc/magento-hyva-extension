@@ -466,7 +466,13 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // `x-cloak`, so the rule it needs had to be declared here — and if it goes
       // missing the four boxes flash on every checkout load, which is the exact
       // defect the attribute was added to fix.
-      expect(CSS_SOURCE).toMatch(/\[x-cloak\]\s*\{[^}]*display:\s*none/);
+      // Anchored on the module's own class, not on `[x-cloak]` alone: round 9
+      // showed the loose pattern matched any selector, so narrowing or typo'ing
+      // this rule left the assertion green while restoring the flash it exists to
+      // prevent.
+      expect(CSS_SOURCE).toMatch(
+        /\.two-order-intent-box\[x-cloak\]\s*\{[^}]*display:\s*none/,
+      );
     });
 
     test.each(STATES)(
@@ -494,6 +500,18 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         expect(classes).not.toMatch(/\bborder-[a-z]+-\d{2,3}\b/);
       },
     );
+
+    test("the in-progress row reserves its spinner gutter independent of order", () => {
+      // Equal-specificity rules would leave this decided by position in the file
+      // (round 9). Two classes, so reordering the stylesheet cannot silently
+      // shrink the gutter the absolutely-positioned spinner sits in.
+      expect(CSS_SOURCE).toMatch(
+        /\.two-order-intent-box\.two-order-intent-checking\s*\{[^}]*padding-right:/,
+      );
+      expect(CSS_SOURCE).toMatch(
+        /\.two-order-intent-box\.two-order-intent-checking\s*\{[^}]*position:\s*relative/,
+      );
+    });
 
     test("the geometry is declared once, on the shared class", () => {
       // The four states drifted apart when each restated its own padding and

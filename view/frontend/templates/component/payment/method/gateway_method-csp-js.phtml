@@ -1026,9 +1026,11 @@ $quoteDetails = json_encode(
                  * order-intent verdict a search took down — and firing it while
                  * `companyName`/`companyId` still held the OUTGOING company meant
                  * every such hook evaluated the company the buyer was replacing.
-                 * The tile's did exactly that: it briefly painted the previous
-                 * company's verdict and lowered the progress row of the request
-                 * that had just gone out for its replacement.
+                 * The tile's did exactly that, briefly painting the previous
+                 * company's verdict over the new one. (The row is not at risk:
+                 * refreshOrderIntentVerdict() never touches it — only
+                 * setOrderIntentChecking() does — so the surviving symptom is the
+                 * transient paint, not a lost progress row.)
                  *
                  * Ordering, not deferral, is the fix. A `$nextTick` here would
                  * paper over it, leave the wrong-company window open for anything
@@ -3260,7 +3262,6 @@ $quoteDetails = json_encode(
                 // company: the question has been answered now.
                 this.forgetOrderIntentError(decidedCompanyId);
 
-
                 /*
                  * The VISIBLE verdict is a separate concern from the dedup
                  * bookkeeping above, and is guarded on its own (review round 4):
@@ -3326,6 +3327,10 @@ $quoteDetails = json_encode(
              *   a reply that arrives after the buyer has reverted to a
              *   different, already-decided company must not blank that
              *   company's approved notice on its way out.
+             * @param {string} [requestedCompanyName] the NAME that company had
+             *   when the request went out. Recorded with the failure so an
+             *   abandoned search can put the report back under the name the check
+             *   actually ran for, rather than one edited by hand since.
              */
             processOrderIntentErrorResponse(response, requestedCompanyId, requestedCompanyName) {
                 if (typeof requestedCompanyId === 'string' && requestedCompanyId
@@ -3333,9 +3338,10 @@ $quoteDetails = json_encode(
                     return;
                 }
                 this.placeOrderIntentFlag = false;
-                // An intent that errored says nothing about approval; drop any
-                // notice left over from a previous, successful intent.
-                this.clearOrderIntentNotices();
+                // Any notice left over from a previous, successful intent is
+                // dropped by refreshOrderIntentVerdict() at the end of this
+                // method — it clears unconditionally before deciding what may be
+                // shown. An explicit clear here was a second copy of that.
                 let message = this.generalErrorMessage;
 
                 if (response?.responseJSON) {
@@ -3388,9 +3394,14 @@ $quoteDetails = json_encode(
                  * self-dismisses), and an empty `generalErrorMessage` must leave
                  * no record, or the record would be one nothing could ever paint.
                  */
-                const boxText = message ? this.generalErrorMessage : '';
+                // Whether this failure is REPORTABLE at all: there must be
+                // something to say (`message` — SCHEMA_ERROR clears it and toasts
+                // per field instead) and wording to say it in. Deliberately not
+                // "the text to paint": the painting is refresh's, and it reads
+                // `generalErrorMessage` itself.
+                const isReportable = Boolean(message && this.generalErrorMessage);
 
-                if (boxText && this.companyId) {
+                if (isReportable && this.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
                     // stays retryable.
                     this.orderIntentFailures[this.companyId] = {

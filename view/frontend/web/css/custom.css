@@ -425,7 +425,12 @@ summary::marker {
   line-height: 1.4;
 }
 
-.two-order-intent-checking {
+/*
+ * Two classes, so the gutter the spinner sits in does not depend on this rule
+ * appearing after `.two-order-intent-box` in the file (round 9). Reordering the
+ * stylesheet would otherwise silently shrink it back to the shared padding.
+ */
+.two-order-intent-box.two-order-intent-checking {
   position: relative;
   padding-right: 2rem;
   border-color: #e5e7eb;
