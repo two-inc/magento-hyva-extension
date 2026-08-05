@@ -355,19 +355,29 @@ describe("order-intent sequencing (bug 4)", () => {
       fresh.initialize(JSON.parse(H.QUOTE_JSON));
       fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
 
+      // Spy on BOTH instances rather than reading state afterwards: the
+      // dispatcher's closure still refers to the OLD `component` object no
+      // matter what the guard does, so `fresh` is never reachable through it
+      // either way — a state assertion on `fresh` would pass even with the
+      // liveness guard deleted. Only a call-count assertion can tell "the
+      // guard dropped the reply" apart from "nothing here ever touches
+      // `fresh` regardless".
+      const deadWrite = jest.spyOn(component, "processOrderIntentSuccessResponse");
+      const liveWrite = jest.spyOn(fresh, "processOrderIntentSuccessResponse");
+
       first.resolve({ approved: true });
       await H.flushPromises();
 
-      // The dead instance never got the write — its notice never left the
-      // empty default `resolveOrderIntentApprovedNotice()` would only fill in
-      // on a real write, which is the observable half of "did not write".
+      // The dead instance's own write method is never called at all — the
+      // guard drops the reply before reaching it.
+      expect(deadWrite).not.toHaveBeenCalled();
+      // Nor is the live one's — the reply was ABOUT company A on the OLD
+      // instance, and nothing routes a reply meant for a torn-down instance
+      // to whatever replaced it; that would repaint the new instance with a
+      // verdict for a company it never asked about.
+      expect(liveWrite).not.toHaveBeenCalled();
       expect(component.orderIntentApprovedNotice).toBe("");
-      // Nor did the live one — the reply was ABOUT company A on the OLD
-      // instance, and the new instance has no company captured at all, so it
-      // must not be repainted with a verdict for a company it never asked
-      // about.
       expect(fresh.orderIntentApprovedNotice).toBe("");
-      expect(fresh.lastOrderIntentCompanyId).toBe("");
     });
   });
 
