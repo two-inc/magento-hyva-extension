@@ -704,10 +704,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    *    `orderIntentApprovedNotice` on the way through, which is the deliberate
    *    fail-closed property they exist for;
    *  - `fillCompanyData()` then suppressed the intent that would have re-set
-   *    it, because `lastOrderIntentCompanyId` still held that same identifier.
+   *    it, because a decision for that same identifier was still on record.
    *
    * "Change company" is gone (bug 5), and with it the ONLY path that used to
-   * reset `lastOrderIntentCompanyId` mid-session — so the specific "repaints
+   * reset the decision records mid-session — so the specific "repaints
    * the label instead of leaving a bare button" scenario cannot occur any
    * more: there is no button to leave bare. What survives, and is still
    * pinned below, is the dedup mechanism itself — a DIFFERENT company must
@@ -779,7 +779,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
        * it debounces, calls placeOrderIntent(), and hands an approval to
        * processOrderIntentSuccessResponse(). Only the last step is what the
        * notice depends on, and driving it through the REAL success handler is
-       * what makes `lastOrderIntentCompanyId` advance the way production does.
+       * what makes the decision record advance the way production does.
        */
       const intents = [];
       const listener = function () {

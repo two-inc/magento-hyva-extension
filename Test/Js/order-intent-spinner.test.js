@@ -1005,7 +1005,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
     test("a failure stays retryable, and a later decision supersedes it", () => {
       // The failure record is deliberately kept OUT of the dedup gate: that gate
-      // reads `lastOrderIntentCompanyId`, so filing an error there would suppress
+      // reads the DECISIONS map, so filing an error there would suppress
       // the retry the error exists to invite.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
