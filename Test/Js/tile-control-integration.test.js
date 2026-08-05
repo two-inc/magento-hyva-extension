@@ -256,6 +256,50 @@ describe("the payment tile's mounted control (integration)", () => {
     await pending;
   });
 
+  test("abandoning a search puts the standing verdict back", async () => {
+    // Round-3 finding: clearing on search start had no counterpart for a search
+    // that ENDS without changing the company. The buyer opens the panel, types,
+    // then presses Escape or clicks away — no watcher fires, no pick happens, and
+    // nothing else writes the notices, so the verdict was gone for the rest of
+    // the session. In the declined case that removes the explanation for a
+    // decline that still stands.
+    component.onCompanyNameClick();
+    await search("example", "123456789");
+    component.selectItem(component.items[0]);
+    // A real copy OBJECT. The harness's default stand-in for this getter is a
+    // bare JSON string, which the resolver cannot substitute into.
+    component.orderIntentApprovedNoticeCopy = {
+      withCompany: "Available for {{companyName}} ({{companyNumber}})",
+      withoutCompany: "Available",
+      companyNameToken: "{{companyName}}",
+      companyNumberToken: "{{companyNumber}}",
+    };
+    component.processOrderIntentSuccessResponse(
+      { approved: true },
+      "123456789",
+      "Example Trading Ltd",
+    );
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+
+    // Search again — the box goes down.
+    component.onCompanyNameClick();
+    queryField.value = "example";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    const pending = component.getItems();
+    await H.flushPromises();
+    expect(component.orderIntentApprovedNotice).toBe("");
+    fetchStub.last().respond({ items: [] });
+    await pending;
+
+    // …and abandoning it puts the box back, because the company on screen is
+    // still the one the verdict was reached for.
+    component.closeDropdown();
+
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+    expect(component.orderIntentMessageVisible).toBe(true);
+  });
+
   test("a search too short to go on the wire leaves the verdict standing", async () => {
     // The complement of the test above, and what stops it from passing for the
     // wrong reason. Clearing is hung on a search actually starting, so a buyer

@@ -131,13 +131,17 @@ the template.
 
 ### Order intent: one box, and a verdict that can be repainted
 
-The tile shows exactly one order-intent box at a time, in four states — checking,
-available, not available, could not be determined. Two rules bite:
+The tile shows **at most one VERDICT** — available, not available, could not be
+determined — plus an in-progress row that is a separate fact and may legitimately
+be up alongside nothing. All four are one box style in one place. Two rules bite:
 
 - **Clearing and painting go through one method each.** `clearOrderIntentNotices()`
   takes all states down; `refreshOrderIntentVerdict()` clears and then repaints
   from the recorded verdict. Assignment lists that name only the siblings a caller
   remembers are how a state gets forgotten when a fifth one is added.
+  `clearOrderIntentNotices()` deliberately does NOT touch the in-progress row;
+  `refreshOrderIntentVerdict()` lowers it only when it actually paints a verdict
+  for the company on screen, since the two cannot both be true of one company.
 - **A verdict is recorded against (id, name, decision), and a new search clears
   the box.** Those two are one mechanism: the dedup gate refuses to re-ask for a
   decision already reached, so without the record a buyer who searched again and

@@ -161,6 +161,48 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component[CHECKING_SHOW_BINDING]).toBe(true);
     });
 
+    test("comes down when the payment method changes inside the debounce", () => {
+      // Round-3 finding. The row goes up optimistically on the pick, so every
+      // path that then declines to make a request has to take it back down. Two
+      // early returns in the debounce callback did not, leaving a permanent
+      // "Checking availability" box — reachable by picking a company and then
+      // switching payment method within the 500ms window.
+      component.placeOrderIntent = function () {
+        return deferred().promise;
+      };
+
+      component.companyName = "Company A";
+      component.companyId = "111111111";
+      component.fillCompanyData("111111111", "Company A");
+      expect(component[CHECKING_SHOW_BINDING]).toBe(true);
+
+      // The buyer switches away from Two before the debounce elapses.
+      document.querySelector(
+        'input[name="payment-method-option"]',
+      ).value = "some_other_method";
+      jest.advanceTimersByTime(500);
+
+      expect(component[CHECKING_SHOW_BINDING]).toBe(false);
+    });
+
+    test("comes down when no payment method is selected at all", () => {
+      component.placeOrderIntent = function () {
+        return deferred().promise;
+      };
+
+      component.companyName = "Company A";
+      component.companyId = "111111111";
+      component.fillCompanyData("111111111", "Company A");
+      expect(component[CHECKING_SHOW_BINDING]).toBe(true);
+
+      document.querySelector(
+        'input[name="payment-method-option"]',
+      ).checked = false;
+      jest.advanceTimersByTime(500);
+
+      expect(component[CHECKING_SHOW_BINDING]).toBe(false);
+    });
+
     test("comes down when the request settles", async () => {
       const request = deferred();
       component.placeOrderIntent = function () {
@@ -414,6 +456,11 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     test("an errored check replaces a standing approval with the error box", () => {
       component.companyId = "111111111";
       component.orderIntentApprovedNotice = "Available for Company A";
+      // A sentinel, not the component's own `generalErrorMessage`: this harness
+      // collapses every translation call to ONE constant, so asserting the box
+      // equals `generalErrorMessage` would pass for any translated string at all
+      // and prove only that the box is non-empty.
+      component.generalErrorMessage = "SENTINEL-general-error";
 
       component.processOrderIntentErrorResponse({}, "111111111");
 
@@ -422,7 +469,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // The error is now REPORTED in the tile, not only in a toast that
       // self-dismisses: a tile that goes back to showing nothing is
       // indistinguishable from a check that never ran.
-      expect(component.orderIntentErrorNotice).toBe(component.generalErrorMessage);
+      expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
       expect(component.twoTileErrorVisible).toBe(true);
       expect(component.placeOrderIntentFlag).toBe(false);
     });
@@ -444,6 +491,132 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // are toasted instead, exactly as before.
       expect(component.orderIntentErrorNotice).toBe("");
       expect(component.twoTileErrorVisible).toBe(false);
+    });
+
+    test("the box never carries the API's own diagnostic text", () => {
+      // The box does not self-dismiss, so upstream `error_message` /
+      // `error_details` — strings written for a developer — must not be parked
+      // permanently in a buyer's checkout. The toast still carries them.
+      component.companyId = "111111111";
+      component.generalErrorMessage = "SENTINEL-general-error";
+
+      component.processOrderIntentErrorResponse(
+        {
+          responseJSON: {
+            error_code: "ORDER_INVALID",
+            error_message: "RAW-UPSTREAM-MESSAGE",
+            error_details: "RAW-UPSTREAM-DETAILS",
+          },
+        },
+        "111111111",
+      );
+
+      expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
+      expect(component.orderIntentErrorNotice).not.toContain("RAW-UPSTREAM");
+    });
+
+    test("a late reply files its verdict under the company it ASKED about", () => {
+      // Round-3 finding, and the sharpest one: the id used to advance above the
+      // paint guard while the name and decision were written below it, so this
+      // interleaving tore the record apart and left company B both unreachable
+      // (dedup said decided, the name said otherwise) and liable to be shown
+      // company A's approval.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+
+      // B is picked, then the buyer reverts to A before B's reply lands.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.processOrderIntentSuccessResponse(
+        { approved: false },
+        "222222222",
+        "Beta Ltd",
+      );
+
+      // The record is entirely B's — id, name and decision together.
+      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.lastOrderIntentCompanyName).toBe("Beta Ltd");
+      expect(component.lastOrderIntentApproved).toBe(false);
+
+      // Nothing about B is painted while A is on screen…
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+
+      // …and B's own decline is reachable the moment B is on screen again,
+      // rather than being stuck behind a name that never matches.
+      component.companyName = "Beta Ltd";
+      component.companyId = "222222222";
+      component.orderIntentNotAvailableCopy = {
+        withCompany: "No: {{companyName}}",
+        withoutCompany: "No",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.refreshOrderIntentVerdict();
+      expect(component.twoTileNotAvailableVisible).toBe(true);
+    });
+
+    test("a verdict is not painted underneath an open results panel", () => {
+      // A reply can land mid-search. Painting it behind the dropdown of
+      // candidates replacing that very company is the complaint that made a new
+      // search clear the box at all.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "Yes: {{companyName}}",
+        withoutCompany: "Yes",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.showDropdown = function () {
+        return true;
+      };
+
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+
+      expect(component.orderIntentApprovedNotice).toBe("");
+      // But it is on record, so closing the panel shows it.
+      expect(component.lastOrderIntentApproved).toBe(true);
+      component.showDropdown = function () {
+        return false;
+      };
+      component.refreshOrderIntentVerdict();
+      expect(component.orderIntentApprovedNotice).not.toBe("");
+    });
+
+    test("repainting a verdict takes the in-progress row down with it", () => {
+      // The row may still be up for a DIFFERENT company's request. It says
+      // nothing true about the company now on screen, so a verdict for that
+      // company replaces it rather than sitting beside it.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "Yes: {{companyName}}",
+        withoutCompany: "Yes",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+
+      component.orderIntentChecking = true;
+      component.refreshOrderIntentVerdict();
+
+      expect(component.orderIntentChecking).toBe(false);
+      expect(component.orderIntentApprovedNotice).not.toBe("");
     });
 
     test("a decided verdict clears the other two states", () => {
