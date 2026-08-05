@@ -87,6 +87,20 @@ describe("one company-search control (bug 6)", () => {
     expect(normalise(fromTile.outerHTML)).toBe(normalise(fromAddress.outerHTML));
   });
 
+  test("each mount point supplies the Alpine scope its surface needs", () => {
+    // The harness substitutes ONE value for `$twoControlAlpineData`, so the
+    // rendered markup cannot tell the two apart — this is the only place the
+    // difference is checkable, and it matters: the address step needs its own
+    // `x-data`, while the tile must have NONE so the control's state lands on
+    // the payment form's component beside the tile label and the order-intent
+    // dispatch. A stray `x-data` in the tile would give the control a private
+    // copy of `companyName`/`companyId` that the label never sees.
+    expect(source(tile)).toContain("$twoControlAlpineData = '';");
+    expect(source(address)).toContain(
+      "$twoControlAlpineData = 'x-data=\"' . $escaper->escapeHtmlAttr($gwBase . 'CompanySearchField') . '\"';",
+    );
+  });
+
   test("neither mount point renders a control of its own alongside it", () => {
     [tile, address].forEach(function (relPath) {
       const doc = render(relPath);

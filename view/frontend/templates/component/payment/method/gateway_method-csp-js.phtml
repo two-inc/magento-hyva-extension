@@ -613,10 +613,12 @@ $quoteDetails = json_encode(
      *   offers a manual/search toggle at all (shipping does not: it has no
      *   markup of its own to hang a toggle link on — its visible input is
      *   rendered by Hyvä Checkout's own address-book form).
-     * @param {boolean} [options.querySplit=false] address-step only
-     *   (TWO-25326 §1): the visible name field and the dropdown's own query
-     *   box are different state, so a keystroke in the dropdown never
-     *   overwrites the captured name until a result is picked.
+     * @param {boolean} [options.querySplit=false] set by
+     *   `twoGatewayCompanySearchControl()`, so both surfaces that mount the
+     *   control get it (TWO-25326 §1): the visible name field and the panel's
+     *   own query box are different state, so a keystroke in the panel never
+     *   overwrites the captured name until a result is picked. Only the
+     *   address-book modal, which composes this engine directly, leaves it off.
      * @param {boolean} [options.editableCompanyId=false] whether this
      *   surface owns a company-number input whose lock state this engine
      *   should compute (address + tile; shipping has none).

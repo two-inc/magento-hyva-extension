@@ -288,6 +288,11 @@ summary::marker {
  * Reserve room for the spinner unconditionally rather than only while
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
+ *
+ * The QUERY field is the one that actually carries a spinner: the company-NAME
+ * field is `readonly` in search mode and never runs a search of its own. Its
+ * inset is kept anyway, and deliberately, so the two inputs the control stacks
+ * line their text up rather than one sitting 34px wider than the other.
  */
 .two-company-search > input,
 .two-company-search__query > input {
