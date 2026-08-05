@@ -1515,6 +1515,29 @@ $quoteDetails = json_encode(
                 this.companyName = '';
                 this.isCompanySelected = false;
 
+                /*
+                 * The stored name has to go with it (follow-up to the same bug
+                 * — the first fix cleared only the identifier pair).
+                 * `forgetStaleCompanyId()` blanks `company_id` /
+                 * `company_id_source` in the billing blob but leaves
+                 * `company_name` holding the company the buyer has just typed
+                 * over, and initialize() restores `search` FROM that key on
+                 * every Magewire re-render (term change, address change, totals
+                 * refresh). The typed text was therefore silently reverted to
+                 * the abandoned company's name in the field that IS
+                 * `payment[company_name]`.
+                 *
+                 * Still not a publish of the typed text (see above) — a blank,
+                 * so the restore finds no stored name and falls back to reading
+                 * the live field, which is what the buyer typed. Writing the
+                 * blank rather than skipping the write is also what stops the
+                 * shipping-company fallback in initialize() re-adopting a name
+                 * the buyer has explicitly typed over; the record's presence is
+                 * the signal, and company-name-payment.phtml's fallback already
+                 * requires a record to CARRY both name and id before it counts.
+                 */
+                window.twoGatewayWriteBillingCompany({ company_name: '' });
+
                 const companyIdInput = document.getElementById('company_id');
                 if (companyIdInput) companyIdInput.value = '';
 

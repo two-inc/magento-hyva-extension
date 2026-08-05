@@ -766,6 +766,32 @@ describe("payment component company selection", () => {
       expect(companyIdInput().disabled).toBe(false);
     });
 
+    test("does not revert the typed name to the abandoned company's", () => {
+      // The gap the first version of the stale-company clear left: it dropped
+      // `company_id` / `company_id_source` from the billing record but left
+      // `company_name` holding company A. `initialize()` restores `search`
+      // from that key on every re-render, and the field it restores into IS
+      // `payment[company_name]` — so a term change, an address change or a
+      // totals refresh silently put company A's name back over the text the
+      // buyer had typed, and the order would have been placed for A.
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      expect(storedSelection().company_name).toBe("Example Trading Ltd");
+
+      typeCompanyName("Other Example");
+
+      expect(component.companyName).toBe("");
+      expect(storedSelection().company_name).toBe("");
+
+      const rebuilt = mountPaymentComponent().component;
+
+      expect(rebuilt.search).toBe("Other Example");
+      expect(rebuilt.search).not.toBe("Example Trading Ltd");
+      expect(rebuilt.companyName).not.toBe("Example Trading Ltd");
+      expect(document.getElementById("company_name").value).toBe(
+        "Other Example",
+      );
+    });
+
     test("keeps the field locked after a pick that had an identifier", () => {
       // The other half of the invariant, and the reason this is not a blanket
       // unlock: the registry answered, so the number stays untypeable.
