@@ -669,6 +669,60 @@ describe("shared company-search helpers", () => {
         expect(window.twoGatewayHasCountrySelector()).toBe(false);
       });
 
+      /**
+       * Review round 1 on this batch. Broadening the lookup by NAME also
+       * reaches fields the buyer has never seen: a logged-in checkout keeps an
+       * address-book "add address" form in the DOM with its country select
+       * pre-selected to the store's own country. Letting that outrank the
+       * quote's real shipping country is the same wrong-country bug again, from
+       * a field nobody touched.
+       */
+      describe("fields the buyer cannot have used are ignored", () => {
+        test("a select hidden by an ancestor's inline display:none does not win", () => {
+          const modal = document.createElement("div");
+          modal.style.display = "none";
+          document.body.appendChild(modal);
+          const select = document.createElement("select");
+          select.name = "country_id";
+          const option = document.createElement("option");
+          option.value = "US";
+          select.appendChild(option);
+          select.value = "US";
+          modal.appendChild(select);
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+          // …and it does not suppress the store default either, or a
+          // single-country checkout with an address-book modal in the DOM
+          // would dead-end on "Please select a country first".
+          expect(window.twoGatewayHasCountrySelector()).toBe(false);
+        });
+
+        test("the `hidden` class and the hidden attribute count too", () => {
+          const byClass = addCountrySelect("country_id", "US");
+          byClass.classList.add("hidden");
+          const byAttribute = addCountrySelect("billing[country_id]", "DE");
+          byAttribute.hidden = true;
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        test("a disabled select does not win", () => {
+          const select = addCountrySelect("country_id", "US");
+          select.disabled = true;
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        test("a visible select still wins — the filter is not a blanket refusal", () => {
+          addCountrySelect("country_id", "GB");
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+          expect(window.twoGatewayHasCountrySelector()).toBe(true);
+        });
+      });
+
       test("twoGatewayCountryFields lists the two known ids once each, ahead of name matches", () => {
         // `#shipping-country_id` also matches `[name="country_id"]` when the
         // form names it that way; a duplicated entry would be harmless here

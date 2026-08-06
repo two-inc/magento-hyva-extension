@@ -584,10 +584,60 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         expect(env.messages).toEqual([]);
       });
 
+      /**
+       * The one case that keeps a toast (review round 1): the box's ELEMENT is
+       * only rendered when the brand has not switched the notice copy off, and
+       * a brand shipping today does switch it off. `…Copy === null` is exactly
+       * that state — the same value the markup's PHP condition tests — so a
+       * declined buyer on such a brand gets the toast rather than nothing at
+       * all.
+       */
+      test("a brand with no inline notice at all still gets told", () => {
+        // `beforeEach` already nulls both copies, which IS the suppressed
+        // brand; asserted explicitly so the precondition is not incidental.
+        expect(component.orderIntentNotAvailableCopy).toBeNull();
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentDeclinedMessage = "SENTINEL-declined";
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(env.messages).toEqual([
+          [{ type: "error", text: "SENTINEL-declined" }],
+        ]);
+        // And there is genuinely no box to have shown instead.
+        expect(component.orderIntentNotAvailableNotice).toBe("");
+        expect(component.twoTileNotAvailableVisible).toBe(false);
+      });
+
+      test("an APPROVAL on that same brand raises nothing", () => {
+        // The fallback is for the decline only — a brand that suppressed its
+        // approved copy has said it does not want the buyer congratulated.
+        component.companyId = "111111111";
+
+        component.processOrderIntentSuccessResponse(
+          { approved: true },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(env.messages).toEqual([]);
+      });
+
       test("dropping the toast did not drop the verdict the flag records", () => {
         // The toast sat directly above `placeOrderIntentFlag`'s write in the
         // same branch, so deleting the branch by hand could have taken the
         // flag with it.
+        component.orderIntentNotAvailableCopy = {
+          withCompany: "NO {{companyName}}",
+          withoutCompany: "NO",
+          companyNameToken: "{{companyName}}",
+          companyNumberToken: "{{companyNumber}}",
+        };
         component.companyId = "111111111";
         component.processOrderIntentSuccessResponse(
           { approved: true },

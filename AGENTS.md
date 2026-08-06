@@ -174,14 +174,17 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the component. Acceptable — a decision is only as good as the quote it was made
   against — but it means the come-back-and-see-your-verdict property holds only
   until the next totals/address/term change.
-- **ONE VERDICT, ONE NOTICE — a decline raises no toast** (2026-08-06). The
-  approved and declined verdicts are the box and nothing else; do not pair a
-  `window.dispatchMessages()` toast with them, in either direction. A toast
-  self-dismisses and lands at the top of the page rather than beside the company
-  it is about, so it can only ever repeat what the box already says permanently.
-  The one exception is a FAILED check, which keeps its toast because that toast
-  carries the API's own diagnostic strings and the box deliberately shows the
-  general wording instead.
+- **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (2026-08-06).
+  A decline used to raise both; the toast self-dismisses and lands at the top of
+  the page rather than beside the company it is about, so it could only repeat
+  what the box already says permanently. Two exceptions, each for its own
+  reason: a FAILED check keeps its toast because that one carries the API's own
+  diagnostic strings and the box deliberately shows the general wording instead;
+  and a decline on a brand that switched the notice COPY off
+  (`orderIntentNotAvailableCopy === null`, the state in which the box's element
+  is never rendered at all — and a brand shipping today is in it) falls back to
+  the toast, because the alternative is telling a declined buyer nothing
+  whatsoever. Gate a fallback on the copy being absent, never on anything else.
 - **The dispatch paths are resolved by `data-name`, on BOTH markup modes.**
   `company-name-payment.phtml` finds the payment step's company pair with
   `[data-name="company_name"]` / `[data-name="company_id"]`, and all three of

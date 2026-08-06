@@ -295,9 +295,44 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * Is this country field one the buyer can actually have used?
+     *
+     * Review round 1 on the 2026-08-06 batch: broadening the lookup to
+     * `country_id` BY NAME also picks up fields the buyer has never seen — a
+     * logged-in checkout's address-book "add address" form is in the DOM with
+     * its country select pre-selected to the store's own country, so an
+     * unfiltered lookup would let that hidden field outrank the quote's real
+     * shipping country and re-enter the very bug this batch fixes, from a field
+     * nobody touched.
+     *
+     * `disabled` and hidden-ness only. Deliberately NOT `offsetParent === null`,
+     * the usual idiom: `x-show` hides with an inline `display: none`, this
+     * codebase also hides with the `hidden` class, `offsetParent` answers null
+     * for a `position: fixed` element that IS visible, and it is unimplemented
+     * in jsdom — so a test written against it would pass while proving nothing.
+     * Same reasoning, and the same three checks, as the control's own
+     * `isDisplayNone()`.
+     *
+     * @param {HTMLElement} field
+     * @returns {boolean}
+     */
+    window.twoGatewayCountryFieldUsable = window.twoGatewayCountryFieldUsable || function(field) {
+        if (!field || field.disabled) return false;
+        let node = field;
+        while (node && node.style) {
+            if (node.style.display === 'none') return false;
+            if (node.hidden) return false;
+            if (node.classList && node.classList.contains('hidden')) return false;
+            node = node.parentElement;
+        }
+        return true;
+    };
+
+    /**
      * Every country selector the buyer could have chosen a country in, in
      * priority order: the two ids Hyvä's own address forms use, then any
-     * `country_id` field regardless of the id shape.
+     * `country_id` field regardless of the id shape. Hidden and disabled fields
+     * are excluded — see twoGatewayCountryFieldUsable().
      *
      * The name-based selectors are not decoration (2026-08-06). The two exact
      * ids only exist while an address FORM is on screen and named the way the
@@ -317,7 +352,9 @@ $quoteDetails = json_encode(
     window.twoGatewayCountryFields = window.twoGatewayCountryFields || function() {
         const fields = [];
         const push = (el) => {
-            if (el && fields.indexOf(el) === -1) fields.push(el);
+            if (!el || fields.indexOf(el) !== -1) return;
+            if (!window.twoGatewayCountryFieldUsable(el)) return;
+            fields.push(el);
         };
         push(document.getElementById('shipping-country_id'));
         push(document.getElementById('billing-country_id'));
@@ -335,6 +372,13 @@ $quoteDetails = json_encode(
      * `select` only. A hidden input mirroring a chosen country is not a
      * selector, and the question this answers is whether the store leaves the
      * country to the buyer.
+     *
+     * Reads the FILTERED list, so a select the buyer cannot reach does not count
+     * either (review round 1). It decides whether the store default is
+     * suppressed, and suppressing it on the strength of a select nobody can see
+     * leaves company search saying "Please select a country first" with nothing
+     * on screen to satisfy it — a dead end, where the store default would merely
+     * have been a guess.
      *
      * @returns {boolean}
      */
@@ -3367,25 +3411,47 @@ $quoteDetails = json_encode(
                 this.placeOrderIntentFlag = Boolean(response.approved);
 
                 /*
-                 * NO TOAST ON A DECLINE (2026-08-06 ruling).
+                 * ONE VERDICT, ONE NOTICE — and never the toast while the box
+                 * exists (2026-08-06 ruling).
                  *
                  * A decline used to raise a 5-second `dispatchMessages()` toast
-                 * as well as the in-tile "not available" box. Two notices for
-                 * one verdict, and the toast is the weaker of the two: it
+                 * AS WELL AS the in-tile "not available" box. Two notices for one
+                 * verdict, and the toast is the weaker of the two: it
                  * self-dismisses, it lands at the top of the page rather than in
                  * the tile the buyer is reading, and it says the same thing the
-                 * box beside their company already says and keeps saying. The
-                 * box is the verdict surface on all four platforms; this toast
-                 * was the last thing making Hyvä differ.
+                 * box beside their company already says and keeps saying.
                  *
-                 * `orderIntentDeclinedMessage` is deliberately KEPT in component
-                 * state — the branded overlay's own tile JS reads it, and it is
-                 * the configured decline wording, not toast-specific copy.
+                 * The box is not unconditional, though, which is why this is a
+                 * FALLBACK rather than a deletion (review round 1). Its ELEMENT is
+                 * only rendered when the brand has not switched the notice copy
+                 * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
+                 * today does switch it off), so on such a brand deleting the toast
+                 * outright left a declined buyer with no signal whatsoever.
+                 * `orderIntentNotAvailableCopy === null` is exactly the state in
+                 * which no inline notice can ever appear — the same fact the
+                 * markup's PHP condition tests — so the toast fires there and only
+                 * there.
+                 *
+                 * Above the panel-open guard below, deliberately: that guard
+                 * defers only the BOX, and a brand with no box has nothing to
+                 * defer.
                  *
                  * The FAILED-check path (processOrderIntentErrorResponse below)
-                 * still toasts: it carries the API's own diagnostic detail,
-                 * which the box deliberately does not show.
+                 * toasts unconditionally, for a different reason: it carries the
+                 * API's own diagnostic detail, which the box deliberately does not
+                 * show.
                  */
+                if (!response.approved && this.orderIntentNotAvailableCopy === null) {
+                    // Guarded, like every other call to it on a path whose whole
+                    // point is telling the buyer something: this must not become
+                    // the thing that throws.
+                    if (typeof window.dispatchMessages === 'function') {
+                        window.dispatchMessages(
+                            [{ type: 'error', text: this.orderIntentDeclinedMessage }],
+                            5000
+                        );
+                    }
+                }
 
                 /*
                  * RECORDED above, PAINTED by one place. This handler no longer

@@ -334,9 +334,16 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * Rendered in BOTH company-search-location modes, not only the
              * text-only tile: it is the ENTIRE story for a declined/no-intent
              * company on either surface. As of the 2026-08-06 ruling it is also
-             * the ONLY one — the 5-second decline toast that used to fire
-             * alongside it is gone (see processOrderIntentSuccessResponse), so
-             * one verdict now produces exactly one notice.
+             * the only notice — the 5-second decline toast that used to fire
+             * alongside it is gone, so one verdict produces exactly one notice.
+             *
+             * Which makes the CONDITION on this element load-bearing beyond
+             * this file: when the brand switch suppresses the copy there is no
+             * element here at all, so `processOrderIntentSuccessResponse()`
+             * falls back to the toast for a decline in exactly that case. The
+             * two conditions test the same fact — this one in PHP
+             * (`getOrderIntentNotAvailableNotice() !== null`), that one in JS
+             * (`orderIntentNotAvailableCopy === null`) — and must keep doing so.
              */
             ?>
             <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
