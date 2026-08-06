@@ -955,12 +955,22 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a check raised outside the pick path clears the standing verdict", () => {
-      // fillCompanyData() is not only reached from a dropdown pick — the shipping
-      // step's company sync and a storage restore call it directly, with no
-      // panel-closed repaint having run first. Those paths are why the explicit
-      // clear beside the optimistic row is not redundant: raising the row does not
-      // clear (only lowering re-derives), so without it a verdict for the previous
-      // company would sit beside "Checking availability" for the whole request.
+      // Why the explicit clear beside the optimistic row is not redundant:
+      // raising the row does not clear (only LOWERING re-derives), so without it a
+      // standing verdict would sit beside "Checking availability" for the whole
+      // request — the one state the box is not allowed to be in.
+      //
+      // Two paths reach it with something standing. A re-pick of a company whose
+      // check FAILED: failures are not in the decisions map, so the dedup gate
+      // opens and dispatches, while the panel-closed repaint has already put the
+      // error box back. And a manual-entry commit, which reaches
+      // `onCompanyCommitted` without `onDropdownClear` ever firing.
+      //
+      // (An earlier version of this comment named the shipping-step sync and the
+      // storage restore. Both are wrong and review round 11 caught it: the sync
+      // assigns `companyName`/`companyId` directly and never calls this method,
+      // and the storage restore passes `triggerOrderIntent = false`, so it takes
+      // the else branch. There are exactly two callers.)
       //
       // Found by mutation sweep after round 9: deleting that clear failed nothing.
       component.orderIntentApprovedNoticeCopy = {
