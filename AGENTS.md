@@ -195,8 +195,9 @@ be up alongside nothing. All four are one box style in one place. The rules that
   WRITES the pair bails out silently when either input is missing — the
   address-step pick sync, the on-load initialisation, and `updatePaymentFields()`
   itself, which is also where those paths' `dispatch-order-intent` lives. Its
-  one dispatch that does NOT depend on the pair is the `checkout:payment:method-
-  activate` re-arm, which fires from the stored selection alone. So the symptom
+  one dispatch that does NOT depend on the pair is the
+  `checkout:payment:method-activate` re-arm, which fires from the stored
+  selection alone. So the symptom
   of a missing `data-name` is not "no intents ever": it is no intent on a PICK,
   with the activation re-arm still firing — which is worse to diagnose than
   total silence, because the feature looks alive. Address-area mode's two inputs

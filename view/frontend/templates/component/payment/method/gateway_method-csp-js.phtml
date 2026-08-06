@@ -326,6 +326,15 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayCountryFieldUsable = window.twoGatewayCountryFieldUsable || function(field) {
         if (!field) return false;
+        /*
+         * A `type="hidden"` input is the one kind of hidden this walk cannot see
+         * (review round 5): `hidden` is false on it, its inline `display` is
+         * empty, and the three checks below all pass — so a hidden MIRROR of a
+         * chosen country, which is exactly a field the buyer never saw, would
+         * have outranked the quote's real shipping country. Tested on the field
+         * itself only; an ancestor cannot be a hidden input.
+         */
+        if (field.tagName === 'INPUT' && field.type === 'hidden') return false;
         let node = field;
         while (node && node.style) {
             if (node.disabled) return false;
@@ -3478,9 +3487,12 @@ $quoteDetails = json_encode(
                  * show.
                  */
                 if (!response.approved && this.resolveOrderIntentNotAvailableNotice() === '') {
-                    // Guarded, like every other call to it on a path whose whole
-                    // point is telling the buyer something: this must not become
-                    // the thing that throws.
+                    // Guarded HERE, not "like every other call site" — three of
+                    // the six in this file are unguarded, the failed-check toast
+                    // below among them. The reason to guard this one is that it
+                    // is the ONLY signal a declined buyer gets on a brand with
+                    // no inline notice, so a missing global must not turn "you
+                    // were declined" into a thrown error and nothing on screen.
                     if (typeof window.dispatchMessages === 'function') {
                         window.dispatchMessages(
                             [{ type: 'error', text: this.orderIntentDeclinedMessage }],

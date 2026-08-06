@@ -707,6 +707,24 @@ describe("shared company-search helpers", () => {
           expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
         });
 
+        test("a hidden INPUT mirror of the country does not win", () => {
+          // Review round 5: `type="hidden"` is the one kind of hidden the
+          // ancestor walk cannot see — `hidden` is false on it, its inline
+          // `display` is empty, and it is not disabled. A hidden mirror of a
+          // chosen country is by definition a field the buyer never saw.
+          const mirror = document.createElement("input");
+          mirror.type = "hidden";
+          mirror.name = "country_id";
+          mirror.value = "US";
+          document.body.appendChild(mirror);
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+          // …and it is not a country SELECTOR either, so it must not suppress
+          // the store default on a single-country checkout.
+          expect(window.twoGatewayHasCountrySelector()).toBe(false);
+        });
+
         test("a disabled select does not win", () => {
           const select = addCountrySelect("country_id", "US");
           select.disabled = true;
