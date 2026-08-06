@@ -954,6 +954,43 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
     });
 
+    test("a check raised outside the pick path clears the standing verdict", () => {
+      // fillCompanyData() is not only reached from a dropdown pick — the shipping
+      // step's company sync and a storage restore call it directly, with no
+      // panel-closed repaint having run first. Those paths are why the explicit
+      // clear beside the optimistic row is not redundant: raising the row does not
+      // clear (only lowering re-derives), so without it a verdict for the previous
+      // company would sit beside "Checking availability" for the whole request.
+      //
+      // Found by mutation sweep after round 9: deleting that clear failed nothing.
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "YES {{companyName}}",
+        withoutCompany: "YES",
+        companyNameToken: "{{companyName}}",
+        companyNumberToken: "{{companyNumber}}",
+      };
+      component.isOrderIntentEnabled = "1";
+
+      // A is decided and its verdict is on screen.
+      component.companyName = "Alpha Ltd";
+      component.companyId = "111111111";
+      component.processOrderIntentSuccessResponse(
+        { approved: true },
+        "111111111",
+        "Alpha Ltd",
+      );
+      component.setOrderIntentChecking(false);
+      expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
+
+      // A different company arrives without any dropdown interaction.
+      component.fillCompanyData("222222222", "Beta Ltd");
+
+      expect(component.orderIntentChecking).toBe(true);
+      expect(component.orderIntentApprovedNotice).toBe("");
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+      expect(component.orderIntentErrorNotice).toBe("");
+    });
+
     test("a check in progress outranks every recorded verdict", () => {
       // The invariant, stated once instead of guarded per route (round 6).
       // "Checking availability" and a conclusion cannot both be true, and after
