@@ -614,6 +614,34 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         expect(component.twoTileNotAvailableVisible).toBe(false);
       });
 
+      test("copy that is present but unusable falls back too", () => {
+        // Review round 2. The resolver deliberately degrades malformed copy to
+        // a SILENT box rather than throwing, so gating the fallback on "the
+        // copy is null" left exactly that defensive branch showing a rendered,
+        // empty box and no toast — silence, from the guard that exists to stop
+        // the tile going dead.
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentDeclinedMessage = "SENTINEL-declined";
+        component.orderIntentNotAvailableCopy = {
+          // No `withCompany` string: resolves to '' for a named company.
+          withoutCompany: "NO",
+          companyNameToken: "{{companyName}}",
+          companyNumberToken: "{{companyNumber}}",
+        };
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(component.orderIntentNotAvailableNotice).toBe("");
+        expect(env.messages).toEqual([
+          [{ type: "error", text: "SENTINEL-declined" }],
+        ]);
+      });
+
       test("an APPROVAL on that same brand raises nothing", () => {
         // The fallback is for the decline only — a brand that suppressed its
         // approved copy has said it does not want the buyer congratulated.

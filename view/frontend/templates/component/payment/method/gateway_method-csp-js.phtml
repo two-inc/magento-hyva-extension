@@ -313,13 +313,22 @@ $quoteDetails = json_encode(
      * Same reasoning, and the same three checks, as the control's own
      * `isDisplayNone()`.
      *
+     * `disabled` is tested on every ANCESTOR too, not only the field: a
+     * `<fieldset disabled>` disables everything inside it without setting the
+     * attribute on any of them (review round 2), and Hyvä's forms do disable
+     * fieldsets while a step is saving.
+     *
+     * Applied ONLY to fields matched by NAME — see twoGatewayCountryFields()
+     * for why the two known ids are exempt.
+     *
      * @param {HTMLElement} field
      * @returns {boolean}
      */
     window.twoGatewayCountryFieldUsable = window.twoGatewayCountryFieldUsable || function(field) {
-        if (!field || field.disabled) return false;
+        if (!field) return false;
         let node = field;
         while (node && node.style) {
+            if (node.disabled) return false;
             if (node.style.display === 'none') return false;
             if (node.hidden) return false;
             if (node.classList && node.classList.contains('hidden')) return false;
@@ -331,8 +340,7 @@ $quoteDetails = json_encode(
     /**
      * Every country selector the buyer could have chosen a country in, in
      * priority order: the two ids Hyvä's own address forms use, then any
-     * `country_id` field regardless of the id shape. Hidden and disabled fields
-     * are excluded — see twoGatewayCountryFieldUsable().
+     * `country_id` field regardless of the id shape.
      *
      * The name-based selectors are not decoration (2026-08-06). The two exact
      * ids only exist while an address FORM is on screen and named the way the
@@ -341,6 +349,19 @@ $quoteDetails = json_encode(
      * a brand's own form component — has the same `country_id` field under a
      * different id, and reading only the two ids silently missed it and fell
      * through to the quote.
+     *
+     * THE VISIBILITY FILTER APPLIES ONLY TO THE NAME MATCHES (review round 2).
+     * The two known ids were read unconditionally by every version of this
+     * helper before this batch, and this checkout does hide a step's form
+     * subtree rather than unmounting it in at least some states — so filtering
+     * them would change behaviour that was already correct, in the direction of
+     * the wrong-country bug this batch exists to close, on a surface no test
+     * here can see. Whether that state is reachable is a question about a
+     * closed-source theme, and the honest answer to a question like that is to
+     * not move the thing that already worked. The filter therefore covers
+     * exactly what this batch ADDED: fields found by name, none of which any
+     * previous version consulted, where a hidden pre-filled address-book form
+     * is a known and reachable false positive.
      *
      * Built by hand rather than as one `querySelectorAll` because that returns
      * DOCUMENT order, not selector order: the historical priority is shipping
@@ -351,16 +372,16 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayCountryFields = window.twoGatewayCountryFields || function() {
         const fields = [];
-        const push = (el) => {
+        const push = (el, filtered) => {
             if (!el || fields.indexOf(el) !== -1) return;
-            if (!window.twoGatewayCountryFieldUsable(el)) return;
+            if (filtered && !window.twoGatewayCountryFieldUsable(el)) return;
             fields.push(el);
         };
-        push(document.getElementById('shipping-country_id'));
-        push(document.getElementById('billing-country_id'));
+        push(document.getElementById('shipping-country_id'), false);
+        push(document.getElementById('billing-country_id'), false);
         Array.prototype.forEach.call(
             document.querySelectorAll('[name="country_id"], [name$="[country_id]"]'),
-            push
+            (el) => push(el, true)
         );
         return fields;
     };
@@ -3427,10 +3448,22 @@ $quoteDetails = json_encode(
                  * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
                  * today does switch it off), so on such a brand deleting the toast
                  * outright left a declined buyer with no signal whatsoever.
-                 * `orderIntentNotAvailableCopy === null` is exactly the state in
-                 * which no inline notice can ever appear — the same fact the
-                 * markup's PHP condition tests — so the toast fires there and only
-                 * there.
+                 *
+                 * Gated on the RESOLVED SENTENCE being empty, not on the copy
+                 * being null (review round 2). The two agree for the brand switch,
+                 * which is the case that matters — `resolveOrderIntentNotAvailable
+                 * Notice()` returns '' for absent copy — but the resolver also
+                 * returns '' for copy that is present and unusable (a malformed
+                 * object missing its sentence, which it deliberately degrades to a
+                 * silent box for rather than throwing). Asking "is there a
+                 * sentence to show" covers both; asking "is the copy null" leaves
+                 * the malformed case with a rendered-but-empty box and no toast,
+                 * i.e. silence again, from the exact defensive branch that exists
+                 * to avoid a dead tile.
+                 *
+                 * Reached only past the `decidedCompanyId !== this.companyId`
+                 * guard above, so the resolver's reads of live `companyName` /
+                 * `companyId` are provably about the company this reply decided.
                  *
                  * Above the panel-open guard below, deliberately: that guard
                  * defers only the BOX, and a brand with no box has nothing to
@@ -3441,7 +3474,7 @@ $quoteDetails = json_encode(
                  * API's own diagnostic detail, which the box deliberately does not
                  * show.
                  */
-                if (!response.approved && this.orderIntentNotAvailableCopy === null) {
+                if (!response.approved && this.resolveOrderIntentNotAvailableNotice() === '') {
                     // Guarded, like every other call to it on a path whose whole
                     // point is telling the buyer something: this must not become
                     // the thing that throws.

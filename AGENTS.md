@@ -180,11 +180,15 @@ be up alongside nothing. All four are one box style in one place. The rules that
   what the box already says permanently. Two exceptions, each for its own
   reason: a FAILED check keeps its toast because that one carries the API's own
   diagnostic strings and the box deliberately shows the general wording instead;
-  and a decline on a brand that switched the notice COPY off
-  (`orderIntentNotAvailableCopy === null`, the state in which the box's element
-  is never rendered at all — and a brand shipping today is in it) falls back to
-  the toast, because the alternative is telling a declined buyer nothing
-  whatsoever. Gate a fallback on the copy being absent, never on anything else.
+  and a decline with NO INLINE SENTENCE TO SHOW falls back to the toast, because
+  the alternative is telling a declined buyer nothing whatsoever. That second
+  exception is gated on `resolveOrderIntentNotAvailableNotice() === ''` — "is
+  there a sentence", not "is the copy null". The two agree for the brand switch
+  (whose null copy means the box's element is never rendered at all, and a brand
+  shipping today is in that state), but the resolver also answers `''` for copy
+  that is present and malformed, which it degrades to a silent box for rather
+  than throwing — and that case needs the fallback just as much. Gate a fallback
+  on there being nothing to say, never on any narrower proxy for it.
 - **The dispatch paths are resolved by `data-name`, on BOTH markup modes.**
   `company-name-payment.phtml` finds the payment step's company pair with
   `[data-name="company_name"]` / `[data-name="company_id"]`, and all three of
@@ -270,6 +274,12 @@ Two things that bite:
   search silently returned US companies to a buyer who had chosen elsewhere.
   Searching the wrong country is worse than not searching — with no country, the
   callers already say "Please select a country first".
+  The hidden/disabled filter (`twoGatewayCountryFieldUsable()`) applies to the
+  NAME matches only. The two ids were read unconditionally by every version of
+  this helper before this rule existed, and this checkout hides a step's form
+  subtree rather than unmounting it in at least some states, so filtering them
+  would move already-correct behaviour towards the bug — on a surface no test
+  here can see. Filter what you ADD; leave what already worked alone.
 - **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
   A company with no number in its home registry gets an internal placeholder
   identifier prefixed `TWO:`. It must reach the API and must never reach the

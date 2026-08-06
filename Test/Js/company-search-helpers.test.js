@@ -721,6 +721,65 @@ describe("shared company-search helpers", () => {
           expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
           expect(window.twoGatewayHasCountrySelector()).toBe(true);
         });
+
+        test("a name-matched select inside a disabled fieldset is ignored", () => {
+          // `<fieldset disabled>` disables everything inside it without setting
+          // the attribute on any descendant, and this checkout disables
+          // fieldsets while a step saves — so the field-level check alone would
+          // read a value the buyer cannot currently change.
+          const fieldset = document.createElement("fieldset");
+          fieldset.disabled = true;
+          document.body.appendChild(fieldset);
+          const select = document.createElement("select");
+          select.name = "country_id";
+          const option = document.createElement("option");
+          option.value = "US";
+          select.appendChild(option);
+          select.value = "US";
+          fieldset.appendChild(select);
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        /**
+         * Review round 2. The filter covers exactly what this batch ADDED —
+         * fields found by NAME. The two known ids were read unconditionally by
+         * every previous version of this helper, and this checkout hides a
+         * step's form subtree rather than unmounting it in at least some states,
+         * so filtering them would move behaviour that was already correct in the
+         * direction of the very bug this batch closes, on a surface no test here
+         * can see.
+         */
+        test("the two known ids are NOT filtered — a hidden one still wins", () => {
+          const wrapper = document.createElement("div");
+          wrapper.style.display = "none";
+          document.body.appendChild(wrapper);
+          const field = document.createElement("input");
+          field.id = "shipping-country_id";
+          field.value = "GB";
+          wrapper.appendChild(field);
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+          expect(window.twoGatewayCountryFields()).toEqual([field]);
+        });
+
+        test("a hidden known-id SELECT still counts as a selector", () => {
+          // Same exemption, for the other question the list answers. A hidden
+          // shipping form on the payment step is still the buyer's country
+          // selector; it is one step away, not absent.
+          const wrapper = document.createElement("div");
+          wrapper.style.display = "none";
+          document.body.appendChild(wrapper);
+          const select = addCountrySelect("country_id", "");
+          select.id = "shipping-country_id";
+          wrapper.appendChild(select);
+
+          expect(window.twoGatewayHasCountrySelector()).toBe(true);
+          expect(
+            window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+          ).toBe("");
+        });
       });
 
       test("twoGatewayCountryFields lists the two known ids once each, ahead of name matches", () => {
