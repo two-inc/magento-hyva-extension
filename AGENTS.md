@@ -174,6 +174,34 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the component. Acceptable — a decision is only as good as the quote it was made
   against — but it means the come-back-and-see-your-verdict property holds only
   until the next totals/address/term change.
+- **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (2026-08-06).
+  A decline used to raise both; the toast self-dismisses and lands at the top of
+  the page rather than beside the company it is about, so it could only repeat
+  what the box already says permanently. Two exceptions, each for its own
+  reason: a FAILED check keeps its toast because that one carries the API's own
+  diagnostic strings and the box deliberately shows the general wording instead;
+  and a decline with NO INLINE SENTENCE TO SHOW falls back to the toast, because
+  the alternative is telling a declined buyer nothing whatsoever. That second
+  exception is gated on `resolveOrderIntentNotAvailableNotice() === ''` — "is
+  there a sentence", not "is the copy null". The two agree for the brand switch
+  (whose null copy means the box's element is never rendered at all, and a brand
+  shipping today is in that state), but the resolver also answers `''` for copy
+  that is present and malformed, which it degrades to a silent box for rather
+  than throwing — and that case needs the fallback just as much. Gate a fallback
+  on there being nothing to say, never on any narrower proxy for it.
+- **The company pair is resolved by `data-name`, on BOTH markup modes.**
+  `company-name-payment.phtml` finds the payment step's company pair with
+  `[data-name="company_name"]` / `[data-name="company_id"]`, and every path that
+  WRITES the pair bails out silently when either input is missing — the
+  address-step pick sync, the on-load initialisation, and `updatePaymentFields()`
+  itself, which is also where those paths' `dispatch-order-intent` lives. Its
+  one dispatch that does NOT depend on the pair is the
+  `checkout:payment:method-activate` re-arm, which fires from the stored
+  selection alone. So the symptom
+  of a missing `data-name` is not "no intents ever": it is no intent on a PICK,
+  with the activation re-arm still firing — which is worse to diagnose than
+  total silence, because the feature looks alive. Address-area mode's two inputs
+  are `type="hidden"` and carry the attribute for exactly this reason.
 
 ### Magewire Components
 
@@ -229,6 +257,33 @@ Two things that bite:
   *renderer* block created at runtime, so there is no layout node to hang a child
   off. `Test/Js/hyva-harness.js` inlines that include (`TEMPLATE_INCLUDE_PATTERN`)
   so the Jest suites render what the page renders.
+- **Address AUTOFILL needs BOTH settings**, and the conjunction lives in ONE
+  place: `CheckoutConfig::getIsAddressSearchEnabled()` returns
+  `enable_address_search && !getIsCompanySearchInPaymentTile()`. Autofill writes
+  city / postcode / street into an address FORM, so when the one control lives in
+  the payment tile there is no form the buyer is working in for it to write into
+  — filling one from a pick made on the payment step overwrites an address they
+  already completed, silently, several steps behind where they are looking. Never
+  re-derive the rule in a template or a component: the engine's `selectItem()`
+  reads `isAddressSearchEnabled` and nothing else, and a surface that computes
+  its own version is how the tile came to autofill.
+- **The buyer's country is resolved LIVE, and the store default is a last
+  resort only where there is no country selector at all**
+  (`twoGatewayGetCountryCode()`). The DOM comes first — `#shipping-country_id`,
+  `#billing-country_id`, then any `country_id`-named field, in that priority
+  whatever the document order — then the quote's own address countries, then the
+  store default. That last term is deliberately suppressed while a country
+  `<select>` exists: the quote snapshot is PHP-rendered at page load and carries
+  no country on a first visit, so an unconditional store default meant company
+  search silently returned US companies to a buyer who had chosen elsewhere.
+  Searching the wrong country is worse than not searching — with no country, the
+  callers already say "Please select a country first".
+  The hidden/disabled filter (`twoGatewayCountryFieldUsable()`) applies to the
+  NAME matches only. The two ids were read unconditionally by every version of
+  this helper before this rule existed, and this checkout hides a step's form
+  subtree rather than unmounting it in at least some states, so filtering them
+  would move already-correct behaviour towards the bug — on a surface no test
+  here can see. Filter what you ADD; leave what already worked alone.
 - **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
   A company with no number in its home registry gets an internal placeholder
   identifier prefixed `TWO:`. It must reach the API and must never reach the

@@ -633,6 +633,13 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayWriteBillingCompany",
   "twoGatewayClearBillingCompany",
   "twoGatewayIsBillingAsShipping",
+  // The country-resolution trio (2026-08-06). Same `window.X = window.X || …`
+  // idiom as everything above, so the same leak-between-files reason to reset
+  // them — and listing them also makes assertSharedHelperGlobals() check the
+  // template actually published them.
+  "twoGatewayCountryFieldUsable",
+  "twoGatewayCountryFields",
+  "twoGatewayHasCountrySelector",
 ];
 
 /**

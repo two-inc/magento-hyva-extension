@@ -243,9 +243,37 @@ class CheckoutConfig implements ArgumentInterface
         return $this->apiKeyVerificationStatus->isVerified();
     }
 
+    /**
+     * May a company pick FILL IN the buyer's address for them?
+     *
+     * TWO-25326, 2026-08-06 ruling: TWO conditions, expressed here once.
+     * Address autofill requires the `enable_address_search` setting AND the
+     * company-search control living in the address entry — because autofill
+     * writes city / postcode / street into an address FORM, and when the one
+     * control lives in the payment tile instead there is no address form the
+     * buyer is working in for it to write into. Filling the address from a
+     * pick made on the payment step overwrites an address the buyer has
+     * already completed, silently, several steps behind where they are
+     * looking.
+     *
+     * Every autofill gate in this module — and in a branded overlay carrying
+     * its own copy of an address-side template — reads THIS getter, so the
+     * two conditions cannot be applied on one surface and forgotten on
+     * another. That is why the conjunction lives here rather than being
+     * `&&`-ed into each template: the previous arrangement satisfied the
+     * second condition three different accidental ways (a hard-coded `false`
+     * in the tile's options, a layout `ifconfig`, and a PHP branch), none of
+     * which stated the rule, and any surface that did not happen to inherit
+     * one of the three autofilled when it must not.
+     *
+     * The name is unchanged deliberately: the setting it gates is
+     * `enable_address_search`, this is the only question anything asks about
+     * it, and every existing caller is an autofill gate.
+     */
     public function getIsAddressSearchEnabled()
     {
-        return $this->configRepository->isAddressSearchEnabled();
+        return $this->configRepository->isAddressSearchEnabled()
+            && !$this->getIsCompanySearchInPaymentTile();
     }
 
     public function getCompanySearchLimit()

@@ -255,6 +255,65 @@ class CheckoutConfigTest extends TestCase
         $this->assertFalse($this->isCompanySearchEnabledFor(false, false));
     }
 
+    /**
+     * TWO-25326, 2026-08-06 ruling: address AUTOFILL requires BOTH the
+     * `enable_address_search` setting AND the one company-search control
+     * living in the address entry.
+     *
+     * The reported bug is the second term missing: with company search in the
+     * payment tile, picking a company there filled in the buyer's address
+     * anyway — writing city / postcode / street several steps behind where the
+     * buyer was looking, over an address they had already completed.
+     *
+     * Asserted as the full truth table, because the failure mode is one term
+     * being dropped and either term alone reproduces the bug in one direction.
+     */
+    public function testAddressAutofillNeedsBothTheSettingAndTheAddressAreaControl(): void
+    {
+        // (enable_address_search, enable_company_search) — the second is what
+        // decides WHERE the control renders: true = address area.
+        $this->assertTrue($this->isAddressSearchEnabledFor(true, true));
+        $this->assertFalse($this->isAddressSearchEnabledFor(true, false));
+        $this->assertFalse($this->isAddressSearchEnabledFor(false, true));
+        $this->assertFalse($this->isAddressSearchEnabledFor(false, false));
+    }
+
+    private function isAddressSearchEnabledFor(
+        bool $coreEnableAddressSearch,
+        bool $coreEnableCompanySearch
+    ): bool {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class ($coreEnableAddressSearch, $coreEnableCompanySearch) {
+            /** @var bool */
+            private $addressSearch;
+
+            /** @var bool */
+            private $companySearch;
+
+            public function __construct(bool $addressSearch, bool $companySearch)
+            {
+                $this->addressSearch = $addressSearch;
+                $this->companySearch = $companySearch;
+            }
+
+            public function isAddressSearchEnabled(): bool
+            {
+                return $this->addressSearch;
+            }
+
+            public function isCompanySearchEnabled(): bool
+            {
+                return $this->companySearch;
+            }
+        };
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+
+        return (bool) $viewModel->getIsAddressSearchEnabled();
+    }
+
     public function testGetIsApiKeyVerifiedDelegatesToTheInjectedStatusService(): void
     {
         $this->assertTrue($this->isApiKeyVerifiedFor(true));

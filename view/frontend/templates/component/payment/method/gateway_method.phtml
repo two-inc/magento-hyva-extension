@@ -332,10 +332,24 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * success) styling and its own `x-text`.
              *
              * Rendered in BOTH company-search-location modes, not only the
-             * text-only tile: it is the text-only tile's ENTIRE story for a
-             * declined/no-intent company in address-area mode, and in
-             * payment-tile mode it supplements the existing toast with
-             * something that does not self-dismiss after 5 seconds.
+             * text-only tile: it is the ENTIRE story for a declined/no-intent
+             * company on either surface. As of the 2026-08-06 ruling it is also
+             * the only notice — the 5-second decline toast that used to fire
+             * alongside it is gone, so one verdict produces exactly one notice.
+             *
+             * Which makes the CONDITION on this element load-bearing beyond
+             * this file: when the brand switch suppresses the copy there is no
+             * element here at all, so `processOrderIntentSuccessResponse()`
+             * falls back to a toast for a decline that has no sentence to show.
+             *
+             * The two conditions are deliberately NOT the same test. This one
+             * decides whether the ELEMENT exists
+             * (`getOrderIntentNotAvailableNotice() !== null`); the JS one asks
+             * the wider question, whether there is a SENTENCE
+             * (`resolveOrderIntentNotAvailableNotice() === ''`), which is also
+             * true for copy that is present but unusable and would otherwise
+             * render this element empty and silent. Absent copy is the case
+             * where both agree, and it is the case this condition exists for.
              */
             ?>
             <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
@@ -399,12 +413,38 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * reads them by name, and fillCompanyData() / initialize() are
              * unchanged: they already write these two elements' `.value`
              * imperatively by id, and do so regardless of which markup mode
-             * is rendered. Nothing downstream of company capture needed to
-             * change for this mode; only what the buyer SEES did.
+             * is rendered.
+             *
+             * `data-name` is LOAD-BEARING on both, and its absence was the
+             * order-intent regression reported on 2026-08-06: with the control
+             * in the address area, picking a company dispatched no intent.
+             * `data-name` is the contract company-name-payment.phtml resolves
+             * the payment step's company pair by — `[data-name="company_name"]`
+             * and `[data-name="company_id"]` — and every path that WRITES that
+             * pair bails out when either input is missing: the address-step pick
+             * sync (`shipping-company-selected`), the on-load initialisation
+             * (`observeForPaymentForm`, which also carries the initial
+             * dispatch), and `updatePaymentFields()` itself, where those paths'
+             * `dispatch-order-intent` lives. The tile-mode markup below carries
+             * the attribute on its visible field, so tile mode dispatched on
+             * every pick and this mode dispatched on none — one missing
+             * attribute, not a missing code path.
+             *
+             * NOT total silence, and the distinction matters for anyone
+             * diagnosing it again: the `checkout:payment:method-activate` re-arm
+             * in that same file dispatches from the STORED selection alone, so
+             * an intent could still fire when the buyer activated the method
+             * with a company already captured. A feature that fires once and
+             * then never again on any pick reads as working intermittently,
+             * which is why this took a live report to find rather than a test.
+             *
+             * The attribute also restores the `update-company-data` sync, so the
+             * tile's own component learns the company the address step captured
+             * instead of relying on the storage restore in initialize().
              */
             ?>
-            <input type="hidden" id="company_name" name="payment[company_name]" />
-            <input type="hidden" id="company_id" name="payment[company_id]" />
+            <input type="hidden" id="company_name" name="payment[company_name]" data-name="company_name" />
+            <input type="hidden" id="company_id" name="payment[company_id]" data-name="company_id" />
             <?php else: ?>
             <?php
             /*

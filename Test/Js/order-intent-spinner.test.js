@@ -547,6 +547,160 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       env.restore();
     });
 
+    /**
+     * 2026-08-06 ruling: ONE verdict, ONE notice.
+     *
+     * A decline used to raise a 5-second toast as well as the in-tile box —
+     * two notices saying the same thing, the weaker of which self-dismisses
+     * and lands at the top of the page rather than beside the company it is
+     * about. The box is the verdict surface on all four platforms.
+     *
+     * Asserted against `env.messages`, the harness's record of
+     * `window.dispatchMessages()`, so this fails the moment the call comes
+     * back — including from a place other than where it was deleted.
+     */
+    describe("a decline raises no toast", () => {
+      test("the in-tile box is the only notice a decline produces", () => {
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentNotAvailableCopy = {
+          withCompany: "NO {{companyName}}",
+          withoutCompany: "NO",
+          companyNameToken: "{{companyName}}",
+          companyNumberToken: "{{companyNumber}}",
+        };
+        component.orderIntentDeclinedMessage = "SENTINEL-declined-toast";
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        // The box did paint — otherwise "no toast" would be satisfied by a
+        // verdict that never rendered at all.
+        expect(component.orderIntentNotAvailableNotice).toBe("NO Alpha Ltd");
+        expect(component.twoTileNotAvailableVisible).toBe(true);
+        expect(env.messages).toEqual([]);
+      });
+
+      /**
+       * The case that keeps a toast (review round 1): the box's ELEMENT is only
+       * rendered when the brand has not switched the notice copy off, and a
+       * brand shipping today does switch it off — so a declined buyer there gets
+       * the toast rather than nothing at all.
+       *
+       * Null copy is the PRECONDITION this test sets up, not the gate. The gate
+       * asks the wider question — `resolveOrderIntentNotAvailableNotice() === ''`
+       * — which also catches copy that is present but unusable; the sibling test
+       * below covers that half.
+       */
+      test("a brand with no inline notice at all still gets told", () => {
+        // `beforeEach` already nulls both copies, which IS the suppressed
+        // brand; asserted explicitly so the precondition is not incidental.
+        expect(component.orderIntentNotAvailableCopy).toBeNull();
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentDeclinedMessage = "SENTINEL-declined";
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(env.messages).toEqual([
+          [{ type: "error", text: "SENTINEL-declined" }],
+        ]);
+        // And there is genuinely no box to have shown instead.
+        expect(component.orderIntentNotAvailableNotice).toBe("");
+        expect(component.twoTileNotAvailableVisible).toBe(false);
+      });
+
+      test("copy that is present but unusable falls back too", () => {
+        // Review round 2. The resolver deliberately degrades malformed copy to
+        // a SILENT box rather than throwing, so gating the fallback on "the
+        // copy is null" left exactly that defensive branch showing a rendered,
+        // empty box and no toast — silence, from the guard that exists to stop
+        // the tile going dead.
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentDeclinedMessage = "SENTINEL-declined";
+        component.orderIntentNotAvailableCopy = {
+          // No `withCompany` string: resolves to '' for a named company.
+          withoutCompany: "NO",
+          companyNameToken: "{{companyName}}",
+          companyNumberToken: "{{companyNumber}}",
+        };
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(component.orderIntentNotAvailableNotice).toBe("");
+        expect(env.messages).toEqual([
+          [{ type: "error", text: "SENTINEL-declined" }],
+        ]);
+      });
+
+      test("an APPROVAL on that same brand raises nothing", () => {
+        // The fallback is for the decline only — a brand that suppressed its
+        // approved copy has said it does not want the buyer congratulated.
+        component.companyId = "111111111";
+
+        component.processOrderIntentSuccessResponse(
+          { approved: true },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(env.messages).toEqual([]);
+      });
+
+      test("dropping the toast did not drop the verdict the flag records", () => {
+        // The toast sat directly above `placeOrderIntentFlag`'s write in the
+        // same branch, so deleting the branch by hand could have taken the
+        // flag with it.
+        component.orderIntentNotAvailableCopy = {
+          withCompany: "NO {{companyName}}",
+          withoutCompany: "NO",
+          companyNameToken: "{{companyName}}",
+          companyNumberToken: "{{companyNumber}}",
+        };
+        component.companyId = "111111111";
+        component.processOrderIntentSuccessResponse(
+          { approved: true },
+          "111111111",
+          undefined,
+        );
+        expect(component.placeOrderIntentFlag).toBe(true);
+
+        component.processOrderIntentSuccessResponse(
+          { approved: false },
+          "111111111",
+          undefined,
+        );
+        expect(component.placeOrderIntentFlag).toBe(false);
+        expect(env.messages).toEqual([]);
+      });
+
+      test("a FAILED check still toasts — it carries detail the box does not", () => {
+        // Deliberately unchanged by the ruling: the box shows the general
+        // wording only, so deleting this toast would drop the API's own
+        // diagnostic text with nothing left carrying it.
+        component.companyId = "111111111";
+        component.generalErrorMessage = "SENTINEL-general-error";
+
+        component.processOrderIntentErrorResponse({}, "111111111");
+
+        expect(env.messages).toEqual([
+          [{ type: "error", text: "SENTINEL-general-error" }],
+        ]);
+      });
+    });
+
     test("clearOrderIntentNotices() takes all three down together", () => {
       component.orderIntentApprovedNotice = "a";
       component.orderIntentNotAvailableNotice = "b";

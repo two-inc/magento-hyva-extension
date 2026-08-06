@@ -580,5 +580,239 @@ describe("shared company-search helpers", () => {
       expect(window.twoGatewayGetCountryCode(null)).toBe("");
       expect(window.twoGatewayGetCountryCode(undefined)).toBe("");
     });
+
+    /**
+     * The reported bug (2026-08-06): company search returned US companies on
+     * the FIRST visit to a checkout whose buyer had selected another country,
+     * and corrected itself as soon as they changed the country.
+     *
+     * Both halves are the store-default fallback. The quote snapshot is
+     * rendered by PHP at page load, so before any address has been saved it
+     * carries no country and the store default answered instead — while the
+     * buyer's own selection sat in the DOM under an id the lookup did not
+     * recognise, or had not been made yet at all.
+     */
+    describe("the buyer's own country selection", () => {
+      /**
+       * A country SELECT the way an address form renders it: named
+       * `country_id` (or namespaced), never one of the two known ids.
+       *
+       * @param {string} name
+       * @param {string} value
+       * @returns {HTMLSelectElement}
+       */
+      function addCountrySelect(name, value) {
+        const select = document.createElement("select");
+        select.name = name;
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value || "";
+        select.appendChild(option);
+        select.value = value;
+        document.body.appendChild(select);
+        return select;
+      }
+
+      test("a country_id select with no recognised id still wins over the quote", () => {
+        addCountrySelect("country_id", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("a namespaced country_id select wins over the quote too", () => {
+        addCountrySelect("shipping[country_id]", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("the shipping id keeps its priority over a name-matched field, whatever the document order", () => {
+        // Document order puts the name-matched select FIRST, so a single
+        // querySelectorAll would hand the priority decision to the theme.
+        addCountrySelect("billing[country_id]", "DE");
+        addCountryField("shipping-country_id", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("the store default is NOT used while the buyer has a country selector they have not chosen in", () => {
+        // The whole reported symptom: US companies for a buyer who has
+        // chosen no country yet. Answering '' is what makes the callers
+        // say "Please select a country first" instead of searching the
+        // store's own country silently.
+        addCountrySelect("country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+        ).toBe("");
+      });
+
+      test("a quote country still beats the empty selector — only the STORE DEFAULT is suppressed", () => {
+        addCountrySelect("country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({
+            shipping_country_id: "SE",
+            default_country_id: "US",
+          }),
+        ).toBe("SE");
+      });
+
+      test("the store default survives on a checkout with no country selector at all", () => {
+        // Exactly the case its own comment was always written for: a
+        // single-country store, where the default is the only answer there
+        // is. A hidden mirror input is not a selector.
+        addCountryField("shipping-country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+        ).toBe("US");
+        expect(window.twoGatewayHasCountrySelector()).toBe(false);
+      });
+
+      /**
+       * Review round 1 on this batch. Broadening the lookup by NAME also
+       * reaches fields the buyer has never seen: a logged-in checkout keeps an
+       * address-book "add address" form in the DOM with its country select
+       * pre-selected to the store's own country. Letting that outrank the
+       * quote's real shipping country is the same wrong-country bug again, from
+       * a field nobody touched.
+       */
+      describe("fields the buyer cannot have used are ignored", () => {
+        test("a select hidden by an ancestor's inline display:none does not win", () => {
+          const modal = document.createElement("div");
+          modal.style.display = "none";
+          document.body.appendChild(modal);
+          const select = document.createElement("select");
+          select.name = "country_id";
+          const option = document.createElement("option");
+          option.value = "US";
+          select.appendChild(option);
+          select.value = "US";
+          modal.appendChild(select);
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+          // …and it does not suppress the store default either, or a
+          // single-country checkout with an address-book modal in the DOM
+          // would dead-end on "Please select a country first".
+          expect(window.twoGatewayHasCountrySelector()).toBe(false);
+        });
+
+        test("the `hidden` class and the hidden attribute count too", () => {
+          const byClass = addCountrySelect("country_id", "US");
+          byClass.classList.add("hidden");
+          const byAttribute = addCountrySelect("billing[country_id]", "DE");
+          byAttribute.hidden = true;
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        test("a hidden INPUT mirror of the country does not win", () => {
+          // Review round 5: `type="hidden"` is the one kind of hidden the
+          // ancestor walk cannot see — `hidden` is false on it, its inline
+          // `display` is empty, and it is not disabled. A hidden mirror of a
+          // chosen country is by definition a field the buyer never saw.
+          const mirror = document.createElement("input");
+          mirror.type = "hidden";
+          mirror.name = "country_id";
+          mirror.value = "US";
+          document.body.appendChild(mirror);
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+          // …and it is not a country SELECTOR either, so it must not suppress
+          // the store default on a single-country checkout.
+          expect(window.twoGatewayHasCountrySelector()).toBe(false);
+        });
+
+        test("a disabled select does not win", () => {
+          const select = addCountrySelect("country_id", "US");
+          select.disabled = true;
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        test("a visible select still wins — the filter is not a blanket refusal", () => {
+          addCountrySelect("country_id", "GB");
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+          expect(window.twoGatewayHasCountrySelector()).toBe(true);
+        });
+
+        test("a name-matched select inside a disabled fieldset is ignored", () => {
+          // `<fieldset disabled>` disables everything inside it without setting
+          // the attribute on any descendant, and this checkout disables
+          // fieldsets while a step saves — so the field-level check alone would
+          // read a value the buyer cannot currently change.
+          const fieldset = document.createElement("fieldset");
+          fieldset.disabled = true;
+          document.body.appendChild(fieldset);
+          const select = document.createElement("select");
+          select.name = "country_id";
+          const option = document.createElement("option");
+          option.value = "US";
+          select.appendChild(option);
+          select.value = "US";
+          fieldset.appendChild(select);
+
+          expect(window.twoGatewayCountryFields()).toEqual([]);
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
+        });
+
+        /**
+         * Review round 2. The filter covers exactly what this batch ADDED —
+         * fields found by NAME. The two known ids were read unconditionally by
+         * every previous version of this helper, and this checkout hides a
+         * step's form subtree rather than unmounting it in at least some states,
+         * so filtering them would move behaviour that was already correct in the
+         * direction of the very bug this batch closes, on a surface no test here
+         * can see.
+         */
+        test("the two known ids are NOT filtered — a hidden one still wins", () => {
+          const wrapper = document.createElement("div");
+          wrapper.style.display = "none";
+          document.body.appendChild(wrapper);
+          const field = document.createElement("input");
+          field.id = "shipping-country_id";
+          field.value = "GB";
+          wrapper.appendChild(field);
+
+          expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+          expect(window.twoGatewayCountryFields()).toEqual([field]);
+        });
+
+        test("a hidden known-id SELECT still counts as a selector", () => {
+          // Same exemption, for the other question the list answers. A hidden
+          // shipping form on the payment step is still the buyer's country
+          // selector; it is one step away, not absent.
+          const wrapper = document.createElement("div");
+          wrapper.style.display = "none";
+          document.body.appendChild(wrapper);
+          const select = addCountrySelect("country_id", "");
+          select.id = "shipping-country_id";
+          wrapper.appendChild(select);
+
+          expect(window.twoGatewayHasCountrySelector()).toBe(true);
+          expect(
+            window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+          ).toBe("");
+        });
+      });
+
+      test("twoGatewayCountryFields lists the two known ids once each, ahead of name matches", () => {
+        // `#shipping-country_id` also matches `[name="country_id"]` when the
+        // form names it that way; a duplicated entry would be harmless here
+        // but makes the priority list a lie for anything else reading it.
+        const shipping = addCountrySelect("country_id", "GB");
+        shipping.id = "shipping-country_id";
+        addCountrySelect("billing[country_id]", "DE");
+
+        const fields = window.twoGatewayCountryFields();
+        expect(fields.filter((f) => f === shipping)).toHaveLength(1);
+        expect(fields[0]).toBe(shipping);
+        expect(fields).toHaveLength(2);
+      });
+    });
   });
 });

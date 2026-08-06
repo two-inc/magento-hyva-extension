@@ -295,29 +295,181 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * Is this country field one the buyer can actually have used?
+     *
+     * Review round 1 on the 2026-08-06 batch: broadening the lookup to
+     * `country_id` BY NAME also picks up fields the buyer has never seen — a
+     * logged-in checkout's address-book "add address" form is in the DOM with
+     * its country select pre-selected to the store's own country, so an
+     * unfiltered lookup would let that hidden field outrank the quote's real
+     * shipping country and re-enter the very bug this batch fixes, from a field
+     * nobody touched.
+     *
+     * `disabled` and hidden-ness only. Deliberately NOT `offsetParent === null`,
+     * the usual idiom: `x-show` hides with an inline `display: none`, this
+     * codebase also hides with the `hidden` class, `offsetParent` answers null
+     * for a `position: fixed` element that IS visible, and it is unimplemented
+     * in jsdom — so a test written against it would pass while proving nothing.
+     * Same reasoning, and the same three checks, as the control's own
+     * `isDisplayNone()`.
+     *
+     * `disabled` is tested on every ANCESTOR too, not only the field: a
+     * `<fieldset disabled>` disables everything inside it without setting the
+     * attribute on any of them (review round 2), and Hyvä's forms do disable
+     * fieldsets while a step is saving.
+     *
+     * Applied ONLY to fields matched by NAME — see twoGatewayCountryFields()
+     * for why the two known ids are exempt.
+     *
+     * @param {HTMLElement} field
+     * @returns {boolean}
+     */
+    window.twoGatewayCountryFieldUsable = window.twoGatewayCountryFieldUsable || function(field) {
+        if (!field) return false;
+        /*
+         * A `type="hidden"` input is the one kind of hidden this walk cannot see
+         * (review round 5): `hidden` is false on it, its inline `display` is
+         * empty, and the three checks below all pass — so a hidden MIRROR of a
+         * chosen country, which is exactly a field the buyer never saw, would
+         * have outranked the quote's real shipping country. Tested on the field
+         * itself only; an ancestor cannot be a hidden input.
+         */
+        if (field.tagName === 'INPUT' && field.type === 'hidden') return false;
+        let node = field;
+        while (node && node.style) {
+            if (node.disabled) return false;
+            if (node.style.display === 'none') return false;
+            if (node.hidden) return false;
+            if (node.classList && node.classList.contains('hidden')) return false;
+            node = node.parentElement;
+        }
+        return true;
+    };
+
+    /**
+     * Every country selector the buyer could have chosen a country in, in
+     * priority order: the two ids Hyvä's own address forms use, then any
+     * `country_id` field regardless of the id shape.
+     *
+     * The name-based selectors are not decoration (2026-08-06). The two exact
+     * ids only exist while an address FORM is on screen and named the way the
+     * checkout's shipping/billing namespaces name it; an address form rendered
+     * under any other namespace — a modal, an address-book "add address" form,
+     * a brand's own form component — has the same `country_id` field under a
+     * different id, and reading only the two ids silently missed it and fell
+     * through to the quote.
+     *
+     * THE VISIBILITY FILTER APPLIES ONLY TO THE NAME MATCHES (review round 2).
+     * The two known ids were read unconditionally by every version of this
+     * helper before this batch, and this checkout does hide a step's form
+     * subtree rather than unmounting it in at least some states — so filtering
+     * them would change behaviour that was already correct, in the direction of
+     * the wrong-country bug this batch exists to close, on a surface no test
+     * here can see. Whether that state is reachable is a question about a
+     * closed-source theme, and the honest answer to a question like that is to
+     * not move the thing that already worked. The filter therefore covers
+     * exactly what this batch ADDED: fields found by name, none of which any
+     * previous version consulted, where a hidden pre-filled address-book form
+     * is a known and reachable false positive.
+     *
+     * Built by hand rather than as one `querySelectorAll` because that returns
+     * DOCUMENT order, not selector order: the historical priority is shipping
+     * BEFORE billing whatever order the two forms happen to render in, and a
+     * single query would have quietly handed that decision to the theme.
+     *
+     * @returns {Array<HTMLElement>}
+     */
+    window.twoGatewayCountryFields = window.twoGatewayCountryFields || function() {
+        const fields = [];
+        const push = (el, filtered) => {
+            if (!el || fields.indexOf(el) !== -1) return;
+            if (filtered && !window.twoGatewayCountryFieldUsable(el)) return;
+            fields.push(el);
+        };
+        push(document.getElementById('shipping-country_id'), false);
+        push(document.getElementById('billing-country_id'), false);
+        Array.prototype.forEach.call(
+            document.querySelectorAll('[name="country_id"], [name$="[country_id]"]'),
+            (el) => push(el, true)
+        );
+        return fields;
+    };
+
+    /**
+     * Is there a country SELECTOR on the page at all — i.e. somewhere the
+     * buyer picks their country themselves?
+     *
+     * `select` only. A hidden input mirroring a chosen country is not a
+     * selector, and the question this answers is whether the store leaves the
+     * country to the buyer.
+     *
+     * Reads the same list, so it inherits the same filtering: NAME matches only
+     * (review round 2). A name-matched select the buyer cannot reach does not
+     * count — suppressing the store default on the strength of one leaves
+     * company search saying "Please select a country first" with nothing on
+     * screen to satisfy it, a dead end where the store default would merely have
+     * been a guess. A hidden select under one of the two KNOWN ids does still
+     * count, and should: that is the checkout's own address form with its step
+     * currently off screen — the buyer's country selector one step away, not an
+     * absent one.
+     *
+     * @returns {boolean}
+     */
+    window.twoGatewayHasCountrySelector = window.twoGatewayHasCountrySelector || function() {
+        return window.twoGatewayCountryFields().some(function(field) {
+            return field.tagName === 'SELECT';
+        });
+    };
+
+    /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
      * Fallback order:
-     * 1. Shipping country dropdown (if visible)
-     * 2. Billing country dropdown (if visible)
-     * 3. Shipping address country from quote
-     * 4. Billing address country from quote
-     * 5. Legacy country_id from quote (backward compatibility)
-     * 6. Store's default country (for checkouts without country selector)
+     * 1. The buyer's own country selection, live out of the DOM (see
+     *    twoGatewayCountryFields() for which elements and in what order)
+     * 2. Shipping address country from quote
+     * 3. Billing address country from quote
+     * 4. Legacy country_id from quote (backward compatibility)
+     * 5. Store's default country — ONLY on a checkout with no country
+     *    selector at all
+     *
+     * WHY THE STORE DEFAULT IS CONDITIONAL (2026-08-06). It was the
+     * unconditional last resort, and that is what produced the reported bug:
+     * company search returning US companies on the first visit to a checkout
+     * whose buyer had selected a different country, then correcting itself the
+     * moment they changed the country. Both halves are this fallback. The quote
+     * snapshot is rendered by PHP at page load, so on a first visit — before
+     * any address has been saved — it carries no country at all and the store
+     * default (US, for the brand this was found on) answered instead; changing
+     * the country afterwards puts a value in the DOM field, which outranks it,
+     * so the symptom looked like a country-change handler that worked and a
+     * first mount that did not.
+     *
+     * Searching the wrong country is worse than not searching: the buyer is
+     * shown a list of real companies that are not theirs, with no indication
+     * the country is wrong. So where the buyer HAS a country selector and has
+     * not yet chosen, this answers '' and the callers show "Please select a
+     * country first" — the existing, already-wired behaviour for no country.
+     * The fallback is preserved exactly where its own comment always said it
+     * was for: a checkout with no country selector, where the store default is
+     * the only answer there is.
      *
      * @param {Object} quoteData - Quote details object from PHP
      * @returns {string} Country code or empty string
      */
     window.twoGatewayGetCountryCode = window.twoGatewayGetCountryCode || function(quoteData) {
-        const shippingCountryField = document.getElementById("shipping-country_id");
-        const billingCountryField = document.getElementById("billing-country_id");
+        const fields = window.twoGatewayCountryFields();
+        for (let i = 0; i < fields.length; i++) {
+            // `.value` and not `getAttribute('value')`: on a `<select>` the
+            // attribute does not exist, and on an input it holds the
+            // server-rendered default rather than what the buyer changed it to.
+            if (fields[i].value) return fields[i].value;
+        }
 
-        return (shippingCountryField && shippingCountryField.value) ||
-               (billingCountryField && billingCountryField.value) ||
-               quoteData?.shipping_country_id ||
+        return quoteData?.shipping_country_id ||
                quoteData?.billing_country_id ||
                quoteData?.country_id ||
-               quoteData?.default_country_id ||
+               (window.twoGatewayHasCountrySelector() ? '' : quoteData?.default_country_id) ||
                '';
     };
 
@@ -3291,15 +3443,62 @@ $quoteDetails = json_encode(
                 // declined company through on a flag set by an earlier approval.
                 this.placeOrderIntentFlag = Boolean(response.approved);
 
-                // The toast fires whatever happens to the box: it is the signal
-                // for a buyer whose attention is on the fields, and the
-                // panel-open guard below deliberately defers only the BOX. Above
-                // the guard so the two cannot get out of step (round 5).
-                if (!response.approved) {
-                    window.dispatchMessages(
-                        [{ type: 'error', text: this.orderIntentDeclinedMessage }],
-                        5000
-                    );
+                /*
+                 * ONE VERDICT, ONE NOTICE — and never the toast while the box
+                 * exists (2026-08-06 ruling).
+                 *
+                 * A decline used to raise a 5-second `dispatchMessages()` toast
+                 * AS WELL AS the in-tile "not available" box. Two notices for one
+                 * verdict, and the toast is the weaker of the two: it
+                 * self-dismisses, it lands at the top of the page rather than in
+                 * the tile the buyer is reading, and it says the same thing the
+                 * box beside their company already says and keeps saying.
+                 *
+                 * The box is not unconditional, though, which is why this is a
+                 * FALLBACK rather than a deletion (review round 1). Its ELEMENT is
+                 * only rendered when the brand has not switched the notice copy
+                 * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
+                 * today does switch it off), so on such a brand deleting the toast
+                 * outright left a declined buyer with no signal whatsoever.
+                 *
+                 * Gated on the RESOLVED SENTENCE being empty, not on the copy
+                 * being null (review round 2). The two agree for the brand switch,
+                 * which is the case that matters — `resolveOrderIntentNotAvailable
+                 * Notice()` returns '' for absent copy — but the resolver also
+                 * returns '' for copy that is present and unusable (a malformed
+                 * object missing its sentence, which it deliberately degrades to a
+                 * silent box for rather than throwing). Asking "is there a
+                 * sentence to show" covers both; asking "is the copy null" leaves
+                 * the malformed case with a rendered-but-empty box and no toast,
+                 * i.e. silence again, from the exact defensive branch that exists
+                 * to avoid a dead tile.
+                 *
+                 * Reached only past the `decidedCompanyId !== this.companyId`
+                 * guard above, so the resolver's reads of live `companyName` /
+                 * `companyId` are provably about the company this reply decided.
+                 *
+                 * Above the panel-open guard below, deliberately: that guard
+                 * defers only the BOX, and a brand with no box has nothing to
+                 * defer.
+                 *
+                 * The FAILED-check path (processOrderIntentErrorResponse below)
+                 * toasts unconditionally, for a different reason: it carries the
+                 * API's own diagnostic detail, which the box deliberately does not
+                 * show.
+                 */
+                if (!response.approved && this.resolveOrderIntentNotAvailableNotice() === '') {
+                    // Guarded HERE, not "like every other call site" — three of
+                    // the six in this file are unguarded, the failed-check toast
+                    // below among them. The reason to guard this one is that it
+                    // is the ONLY signal a declined buyer gets on a brand with
+                    // no inline notice, so a missing global must not turn "you
+                    // were declined" into a thrown error and nothing on screen.
+                    if (typeof window.dispatchMessages === 'function') {
+                        window.dispatchMessages(
+                            [{ type: 'error', text: this.orderIntentDeclinedMessage }],
+                            5000
+                        );
+                    }
                 }
 
                 /*
@@ -3366,9 +3565,12 @@ $quoteDetails = json_encode(
                     }
                 }
 
-                // The persistent box, alongside the existing toast rather than
-                // instead of it — same pairing the declined verdict above
-                // already ships.
+                // The persistent box, alongside the toast this path still
+                // raises rather than instead of it. A FAILED check is the one
+                // verdict that keeps both: the toast carries the API's own
+                // diagnostic detail, which the box deliberately does not show
+                // (see below). A DECLINE has no toast any more — one verdict,
+                // one notice (2026-08-06, see the success handler above).
                 //
                 // The box gets the GENERAL wording, never the API's own
                 // `error_message`/`error_details`. Those are diagnostic strings
