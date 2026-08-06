@@ -417,21 +417,30 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              *
              * `data-name` is LOAD-BEARING on both, and its absence was the
              * order-intent regression reported on 2026-08-06: with the control
-             * in the address area, no intent was ever dispatched at all.
+             * in the address area, picking a company dispatched no intent.
              * `data-name` is the contract company-name-payment.phtml resolves
              * the payment step's company pair by — `[data-name="company_name"]`
-             * and `[data-name="company_id"]` — and all three of its paths bail
-             * out when either is missing: the address-step pick sync
-             * (`shipping-company-selected`), the on-load initialisation
+             * and `[data-name="company_id"]` — and every path that WRITES that
+             * pair bails out when either input is missing: the address-step pick
+             * sync (`shipping-company-selected`), the on-load initialisation
              * (`observeForPaymentForm`, which also carries the initial
-             * dispatch), and `updatePaymentFields()`'s own
-             * `dispatch-order-intent`. The tile-mode markup below carries the
-             * attribute on its visible field, so tile mode dispatched
-             * correctly and this mode dispatched never — one missing attribute,
-             * not a missing code path. It also restores the
-             * `update-company-data` sync, so the tile's own component learns
-             * the company the address step captured instead of relying on the
-             * storage restore in initialize().
+             * dispatch), and `updatePaymentFields()` itself, where those paths'
+             * `dispatch-order-intent` lives. The tile-mode markup below carries
+             * the attribute on its visible field, so tile mode dispatched on
+             * every pick and this mode dispatched on none — one missing
+             * attribute, not a missing code path.
+             *
+             * NOT total silence, and the distinction matters for anyone
+             * diagnosing it again: the `checkout:payment:method-activate` re-arm
+             * in that same file dispatches from the STORED selection alone, so
+             * an intent could still fire when the buyer activated the method
+             * with a company already captured. A feature that fires once and
+             * then never again on any pick reads as working intermittently,
+             * which is why this took a live report to find rather than a test.
+             *
+             * The attribute also restores the `update-company-data` sync, so the
+             * tile's own component learns the company the address step captured
+             * instead of relying on the storage restore in initialize().
              */
             ?>
             <input type="hidden" id="company_name" name="payment[company_name]" data-name="company_name" />

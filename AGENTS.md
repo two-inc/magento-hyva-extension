@@ -189,15 +189,18 @@ be up alongside nothing. All four are one box style in one place. The rules that
   that is present and malformed, which it degrades to a silent box for rather
   than throwing — and that case needs the fallback just as much. Gate a fallback
   on there being nothing to say, never on any narrower proxy for it.
-- **The dispatch paths are resolved by `data-name`, on BOTH markup modes.**
+- **The company pair is resolved by `data-name`, on BOTH markup modes.**
   `company-name-payment.phtml` finds the payment step's company pair with
-  `[data-name="company_name"]` / `[data-name="company_id"]`, and all three of
-  its paths — the address-step pick sync, the on-load initialisation, and
-  `updatePaymentFields()`'s own dispatch — bail out silently when either is
-  missing. Address-area mode's two inputs are `type="hidden"` and carry the
-  attribute for exactly this reason. Dropping it from either input disables
-  order intent for that whole mode with no error anywhere, which is how the mode
-  shipped for several rounds dispatching no intents at all.
+  `[data-name="company_name"]` / `[data-name="company_id"]`, and every path that
+  WRITES the pair bails out silently when either input is missing — the
+  address-step pick sync, the on-load initialisation, and `updatePaymentFields()`
+  itself, which is also where those paths' `dispatch-order-intent` lives. Its
+  one dispatch that does NOT depend on the pair is the `checkout:payment:method-
+  activate` re-arm, which fires from the stored selection alone. So the symptom
+  of a missing `data-name` is not "no intents ever": it is no intent on a PICK,
+  with the activation re-arm still firing — which is worse to diagnose than
+  total silence, because the feature looks alive. Address-area mode's two inputs
+  are `type="hidden"` and carry the attribute for exactly this reason.
 
 ### Magewire Components
 

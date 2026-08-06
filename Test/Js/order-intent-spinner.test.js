@@ -585,12 +585,15 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       });
 
       /**
-       * The one case that keeps a toast (review round 1): the box's ELEMENT is
-       * only rendered when the brand has not switched the notice copy off, and
-       * a brand shipping today does switch it off. `…Copy === null` is exactly
-       * that state — the same value the markup's PHP condition tests — so a
-       * declined buyer on such a brand gets the toast rather than nothing at
-       * all.
+       * The case that keeps a toast (review round 1): the box's ELEMENT is only
+       * rendered when the brand has not switched the notice copy off, and a
+       * brand shipping today does switch it off — so a declined buyer there gets
+       * the toast rather than nothing at all.
+       *
+       * Null copy is the PRECONDITION this test sets up, not the gate. The gate
+       * asks the wider question — `resolveOrderIntentNotAvailableNotice() === ''`
+       * — which also catches copy that is present but unusable; the sibling test
+       * below covers that half.
        */
       test("a brand with no inline notice at all still gets told", () => {
         // `beforeEach` already nulls both copies, which IS the suppressed
