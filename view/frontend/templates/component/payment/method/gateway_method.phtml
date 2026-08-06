@@ -340,10 +340,16 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * Which makes the CONDITION on this element load-bearing beyond
              * this file: when the brand switch suppresses the copy there is no
              * element here at all, so `processOrderIntentSuccessResponse()`
-             * falls back to the toast for a decline in exactly that case. The
-             * two conditions test the same fact — this one in PHP
-             * (`getOrderIntentNotAvailableNotice() !== null`), that one in JS
-             * (`orderIntentNotAvailableCopy === null`) — and must keep doing so.
+             * falls back to a toast for a decline that has no sentence to show.
+             *
+             * The two conditions are deliberately NOT the same test. This one
+             * decides whether the ELEMENT exists
+             * (`getOrderIntentNotAvailableNotice() !== null`); the JS one asks
+             * the wider question, whether there is a SENTENCE
+             * (`resolveOrderIntentNotAvailableNotice() === ''`), which is also
+             * true for copy that is present but unusable and would otherwise
+             * render this element empty and silent. Absent copy is the case
+             * where both agree, and it is the case this condition exists for.
              */
             ?>
             <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>

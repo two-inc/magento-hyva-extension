@@ -394,12 +394,15 @@ $quoteDetails = json_encode(
      * selector, and the question this answers is whether the store leaves the
      * country to the buyer.
      *
-     * Reads the FILTERED list, so a select the buyer cannot reach does not count
-     * either (review round 1). It decides whether the store default is
-     * suppressed, and suppressing it on the strength of a select nobody can see
-     * leaves company search saying "Please select a country first" with nothing
-     * on screen to satisfy it — a dead end, where the store default would merely
-     * have been a guess.
+     * Reads the same list, so it inherits the same filtering: NAME matches only
+     * (review round 2). A name-matched select the buyer cannot reach does not
+     * count — suppressing the store default on the strength of one leaves
+     * company search saying "Please select a country first" with nothing on
+     * screen to satisfy it, a dead end where the store default would merely have
+     * been a guess. A hidden select under one of the two KNOWN ids does still
+     * count, and should: that is the checkout's own address form with its step
+     * currently off screen — the buyer's country selector one step away, not an
+     * absent one.
      *
      * @returns {boolean}
      */
