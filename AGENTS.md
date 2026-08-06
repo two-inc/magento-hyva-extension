@@ -174,6 +174,23 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the component. Acceptable — a decision is only as good as the quote it was made
   against — but it means the come-back-and-see-your-verdict property holds only
   until the next totals/address/term change.
+- **ONE VERDICT, ONE NOTICE — a decline raises no toast** (2026-08-06). The
+  approved and declined verdicts are the box and nothing else; do not pair a
+  `window.dispatchMessages()` toast with them, in either direction. A toast
+  self-dismisses and lands at the top of the page rather than beside the company
+  it is about, so it can only ever repeat what the box already says permanently.
+  The one exception is a FAILED check, which keeps its toast because that toast
+  carries the API's own diagnostic strings and the box deliberately shows the
+  general wording instead.
+- **The dispatch paths are resolved by `data-name`, on BOTH markup modes.**
+  `company-name-payment.phtml` finds the payment step's company pair with
+  `[data-name="company_name"]` / `[data-name="company_id"]`, and all three of
+  its paths — the address-step pick sync, the on-load initialisation, and
+  `updatePaymentFields()`'s own dispatch — bail out silently when either is
+  missing. Address-area mode's two inputs are `type="hidden"` and carry the
+  attribute for exactly this reason. Dropping it from either input disables
+  order intent for that whole mode with no error anywhere, which is how the mode
+  shipped for several rounds dispatching no intents at all.
 
 ### Magewire Components
 
@@ -229,6 +246,27 @@ Two things that bite:
   *renderer* block created at runtime, so there is no layout node to hang a child
   off. `Test/Js/hyva-harness.js` inlines that include (`TEMPLATE_INCLUDE_PATTERN`)
   so the Jest suites render what the page renders.
+- **Address AUTOFILL needs BOTH settings**, and the conjunction lives in ONE
+  place: `CheckoutConfig::getIsAddressSearchEnabled()` returns
+  `enable_address_search && !getIsCompanySearchInPaymentTile()`. Autofill writes
+  city / postcode / street into an address FORM, so when the one control lives in
+  the payment tile there is no form the buyer is working in for it to write into
+  — filling one from a pick made on the payment step overwrites an address they
+  already completed, silently, several steps behind where they are looking. Never
+  re-derive the rule in a template or a component: the engine's `selectItem()`
+  reads `isAddressSearchEnabled` and nothing else, and a surface that computes
+  its own version is how the tile came to autofill.
+- **The buyer's country is resolved LIVE, and the store default is a last
+  resort only where there is no country selector at all**
+  (`twoGatewayGetCountryCode()`). The DOM comes first — `#shipping-country_id`,
+  `#billing-country_id`, then any `country_id`-named field, in that priority
+  whatever the document order — then the quote's own address countries, then the
+  store default. That last term is deliberately suppressed while a country
+  `<select>` exists: the quote snapshot is PHP-rendered at page load and carries
+  no country on a first visit, so an unconditional store default meant company
+  search silently returned US companies to a buyer who had chosen elsewhere.
+  Searching the wrong country is worse than not searching — with no country, the
+  callers already say "Please select a country first".
 - **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
   A company with no number in its home registry gets an internal placeholder
   identifier prefixed `TWO:`. It must reach the API and must never reach the
