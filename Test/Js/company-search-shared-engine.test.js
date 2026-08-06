@@ -259,6 +259,48 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     expect(addressLike.companyIdDisabled).toBe(false);
   });
 
+  /**
+   * TWO-25326, 2026-08-06: autofill is gated, and the gate is a term of
+   * selectItem() rather than a property of the surface's markup.
+   *
+   * The ruling has two conditions — the `enable_address_search` setting AND
+   * the one company-search control living in the address entry — and
+   * CheckoutConfig::getIsAddressSearchEnabled() is where they are combined
+   * (see Test/Unit/ViewModel/CheckoutConfigTest.php for that truth table).
+   * What is pinned HERE is that `isAddressSearchEnabled` is the only thing
+   * standing between a pick and a request: with it false, a pick carrying a
+   * perfectly good `lookupId` must put nothing on the wire at all.
+   */
+  test("a pick makes no address request while autofill is gated off", async () => {
+    const component = mount({ isAddressSearchEnabled: false });
+
+    component.selectItem({
+      companyName: "Example Trading Ltd",
+      companyId: "123456789",
+      lookupId: "lookup-1",
+    });
+
+    // Not "no fields written" — no REQUEST. A gate that fetched the address
+    // and then declined to apply it would still be reading the buyer's
+    // company detail out of the API for nothing.
+    expect(fetchStub.calls).toHaveLength(0);
+  });
+
+  test("the same pick DOES look the address up once autofill is allowed", async () => {
+    // The other half: without this, the test above passes against a
+    // selectItem() that never looks anything up on any surface.
+    const component = mount({ isAddressSearchEnabled: true });
+
+    component.selectItem({
+      companyName: "Example Trading Ltd",
+      companyId: "123456789",
+      lookupId: "lookup-1",
+    });
+
+    expect(fetchStub.calls).toHaveLength(1);
+    expect(fetchStub.calls[0].url).toContain("lookup-1");
+  });
+
   test("addressLookup()/setAddressData() are safe no-ops with no container resolved — never a throw", async () => {
     // `resolveAddressContainer` defaults to `() => null` and is closed over
     // by the engine itself, not exposed on the instance — selectItem() is

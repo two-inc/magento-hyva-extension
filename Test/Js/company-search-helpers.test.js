@@ -580,5 +580,108 @@ describe("shared company-search helpers", () => {
       expect(window.twoGatewayGetCountryCode(null)).toBe("");
       expect(window.twoGatewayGetCountryCode(undefined)).toBe("");
     });
+
+    /**
+     * The reported bug (2026-08-06): company search returned US companies on
+     * the FIRST visit to a checkout whose buyer had selected another country,
+     * and corrected itself as soon as they changed the country.
+     *
+     * Both halves are the store-default fallback. The quote snapshot is
+     * rendered by PHP at page load, so before any address has been saved it
+     * carries no country and the store default answered instead — while the
+     * buyer's own selection sat in the DOM under an id the lookup did not
+     * recognise, or had not been made yet at all.
+     */
+    describe("the buyer's own country selection", () => {
+      /**
+       * A country SELECT the way an address form renders it: named
+       * `country_id` (or namespaced), never one of the two known ids.
+       *
+       * @param {string} name
+       * @param {string} value
+       * @returns {HTMLSelectElement}
+       */
+      function addCountrySelect(name, value) {
+        const select = document.createElement("select");
+        select.name = name;
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value || "";
+        select.appendChild(option);
+        select.value = value;
+        document.body.appendChild(select);
+        return select;
+      }
+
+      test("a country_id select with no recognised id still wins over the quote", () => {
+        addCountrySelect("country_id", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("a namespaced country_id select wins over the quote too", () => {
+        addCountrySelect("shipping[country_id]", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("the shipping id keeps its priority over a name-matched field, whatever the document order", () => {
+        // Document order puts the name-matched select FIRST, so a single
+        // querySelectorAll would hand the priority decision to the theme.
+        addCountrySelect("billing[country_id]", "DE");
+        addCountryField("shipping-country_id", "GB");
+
+        expect(window.twoGatewayGetCountryCode(quote)).toBe("GB");
+      });
+
+      test("the store default is NOT used while the buyer has a country selector they have not chosen in", () => {
+        // The whole reported symptom: US companies for a buyer who has
+        // chosen no country yet. Answering '' is what makes the callers
+        // say "Please select a country first" instead of searching the
+        // store's own country silently.
+        addCountrySelect("country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+        ).toBe("");
+      });
+
+      test("a quote country still beats the empty selector — only the STORE DEFAULT is suppressed", () => {
+        addCountrySelect("country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({
+            shipping_country_id: "SE",
+            default_country_id: "US",
+          }),
+        ).toBe("SE");
+      });
+
+      test("the store default survives on a checkout with no country selector at all", () => {
+        // Exactly the case its own comment was always written for: a
+        // single-country store, where the default is the only answer there
+        // is. A hidden mirror input is not a selector.
+        addCountryField("shipping-country_id", "");
+
+        expect(
+          window.twoGatewayGetCountryCode({ default_country_id: "US" }),
+        ).toBe("US");
+        expect(window.twoGatewayHasCountrySelector()).toBe(false);
+      });
+
+      test("twoGatewayCountryFields lists the two known ids once each, ahead of name matches", () => {
+        // `#shipping-country_id` also matches `[name="country_id"]` when the
+        // form names it that way; a duplicated entry would be harmless here
+        // but makes the priority list a lie for anything else reading it.
+        const shipping = addCountrySelect("country_id", "GB");
+        shipping.id = "shipping-country_id";
+        addCountrySelect("billing[country_id]", "DE");
+
+        const fields = window.twoGatewayCountryFields();
+        expect(fields.filter((f) => f === shipping)).toHaveLength(1);
+        expect(fields[0]).toBe(shipping);
+        expect(fields).toHaveLength(2);
+      });
+    });
   });
 });

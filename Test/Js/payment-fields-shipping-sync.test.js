@@ -352,6 +352,86 @@ describe("shipping to payment company sync", () => {
     });
   });
 
+  /**
+   * The regression reported on 2026-08-06: with the one company-search control
+   * in the ADDRESS AREA, no order intent was ever dispatched at all, while
+   * payment-tile mode dispatched on every pick.
+   *
+   * One missing attribute, not a missing code path. This bridge resolves the
+   * payment step's company pair by `data-name` — `[data-name="company_name"]`
+   * and `[data-name="company_id"]` — and every path it owns bails out when
+   * either is absent: this sync, the on-load initialisation that carries the
+   * first dispatch, and updatePaymentFields()'s own dispatch. The tile-mode
+   * markup carries `data-name` on its visible field; the address-mode markup's
+   * two hidden inputs did not.
+   *
+   * The fixture is built from the SHIPPED address-mode markup rather than
+   * hand-written like the one above, because a hand-written fixture with
+   * `data-name` on it is exactly what let this ship: every test in this file
+   * passed throughout.
+   */
+  describe("address-area mode, from the shipped markup", () => {
+    const ADDRESS_AREA = [[/^\$isCompanySearchInPaymentTile$/, ""]];
+
+    beforeEach(() => {
+      const markup = H.renderTemplateMarkup(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        ADDRESS_AREA,
+      );
+      const rendered = new DOMParser().parseFromString(markup, "text/html");
+      const nameEl = rendered.querySelector(
+        'input[name="payment[company_name]"]',
+      );
+      const idEl = rendered.querySelector('input[name="payment[company_id]"]');
+      // Both are `type="hidden"` in this mode — that is the mode, not an
+      // accident of the fixture.
+      expect(nameEl.type).toBe("hidden");
+      expect(idEl.type).toBe("hidden");
+
+      document.body.innerHTML = [
+        '<div id="payment-root" x-data="twoGatewayHyvaPaymentMethodBase">',
+        nameEl.outerHTML,
+        idEl.outerHTML,
+        "</div>",
+      ].join("\n");
+
+      env.browserStorage.removeItem(H.COMPANY_SELECTION_KEY);
+      syncedEvents = [];
+      document
+        .getElementById("payment-root")
+        .addEventListener("update-company-data", (event) => {
+          syncedEvents.push(event.detail);
+        });
+    });
+
+    test("an address-step pick dispatches an order intent", () => {
+      activateTwoPayment();
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+
+      try {
+        selectShippingCompany("Example Trading Ltd", "12345678");
+        expect(dispatched).toEqual(["intent"]);
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
+    });
+
+    test("and the pick reaches the tile's own component and its hidden fields", () => {
+      // The same missing attribute silenced the state sync, so the tile
+      // component only ever learned the company through the storage restore in
+      // initialize() — i.e. not until the next Magewire re-render.
+      selectShippingCompany("Example Trading Ltd", "12345678");
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("12345678");
+      expect(syncedEvents).toEqual([
+        { companyName: "Example Trading Ltd", companyId: "12345678" },
+      ]);
+    });
+  });
+
   test("does not sync when billing is not the same as shipping", () => {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
