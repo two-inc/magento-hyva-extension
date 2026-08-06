@@ -101,16 +101,23 @@ const NOTICE_COPY = {
 };
 
 /**
- * Put `component` in the state where the inline notice is on screen, through
- * the REAL success handler rather than by assigning the observable. A test that
- * wrote `orderIntentApprovedNotice` by hand would still pass if
- * processOrderIntentSuccessResponse() stopped setting it.
+ * Put `component` in the state where the inline notice is on screen, by driving a
+ * WHOLE intent check — reply AND settle — through the real handlers rather than
+ * by assigning the observable. A test that wrote `orderIntentApprovedNotice` by
+ * hand would still pass if the production path stopped setting it.
+ *
+ * Both halves are needed because the reply handler only RECORDS: the box is
+ * painted when the check stops being in flight, since a verdict may never share
+ * the tile with a progress row. A fixture that stopped at the reply would leave
+ * the row up and the box correctly empty, and every label assertion below would
+ * then read as a regression when it is really a fixture that stops half way.
  *
  * @param {Object} component
  */
 function approveIntent(component) {
   component.orderIntentApprovedNoticeCopy = NOTICE_COPY;
   component.processOrderIntentSuccessResponse({ approved: true });
+  component.setOrderIntentChecking(false);
 }
 
 /**
@@ -612,6 +619,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // suite's shared component stubs `$watch` to a no-op, so a fresh instance
       // is mounted with a recording one — which also proves the watchers are
       // actually registered rather than assuming it.
+      //
+      // The company is really EDITED before the watcher is fired, rather than
+      // the callback being invoked over unchanged state. Alpine only calls a
+      // watcher when the value changed, so invoking it over an unchanged company
+      // asserts on an artefact of the simulation — and since 2026-08-05 the
+      // watchers repaint a verdict that is still valid for the company on
+      // screen, so an unchanged company legitimately keeps its label.
       const watchers = {};
       const root = document.getElementById("payment-root");
       const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
@@ -629,12 +643,50 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
 
       expect(watchers.companyName).toBeDefined();
       expect(watchers.companyId).toBeDefined();
+      fresh.companyName = "Example Trading Limited";
       watchers.companyName.forEach(function (callback) {
         callback();
       });
 
       expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
       expect(fresh[LABEL_SHOW_BINDING]).toBe(false);
+    });
+
+    test("returning to the same company puts its verdict back", () => {
+      // The other side of the watcher, and the reason the edit above has to be
+      // a real edit. A buyer who searches again — which takes the box down —
+      // and then picks the SAME company gets no new decision, because the dedup
+      // gate refuses to re-ask for one it already has. Without a repaint the box
+      // would stay blank for the rest of the session.
+      const watchers = {};
+      const root = document.getElementById("payment-root");
+      const fresh = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: root,
+        root: root,
+      });
+      fresh.$watch = function (property, callback) {
+        (watchers[property] = watchers[property] || []).push(callback);
+      };
+      fresh.initialize(JSON.parse(H.QUOTE_JSON));
+
+      fresh.selectItem(pickerItem("Example Trading Ltd", "123456789"));
+      approveIntent(fresh);
+      expect(fresh[LABEL_SHOW_BINDING]).toBe(true);
+
+      // A search starting is what empties the box. The first pick left the
+      // in-progress flag up (this suite runs no dispatcher to lower it), so it
+      // is reset here too — otherwise it could not show that the re-pick
+      // dispatches nothing.
+      fresh.clearOrderIntentNotices();
+      fresh.orderIntentChecking = false;
+      expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
+
+      // Re-picking the same company dispatches nothing, and repaints.
+      fresh.fillCompanyData("123456789", "Example Trading Ltd");
+
+      expect(fresh.orderIntentChecking).toBe(false);
+      expect(fresh[INTENT_MESSAGE_SHOW_BINDING]).toBe(true);
+      expect(fresh[LABEL_SHOW_BINDING]).toBe(true);
     });
   });
 
@@ -649,10 +701,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    *    `orderIntentApprovedNotice` on the way through, which is the deliberate
    *    fail-closed property they exist for;
    *  - `fillCompanyData()` then suppressed the intent that would have re-set
-   *    it, because `lastOrderIntentCompanyId` still held that same identifier.
+   *    it, because a decision for that same identifier was still on record.
    *
    * "Change company" is gone (bug 5), and with it the ONLY path that used to
-   * reset `lastOrderIntentCompanyId` mid-session — so the specific "repaints
+   * reset the decision records mid-session — so the specific "repaints
    * the label instead of leaving a bare button" scenario cannot occur any
    * more: there is no button to leave bare. What survives, and is still
    * pinned below, is the dedup mechanism itself — a DIFFERENT company must
@@ -724,12 +776,17 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
        * it debounces, calls placeOrderIntent(), and hands an approval to
        * processOrderIntentSuccessResponse(). Only the last step is what the
        * notice depends on, and driving it through the REAL success handler is
-       * what makes `lastOrderIntentCompanyId` advance the way production does.
+       * what makes the decision record advance the way production does.
        */
       const intents = [];
       const listener = function () {
         intents.push(fresh.companyId);
         fresh.processOrderIntentSuccessResponse({ approved: true });
+        // The real dispatcher's `finally` too, not just its reply handling:
+        // lowering the row is what re-derives the box, so a fixture that stops at
+        // the reply leaves the row up forever and a component that (correctly)
+        // refuses to paint a verdict beside a progress row looks broken.
+        fresh.setOrderIntentChecking(false);
       };
       window.addEventListener("dispatch-order-intent", listener);
 
@@ -795,7 +852,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         live.component.enableSearch();
 
         expect(live.intents).toEqual([SAME[1]]);
-        expect(live.component.lastOrderIntentCompanyId).toBe(SAME[1]);
+        expect(live.component.orderIntentDecisions[SAME[1]]).toBeDefined();
       } finally {
         live.stop();
       }
@@ -813,16 +870,26 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // property by name, which stays green with a real gate deleted — the
       // opposite of what this test is for.
       //
+      // Both now ask the ONE question, of the ONE set of records the box is
+      // painted from (review round 7): the gate used to consult a separate
+      // single-slot "last company dispatched for", which meant "already
+      // decided" and "has a verdict to show" could disagree — and did, so a
+      // company whose answer was known was asked about again.
+      //
       // fillCompanyData()'s gate, before it dispatches:
-      expect(js).toContain("companyId !== this.lastOrderIntentCompanyId");
+      expect(js).toContain(
+        "!this.hasOrderIntentDecisionFor(companyId, companyName)",
+      );
       // and the top-level listener's own "already processed" gate — read via
       // a local alias (`component`) rather than the global directly, because
       // bug 5's local-spinner rework wrapped this in executeOrderIntent(),
       // but it is still the SAME global instance under that name:
       expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(
-        "currentCompanyId === component.lastOrderIntentCompanyId",
+        "component.hasOrderIntentDecisionFor(currentCompanyId, component.companyName)",
       );
+      // And the slot they used to read is gone, not merely unused.
+      expect(js).not.toContain("lastOrderIntentCompanyId");
     });
   });
 

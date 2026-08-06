@@ -220,6 +220,181 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.companyTileLabelText).toBe("Unlisted Trading Ltd");
   });
 
+  test("starting a new search takes the previous verdict off the tile", async () => {
+    // 2026-08-05, cross-platform order-intent UI unification: a buyer searching
+    // again is replacing the company the standing verdict was about, so the
+    // verdict is stale from the moment the search starts — not from the moment
+    // the replacement is picked, and not from the moment the next decision
+    // arrives. The live notice properties are assigned directly rather than
+    // resolved from brand copy: what is under test is the clearing, and the
+    // three of them are the whole visible verdict.
+    //
+    // `$watch` is a no-op in this suite (see beforeEach), so the `companyName` /
+    // `companyId` watchers cannot be what clears these — this isolates the
+    // search-start path the engine's `onLoaderStart` hook drives.
+    component.orderIntentApprovedNotice = "Available for Example Trading Ltd";
+    component.orderIntentNotAvailableNotice = "stale not-available";
+    component.orderIntentErrorNotice = "stale error";
+
+    component.onCompanyNameClick();
+    queryField.value = "example";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    const pending = component.getItems();
+    await H.flushPromises();
+
+    // A request is on the wire and NOTHING has come back yet.
+    expect(fetchStub.calls.length).toBe(1);
+    expect(component.orderIntentApprovedNotice).toBe("");
+    expect(component.orderIntentNotAvailableNotice).toBe("");
+    expect(component.orderIntentErrorNotice).toBe("");
+    expect(component.orderIntentMessageVisible).toBe(false);
+    expect(component.twoTileNotAvailableVisible).toBe(false);
+    expect(component.twoTileErrorVisible).toBe(false);
+
+    fetchStub.last().respond({ items: [] });
+    await pending;
+  });
+
+  test("the panel-closed hook fires with the INCOMING company already written", async () => {
+    // Round 9: the outcome-only version of this test below cannot fail on the
+    // ordering it names, because fillCompanyData() clears or re-derives in the
+    // same synchronous call and erases the wrong-company repaint before anything
+    // can observe it. So observe the hook ITSELF: what the company was at the
+    // moment it ran is the whole claim.
+    component.onCompanyNameClick();
+    await search("alpha", "111111111");
+    component.selectItem(component.items[0]);
+
+    const seenAtHookTime = [];
+    const real = component.refreshOrderIntentVerdict.bind(component);
+    component.refreshOrderIntentVerdict = function () {
+      seenAtHookTime.push({ id: this.companyId, name: this.companyName });
+      return real();
+    };
+
+    component.onCompanyNameClick();
+    await search("beta", "222222222");
+    component.selectItem(component.items[0]);
+
+    // It did fire — otherwise this test would pass by observing nothing.
+    expect(seenAtHookTime.length).toBeGreaterThan(0);
+    // And every time it fired, the pick had already been written. Before the
+    // engine's call was moved below the state writes, this was the OUTGOING
+    // company and the hook painted its verdict over the new one.
+    seenAtHookTime.forEach((seen) => {
+      expect(seen.id).toBe("222222222");
+      expect(seen.name).toBe("Example Trading Ltd");
+    });
+  });
+
+  test("picking a new company evaluates against the INCOMING one", async () => {
+    // Round-5 finding. The engine dismissed the panel BEFORE writing the pick's
+    // company, so the tile's panel-closed repaint ran against the OUTGOING one —
+    // briefly repainting the previous company's verdict and lowering the progress
+    // row of the request that had just gone out for its replacement. Ordering was
+    // the fix, so this is assertable synchronously.
+    component.onCompanyNameClick();
+    await search("alpha", "111111111");
+    component.selectItem(component.items[0]);
+    component.orderIntentApprovedNoticeCopy = {
+      withCompany: "Available for {{companyName}}",
+      withoutCompany: "Available",
+      companyNameToken: "{{companyName}}",
+      companyNumberToken: "{{companyNumber}}",
+    };
+    component.processOrderIntentSuccessResponse(
+      { approved: true },
+      "111111111",
+      "Example Trading Ltd",
+    );
+    component.setOrderIntentChecking(false);
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+
+    // A different company is picked.
+    component.onCompanyNameClick();
+    await search("beta", "222222222");
+    component.selectItem(component.items[0]);
+
+    // The previous company's verdict is not on screen next to the new company,
+    // and the new company's check is visibly running.
+    expect(component.companyId).toBe("222222222");
+    expect(component.orderIntentApprovedNotice).toBe("");
+    expect(component.orderIntentMessageVisible).toBe(false);
+    expect(component.orderIntentChecking).toBe(true);
+  });
+
+  test("abandoning a search puts the standing verdict back", async () => {
+    // Round-3 finding: clearing on search start had no counterpart for a search
+    // that ENDS without changing the company. The buyer opens the panel, types,
+    // then presses Escape or clicks away — no watcher fires, no pick happens, and
+    // nothing else writes the notices, so the verdict was gone for the rest of
+    // the session. In the declined case that removes the explanation for a
+    // decline that still stands.
+    component.onCompanyNameClick();
+    await search("example", "123456789");
+    component.selectItem(component.items[0]);
+    // A real copy OBJECT. The harness's default stand-in for this getter is a
+    // bare JSON string, which the resolver cannot substitute into.
+    component.orderIntentApprovedNoticeCopy = {
+      withCompany: "Available for {{companyName}} ({{companyNumber}})",
+      withoutCompany: "Available",
+      companyNameToken: "{{companyName}}",
+      companyNumberToken: "{{companyNumber}}",
+    };
+    component.processOrderIntentSuccessResponse(
+      { approved: true },
+      "123456789",
+      "Example Trading Ltd",
+    );
+    // The pick raised the progress row optimistically and this suite runs no
+    // dispatcher to settle it, so it is settled here as the real one's `finally`
+    // does — lowering the row is what paints the box, since a verdict may never
+    // share the tile with a progress row.
+    component.setOrderIntentChecking(false);
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+
+    // Search again — the box goes down.
+    component.onCompanyNameClick();
+    queryField.value = "example";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    const pending = component.getItems();
+    await H.flushPromises();
+    expect(component.orderIntentApprovedNotice).toBe("");
+    fetchStub.last().respond({ items: [] });
+    await pending;
+
+    // …and abandoning it puts the box back, because the company on screen is
+    // still the one the verdict was reached for. Synchronous: the engine
+    // dismisses the panel AFTER writing the pick's company, so the hook needs no
+    // deferral (round 5).
+    component.closeDropdown();
+
+    expect(component.orderIntentApprovedNotice).not.toBe("");
+    expect(component.orderIntentMessageVisible).toBe(true);
+  });
+
+  test("a search too short to go on the wire leaves the verdict standing", async () => {
+    // The complement of the test above, and what stops it from passing for the
+    // wrong reason. Clearing is hung on a search actually starting, so a buyer
+    // who opens the panel and types one character has not replaced anything
+    // yet and must not lose the verdict for the company they still have.
+    component.orderIntentApprovedNotice = "Available for Example Trading Ltd";
+
+    component.onCompanyNameClick();
+    queryField.value = "e";
+    component.$el = queryField;
+    component.noteCompanyQuery();
+    await component.getItems();
+    await H.flushPromises();
+
+    expect(fetchStub.calls.length).toBe(0);
+    expect(component.orderIntentApprovedNotice).toBe(
+      "Available for Example Trading Ltd",
+    );
+  });
+
   test("the control's own number display stays down on this surface", async () => {
     component.onCompanyNameClick();
     await search("example", "123456789");

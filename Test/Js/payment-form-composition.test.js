@@ -469,10 +469,17 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       fresh.selectItem(pickerItem("Example Trading Ltd", "123456789"));
       fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
       fresh.processOrderIntentSuccessResponse({ approved: true });
+      // Settled as the dispatcher does: lowering the row is what paints the box,
+      // because a verdict may never share the tile with a progress row.
+      fresh.setOrderIntentChecking(false);
       expect(fresh.orderIntentMessageVisible).toBe(true);
 
       expect(watchers.companyName).toBeDefined();
       expect(watchers.companyId).toBeDefined();
+      // A real edit, not the callback fired over unchanged state: Alpine only
+      // calls a watcher when the value changed, and since 2026-08-05 the
+      // watchers repaint a verdict still valid for the company on screen.
+      fresh.companyName = "Example Trading Limited";
       watchers.companyName.forEach((callback) => callback());
 
       expect(fresh.orderIntentMessageVisible).toBe(false);
@@ -512,6 +519,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
       form.orderIntentApprovedNoticeCopy = NOTICE_COPY;
       form.processOrderIntentSuccessResponse({ approved: true });
+      form.setOrderIntentChecking(false);
 
       expect(form.orderIntentMessageVisible).toBe(true);
       expect(form.companyTileLabelText).toBe("Example Trading Ltd (123456789)");

@@ -437,12 +437,18 @@ describe("payment component company selection", () => {
     });
 
     test("dispatches no order intent, where an identified company does", () => {
-      // Reached after an intent has already succeeded for another company:
-      // `lastOrderIntentCompanyId` is then non-empty, so the "id changed"
-      // condition is true for an empty id and used to fire an intent for a
-      // company with no identifier. The listener would discard it, but it
-      // would still read as a real submission in the event log.
-      component.lastOrderIntentCompanyId = "11111111";
+      // Reached after an intent has already succeeded for another company, so
+      // the dedup gate has a decision on record and the "not already decided"
+      // half of the condition is true for an empty id — which used to fire an
+      // intent for a company with no identifier at all. The listener would
+      // discard it, but it would still read as a real submission in the event
+      // log. Seeded through the RECORD the gate actually reads (review round 7
+      // replaced a single-slot `lastOrderIntentCompanyId` with per-company
+      // records); assigning the old field here left this test seeding nothing.
+      component.orderIntentDecisions["11111111"] = {
+        name: "Earlier Example Ltd",
+        approved: true,
+      };
       const dispatched = [];
       const listener = () => dispatched.push("intent");
       window.addEventListener("dispatch-order-intent", listener);

@@ -160,7 +160,7 @@ describe("order-intent sequencing (bug 4)", () => {
 
       capture("Company A", "111111111");
       await H.flushPromises();
-      expect(component.lastOrderIntentCompanyId).toBe("111111111");
+      expect(component.orderIntentDecisions["111111111"]).toBeDefined();
 
       capture("Company A", "111111111");
       await H.flushPromises();
@@ -189,7 +189,7 @@ describe("order-intent sequencing (bug 4)", () => {
       second.resolve({ approved: true });
       await H.flushPromises();
 
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.orderIntentDecisions["222222222"]).toBeDefined();
       expect(component.orderIntentApprovedNotice).toBe(
         "Approved for Company B (222222222)",
       );
@@ -198,7 +198,7 @@ describe("order-intent sequencing (bug 4)", () => {
       first.resolve({ approved: false });
       await H.flushPromises();
 
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.orderIntentDecisions["222222222"]).toBeDefined();
       expect(component.orderIntentApprovedNotice).toBe(
         "Approved for Company B (222222222)",
       );
@@ -247,7 +247,7 @@ describe("order-intent sequencing (bug 4)", () => {
 
       // Read off the request, not off live state. Filing it under 999999999
       // would suppress that company's own check forever.
-      expect(component.lastOrderIntentCompanyId).toBe("111111111");
+      expect(component.orderIntentDecisions["111111111"]).toBeDefined();
     });
 
     /**
@@ -295,7 +295,7 @@ describe("order-intent sequencing (bug 4)", () => {
       // satisfied, so re-picking B later costs no extra request either. This
       // is the SAME behaviour "the decision is filed against the company it
       // was REQUESTED for" pins for the live-edit case above.
-      expect(component.lastOrderIntentCompanyId).toBe("222222222");
+      expect(component.orderIntentDecisions["222222222"]).toBeDefined();
     });
 
     test("a stale reply for a reverted-away company does not clear the live company's approval via the error path either", async () => {

@@ -264,15 +264,27 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              *
              * Rendered in BOTH company-search-location modes: the intent check
              * runs whichever surface captured the company.
+             *
+             * The box (border, radius, padding, colour) is `custom.css`'s, not
+             * Tailwind utilities': it is one of four states of ONE box — this
+             * row and the three verdicts below it — and the four have to agree
+             * on their geometry, which they cannot do if each restates it in a
+             * class list. The same reason `input.company_id:disabled` and
+             * `.two-company-search__unavailable` are CSS here rather than
+             * utilities: the module must not depend on the merchant's Tailwind
+             * build having generated a colour only this module asks for, and an
+             * uncompiled `bg-red-50` is an invisible box rather than a loud
+             * failure.
              */
             ?>
             <div
-                class="two-order-intent-checking relative bg-gray-50 border border-gray-200 text-gray-800 text-sm p-2 pr-8 rounded-md"
+                class="two-order-intent-box two-order-intent-checking"
+                x-cloak
                 role="status"
                 data-name="order_intent_checking"
                 x-show="orderIntentChecking"
             >
-                <span><?= $escaper->escapeHtml(__('Checking your company…')) ?></span>
+                <span><?= $escaper->escapeHtml(__('Checking availability')) ?></span>
                 <span class="two-company-search__spinner" aria-hidden="true"></span>
             </div>
             <?php
@@ -301,7 +313,8 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             ?>
             <?php if ($configModel->getOrderIntentApprovedNotice() !== null): ?>
                 <div
-                    class="two-order-intent-message approved bg-green-50 border border-green-200 text-green-800 text-sm p-2 rounded-md"
+                    class="two-order-intent-box two-order-intent-message approved"
+                    x-cloak
                     role="status"
                     data-name="order_intent_message"
                     x-show="orderIntentMessageVisible"
@@ -327,13 +340,48 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             ?>
             <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
                 <div
-                    class="two-order-intent-message unavailable bg-gray-50 border border-gray-200 text-gray-800 text-sm p-2 rounded-md"
+                    class="two-order-intent-box two-order-intent-message unavailable"
+                    x-cloak
                     role="status"
                     data-name="order_intent_not_available_message"
                     x-show="twoTileNotAvailableVisible"
                     x-text="orderIntentNotAvailableNotice"
                 ></div>
             <?php endif ?>
+            <?php
+            /*
+             * The THIRD verdict state (2026-08-05, cross-platform order-intent
+             * UI unification): the check itself failed.
+             *
+             * Until now an errored intent check produced a self-dismissing
+             * toast and nothing else, so the tile that had just been showing
+             * "Checking availability" went back to showing nothing at all —
+             * indistinguishable from a check that never ran. The three verdicts
+             * an intent check can reach (available / not available / could not
+             * be determined) now each land in the same box in the same place,
+             * differing only in colour, which is the shape the other three
+             * platforms render.
+             *
+             * `role="alert"`, not `role="status"`: unlike its two siblings this
+             * one reports a failure the buyer may need to act on (retry, or
+             * pick a different company), and it appears without the buyer
+             * having asked for anything.
+             *
+             * Unconditional, with no brand switch of its own — the two notices
+             * above are brand-configurable COPY (a brand may have nothing it
+             * wants said about an approval), whereas this text is the existing
+             * `generalErrorMessage`/error-response wording the toast already
+             * used, and there is no configuration that suppresses it.
+             */
+            ?>
+            <div
+                class="two-order-intent-box two-order-intent-message error"
+                x-cloak
+                role="alert"
+                data-name="order_intent_error_message"
+                x-show="twoTileErrorVisible"
+                x-text="orderIntentErrorNotice"
+            ></div>
             <?php if (!$isCompanySearchInPaymentTile): ?>
             <?php
             /*
