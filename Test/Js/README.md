@@ -137,6 +137,21 @@ resolved instead of rejecting would make either look fine.
 - `twoGatewayGetCountryCode`'s six-step fallback order, each step pinned, ending at `''`
   rather than `undefined`.
 
+`company-country-form-scoping.test.js` — **which form's country** that resolution reads
+(TWO-25461). Two address forms are on screen in different countries and each mounts the
+same control, because that is the only fixture in which a resolver hardcoded to the
+shipping address can be told apart from one that works: it is right about one of the two
+and wrong about the other. Every case drives a real search to the wire and asserts on the
+`country` query parameter — a resolver that computes one country and searches in another
+would pass on `component.countryCode` alone. Covered: each address form reading its own
+live field; one form on screen without the other; the payment tile taking the
+**invoice-role** address, which flips with `#billing-as-shipping` and defaults to shipping
+when that checkbox is absent, plus its fallback when no billing form is rendered; the
+order-intent body carrying the same country the search used; an unchosen local field
+falling through to the QUOTE rather than to the other live form; the address-book picker
+anchoring on its own input rather than on the foreign `$root` Hyvä gives it; and the scope
+walk's boundaries.
+
 `shipping-company-loader.test.js` — the `searchInput` picker, and above all its
 `magewire:loader` bookkeeping. The loader is a full-screen overlay driven by a **boolean,
 not a counter**, so two rules pull against each other: a superseded search must _not_

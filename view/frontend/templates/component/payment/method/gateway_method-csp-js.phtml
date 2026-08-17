@@ -281,8 +281,9 @@ $quoteDetails = json_encode(
     /**
      * Is the buyer's billing address the shipping address?
      *
-     * Hoisted here from company-name-payment.phtml (review round 3) so the two
-     * surfaces that now depend on it cannot answer it differently. Defaults to
+     * Hoisted here from company-name-payment.phtml (review round 3) so the
+     * surfaces that depend on it cannot answer it differently — three of them
+     * since TWO-25461, which added twoGatewayInvoiceRoleCountryField(). Defaults to
      * TRUE when the checkbox is absent, which is the pre-existing behaviour and
      * the safe direction: on a checkout with no such toggle there is only one
      * address, so the shipping company IS the billing company.
@@ -351,6 +352,18 @@ $quoteDetails = json_encode(
      * priority order: the two ids Hyvä's own address forms use, then any
      * `country_id` field regardless of the id shape.
      *
+     * SCOPED TO ONE FORM WHEN THE CALLER HAS ONE (TWO-25461). `context` is any
+     * element belonging to the control that is asking — its own root, or a
+     * country field it has already resolved by role. The document-wide,
+     * shipping-before-billing list below is what answers for a caller with no
+     * form of its own, and only for such a caller: a control mounted in the
+     * INVOICE address form asking a document-global resolver got the SHIPPING
+     * country, because the resolver had no way to know which form it was inside.
+     * The company-search field renderer is registered globally on
+     * `entity-form.field-renderers`, so it mounts on whichever address forms the
+     * checkout renders and that mis-read is reachable on any checkout with two
+     * addresses in different countries.
+     *
      * The name-based selectors are not decoration (2026-08-06). The two exact
      * ids only exist while an address FORM is on screen and named the way the
      * checkout's shipping/billing namespaces name it; an address form rendered
@@ -377,22 +390,127 @@ $quoteDetails = json_encode(
      * BEFORE billing whatever order the two forms happen to render in, and a
      * single query would have quietly handed that decision to the theme.
      *
+     * @param {HTMLElement} [context] an element belonging to the control that is
+     *   asking. Its own address form answers when it has one; otherwise the
+     *   document-wide list does.
      * @returns {Array<HTMLElement>}
      */
-    window.twoGatewayCountryFields = window.twoGatewayCountryFields || function() {
+    window.twoGatewayCountryFields = window.twoGatewayCountryFields || function(context) {
+        const scope = window.twoGatewayCountryFieldScope(context);
+        return window.twoGatewayCountryFieldsWithin(scope);
+    };
+
+    /**
+     * The country fields inside `scope` — or the whole document when `scope` is
+     * null — in the same priority order and under the same filtering rule as
+     * ever: the two known ids unfiltered (see the note above on why), name
+     * matches filtered.
+     *
+     * `scope` may BE a country field rather than contain one: that is how the
+     * payment tile names the invoice-role address field it wants read, having
+     * resolved it by role rather than by position in the DOM.
+     *
+     * @param {HTMLElement|null} scope
+     * @returns {Array<HTMLElement>}
+     */
+    window.twoGatewayCountryFieldsWithin = window.twoGatewayCountryFieldsWithin || function(scope) {
+        // A country field found BY NAME, in either shape an address form
+        // namespaces it under. Local to this function rather than a global or a
+        // file-scope const: nothing outside consumes it, and this inline block is
+        // re-evaluated (by a second payment method's render, and by every Jest
+        // suite that loads the template twice) — where a top-level `const` throws
+        // on redeclaration, which is why every published name here is
+        // `window.X = window.X || …`.
+        const NAME_SELECTOR = '[name="country_id"], [name$="[country_id]"]';
         const fields = [];
         const push = (el, filtered) => {
             if (!el || fields.indexOf(el) !== -1) return;
             if (filtered && !window.twoGatewayCountryFieldUsable(el)) return;
             fields.push(el);
         };
-        push(document.getElementById('shipping-country_id'), false);
-        push(document.getElementById('billing-country_id'), false);
+        const root = scope || document;
+        if (scope) {
+            if (scope.id === 'shipping-country_id' || scope.id === 'billing-country_id') {
+                push(scope, false);
+            } else if (scope.matches && scope.matches(NAME_SELECTOR)) {
+                push(scope, true);
+            }
+        }
+        push(root.querySelector('#shipping-country_id'), false);
+        push(root.querySelector('#billing-country_id'), false);
         Array.prototype.forEach.call(
-            document.querySelectorAll('[name="country_id"], [name$="[country_id]"]'),
+            root.querySelectorAll(NAME_SELECTOR),
             (el) => push(el, true)
         );
         return fields;
+    };
+
+    /**
+     * Which form owns `context`'s country — the nearest ancestor (or `context`
+     * itself) that has a country field of its own. `null` means the caller has
+     * no address form of its own to read, and the document-wide list answers.
+     *
+     * The walk stops at a `<form>` that has no country field the list would
+     * return — which is how the address-book modal exits it while closed. It also
+     * guards a case no surface reaches today: a by-root caller inside some other
+     * country-less form would otherwise climb out of it into whatever container
+     * holds the address forms too, and be handed a "scope" that is the whole
+     * checkout — the document-wide list by another name and by accident.
+     *
+     * Scope-hood asks for a field the list would actually return, so it inherits
+     * that list's filtering EXACTLY — name matches filtered, the two known ids
+     * not. A form whose only country field is a hidden NAME match is therefore
+     * not a scope and its caller falls through to the document-wide list, which
+     * is what the address-book modal is while it is closed. A form holding one of
+     * the two KNOWN ids IS a scope even hidden, deliberately: those ids have been
+     * read unconditionally by every version of this helper, this checkout hides a
+     * step's form subtree rather than unmounting it, and refusing them here would
+     * move already-correct behaviour on a surface no test can see. Filter what
+     * you ADD.
+     *
+     * @param {HTMLElement} [context]
+     * @returns {HTMLElement|null}
+     */
+    window.twoGatewayCountryFieldScope = window.twoGatewayCountryFieldScope || function(context) {
+        let node = context && context.nodeType === 1 ? context : null;
+        while (node) {
+            /*
+             * `<body>` is tested BEFORE asking whether it holds a country field,
+             * and it very often does. Answering "the whole body is your scope"
+             * is the document-wide list under another name, reached by accident
+             * — the same thing this walk's `<form>` boundary exists to refuse.
+             * Saying null says it deliberately.
+             */
+            if (node.tagName === 'BODY' || node.tagName === 'HTML') return null;
+            if (window.twoGatewayCountryFieldsWithin(node).length) return node;
+            if (node.tagName === 'FORM') return null;
+            node = node.parentElement;
+        }
+        return null;
+    };
+
+    /**
+     * The country field of the address in the INVOICE role, for a caller that is
+     * not mounted in an address form at all — the payment tile (porting guide
+     * §1(a.3)).
+     *
+     * The tile's company IS the invoice-role company: it reads and writes the
+     * BILLING company record. So the country it must search in is the billing
+     * address's, which is the shipping address only while the buyer has said the
+     * two are the same. Reading `#shipping-country_id` unconditionally, which is
+     * what a document-global shipping-first lookup did, was correct only by
+     * coincidence of that checkbox's default.
+     *
+     * `null` when the field is not on the page — a checkout whose billing form
+     * has not been rendered yet, or one that namespaces its ids differently —
+     * and the document-wide list answers, as before.
+     *
+     * @returns {HTMLElement|null}
+     */
+    window.twoGatewayInvoiceRoleCountryField = window.twoGatewayInvoiceRoleCountryField || function() {
+        return document.getElementById(
+            window.twoGatewayIsBillingAsShipping() ? 'shipping-country_id' : 'billing-country_id'
+        );
     };
 
     /**
@@ -412,6 +530,15 @@ $quoteDetails = json_encode(
      * count, and should: that is the checkout's own address form with its step
      * currently off screen — the buyer's country selector one step away, not an
      * absent one.
+     *
+     * DELIBERATELY NOT SCOPED to the calling form (TWO-25461), unlike the field
+     * read it guards. "Does the buyer get to pick their country" is a property of
+     * the STORE, not of one form — and the direction the two answers differ in is
+     * the dangerous one: a form whose own country field is not a `<select>`, on a
+     * store where other forms have one, would stop suppressing the store default
+     * and go back to silently searching the store's country. Scoping this would
+     * reintroduce the bug the suppression exists to prevent, so the question stays
+     * exactly as document-wide as it was.
      *
      * @returns {boolean}
      */
@@ -454,11 +581,22 @@ $quoteDetails = json_encode(
      * was for: a checkout with no country selector, where the store default is
      * the only answer there is.
      *
+     * THE QUOTE TERMS ARE NOT SCOPED, only the live DOM read above them
+     * (TWO-25461). They are a page-load snapshot of saved addresses, and
+     * re-ordering them per calling form would change what a checkout with no
+     * country field on screen answers — a different question, on a surface no
+     * test here can see, from the one this scoping fixes. A form whose own
+     * country field is present but empty therefore still falls through to the
+     * quote's shipping country: it is not that form's country, but it is not
+     * another LIVE form's either, and it is what every version of this helper
+     * has answered.
+     *
      * @param {Object} quoteData - Quote details object from PHP
+     * @param {HTMLElement} [context] see twoGatewayCountryFields()
      * @returns {string} Country code or empty string
      */
-    window.twoGatewayGetCountryCode = window.twoGatewayGetCountryCode || function(quoteData) {
-        const fields = window.twoGatewayCountryFields();
+    window.twoGatewayGetCountryCode = window.twoGatewayGetCountryCode || function(quoteData, context) {
+        const fields = window.twoGatewayCountryFields(context);
         for (let i = 0; i < fields.length; i++) {
             // `.value` and not `getAttribute('value')`: on a `<select>` the
             // attribute does not exist, and on an input it holds the
@@ -849,6 +987,14 @@ $quoteDetails = json_encode(
             // no-ops on a surface (the tile) that offers no address lookup.
             resolveAddressContainer: function () { return null; },
             addressContainerWarning: '',
+            // Which form's country this surface reads, named by the surface
+            // itself: its own root, a field it resolved by role, whatever
+            // anchors it to one address form (see
+            // twoGatewayCountryFieldScope()). `null` — the default, like
+            // resolveAddressContainer's above — means "I have no address form of
+            // my own", which resolves through the document-wide, shipping-first
+            // list exactly as every caller did before this option existed.
+            resolveCountryContext: function () { return null; },
             // null/'' disables the DOM CustomEvent dispatch entirely — the
             // payment tile has never dispatched one from selectItem() (its
             // own business logic runs off onCompanyCommitted instead), and
@@ -964,6 +1110,21 @@ $quoteDetails = json_encode(
             },
 
             /**
+             * The buyer's country, resolved the ONE way (TWO-25461) — this is
+             * the only place any surface's country comes from, and the only
+             * thing that varies between surfaces is which form is asking.
+             *
+             * @param {Object} quoteData
+             * @returns {string}
+             */
+            resolveCountryCode(quoteData) {
+                return window.twoGatewayGetCountryCode(
+                    quoteData,
+                    cfg.resolveCountryContext.call(this)
+                );
+            },
+
+            /**
              * Run a company search for `term` against the API, populating
              * `items` / `isSearching` / `isSearchUnavailable` / `countryCode`.
              * Cancels any prior in-flight search first (supersession) and is
@@ -982,7 +1143,7 @@ $quoteDetails = json_encode(
                 this.selectedIndex = -1;
                 this.isSearchUnavailable = false;
                 const quoteData = cfg.getQuote.call(this);
-                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
+                this.countryCode = this.resolveCountryCode(quoteData);
 
                 if (this.countryCode) this.countrySelectionShown = false;
 
@@ -1407,7 +1568,21 @@ $quoteDetails = json_encode(
             ? opts.onDropdownClear
             : function () {};
 
+        /*
+         * The control's own default for "which form is asking" is its own root
+         * — `controlRoot()`, not `$root`, for the same reason every other DOM
+         * question here goes through it: on the tile `$root` is the whole
+         * payment form. A surface that knows better still wins, so this is
+         * captured rather than overwritten by the Object.assign below (the tile
+         * resolves the invoice-role address by role, having no address form of
+         * its own to be inside).
+         */
+        const surfaceCountryContext = typeof opts.resolveCountryContext === 'function'
+            ? opts.resolveCountryContext
+            : function () { return this.controlRoot(); };
+
         const engineOptions = Object.assign({}, opts, {
+            resolveCountryContext: surfaceCountryContext,
             // Fixed by this control's own markup, not per surface.
             querySplit: true,
             manualModeSupported: true,
@@ -2297,6 +2472,14 @@ $quoteDetails = json_encode(
             countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
             companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
+            /*
+             * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose
+             * country it wants by ROLE (TWO-25461, porting guide §1(a.3)): the
+             * invoice-role one, which is the company record this tile reads and
+             * writes. Previously it inherited a document-global lookup that took
+             * the shipping country whatever the buyer's billing address said.
+             */
+            resolveCountryContext: function () { return window.twoGatewayInvoiceRoleCountryField(); },
             readSelection: function () { return window.twoGatewayReadBillingCompany(); },
             writeSelection: function (patch) { return window.twoGatewayWriteBillingCompany(patch); },
             /*
@@ -3217,8 +3400,10 @@ $quoteDetails = json_encode(
                     type: 'SHIPPING_FEE'
                 });
 
-                // Get country code using centralized helper
-                this.countryCode = window.twoGatewayGetCountryCode(quoteData);
+                // The same one resolution the search uses, so an order intent can
+                // never be checked against a different country from the one the
+                // company was found in.
+                this.countryCode = this.resolveCountryCode(quoteData);
 
                 const gross_amount = parseFloat(quoteData.grand_total || 0);
                 const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);

@@ -189,6 +189,16 @@ document.addEventListener('alpine:init', () => {
             onLoaderStart: function () { window.dispatchEvent(new Event('magewire:loader:start')); },
             onLoaderDone: function () { window.dispatchEvent(new Event('magewire:loader:done')); },
             resolveAddressContainer: function () { return this.$el ? this.$el.closest('form') : null; },
+            /*
+             * `$el`, not `$root`, for the same reason resolveAddressContainer and
+             * searchStillValid above use it: on THIS surface the `x-data` is
+             * Hyvä's own closed-source markup, so `$root` is an element this
+             * module does not own and cannot bound — if it sits above both
+             * address forms the country scope would span the checkout. `$el` is
+             * the input this picker is bound to, which is inside the address form
+             * the buyer is editing, and it is this file's established anchor.
+             */
+            resolveCountryContext: function () { return this.$el || null; },
             addressContainerWarning: 'Could not find shipping form container',
             // Magewire may destroy and rebuild this instance mid-search
             // (a DOM morph) — the historical `isConnected` guard, moved here.

@@ -278,10 +278,15 @@ function normalizeExpression(raw) {
  * @param {string} relPath for error messages
  * @returns {string}
  */
-function resolveCompanySearchLocationConditionals(source, isPaymentTile, relPath) {
+function resolveCompanySearchLocationConditionals(
+  source,
+  isPaymentTile,
+  relPath,
+) {
   const openTagRe =
     /<\?php\s+if\s*\(\s*(!?)\s*\$isCompanySearchInPaymentTile\b[^)]*\)\s*:\s*\?>/;
-  const tokenRe = /<\?php\s+(if\s*\([\s\S]*?\)\s*:|else\s*:|endif\b[\s\S]*?)\s*\?>/g;
+  const tokenRe =
+    /<\?php\s+(if\s*\([\s\S]*?\)\s*:|else\s*:|endif\b[\s\S]*?)\s*\?>/g;
 
   let openMatch;
   // eslint-disable-next-line no-cond-assign
@@ -640,6 +645,13 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCountryFieldUsable",
   "twoGatewayCountryFields",
   "twoGatewayHasCountrySelector",
+  // The form-scoping half of that resolution (TWO-25461): which form is asking,
+  // what that form's own country fields are, and — for a caller in no address
+  // form at all — which address holds the invoice role. Same idiom, same reset
+  // reason.
+  "twoGatewayCountryFieldsWithin",
+  "twoGatewayCountryFieldScope",
+  "twoGatewayInvoiceRoleCountryField",
 ];
 
 /**
