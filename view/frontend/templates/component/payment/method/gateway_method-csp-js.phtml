@@ -450,13 +450,12 @@ $quoteDetails = json_encode(
      * itself) that has a country field of its own. `null` means the caller has
      * no address form of its own to read, and the document-wide list answers.
      *
-     * The walk stops at a `<form>` that has no country field. No surface reaches
-     * that boundary today — the tile, the one caller outside an address form,
-     * names its field by role rather than asking by root — so it is DEFENSIVE:
-     * it is what stops a future by-root caller in some other form climbing out of
-     * it into whatever container holds the address forms too, which would hand
-     * back a "scope" that is the whole checkout, i.e. the document-wide list by
-     * another name and by accident.
+     * The walk stops at a `<form>` that has no country field the list would
+     * return — which is how the address-book modal exits it while closed. It also
+     * guards a case no surface reaches today: a by-root caller inside some other
+     * country-less form would otherwise climb out of it into whatever container
+     * holds the address forms too, and be handed a "scope" that is the whole
+     * checkout — the document-wide list by another name and by accident.
      *
      * Scope-hood asks for a field the list would actually return, so it inherits
      * that list's filtering EXACTLY — name matches filtered, the two known ids
