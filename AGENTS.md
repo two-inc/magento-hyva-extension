@@ -269,9 +269,8 @@ Two things that bite:
   its own version is how the tile came to autofill.
 - **The buyer's country is resolved LIVE, and the store default is a last
   resort only where there is no country selector at all**
-  (`twoGatewayGetCountryCode()`). The DOM comes first — `#shipping-country_id`,
-  `#billing-country_id`, then any `country_id`-named field, in that priority
-  whatever the document order — then the quote's own address countries, then the
+  (`twoGatewayGetCountryCode()`). The DOM comes first — **that of the form doing
+  the asking** — then the quote's own address countries, then the
   store default. That last term is deliberately suppressed while a country
   `<select>` exists: the quote snapshot is PHP-rendered at page load and carries
   no country on a first visit, so an unconditional store default meant company
@@ -284,6 +283,22 @@ Two things that bite:
   subtree rather than unmounting it in at least some states, so filtering them
   would move already-correct behaviour towards the bug — on a surface no test
   here can see. Filter what you ADD; leave what already worked alone.
+- **ONE resolver, but it resolves RELATIVE TO THE CALLER** (TWO-25461).
+  "Resolve the country one way and reuse it everywhere" means one resolution
+  FUNCTION, never one hardcoded priority order. `twoGatewayGetCountryCode()`
+  takes a context element and scopes the live DOM read to the address form that
+  owns it (`twoGatewayCountryFieldScope()`): the nearest ancestor with a country
+  field of its own, stopping at a `<form>` that has none. The company field
+  renderer is registered globally on `entity-form.field-renderers`, so the SAME
+  component mounts on the delivery form and the invoice form — a document-wide
+  shipping-first lookup gave the invoice form the delivery country, and each
+  form must read only its own live fields. Callers with no address form of
+  their own keep the document-wide, shipping-first list, and the payment tile
+  names the address it means BY ROLE rather than inheriting that:
+  `twoGatewayInvoiceRoleCountryField()` is the billing form's field, or the
+  shipping form's while `#billing-as-shipping` is ticked, because the tile's
+  company is the invoice-role company. Only the LIVE read is scoped; the quote
+  terms below it are a page-load snapshot and are deliberately left alone.
 - **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
   A company with no number in its home registry gets an internal placeholder
   identifier prefixed `TWO:`. It must reach the API and must never reach the

@@ -1,0 +1,379 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25461. WHICH FORM'S COUNTRY a company search runs in.
+ *
+ * There is one country resolver and every surface reuses it — that part was
+ * always right. What was wrong is that it answered a DOCUMENT-WIDE question with
+ * a hardcoded shipping-before-billing priority, so a control mounted in the
+ * invoice address form read the DELIVERY address's country. The company-search
+ * field renderer is registered globally on `entity-form.field-renderers`, so it
+ * mounts on whichever address forms the checkout renders and both forms' controls
+ * are the same component: nothing in the resolver knew which one was asking.
+ *
+ * The rule (sole-trader porting guide §1): each address form's chip visibility
+ * and company/country read LIVE from that same form's own current fields, never
+ * from a different address; and the payment tile, which is in no address form at
+ * all, reads the address holding the INVOICE role (§1(a.3)) — the billing one,
+ * or the shipping one while the buyer says they are the same.
+ *
+ * Every search here is driven to the WIRE and asserted on the `country` query
+ * parameter, because that is the only thing that proves which country the buyer
+ * was actually searched in. Asserting `component.countryCode` alone would pass
+ * on a resolver that computed the right value and searched with another.
+ */
+
+"use strict";
+
+const H = require("./hyva-harness");
+
+const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
+const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+
+describe("form-scoped country resolution", () => {
+  let env;
+  let fetchStub;
+
+  /**
+   * One address form: its own country select and its own company-search control.
+   *
+   * `class="two-company-search"` on the control root and `.two-company-query`
+   * inside it are load-bearing for the same reasons as in the other control
+   * suites — `controlRoot()` finds itself by that class, and the panel's query
+   * box is what a search reads its term from.
+   *
+   * The `<form>` element is load-bearing here too: it is the boundary the scope
+   * walk stops at, so it is what stops a control climbing out of its own address
+   * form and into the neighbouring one.
+   *
+   * @param {string} role "shipping" or "billing"
+   * @param {string} country the value its select is on, "" for unchosen
+   * @returns {string}
+   */
+  function addressForm(role, country) {
+    return [
+      '<form id="' + role + '-form">',
+      '  <select id="' + role + '-country_id" name="' + role + '[country_id]">',
+      '    <option value=""></option>',
+      '    <option value="' +
+        country +
+        '"' +
+        (country ? " selected" : "") +
+        ">x</option>",
+      "  </select>",
+      '  <div id="' + role + '-company-root" class="two-company-search">',
+      '    <input type="text" id="' + role + '-company-field" value="" />',
+      '    <input type="text" class="two-company-query"',
+      '           id="' + role + '-company-query" value="" />',
+      "  </div>",
+      "</form>",
+    ].join("\n");
+  }
+
+  /**
+   * The payment tile: a form of its own, holding the one control, with NO
+   * country field anywhere inside it — which is the whole point. It is several
+   * steps away from any address, so it has no form-local country to read and
+   * has to name the address it means by role.
+   *
+   * @param {boolean} [billingAsShipping] renders the checkbox in that state;
+   *   omit to render no checkbox at all
+   * @returns {string}
+   */
+  function paymentTile(billingAsShipping) {
+    return [
+      '<form id="payment-form">',
+      billingAsShipping === undefined
+        ? ""
+        : '  <input type="checkbox" id="billing-as-shipping"' +
+          (billingAsShipping ? " checked" : "") +
+          " />",
+      '  <div id="tile-root">',
+      '    <div class="two-company-search">',
+      '      <input type="text" id="company_name" value="" />',
+      '      <input type="text" class="two-company-query"',
+      '             id="tile-company-query" value="" />',
+      "    </div>",
+      '    <input type="text" id="company_id" value="" disabled />',
+      "  </div>",
+      "</form>",
+    ].join("\n");
+  }
+
+  /**
+   * @param {string} html
+   * @returns {void}
+   */
+  function render(html) {
+    document.body.innerHTML = html;
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
+    env.fireAlpineInit();
+  }
+
+  /**
+   * Mount the address step's control inside one address form.
+   *
+   * @param {string} role
+   * @returns {Object}
+   */
+  function mountAddressControl(role) {
+    const component = H.mountComponent(
+      env.alpineComponents[ADDRESS_COMPONENT],
+      {
+        el: document.getElementById(role + "-company-field"),
+        root: document.getElementById(role + "-company-root"),
+      },
+    );
+    component.init();
+    return component;
+  }
+
+  /**
+   * Mount the payment tile's control.
+   *
+   * @returns {Object}
+   */
+  function mountTile() {
+    const component = H.mountComponent(env.alpineComponents[TILE_COMPONENT], {
+      el: document.getElementById("company_name"),
+      root: document.getElementById("tile-root"),
+    });
+    component.$watch = function () {};
+    component.initialize(JSON.parse(H.QUOTE_JSON));
+    return component;
+  }
+
+  /**
+   * Drive a search from one mounted control to the wire and report the country
+   * it went out with.
+   *
+   * @param {Object} component
+   * @param {string} queryFieldId
+   * @returns {Promise<string|null>} the `country` parameter, or null if nothing
+   *   reached the wire at all
+   */
+  async function searchedCountry(component, queryFieldId) {
+    document.getElementById(queryFieldId).value = "Exa";
+    component.getItems();
+    await H.flushPromises();
+
+    const call = fetchStub.calls[fetchStub.calls.length - 1];
+    if (!call) return null;
+    const country = new URL(call.url).searchParams.get("country");
+    call.respond({ items: [] });
+    await H.flushPromises();
+    return country;
+  }
+
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    jest.useRealTimers();
+  });
+
+  describe("two address forms in different countries, both on screen", () => {
+    // The reported bug, and the reason every assertion below is on a pair
+    // rather than on one form: a resolver hardcoded to shipping is right about
+    // one of these and wrong about the other, and only comparing the two can
+    // tell that apart from a resolver that works.
+    beforeEach(() => {
+      render(addressForm("shipping", "NO") + addressForm("billing", "GB"));
+    });
+
+    test.each([
+      ["shipping", "NO", "the delivery form reads its own country"],
+      ["billing", "GB", "the invoice form reads its own country"],
+    ])("%s control searches in %s — %s", async (role, expected) => {
+      const component = mountAddressControl(role);
+
+      expect(await searchedCountry(component, role + "-company-query")).toBe(
+        expected,
+      );
+      expect(component.countryCode).toBe(expected);
+    });
+
+    test("a caller with no form of its own still gets the document-wide, shipping-first answer", () => {
+      // Unchanged behaviour, asserted so the scoping cannot quietly become
+      // mandatory: the tile's fallback, and every existing caller in the other
+      // suites, depend on this path.
+      expect(window.twoGatewayGetCountryCode({})).toBe("NO");
+    });
+
+    test("an empty local field falls through to the QUOTE, never to the other live form", () => {
+      // The design rule is about live reads: a form whose own country is
+      // unchosen must not be answered with the country the buyer entered in a
+      // DIFFERENT address. The quote snapshot is the documented next term and
+      // stays that way (see twoGatewayGetCountryCode) — what must not happen is
+      // "GB".
+      document.getElementById("shipping-country_id").value = "";
+
+      expect(
+        window.twoGatewayGetCountryCode(
+          { shipping_country_id: "SE" },
+          document.getElementById("shipping-company-root"),
+        ),
+      ).toBe("SE");
+    });
+
+    test("the store default stays suppressed per form, not per document", () => {
+      // A form whose own select is unchosen must answer '' — "Please select a
+      // country first" — rather than the store's own country, exactly as the
+      // document-wide version did. The neighbouring form having a country
+      // chosen must not change that.
+      document.getElementById("shipping-country_id").value = "";
+
+      expect(
+        window.twoGatewayGetCountryCode(
+          { default_country_id: "US" },
+          document.getElementById("shipping-company-root"),
+        ),
+      ).toBe("");
+    });
+  });
+
+  describe("one address form on screen", () => {
+    // A buyer who has not opened a second address is the common case, and the
+    // scope walk must not need the other form to exist. Before the fix the
+    // billing-only case was the visible bug: nothing named `shipping-country_id`
+    // in the document, so a shipping-first lookup fell past every live field.
+    test.each([
+      ["shipping", "NO"],
+      ["billing", "GB"],
+    ])("the %s form alone resolves %s", async (role, expected) => {
+      render(addressForm(role, expected));
+      const component = mountAddressControl(role);
+
+      expect(await searchedCountry(component, role + "-company-query")).toBe(
+        expected,
+      );
+    });
+  });
+
+  describe("the payment tile reads the INVOICE-role address", () => {
+    test.each([
+      [
+        true,
+        "NO",
+        "billing-as-shipping ticked: the invoice address IS shipping",
+      ],
+      [false, "GB", "unticked: the invoice address is the billing form"],
+    ])("checkbox %s → %s (%s)", async (checked, expected) => {
+      render(
+        addressForm("shipping", "NO") +
+          addressForm("billing", "GB") +
+          paymentTile(checked),
+      );
+      const component = mountTile();
+
+      expect(await searchedCountry(component, "tile-company-query")).toBe(
+        expected,
+      );
+    });
+
+    test("no checkbox at all is billing-as-shipping, so the shipping country answers", async () => {
+      // twoGatewayIsBillingAsShipping() defaults TRUE when the checkbox is
+      // absent — one address, so the shipping address holds every role.
+      render(
+        addressForm("shipping", "NO") +
+          addressForm("billing", "GB") +
+          paymentTile(),
+      );
+      const component = mountTile();
+
+      expect(await searchedCountry(component, "tile-company-query")).toBe("NO");
+    });
+
+    test("with no billing form rendered it falls back rather than refusing to search", async () => {
+      // Unticked, but the billing form is not on the page — a checkout that has
+      // not rendered it yet, or one that namespaces its ids differently. The
+      // document-wide list answers, which is what this surface always did.
+      render(addressForm("shipping", "NO") + paymentTile(false));
+      const component = mountTile();
+
+      expect(await searchedCountry(component, "tile-company-query")).toBe("NO");
+    });
+
+    test("the order-intent check is sent with the same country the search used", () => {
+      // One resolution, one country. A verdict reached in a different country
+      // from the search that found the company is a wrong answer that looks
+      // like a right one.
+      render(
+        addressForm("shipping", "NO") +
+          addressForm("billing", "GB") +
+          paymentTile(false),
+      );
+      const component = mountTile();
+
+      const body = component.buildOrderIntentRequestBody(
+        JSON.parse(H.QUOTE_JSON),
+      );
+
+      expect(body.buyer.company.country_prefix).toBe("GB");
+    });
+  });
+
+  describe("the scope walk itself", () => {
+    beforeEach(() => {
+      render(addressForm("shipping", "NO") + paymentTile(false));
+    });
+
+    test("stops at a form with no country field of its own", () => {
+      // The tile's control. Climbing past its `<form>` would reach the container
+      // holding the address forms too, and hand back a "scope" that is the whole
+      // checkout — document-global by another name, and accidentally rather than
+      // deliberately so.
+      expect(
+        window.twoGatewayCountryFieldScope(
+          document.querySelector("#tile-root .two-company-search"),
+        ),
+      ).toBeNull();
+    });
+
+    test("does not treat a form whose only country field is hidden as a scope", () => {
+      // Such a caller falls through to the document-wide list, which is what it
+      // did before scoping existed. The address-book modal composes the engine
+      // inside its own form, and that form's field is a name match filtered out
+      // while the modal is closed.
+      document.body.innerHTML +=
+        '<form id="modal-form">' +
+        '  <select name="modal[country_id]" style="display: none">' +
+        '    <option value="DE" selected>x</option>' +
+        "  </select>" +
+        '  <div id="modal-company-root" class="two-company-search"></div>' +
+        "</form>";
+
+      expect(
+        window.twoGatewayCountryFieldScope(
+          document.getElementById("modal-company-root"),
+        ),
+      ).toBeNull();
+      expect(
+        window.twoGatewayGetCountryCode(
+          {},
+          document.getElementById("modal-company-root"),
+        ),
+      ).toBe("NO");
+    });
+
+    test("a country field IS its own scope, so a caller may name one by role", () => {
+      // How the tile passes the invoice-role field it resolved itself.
+      const field = document.getElementById("shipping-country_id");
+
+      expect(window.twoGatewayCountryFieldScope(field)).toBe(field);
+      expect(window.twoGatewayCountryFieldsWithin(field)).toEqual([field]);
+    });
+
+    test.each([
+      [undefined, "no context"],
+      [null, "null"],
+      [{}, "a non-element"],
+    ])("%s resolves no scope (%s)", (context) => {
+      expect(window.twoGatewayCountryFieldScope(context)).toBeNull();
+    });
+  });
+});
