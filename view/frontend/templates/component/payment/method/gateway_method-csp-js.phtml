@@ -347,13 +347,6 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * The selector matching a country field found BY NAME, in either of the two
-     * shapes an address form namespaces it under.
-     */
-    window.TWO_GATEWAY_COUNTRY_NAME_SELECTOR = window.TWO_GATEWAY_COUNTRY_NAME_SELECTOR
-        || '[name="country_id"], [name$="[country_id]"]';
-
-    /**
      * Every country selector the buyer could have chosen a country in, in
      * priority order: the two ids Hyvä's own address forms use, then any
      * `country_id` field regardless of the id shape.
@@ -420,6 +413,14 @@ $quoteDetails = json_encode(
      * @returns {Array<HTMLElement>}
      */
     window.twoGatewayCountryFieldsWithin = window.twoGatewayCountryFieldsWithin || function(scope) {
+        // A country field found BY NAME, in either shape an address form
+        // namespaces it under. Local to this function rather than a global or a
+        // file-scope const: nothing outside consumes it, and this inline block is
+        // re-evaluated (by a second payment method's render, and by every Jest
+        // suite that loads the template twice) — where a top-level `const` throws
+        // on redeclaration, which is why every published name here is
+        // `window.X = window.X || …`.
+        const NAME_SELECTOR = '[name="country_id"], [name$="[country_id]"]';
         const fields = [];
         const push = (el, filtered) => {
             if (!el || fields.indexOf(el) !== -1) return;
@@ -430,14 +431,14 @@ $quoteDetails = json_encode(
         if (scope) {
             if (scope.id === 'shipping-country_id' || scope.id === 'billing-country_id') {
                 push(scope, false);
-            } else if (scope.matches && scope.matches(window.TWO_GATEWAY_COUNTRY_NAME_SELECTOR)) {
+            } else if (scope.matches && scope.matches(NAME_SELECTOR)) {
                 push(scope, true);
             }
         }
         push(root.querySelector('#shipping-country_id'), false);
         push(root.querySelector('#billing-country_id'), false);
         Array.prototype.forEach.call(
-            root.querySelectorAll(window.TWO_GATEWAY_COUNTRY_NAME_SELECTOR),
+            root.querySelectorAll(NAME_SELECTOR),
             (el) => push(el, true)
         );
         return fields;
@@ -448,12 +449,13 @@ $quoteDetails = json_encode(
      * itself) that has a country field of its own. `null` means the caller has
      * no address form of its own to read, and the document-wide list answers.
      *
-     * The walk stops at a `<form>` that has no country field, because that is
-     * the payment tile: its control lives in the payment form, several steps
-     * away from any address. Without that boundary the walk would climb past it
-     * to whatever container holds the address forms too and hand back a "scope"
-     * that is the whole checkout — document-global by another name, and
-     * ACCIDENTALLY rather than deliberately so.
+     * The walk stops at a `<form>` that has no country field. No surface reaches
+     * that boundary today — the tile, the one caller outside an address form,
+     * names its field by role rather than asking by root — so it is DEFENSIVE:
+     * it is what stops a future by-root caller in some other form climbing out of
+     * it into whatever container holds the address forms too, which would hand
+     * back a "scope" that is the whole checkout, i.e. the document-wide list by
+     * another name and by accident.
      *
      * Scope-hood asks for a field the list would actually return, so it inherits
      * that list's filtering EXACTLY — name matches filtered, the two known ids
@@ -985,12 +987,14 @@ $quoteDetails = json_encode(
             // no-ops on a surface (the tile) that offers no address lookup.
             resolveAddressContainer: function () { return null; },
             addressContainerWarning: '',
-            // Which form's country this surface reads. The default is its own
-            // Alpine root, which for a control mounted IN an address form is
-            // inside that form — see twoGatewayCountryFieldScope(). A surface
-            // that is not in an address form at all overrides it: the payment
-            // tile names the invoice-role field by role instead.
-            resolveCountryContext: function () { return this.$root || this.$el || null; },
+            // Which form's country this surface reads, named by the surface
+            // itself: its own root, a field it resolved by role, whatever
+            // anchors it to one address form (see
+            // twoGatewayCountryFieldScope()). `null` — the default, like
+            // resolveAddressContainer's above — means "I have no address form of
+            // my own", which resolves through the document-wide, shipping-first
+            // list exactly as every caller did before this option existed.
+            resolveCountryContext: function () { return null; },
             // null/'' disables the DOM CustomEvent dispatch entirely — the
             // payment tile has never dispatched one from selectItem() (its
             // own business logic runs off onCompanyCommitted instead), and

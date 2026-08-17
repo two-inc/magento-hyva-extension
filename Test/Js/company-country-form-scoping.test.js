@@ -306,19 +306,58 @@ describe("form-scoped country resolution", () => {
     });
   });
 
+  describe("the address-book picker, whose x-data is not ours", () => {
+    // shipping_company.phtml composes the ENGINE directly under Hyvä Checkout's
+    // own closed-source modal markup, so its `$root` is an element this module
+    // neither owns nor can bound — if it sits above both address forms, a
+    // root-anchored scope would span the checkout. It anchors on `$el`, the input
+    // it is bound to, which is inside the form the buyer is editing. The mount
+    // below gives it exactly the bad `$root` (the wrapper over both forms) to
+    // prove the anchor, not the root, is what decides.
+    test("scopes to the form holding its own input, not to its foreign root", async () => {
+      render(
+        '<div id="checkout-wrapper">' +
+          addressForm("shipping", "NO") +
+          addressForm("billing", "GB") +
+          "</div>",
+      );
+      H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE);
+      env.fireAlpineInit();
+      // The visible input this picker is bound to, inside the INVOICE form —
+      // whichever form Hyvä has the buyer editing is the one it must read, and
+      // billing is the one a shipping-first resolver gets wrong.
+      const input = document.getElementById("billing-company-field");
+      const component = H.mountComponent(env.alpineComponents.searchInput, {
+        el: input,
+        root: document.getElementById("checkout-wrapper"),
+      });
+
+      // This surface has no query box of its own (`querySplit` off): the term is
+      // read from the input it is bound to, which is the same element that
+      // anchors the country scope.
+      input.value = "Exa";
+      component.getItems();
+      await H.flushPromises();
+
+      const call = fetchStub.calls[fetchStub.calls.length - 1];
+      expect(new URL(call.url).searchParams.get("country")).toBe("GB");
+      call.respond({ items: [] });
+      await H.flushPromises();
+    });
+  });
+
   describe("the scope walk itself", () => {
     beforeEach(() => {
       render(addressForm("shipping", "NO") + paymentTile(false));
     });
 
     test("stops at a form with no country field of its own", () => {
-      // The tile's control, WITH A WRAPPER above it that holds the address form
-      // too — the shape a real checkout has, and the only shape in which this
-      // boundary does any work. Climbing past the payment `<form>` reaches that
-      // wrapper and hands back a "scope" that is the whole checkout: document-wide
-      // by another name, and accidentally rather than deliberately so. A fixture
-      // whose forms are direct `<body>` children cannot tell the two apart,
-      // because the body guard catches it either way.
+      // DEFENSIVE, and pinned as such: no surface asks by root from inside a
+      // country-less form today — the tile names its field by role instead — so
+      // this is what stops a future by-root caller climbing out of its own form.
+      // The wrapper is what makes the boundary do any work: without an ancestor
+      // holding the address form too there is nothing above to climb to, and the
+      // body guard would catch it either way.
       document.body.innerHTML =
         '<div id="checkout-wrapper">' + document.body.innerHTML + "</div>";
 

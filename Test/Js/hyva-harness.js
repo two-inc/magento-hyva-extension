@@ -649,7 +649,6 @@ const SHARED_HELPER_GLOBALS = [
   // what that form's own country fields are, and — for a caller in no address
   // form at all — which address holds the invoice role. Same idiom, same reset
   // reason.
-  "TWO_GATEWAY_COUNTRY_NAME_SELECTOR",
   "twoGatewayCountryFieldsWithin",
   "twoGatewayCountryFieldScope",
   "twoGatewayInvoiceRoleCountryField",
