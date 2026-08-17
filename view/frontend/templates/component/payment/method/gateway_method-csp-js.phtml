@@ -281,8 +281,9 @@ $quoteDetails = json_encode(
     /**
      * Is the buyer's billing address the shipping address?
      *
-     * Hoisted here from company-name-payment.phtml (review round 3) so the two
-     * surfaces that now depend on it cannot answer it differently. Defaults to
+     * Hoisted here from company-name-payment.phtml (review round 3) so the
+     * surfaces that depend on it cannot answer it differently — three of them
+     * since TWO-25461, which added twoGatewayInvoiceRoleCountryField(). Defaults to
      * TRUE when the checkbox is absent, which is the pre-existing behaviour and
      * the safe direction: on a checkout with no such toggle there is only one
      * address, so the shipping company IS the billing company.

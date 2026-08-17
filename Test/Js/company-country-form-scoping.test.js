@@ -306,6 +306,36 @@ describe("form-scoped country resolution", () => {
     });
   });
 
+  describe("a surface that names no anchor", () => {
+    test("resolves through the document-wide list, i.e. as it did before scoping", async () => {
+      // The engine's `resolveCountryContext` default. Every surface in this repo
+      // names its own anchor, so nothing here reaches it — it is the contract for
+      // an out-of-repo composer, and the direction it degrades in is what makes it
+      // safe: pre-scoping behaviour, never "no country at all". Composed bare
+      // rather than through a surface, because a surface would override it.
+      render(addressForm("shipping", "NO") + addressForm("billing", "GB"));
+      const component = H.mountComponent(
+        () =>
+          window.twoGatewayCompanySearchEngine({
+            checkoutApiUrl: "https://checkout-api.test.invalid",
+            getQuote: function () {
+              return {};
+            },
+          }),
+        { el: document.getElementById("billing-company-field") },
+      );
+
+      // Not awaited before the assertion: the country is resolved synchronously
+      // at the top of the search, and the request is settled afterwards only so
+      // the suite leaves nothing in flight.
+      const pending = component.runCompanySearch("Exa");
+      expect(component.countryCode).toBe("NO");
+
+      fetchStub.calls[fetchStub.calls.length - 1].respond({ items: [] });
+      await pending;
+    });
+  });
+
   describe("the address-book picker, whose x-data is not ours", () => {
     // shipping_company.phtml composes the ENGINE directly under Hyvä Checkout's
     // own closed-source modal markup, so its `$root` is an element this module

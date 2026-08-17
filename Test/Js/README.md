@@ -148,9 +148,9 @@ live field; one form on screen without the other; the payment tile taking the
 **invoice-role** address, which flips with `#billing-as-shipping` and defaults to shipping
 when that checkbox is absent, plus its fallback when no billing form is rendered; the
 order-intent body carrying the same country the search used; an unchosen local field
-falling through to the QUOTE rather than to the other live form; and the scope walk's own
-boundaries — a `<form>` with no country field of its own, a form whose only country field
-is hidden, and a field naming itself as its own scope.
+falling through to the QUOTE rather than to the other live form; the address-book picker
+anchoring on its own input rather than on the foreign `$root` Hyvä gives it; and the scope
+walk's boundaries.
 
 `shipping-company-loader.test.js` — the `searchInput` picker, and above all its
 `magewire:loader` bookkeeping. The loader is a full-screen overlay driven by a **boolean,
