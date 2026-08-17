@@ -549,6 +549,158 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * Every field the default→non-default mirror can write, for ONE address role.
+     *
+     * TWO-25461 §2.5. The set is not "the fields we happen to sync today": it is
+     * every field a mirrored write could land in, because the pin below asks
+     * whether the BUYER has edited this address and a buyer typing into address
+     * line 2 says that exactly as loudly as one retyping the company. The
+     * previous model tracked company name/id alone, so an address the buyer had
+     * genuinely made their own — different region, different second line — went
+     * on being overwritten from the default one.
+     *
+     * Resolved by Hyvä's own `<role>-<field>` id convention, the same one
+     * `twoGatewayCountryFields()` reads `shipping-country_id` /
+     * `billing-country_id` by. `region` is two candidate fields, not one: an
+     * address format with a known region list renders a `region_id` select and
+     * one without renders a free-text `region`, and which of the two a country
+     * gets is the country's business.
+     *
+     * A key whose field is absent is OMITTED, not recorded empty — "this form
+     * has no such field" and "the buyer left it blank" are different facts and
+     * the pin treats them differently.
+     *
+     * @param {string} role 'shipping' or 'billing'
+     * @returns {Object} tracked key → current trimmed value
+     */
+    window.twoGatewayAddressMirrorFields = window.twoGatewayAddressMirrorFields || function(role) {
+        const snapshot = {};
+        const pick = function(key, ids) {
+            for (let i = 0; i < ids.length; i++) {
+                const el = document.getElementById(role + '-' + ids[i]);
+                if (!el) continue;
+                /*
+                 * A field the buyer could not have reached cannot be evidence
+                 * that they edited it, and this is the question
+                 * twoGatewayCountryFieldUsable() already answers — disabled
+                 * anywhere up the tree, or hidden by any of the three idioms
+                 * this checkout uses. Reused rather than reimplemented.
+                 *
+                 * This is NOT the rule that says the two known country ids are
+                 * read unfiltered. That rule is about the country RESOLVER's
+                 * priority list, where filtering a hidden step's form would
+                 * lose a country the buyer really did choose. Here the filter
+                 * is the load-bearing part: it is what makes collapsing to one
+                 * address resume the sync (§2.4), because a billing form the
+                 * checkout has hidden stops holding the buyer's edits against
+                 * them.
+                 */
+                if (!window.twoGatewayCountryFieldUsable(el)) continue;
+                snapshot[key] = String(el.value || '').trim();
+                return;
+            }
+        };
+        pick('country', ['country_id']);
+        pick('company_name', ['company']);
+        pick('company_id', ['company_id']);
+        // Line 2 only. Line 1 is not a mirrored field: nothing propagates a
+        // street address between the two forms, so it cannot pin.
+        pick('street2', ['street1']);
+        pick('region', ['region_id', 'region']);
+        return snapshot;
+    };
+
+    /**
+     * Has the buyer made the BILLING address their own — i.e. is it pinned?
+     *
+     * TWO-25461 §2.3/§2.4. This replaces a record-existence test (was: "a
+     * billing company record exists at all"), and the difference is the whole
+     * point. Record existence latched: the first billing write ever made
+     * stopped the sync for the rest of the checkout, with nothing that could
+     * ever restart it. This is a pure CONTENT MATCH, recomputed at every read,
+     * so it un-pins by itself the moment the two addresses agree again —
+     * which is what makes "collapse to one address and reopen" resume the sync
+     * with no resume control to press (§2.4 rejected building one).
+     *
+     * Two rules that look like details and are not:
+     *
+     * WHOLE-ADDRESS GRANULARITY. One field differing pins the WHOLE address,
+     * including the fields the buyer never touched. Explicit ruling, not an
+     * approximation of a per-field pin: a buyer who has corrected the region on
+     * their billing address is telling us this address is theirs, and
+     * overwriting its company from the shipping one because *that* field still
+     * matched is the bug, not the safe half of it.
+     *
+     * AN EMPTY TARGET FIELD IS NOT A MISMATCH. It is a field waiting to be
+     * filled, and the mirror filling it is the propagation §2.2 asks for.
+     * Counting blank-vs-populated as a difference would pin every freshly
+     * opened billing form on the spot and mean nothing ever propagated at all.
+     * The cost is that a field the buyer deliberately CLEARED reads as
+     * unedited; that is the safe direction, and the direction the whole-address
+     * rule mostly covers anyway, since clearing one field of an address they
+     * are working in rarely leaves the other four matching.
+     *
+     * Trimmed and case-insensitive, per §2.3 — the buyer retyping their own
+     * company with different capitalisation has not made a different address.
+     *
+     * @returns {boolean} true when the billing address must not be overwritten
+     */
+    window.twoGatewayIsBillingAddressPinned = window.twoGatewayIsBillingAddressPinned || function() {
+        const source = window.twoGatewayAddressMirrorFields('shipping');
+        const target = window.twoGatewayAddressMirrorFields('billing');
+
+        /*
+         * The shipping ADDRESS FORM does not always carry the company pair:
+         * with company search mounted in the payment tile it has no company
+         * field at all. The mirror still has a company to write in that
+         * configuration — it writes the stored shipping selection — so the
+         * comparison has to see the same value the mirror would use, or a
+         * billing company the buyer typed would be compared against nothing
+         * and read as unedited.
+         *
+         * Filled only where the form left a gap. A rendered field is the
+         * fresher of the two by definition: it is what the buyer is looking at.
+         */
+        const fillCompanyGaps = function(snapshot, record) {
+            ['company_name', 'company_id'].forEach(function(key) {
+                if (Object.prototype.hasOwnProperty.call(snapshot, key)) return;
+                if (!record[key]) return;
+                snapshot[key] = String(record[key]).trim();
+            });
+        };
+        fillCompanyGaps(source, window.twoGatewayReadCompanySelection());
+        /*
+         * And the same substitution on the TARGET side, for the same reason and
+         * with more at stake. A company the buyer picked ON THE PAYMENT TILE is
+         * an edit of the billing role — the strongest one there is, since they
+         * named it while looking at the billing step — but it lands in the
+         * billing RECORD, not in an address-form field, and in the tile
+         * configuration there is no billing company field for it to land in.
+         * Reading only the form would make that pick invisible to the pin, and
+         * the shipping company would overwrite it on the next Magewire
+         * re-render. That precise bug is what the two-key split was introduced
+         * to fix; the pin has to keep it fixed.
+         *
+         * It is not a latch: the record is REMOVED when the buyer collapses
+         * back to one address (see the billing-as-shipping handler in
+         * company-name-payment.phtml), which is what leaves the pin nothing to
+         * hold and resumes the sync.
+         */
+        fillCompanyGaps(target, window.twoGatewayReadBillingCompany());
+        const normalise = function(value) {
+            return String(value === undefined ? '' : value).trim().toLowerCase();
+        };
+        return Object.keys(target).some(function(key) {
+            const current = normalise(target[key]);
+            // Nothing there to protect, and nothing to compare against: in
+            // either case the mirror may write.
+            if (!current) return false;
+            if (!Object.prototype.hasOwnProperty.call(source, key)) return false;
+            return current !== normalise(source[key]);
+        });
+    };
+
+    /**
      * Global helper to get country code from multiple sources with fallbacks.
      *
      * Fallback order:
@@ -1447,18 +1599,104 @@ $quoteDetails = json_encode(
                     this.setAddressData(data.addresses[0], container);
                 }
             },
+            /**
+             * Write an address from an external payload into an address form.
+             *
+             * TWO-25461 §2.6. The routing rules below are the same for every
+             * payload this can receive — a registered-company search result, a
+             * sole-trader autofill — deliberately, because special-casing the
+             * source is how the two drift apart.
+             *
+             *   building/apartment present → LINE 1, and `street` → LINE 2
+             *   building/apartment absent  → `street` → LINE 1, line 2 untouched
+             *
+             * Which reads backwards until you picture the address it describes:
+             * where a payload names a building, the building IS the first line a
+             * postal service wants and the street is its qualifier. It used to
+             * put `street` in line 1 unconditionally and never write line 2 at
+             * all, so a building name was simply dropped.
+             *
+             * NO DEDUP between the two lines even when the text is identical —
+             * some real addresses legitimately repeat, and a form that silently
+             * swallows the second line of one is wrong in a way the buyer cannot
+             * see or correct.
+             *
+             * `region` goes to a state/county field where the address format has
+             * one — a `region_id` select is matched by option TEXT, which is
+             * lossy and known to be, hence best-effort — and otherwise is
+             * appended to `city` after a comma, because dropping it loses part
+             * of the address entirely.
+             */
             setAddressData(address, container) {
                 if (!container) {
                     if (cfg.addressContainerWarning) console.warn(cfg.addressContainerWarning);
                     return;
                 }
+                const text = (value) => String(value === undefined || value === null ? '' : value).trim();
+
                 const cityInput = container.querySelector('input[name="city"]');
                 const postcodeInput = container.querySelector('input[name="postcode"]');
-                const streetInput = container.querySelector('input[name="street[0]"]');
-                if (cityInput) cityInput.value = address.city || "";
-                if (postcodeInput) postcodeInput.value = address.postal_code || "";
-                if (streetInput) streetInput.value = address.street_address || "";
-                [cityInput, postcodeInput, streetInput].forEach((input) => {
+                const line1Input = container.querySelector('input[name="street[0]"]');
+                const line2Input = container.querySelector('input[name="street[1]"]');
+
+                const street = text(address.street_address);
+                // Either name, joined when the payload carries both: they are two
+                // halves of one premises identifier, not alternatives to choose
+                // between.
+                const premises = [text(address.building), text(address.apartment)]
+                    .filter((part) => part !== '')
+                    .join(' ');
+
+                const line1 = premises || street;
+                // Only ever populated by the premises branch. `''` on the other
+                // branch is not a write of empty — see the guard below.
+                const line2 = premises ? street : '';
+
+                if (line1Input) line1Input.value = line1;
+                /*
+                 * Line 2 is left ALONE, not blanked, when there is nothing to put
+                 * in it. Blanking would make an autofill that happens to carry no
+                 * building silently delete an apartment number the buyer typed
+                 * themselves, which is a worse failure than not filling a field.
+                 */
+                if (line2Input && line2) line2Input.value = line2;
+
+                const region = text(address.region);
+                let city = text(address.city);
+                // The comma is a SEPARATOR, so it only exists where there are two
+                // things to separate. An address whose payload names a region and
+                // no city would otherwise arrive with a leading comma.
+                const cityWithRegion = () => (city ? city + ', ' + region : region);
+                if (region) {
+                    const regionSelect = container.querySelector('select[name="region_id"]');
+                    const regionInput = container.querySelector('input[name="region"]');
+                    if (regionSelect) {
+                        const match = Array.prototype.find.call(
+                            regionSelect.options || [],
+                            (option) => text(option.textContent).toLowerCase() === region.toLowerCase()
+                        );
+                        // A select with no matching option gets nothing: writing
+                        // an unmatched value onto a `region_id` select stores an
+                        // id the store does not have. The comma fallback carries
+                        // the region instead, so it is not lost either way.
+                        if (match) {
+                            regionSelect.value = match.value;
+                            regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                        } else {
+                            city = cityWithRegion();
+                        }
+                    } else if (regionInput) {
+                        regionInput.value = region;
+                        regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                    } else {
+                        city = cityWithRegion();
+                    }
+                }
+
+                if (cityInput) cityInput.value = city;
+                if (postcodeInput) postcodeInput.value = text(address.postal_code);
+
+                [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
                 });
             },
@@ -2735,9 +2973,9 @@ $quoteDetails = json_encode(
 
                 /*
                  * Restore from the BILLING record first (TWO-25326 review
-                 * round 3), falling back to the shipping one only when there is
-                 * no billing record AND the buyer has billing set to the
-                 * shipping address.
+                 * round 3), falling back to the shipping one only when the
+                 * billing address is NOT pinned AND the buyer has billing set to
+                 * the shipping address.
                  *
                  * Both terms are load-bearing. Reading billing first is what
                  * stops a company the buyer named here being overwritten by the
@@ -2748,16 +2986,37 @@ $quoteDetails = json_encode(
                  * the split, is precisely why unticking the box left the WRONG
                  * company showing as a read-only captured label.
                  *
-                 * Absence, not emptiness, selects the fallback: the clear is a
-                 * removal (see twoGatewayClearBillingCompany), so an empty
-                 * billing record cannot exist and "no keys" unambiguously means
-                 * the buyer has not named a billing company yet.
+                 * WHICH QUESTION SELECTS THE FALLBACK CHANGED (TWO-25461 §2.3).
+                 * It used to be whether a billing RECORD EXISTED, which latched:
+                 * the first write to that key — including the `{quote_id}` stamp
+                 * and the blanked pair forgetStaleCompanyId() leaves — stopped
+                 * the sync for the rest of the checkout with nothing that could
+                 * restart it. It is now whether the billing address's own fields
+                 * still MATCH what the mirror would write
+                 * (twoGatewayIsBillingAddressPinned), recomputed here on every
+                 * re-render rather than latched once. A buyer who has edited
+                 * that address keeps it; one whose two addresses agree again —
+                 * having collapsed to one and reopened it — is synced again,
+                 * with no resume control to find (§2.4).
+                 *
+                 * The record is still what gets RESTORED once the address is
+                 * pinned. Only the decision moved.
                  */
                 const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
-                const hasBillingRecord = Object.keys(billingCompanySelectionData).length > 0;
+                const storedShippingSelection = window.twoGatewayReadCompanySelection();
+                /*
+                 * The third term is "never replace a company with nothing", not
+                 * part of the pin. With company search mounted in this TILE the
+                 * shipping key is never written, so a nameless shipping record
+                 * is that configuration's normal state and adopting it would
+                 * discard the only company the buyer ever named — leaving a
+                 * locked, empty, required number field behind it.
+                 */
                 const shippingCompanySelectionData =
-                    (!hasBillingRecord && window.twoGatewayIsBillingAsShipping())
-                        ? window.twoGatewayReadCompanySelection()
+                    (!window.twoGatewayIsBillingAddressPinned()
+                        && window.twoGatewayIsBillingAsShipping()
+                        && storedShippingSelection.company_name)
+                        ? storedShippingSelection
                         : billingCompanySelectionData;
                 /*
                  * `manual_mode` is deliberately NOT restored here.

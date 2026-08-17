@@ -305,6 +305,81 @@ Two things that bite:
   screen; the helper answers `''` for one, which is the same case as "no number",
   so surrounding parentheses drop with it.
 
+### Two addresses: editable, mirrored, and pinned by CONTENT
+
+The checkout can hold two addresses — shipping, and a separate billing one once
+"billing same as shipping" is unticked — and the second one **stays fully
+editable, always**. Making its company or country read-only was evaluated and
+rejected: a company with a branch in a neighbouring country is one legal entity
+with two genuinely different valid local pairings.
+
+The shipping (default) address's company propagates onto the billing one, and
+what stops that propagation is a **pure content match**, not a flag:
+
+- Before a mirrored value is written, the tracked fields of the billing address
+  are compared against what the mirror would write, **trimmed and
+  case-insensitive**. Still matching → still synced, overwrite freely.
+- **One** field differing pins the **whole address**, including the fields the
+  buyer never touched. Explicit ruling — do not scope the pin per field.
+- **There is no resume control, and none should be built.** The match is
+  recomputed on every read, so it releases by itself. Ticking "billing same as
+  shipping" drops the billing company record and mirrors the shipping company
+  across in the same handler, which is what leaves the pin nothing to hold.
+- The tracked set is **five** fields: country, company name, company id, address
+  line 2, region. Not two. A buyer typing into address line 2 is exactly as
+  strong a signal of independent editing as one retyping the company, and the
+  earlier two-field set could not see it.
+
+`twoGatewayIsBillingAddressPinned()` is the one answer to this question and
+every surface asks it — the tile's `initialize()` and the bridge's
+`checkout:payment:method-activate` resolution and its two shipping-mirror paths.
+Two surfaces answering it differently is how the tile came to adopt a company
+the buyer had said does not apply, twice.
+
+Three things that bite:
+
+- **The pin gates PROPAGATION, never a RESTORE.** It is checked at the call
+  sites that push the shipping company across, and deliberately not inside
+  `updatePaymentFields()` — which is also how a company resolved *for* the
+  billing role, including one read back out of the billing record, reaches the
+  tile. A pin there blocks the buyer's own billing company from being restored,
+  which is the exact opposite of protecting it.
+- **A blank target field is not a mismatch.** It is a field waiting to be
+  filled, and filling it is the propagation. Counting blank-vs-populated as a
+  difference pins every freshly opened billing form on the spot and nothing ever
+  propagates at all.
+- **"Never replace a company with nothing" is a separate term, not part of the
+  pin.** With company search mounted in the payment tile the shipping storage
+  key is never written, so a nameless shipping record is that configuration's
+  normal state; adopting it discards the only company the buyer ever named and
+  leaves a locked, empty, required number field behind it.
+
+Whichever address plays the **billing/invoice role** is the one that requires a
+company and org number — never a shipping-only address, and the role is resolved
+once rather than re-derived per surface.
+
+### Writing an address from an external payload
+
+`setAddressData()` routes one way for every payload it can receive — a
+registered-company search result, an autofill — because special-casing the
+source is how the two drift apart:
+
+| payload | line 1 | line 2 |
+|---|---|---|
+| `building`/`apartment` present | the premises (both, joined) | `street` |
+| neither present | `street` | **left untouched** |
+
+No dedup between the lines even when the text is identical: some real addresses
+legitimately repeat, and silently swallowing one is invisible to the buyer.
+Line 2 is left alone rather than blanked when there is nothing for it, so an
+autofill carrying no building cannot delete an apartment number the buyer typed.
+
+`region` goes to a `region_id` select when an option's TEXT matches (lossy and
+known to be), else to a free-text `region` field, else it is appended to `city`
+after a comma — the comma being a separator, so an address with no city gets
+none. An unmatched value is never written onto a `region_id` select: that stores
+an id the store does not have.
+
 ### Staging Cache Refresh (git-sync workflow)
 
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:

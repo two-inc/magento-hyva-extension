@@ -652,6 +652,12 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCountryFieldsWithin",
   "twoGatewayCountryFieldScope",
   "twoGatewayInvoiceRoleCountryField",
+  // The content-match sync pin (TWO-25461 §2). Same `window.X = window.X || …`
+  // idiom as everything above, so the same leak-between-files reason to reset
+  // them, and listing them also asserts the template really publishes them —
+  // company-name-payment.phtml consults the pin through `window`.
+  "twoGatewayAddressMirrorFields",
+  "twoGatewayIsBillingAddressPinned",
 ];
 
 /**
