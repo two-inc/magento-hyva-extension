@@ -455,11 +455,16 @@ $quoteDetails = json_encode(
      * that is the whole checkout — document-global by another name, and
      * ACCIDENTALLY rather than deliberately so.
      *
-     * A form whose only country field is hidden or disabled does not count as a
-     * scope either, so such a caller falls through to the document-wide list
-     * exactly as it did before this rule existed — the address-book modal
-     * composes the engine inside its own form, and that form's field is a name
-     * match filtered out while the modal is closed.
+     * Scope-hood asks for a field the list would actually return, so it inherits
+     * that list's filtering EXACTLY — name matches filtered, the two known ids
+     * not. A form whose only country field is a hidden NAME match is therefore
+     * not a scope and its caller falls through to the document-wide list, which
+     * is what the address-book modal is while it is closed. A form holding one of
+     * the two KNOWN ids IS a scope even hidden, deliberately: those ids have been
+     * read unconditionally by every version of this helper, this checkout hides a
+     * step's form subtree rather than unmounting it, and refusing them here would
+     * move already-correct behaviour on a surface no test can see. Filter what
+     * you ADD.
      *
      * @param {HTMLElement} [context]
      * @returns {HTMLElement|null}
@@ -524,16 +529,19 @@ $quoteDetails = json_encode(
      * currently off screen — the buyer's country selector one step away, not an
      * absent one.
      *
-     * Scoped the same way as the list it reads: the question is whether the
-     * buyer has a country selector in the form being resolved, so a caller
-     * asking about its own form must not have the store default suppressed by a
-     * selector belonging to a different one.
+     * DELIBERATELY NOT SCOPED to the calling form (TWO-25461), unlike the field
+     * read it guards. "Does the buyer get to pick their country" is a property of
+     * the STORE, not of one form — and the direction the two answers differ in is
+     * the dangerous one: a form whose own country field is not a `<select>`, on a
+     * store where other forms have one, would stop suppressing the store default
+     * and go back to silently searching the store's country. Scoping this would
+     * reintroduce the bug the suppression exists to prevent, so the question stays
+     * exactly as document-wide as it was.
      *
-     * @param {HTMLElement} [context] see twoGatewayCountryFields()
      * @returns {boolean}
      */
-    window.twoGatewayHasCountrySelector = window.twoGatewayHasCountrySelector || function(context) {
-        return window.twoGatewayCountryFields(context).some(function(field) {
+    window.twoGatewayHasCountrySelector = window.twoGatewayHasCountrySelector || function() {
+        return window.twoGatewayCountryFields().some(function(field) {
             return field.tagName === 'SELECT';
         });
     };
@@ -597,7 +605,7 @@ $quoteDetails = json_encode(
         return quoteData?.shipping_country_id ||
                quoteData?.billing_country_id ||
                quoteData?.country_id ||
-               (window.twoGatewayHasCountrySelector(context) ? '' : quoteData?.default_country_id) ||
+               (window.twoGatewayHasCountrySelector() ? '' : quoteData?.default_country_id) ||
                '';
     };
 

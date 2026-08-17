@@ -204,47 +204,48 @@ describe("form-scoped country resolution", () => {
       expect(window.twoGatewayGetCountryCode({})).toBe("NO");
     });
 
-    test("an empty local field falls through to the QUOTE, never to the other live form", () => {
-      // The design rule is about live reads: a form whose own country is
-      // unchosen must not be answered with the country the buyer entered in a
-      // DIFFERENT address. The quote snapshot is the documented next term and
-      // stays that way (see twoGatewayGetCountryCode) — what must not happen is
-      // "GB".
-      document.getElementById("shipping-country_id").value = "";
+    // What a form with its own country UNCHOSEN falls through to. The design
+    // rule is about live reads: it must not be answered with the country the
+    // buyer entered in a DIFFERENT address, so "GB" is the wrong answer to every
+    // row here. What it falls through to instead is unchanged — the quote
+    // snapshot, and then '' rather than the store default while a country
+    // selector exists.
+    test.each([
+      [
+        { shipping_country_id: "SE" },
+        "SE",
+        "the quote, not the other live form",
+      ],
+      [
+        { default_country_id: "US" },
+        "",
+        "'' — the store default stays suppressed",
+      ],
+    ])(
+      "an unchosen local field falls through to %p → %p (%s)",
+      (quote, expected) => {
+        document.getElementById("shipping-country_id").value = "";
 
-      expect(
-        window.twoGatewayGetCountryCode(
-          { shipping_country_id: "SE" },
-          document.getElementById("shipping-company-root"),
-        ),
-      ).toBe("SE");
-    });
-
-    test("the store default stays suppressed per form, not per document", () => {
-      // A form whose own select is unchosen must answer '' — "Please select a
-      // country first" — rather than the store's own country, exactly as the
-      // document-wide version did. The neighbouring form having a country
-      // chosen must not change that.
-      document.getElementById("shipping-country_id").value = "";
-
-      expect(
-        window.twoGatewayGetCountryCode(
-          { default_country_id: "US" },
-          document.getElementById("shipping-company-root"),
-        ),
-      ).toBe("");
-    });
+        expect(
+          window.twoGatewayGetCountryCode(
+            quote,
+            document.getElementById("shipping-company-root"),
+          ),
+        ).toBe(expected);
+      },
+    );
   });
 
   describe("one address form on screen", () => {
     // A buyer who has not opened a second address is the common case, and the
-    // scope walk must not need the other form to exist. Before the fix the
-    // billing-only case was the visible bug: nothing named `shipping-country_id`
-    // in the document, so a shipping-first lookup fell past every live field.
+    // scope walk must not need the other form to exist to answer. Both rows
+    // passed BEFORE the scoping too — with only one form in the document, the
+    // old shipping-first list reached the same field — so they pin that the fix
+    // did not break the single-form case, not that it fixed it.
     test.each([
-      ["shipping", "NO"],
-      ["billing", "GB"],
-    ])("the %s form alone resolves %s", async (role, expected) => {
+      ["shipping", "NO", "the delivery form, no invoice form rendered yet"],
+      ["billing", "GB", "the invoice form, no delivery form in this fixture"],
+    ])("the %s form alone resolves %s (%s)", async (role, expected) => {
       render(addressForm(role, expected));
       const component = mountAddressControl(role);
 
@@ -255,14 +256,15 @@ describe("form-scoped country resolution", () => {
   });
 
   describe("the payment tile reads the INVOICE-role address", () => {
+    // Only the UNTICKED row discriminates this fix from the old shipping-first
+    // lookup; the other two coincide with it, and are here because they are the
+    // rows that fail if the role resolution is pinned to billing instead, or if
+    // the absent-checkbox default is inverted.
     test.each([
-      [
-        true,
-        "NO",
-        "billing-as-shipping ticked: the invoice address IS shipping",
-      ],
+      [true, "NO", "ticked: the invoice address IS the delivery address"],
       [false, "GB", "unticked: the invoice address is the billing form"],
-    ])("checkbox %s → %s (%s)", async (checked, expected) => {
+      [undefined, "NO", "no checkbox at all: one address holds every role"],
+    ])("checkbox %p → %s (%s)", async (checked, expected) => {
       render(
         addressForm("shipping", "NO") +
           addressForm("billing", "GB") +
@@ -273,19 +275,6 @@ describe("form-scoped country resolution", () => {
       expect(await searchedCountry(component, "tile-company-query")).toBe(
         expected,
       );
-    });
-
-    test("no checkbox at all is billing-as-shipping, so the shipping country answers", async () => {
-      // twoGatewayIsBillingAsShipping() defaults TRUE when the checkbox is
-      // absent — one address, so the shipping address holds every role.
-      render(
-        addressForm("shipping", "NO") +
-          addressForm("billing", "GB") +
-          paymentTile(),
-      );
-      const component = mountTile();
-
-      expect(await searchedCountry(component, "tile-company-query")).toBe("NO");
     });
 
     test("with no billing form rendered it falls back rather than refusing to search", async () => {
@@ -323,15 +312,45 @@ describe("form-scoped country resolution", () => {
     });
 
     test("stops at a form with no country field of its own", () => {
-      // The tile's control. Climbing past its `<form>` would reach the container
-      // holding the address forms too, and hand back a "scope" that is the whole
-      // checkout — document-global by another name, and accidentally rather than
-      // deliberately so.
+      // The tile's control, WITH A WRAPPER above it that holds the address form
+      // too — the shape a real checkout has, and the only shape in which this
+      // boundary does any work. Climbing past the payment `<form>` reaches that
+      // wrapper and hands back a "scope" that is the whole checkout: document-wide
+      // by another name, and accidentally rather than deliberately so. A fixture
+      // whose forms are direct `<body>` children cannot tell the two apart,
+      // because the body guard catches it either way.
+      document.body.innerHTML =
+        '<div id="checkout-wrapper">' + document.body.innerHTML + "</div>";
+
       expect(
         window.twoGatewayCountryFieldScope(
           document.querySelector("#tile-root .two-company-search"),
         ),
       ).toBeNull();
+    });
+
+    test("stops at the body for a control that is in no form at all", () => {
+      // `<body>` all but always contains SOME country field, so a walk that
+      // reached it and asked the containment question would answer "your scope is
+      // the whole document" — the same accident the `<form>` boundary refuses.
+      // Reachable without a form ancestor: a control rendered outside the address
+      // forms entirely.
+      document.body.innerHTML +=
+        '<div id="loose-root" class="two-company-search"></div>';
+
+      expect(
+        window.twoGatewayCountryFieldScope(
+          document.getElementById("loose-root"),
+        ),
+      ).toBeNull();
+      // …and it therefore falls through to the document-wide list rather than
+      // resolving nothing at all.
+      expect(
+        window.twoGatewayGetCountryCode(
+          {},
+          document.getElementById("loose-root"),
+        ),
+      ).toBe("NO");
     });
 
     test("does not treat a form whose only country field is hidden as a scope", () => {
