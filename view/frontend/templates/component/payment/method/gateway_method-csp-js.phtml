@@ -570,6 +570,21 @@ $quoteDetails = json_encode(
      * has no such field" and "the buyer left it blank" are different facts and
      * the pin treats them differently.
      *
+     * Kept as five keys rather than trimmed to the two that matter most on
+     * today's checkouts. `company_name`/`company_id` are the ones that can
+     * ALWAYS produce a mismatch here — `twoGatewayIsBillingAddressPinned()`
+     * backfills both from stored selection when the DOM field is absent, so
+     * they compare even in the company-search-in-tile configuration where
+     * neither address form carries a company field at all. `country`/
+     * `street2`/`region` have no such backfill: they only compare when a
+     * separate billing address FORM is actually rendered (billing-as-shipping
+     * unticked) with Hyvä's own `<role>-<field>` ids, which this repo cannot
+     * independently verify — Hyvä Checkout's own address markup is
+     * closed-source and not installed anywhere testable from here. Dropping
+     * them to simplify would be betting on an unverified absence; keeping
+     * them costs nothing when they are absent and catches a real edit when
+     * they are not.
+     *
      * @param {string} role 'shipping' or 'billing'
      * @returns {Object} tracked key → current trimmed value
      */
