@@ -92,6 +92,25 @@ $methodCode = $brandedViewModel->getMethodCode();
      * freeze the fallback permanently — the same trap the selection accessors
      * at the top of this file already document.
      */
+    /**
+     * Has the buyer made the billing address their own? (TWO-25461 §2.3)
+     *
+     * Gates the paths that PROPAGATE the shipping company onto the billing
+     * role, and only those. It deliberately does NOT live inside
+     * updatePaymentFields(), which is also how a company resolved FOR the
+     * billing role — including one read back out of the billing record — is
+     * written into the tile; a pin there would have blocked the buyer's own
+     * billing company from being restored, which is the opposite of protecting
+     * it.
+     *
+     * Resolved at CALL time with a permissive fallback, for the same reason as
+     * the accessors at the top of this file: this template runs before
+     * gateway_method-csp-js.phtml publishes the helper, and a missing helper
+     * must degrade to today's sync rather than silently stop every one.
+     */
+    const isBillingAddressPinned = () => Boolean(window.twoGatewayIsBillingAddressPinned)
+        && window.twoGatewayIsBillingAddressPinned();
+
     const isBillingAsShipping = () => {
         if (window.twoGatewayIsBillingAsShipping) {
             return window.twoGatewayIsBillingAsShipping();
@@ -226,6 +245,8 @@ $methodCode = $brandedViewModel->getMethodCode();
          * This ensures payment section reflects the current shipping selection after page refresh.
          */
         const initializePaymentFieldsFromShipping = () => {
+            // A propagation of the SHIPPING company, so it respects the pin.
+            if (isBillingAddressPinned()) return;
             const shippingCompanySelectionData = twoPaymentReadSelection();
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
@@ -358,29 +379,47 @@ $methodCode = $brandedViewModel->getMethodCode();
              * accessors at the top of this file are: this template can run
              * before gateway_method-csp-js.phtml has published it.
              *
-             * Presence of the record is NOT enough to select it (review round
-             * follow-up): a billing record can be non-empty while naming no
-             * company at all — `{manual_mode}`, the `{quote_id}` stamp
-             * clearStaleBillingCompanyIfNeeded leaves behind, or the blanked
-             * `company_id`/`company_id_source` pair forgetStaleCompanyId
-             * writes. Any of those would shadow a perfectly good shipping
-             * fallback and silently reinstate the very bug this block fixes,
-             * so the test is whether the record actually CARRIES a company.
+             * WHICH RECORD WINS IS THE PIN'S DECISION (TWO-25461 §2.3), and it
+             * is deliberately the SAME expression the tile's own initialize()
+             * evaluates. Two surfaces answering "may the shipping company be
+             * adopted as the billing one" differently is how the tile came to
+             * adopt a company the buyer had said does not apply, and a review
+             * round already fixed one such divergence here.
              *
-             * And the fallback itself is gated on twoGatewayIsBillingAsShipping()
-             * for the same reason the tile's own initialize() gates it (see
-             * gateway_method-csp-js.phtml): once the buyer has unticked
-             * "billing same as shipping", adopting the shipping company as the
-             * billing one is wrong, and firing order intent for it is worse.
+             * It used to ask whether the billing record NAMED a company, which
+             * was a proxy for the old record-existence sync model — a non-empty
+             * record that names nothing (`{manual_mode}`, the `{quote_id}` stamp
+             * clearStaleBillingCompanyIfNeeded leaves, the blanked pair
+             * forgetStaleCompanyId writes) had to be excluded by hand so it
+             * could not shadow a good shipping fallback. The pin needs no such
+             * exclusion: it reads the address the buyer can see rather than
+             * guessing from what is in storage, so a stamp-only record no longer
+             * looks like an edit. When the address IS pinned and its record
+             * names no company, nothing is adopted and no intent fires — which
+             * is the correct fail-closed answer, not a lost fallback.
+             *
+             * The billing-as-shipping term is unchanged and still load-bearing:
+             * once the buyer has unticked the box, adopting the shipping company
+             * is wrong and firing order intent for it is worse.
+             *
+             * Both helpers are resolved at CALL time with a fallback, for the
+             * same reason as the accessors at the top of this file.
              */
             const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
                 || function () { return {}; })();
-            const billingRecordNamesCompany = Boolean(
-                billingCompanySelectionData.company_name && billingCompanySelectionData.company_id,
-            );
-            const capturedCompanySelectionData = billingRecordNamesCompany
-                ? billingCompanySelectionData
-                : (isBillingAsShipping() ? twoPaymentReadSelection() : {});
+            const shippingCompanySelectionData = twoPaymentReadSelection();
+            /*
+             * The third term is not part of the pin: it is "never replace a
+             * company with nothing". With company search mounted in the payment
+             * TILE the shipping key is never written at all, so a nameless
+             * shipping record is the normal state there and adopting it would
+             * discard the only company the buyer ever named.
+             */
+            const capturedCompanySelectionData = (!isBillingAddressPinned()
+                && isBillingAsShipping()
+                && shippingCompanySelectionData.company_name)
+                ? shippingCompanySelectionData
+                : billingCompanySelectionData;
             const capturedCompany = capturedCompanySelectionData.company_name || "";
             const capturedCompanyId = capturedCompanySelectionData.company_id || "";
 
@@ -408,6 +447,10 @@ $methodCode = $brandedViewModel->getMethodCode();
     window.addEventListener("shipping-company-selected", (event) => {
         // Only sync if billing is same as shipping
         if (!isBillingAsShipping()) {
+            return;
+        }
+        // And never over an address the buyer has made their own (§2.3).
+        if (isBillingAddressPinned()) {
             return;
         }
 
@@ -464,6 +507,25 @@ $methodCode = $brandedViewModel->getMethodCode();
                     const billingAsShipping = data?.billingAsShipping;
 
                     if (billingAsShipping) {
+                        /*
+                         * The buyer's own billing company record is DROPPED
+                         * first (TWO-25461 §2.4). They have just said the
+                         * billing address is the shipping address, so a
+                         * separate billing company describes nothing — and
+                         * while it survives, the sync pin reads it as an
+                         * unreconciled edit of the billing role and refuses
+                         * every mirrored write, including the one immediately
+                         * below. This is the whole resumption path: no resume
+                         * control, just the state that justified the pin
+                         * ceasing to exist.
+                         *
+                         * Removed rather than blanked, because the tile's
+                         * fallback-to-shipping rule keys on the record being
+                         * ABSENT — see twoGatewayClearBillingCompany.
+                         */
+                        if (window.twoGatewayClearBillingCompany) {
+                            window.twoGatewayClearBillingCompany();
+                        }
                         // Billing is now same as shipping - sync company data from shipping
                         const shippingCompanySelectionData = twoPaymentReadSelection();
                         const shippingCompany = shippingCompanySelectionData.company_name || "";

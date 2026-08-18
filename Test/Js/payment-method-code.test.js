@@ -325,19 +325,37 @@ describe("payment-fields template method code", () => {
         expect(intents.length).toBeGreaterThan(0);
       });
 
-      test("does not shadow the shipping fallback when it has a name but no identifier", () => {
-        // Half a company is not a company as far as this retry is concerned:
-        // the downstream guard requires both, so treating it as a hit would
-        // just mean no intent at all.
+      /*
+       * REVERSED BY TWO-25461 §2.3, deliberately, and recorded rather than
+       * quietly edited.
+       *
+       * A record naming a company with no identifier is NOT company-less: the
+       * buyer typed that name for the billing role. It used to fall through to
+       * the shipping fallback on the reasoning that "half a company is not a
+       * company as far as this retry is concerned — the downstream guard
+       * requires both, so treating it as a hit would just mean no intent at
+       * all". True about the intent, and the wrong trade: the price of that
+       * intent was resolving the billing role to a company the buyer had
+       * replaced, and an intent fired for the wrong company is worse than no
+       * intent at all.
+       *
+       * Under the content-match pin a named billing company differing from the
+       * shipping one pins the address, so nothing is adopted and nothing is
+       * dispatched. The buyer's own company is still what the tile restores
+       * from that same record; this listener simply stops substituting a
+       * different one.
+       */
+      test("pins the address, and dispatches nothing, when it names a company with no identifier", () => {
         activateWithBillingRecord({
           quote_id: "test-quote-1",
           company_name: "Half Captured Ltd",
         });
 
-        expect(document.getElementById("company_name").value).toBe(
-          "Example Trading Ltd",
-        );
-        expect(intents.length).toBeGreaterThan(0);
+        // Not "Example Trading Ltd": the shipping company is not this buyer's
+        // billing company, and the field is left as the test blanked it rather
+        // than being filled with the wrong one.
+        expect(document.getElementById("company_name").value).toBe("");
+        expect(intents.length).toBe(0);
       });
     });
 
