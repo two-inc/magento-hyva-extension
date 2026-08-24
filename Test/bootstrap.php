@@ -7,6 +7,7 @@ declare(strict_types=1);
 // and require them here.
 
 require __DIR__ . '/Stubs/HyvaCheckoutPaymentMethodList.php';
+require __DIR__ . '/Stubs/TermStillAvailablePlugin.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';
