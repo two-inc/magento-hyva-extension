@@ -167,7 +167,7 @@ document.addEventListener('alpine:init', () => {
             dropdownSelector: '.max-h-select',
             itemSelector: 'div.cursor-pointer',
             countrySelectionMessage: "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
-            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is unavailable. Try again, or enter details manually.')) ?>",
+            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again, or enter details manually.')) ?>",
             // This picker renders no inline "unavailable" notice or
             // min-characters hint of its own (its markup lives in Hyvä
             // Checkout's own address-book modal, outside this module) — a
