@@ -586,6 +586,18 @@ retargeted here rather than relaxed, and it goes red under **all three** of thos
 including the gate being deleted outright — which is what shows the retargeted version can
 still fail.
 
+TWO-25503 narrows WHERE that affordance is offered at all, and the four tests for it live in
+`company-search-location.test.js` because it is the location switch that decides it. Manual
+entry captures no company number and Two's payment method requires one, so the row is offered
+only on the address step; the payment tile, which hosts the control precisely when the
+address-step company search is off, overrides `manualEntryVisible` to a constant false. The
+gate is component state rather than a PHP branch, which is what keeps the control's markup
+byte-identical across both mount points — `company-search-one-control.test.js` pins that. Two
+tests read the `x-show` binding off each mount point's shipped markup and two evaluate the
+getter on each mounted component, because a getter nothing consults and a binding naming a
+property no component has are both silently inert. Mutation-checked: dropping the tile
+override fails 1, dropping the binding fails 2.
+
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.
 

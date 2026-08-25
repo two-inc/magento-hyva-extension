@@ -209,4 +209,82 @@ describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
       expect(component.twoTileNotAvailableVisible).toBe(false);
     });
   });
+
+  /**
+   * TWO-25503. Manual entry captures no company number and Two's payment method
+   * requires one, so the affordance is offered only where the address-step
+   * lookup is — which is exactly where the control is NOT in the tile.
+   *
+   * The gate is component state, not a PHP branch, so the control's markup stays
+   * byte-identical across both mount points (pinned by
+   * company-search-one-control.test.js). That makes the binding and the getter
+   * two halves of one claim: a getter nothing consults, or a binding naming a
+   * property no component has, are both silently inert.
+   */
+  describe("manual entry follows the company-search setting", () => {
+    const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
+    const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+    const ROW_WRAPPER = ".two-company-manual-entry-row";
+
+    let env;
+
+    beforeEach(() => {
+      document.body.innerHTML = [
+        '<div id="root" class="two-company-search">',
+        '  <input type="text" id="field" value="" />',
+        '  <input type="text" class="two-company-query" id="query" value="" />',
+        "</div>",
+      ].join("\n");
+
+      env = H.installHyvaEnvironment();
+      H.loadSharedHelpers();
+      H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
+      env.fireAlpineInit();
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    [
+      [H.COMPANY_NAME_MARKUP_TEMPLATE, ADDRESS_AREA, "the address step"],
+      [H.GATEWAY_METHOD_MARKUP_TEMPLATE, PAYMENT_TILE_TRUE, "the payment tile"],
+    ].forEach(function (row) {
+      const relPath = row[0];
+      const rules = row[1];
+      const description = row[2];
+
+      test("the row is gated on manualEntryVisible in " + description, () => {
+        const markup = H.renderTemplateMarkup(relPath, rules);
+        const doc = new DOMParser().parseFromString(markup, "text/html");
+        const button = doc.querySelector(ROW_WRAPPER);
+        expect(button).not.toBeNull();
+
+        expect(button.parentElement.getAttribute("x-show")).toBe(
+          "manualEntryVisible",
+        );
+      });
+    });
+
+    [
+      [ADDRESS_COMPONENT, true, "offered on the address step"],
+      [TILE_COMPONENT, false, "withheld in the payment tile"],
+    ].forEach(function (row) {
+      const componentName = row[0];
+      const expected = row[1];
+      const description = row[2];
+
+      test("manual entry is " + description, () => {
+        const factory = env.alpineComponents[componentName];
+        expect(typeof factory).toBe("function");
+
+        const component = H.mountComponent(factory, {
+          el: document.getElementById("field"),
+          root: document.getElementById("root"),
+        });
+
+        expect(component.manualEntryVisible).toBe(expected);
+      });
+    });
+  });
 });

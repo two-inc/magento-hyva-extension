@@ -2528,6 +2528,15 @@ $quoteDetails = json_encode(
             },
 
             /**
+             * Gates the in-panel manual-entry row (TWO-25503).
+             *
+             * @returns {boolean}
+             */
+            get manualEntryVisible() {
+                return true;
+            },
+
+            /**
              * Bound as `:placeholder`. The markup also carries a static
              * `placeholder` attribute with the same source string, so the hint
              * is present in the server-rendered HTML before Alpine boots; this
@@ -3157,6 +3166,14 @@ $quoteDetails = json_encode(
             // twice. A constant rather than a narrowed condition: this surface
             // has no state in which that display is the right place for it.
             get companyIdDisplayVisible() {
+                return false;
+            },
+
+            // TWO-25503: this tile hosts the control only when the address-step
+            // company search is off, and manual entry captures no company
+            // number — which Two's payment method requires — so the registry
+            // lookup is the only route left here.
+            get manualEntryVisible() {
                 return false;
             },
 
