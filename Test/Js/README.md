@@ -586,7 +586,7 @@ retargeted here rather than relaxed, and it goes red under **all three** of thos
 including the gate being deleted outright — which is what shows the retargeted version can
 still fail.
 
-TWO-25503 narrows WHERE that affordance is offered at all, and the four tests for it live in
+TWO-25503 narrows WHERE that affordance is offered at all, and the six tests for it live in
 `company-search-location.test.js` because it is the location switch that decides it. Manual
 entry captures no company number and Two's payment method requires one, so the row is offered
 only on the address step; the payment tile, which hosts the control precisely when the
@@ -595,8 +595,18 @@ gate is component state rather than a PHP branch, which is what keeps the contro
 byte-identical across both mount points — `company-search-one-control.test.js` pins that. Two
 tests read the `x-show` binding off each mount point's shipped markup and two evaluate the
 getter on each mounted component, because a getter nothing consults and a binding naming a
-property no component has are both silently inert. Mutation-checked: dropping the tile
-override fails 1, dropping the binding fails 2.
+property no component has are both silently inert.
+
+The remaining two are about the §4 Tab-out, and they are the reason this is more than a
+visibility flag. The "not on the list" button is the panel's last focusable and its
+`@keydown.tab` is what shuts the panel on the way out; plain Tab from the query field was
+therefore deliberately left to the browser. Withhold the button and that shortcut inverts —
+focus walks off and leaves an open panel over the rest of the form, which is the very defect
+§4 exists for. `onQueryTab()` now delegates to `onManualEntryTab()` when the row is not
+offered, so the two surfaces differ in who closes the panel and not in whether it closes.
+
+Mutation-checked: dropping the tile override fails 1, dropping the `x-show` binding fails 2,
+and reverting `onQueryTab()` to its plain early return fails 1.
 
 `harness-contract.test.js` — the fail-loud guarantees above, for both the JS and the markup
 renderer.

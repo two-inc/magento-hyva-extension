@@ -2284,9 +2284,16 @@ $quoteDetails = json_encode(
              * the company-name field. Plain Tab is left to the browser: the "not
              * on the list" button is the very next focusable element in document
              * order, and the panel must stay open for it.
+             *
+             * TWO-25503: where that button is not offered, the query field is
+             * the panel's last focusable, so plain Tab has to do the button's
+             * half of the job — otherwise focus leaves an open panel behind it.
              */
             onQueryTab(event) {
-                if (!event.shiftKey) return;
+                if (!event.shiftKey) {
+                    if (!this.manualEntryVisible) this.onManualEntryTab(event);
+                    return;
+                }
                 event.preventDefault();
                 this.closeDropdownAndFocusName();
             },
