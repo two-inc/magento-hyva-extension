@@ -74,6 +74,16 @@ const PHP_VALUE_RULES = [
     "checkout.payment.method.two_payment",
   ],
   [/^\$checkoutApiUrl$/, "https://checkout-api.test.invalid"],
+  // The Magento link base URL `rest/V1/two/...` hangs off, with no trailing
+  // slash — the template strips it, and a suite asserting on a built URL sees
+  // the join.
+  [/^\$restBaseUrl$/, "https://shop.test.invalid"],
+  [/^\$soleTraderErrorMessage$/, ESCAPED_STRING],
+  // Emitted BARE as a JS boolean literal, not quoted like the neighbouring
+  // config flags. `false` is the production default for a store that has not
+  // turned address autopopulation on; the phone-autofill suite overrides it via
+  // `extraRules`, which is what proves the gate reads the injected value.
+  [/^\$isAddressAutopopulationEnabled$/, "false"],
   [/^\$companySearchLimit$/, "10"],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
@@ -658,6 +668,17 @@ const SHARED_HELPER_GLOBALS = [
   // company-name-payment.phtml consults the pin through `window`.
   "twoGatewayAddressMirrorFields",
   "twoGatewayIsBillingAddressPinned",
+  // The sole-trader helpers (TWO-25503). Same `window.X = window.X || …` idiom
+  // as everything above, so the same leak-between-files reason to reset them —
+  // and the per-country memo especially: a country answered in one file's
+  // fixture would otherwise decide the next file's mode tab with no request
+  // ever going out.
+  "TWO_GATEWAY_SUPPORTED_COMPANY_TYPES",
+  "twoGatewaySupportedCompanyTypes",
+  "twoGatewaySoleTraderTokens",
+  "twoGatewayAutofillBuyer",
+  "twoGatewaySoleTraderSignupUrl",
+  "twoGatewayInvoiceRoleAddressForm",
 ];
 
 /**

@@ -84,7 +84,8 @@ summary::marker {
  * unselected. Brand overlays that ship a different palette override
  * these rules from their own custom.css which loads after this one.
  */
-.two-term-chip {
+.two-term-chip,
+.two-mode-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -94,23 +95,69 @@ summary::marker {
   background: #fff;
   color: #3043d1;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
   min-width: 80px;
   font-family: inherit;
   position: relative;
 }
 
-.two-term-chip:hover { border-color: #3043d1; }
-.two-term-chip:focus { outline: none; }
-.two-term-chip[disabled] { cursor: wait; opacity: 0.7; }
+.two-term-chip:hover,
+.two-mode-chip:hover {
+  border-color: #3043d1;
+}
+.two-term-chip:focus,
+.two-mode-chip:focus {
+  outline: none;
+}
+.two-term-chip[disabled] {
+  cursor: wait;
+  opacity: 0.7;
+}
 
 .two-term-chip--selected,
 .two-term-chip--selected:hover,
 .two-term-chip--selected:focus,
-.two-term-chip--selected:active {
+.two-term-chip--selected:active,
+.two-mode-chip--selected,
+.two-mode-chip--selected:hover,
+.two-mode-chip--selected:focus,
+.two-mode-chip--selected:active {
   border-color: #3043d1;
   background: #3043d1;
   color: #fff;
+}
+
+/* The Registered company / Sole trader toggle (TWO-25503). Shares the term
+   chips' palette above because it is the same control in the same tile; its own
+   container rule because the mode chips sit on one row of text rather than
+   stacking a label over a fee. */
+.two-mode-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.5em;
+}
+
+.two-mode-chip {
+  flex-direction: row;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.two-soletrader-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #3043d1;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
 }
 
 /* Sole-available-term chip: informational, not interactive. Filled blue
@@ -143,7 +190,7 @@ summary::marker {
 }
 
 .two-term-chip--selected .two-term-chip__days::before {
-  content: '\2713';
+  content: "\2713";
   color: #fff;
   font-size: 14px;
   font-weight: 700;
@@ -179,18 +226,30 @@ summary::marker {
   animation: two-term-chip-dot 1.4s infinite ease-in-out both;
 }
 
-.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
-.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+.two-term-chip__loading > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.two-term-chip__loading > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes two-term-chip-dot {
-  0%, 80%, 100% { opacity: 0.2; }
-  40%          { opacity: 1; }
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 
 /* QA polish: more breathing room between the "Selected payment terms"
    caption and the chip strip. Tailwind utility `mb-1` on the label is
    too tight visually. */
-.two-term-chips > label.label { margin-bottom: 20px; }
+.two-term-chips > label.label {
+  margin-bottom: 20px;
+}
 
 /* All links inside the payment-method block render blue +
    underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
@@ -200,8 +259,8 @@ summary::marker {
    beats Tailwind's element-only `a` reset, so no !important needed. A
    bare `a` would tie Tailwind's specificity and lose on load order. */
 .payment-method-custom-form a {
-    color: #0066cc;
-    text-decoration: underline;
+  color: #0066cc;
+  text-decoration: underline;
 }
 
 /*
