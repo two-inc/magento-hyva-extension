@@ -276,6 +276,22 @@ class CheckoutConfig implements ArgumentInterface
             && !$this->getIsCompanySearchInPaymentTile();
     }
 
+    /**
+     * The `enable_address_search` setting ALONE, un-narrowed (TWO-25503).
+     *
+     * Deliberately not getIsAddressSearchEnabled(): that getter's second
+     * condition is about where the company-search CONTROL is mounted, which
+     * decides nothing about the sole-trader flow — the sole-trader entry point
+     * lives in the payment tile in both configurations, and its address
+     * write-back is unconditional per TWO-25461 §5. The only thing this gates
+     * is the buyer's PHONE NUMBER, which the merchant opted into having filled
+     * in for them when they turned address autopopulation on.
+     */
+    public function getIsAddressAutopopulationEnabled(): bool
+    {
+        return (bool) $this->configRepository->isAddressSearchEnabled();
+    }
+
     public function getCompanySearchLimit()
     {
         return 50;
