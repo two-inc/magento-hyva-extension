@@ -18,83 +18,115 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 /** @var ViewModelRegistry $viewModels */
 /** @var Escaper $escaper */
 /** @var MagewireFormComponent $magewire */
-/** @var CheckoutConfig $viewModel */
 
 /** @var BrandedHyvaViewModelInterface $brandedViewModel */
 $brandedViewModel = $block->getData('branded_view_model');
 $gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
-$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 /** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
 $element = $block->getData("element");
 $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
 $form = $block->getData("form");
 ?>
-<div class="w-full font-medium text-gray-700 <?= /* @noEscape */ $element->isRequired()
-        ? "required"
-        : "not-required" ?>">
+<div class="<?= $escaper->escapeHtmlAttr(
+    $element->renderClass(
+        [
+            "field",
+            "font-medium",
+            "text-gray-700",
+            $element->isRequired() ? "required" : "not-required",
+        ],
+        "field-wrapper-inner",
+    ),
+) ?>">
     <?= /* @noEscape */ $renderer->renderLabel($element) ?>
     <?= /* @noEscape */ $renderer->renderBefore($element) ?>
 
-    <div class="block font-medium text-gray-700">
-        <div x-data="<?= $gwBase ?>CompanySearchField" class="relative" @click.outside="closeDropdown">
-            <input type="text" class="<?= $escaper->escapeHtmlAttr(
-                $element->renderClass([
-                    "block w-full form-input grow renderer-text",
-                ]),
-            ) ?>"
-            <?php if ($element->hasAttributes()): ?>
-                <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
-            <?php endif; ?>
-            <?php if ($element->isRequired()): ?>
-                required
-                data-validate='{"required":true}'
-            <?php endif; ?>
-            autocomplete="off"
-            @input.debounce.500ms="getItems"
+    <?php
+    /*
+     * TWO-25326 §7.1 (2026-08-03 ruling): exactly ONE company-search control
+     * per platform. When the admin setting points that one control at the
+     * payment tile instead, this surface must NOT also render it — it gets a
+     * single plain field with no enhancement at all, in the `else` branch
+     * below.
+     */
+    $isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
+    ?>
+    <?php if (!$isCompanySearchInPaymentTile): ?>
+    <?php
+    /*
+     * THE company-search control, included from the one file both mount
+     * points share (TWO-25326, 2026-08-05 ruling — see the doc comment in
+     * form/field/company-search-control.phtml for why the tile no longer has
+     * a second copy of its own).
+     *
+     * `$twoControlInputAttributes` carries this field's real
+     * name/id/value/validation from the entity-field config, so it submits and
+     * restores exactly as any other Hyvä address field does. It is built here
+     * rather than inside the control because it is the one genuinely
+     * surface-specific thing about the input: only this surface has an
+     * `EntityFieldInterface` to render it from.
+     */
+    $twoControlAlpineData = 'x-data="' . $escaper->escapeHtmlAttr($gwBase . 'CompanySearchField') . '"';
+    $twoControlInputClass = $escaper->escapeHtmlAttr(
+        $element->renderClass(["block w-full form-input grow renderer-text"]),
+    );
+    $twoControlInputAttributes = ($element->hasAttributes() ? $element->renderAttributes($escaper) : '')
+        . ($element->isRequired() ? ' required data-validate=\'{"required":true}\'' : '');
+    include $block->getTemplateFile('Two_GatewayHyva::form/field/company-search-control.phtml');
+    ?>
+    <?php else: ?>
+        <?php
+        /*
+         * TWO-25326 §7.1: the one company-search control lives in the
+         * payment tile in this configuration, so the address step gets a
+         * PLAIN field for the same underlying attribute — no search, no
+         * dropdown, no Alpine component at all. `renderAttributes()` still
+         * carries this field's real name/id/value/validation from the
+         * entity-field config, so it submits and restores exactly as any
+         * other Hyvä address field does; nothing here is company-search
+         * specific.
+         *
+         * No `input-group` class here, for the same reason the control itself
+         * does not carry one (TWO-25326 tile bugfix batch, bug 3): that class
+         * is Hyvä's shared styling for an input grouped with a real addon, and
+         * this wrapper holds exactly ONE bare input and no addon at all.
+         * `group`/`flex`/`gap-4` are layout-only and stay.
+         */
+        ?>
+        <div class="group flex gap-4">
+            <input
+                type="text"
+                class="<?= $escaper->escapeHtmlAttr(
+                    $element->renderClass(["block w-full form-input grow renderer-text"]),
+                ) ?>"
+                <?php if ($element->hasAttributes()): ?>
+                    <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
+                <?php endif; ?>
+                <?php if ($element->isRequired()): ?>
+                    required
+                    data-validate='{"required":true}'
+                <?php endif; ?>
+                autocomplete="off"
             />
-            <!-- Search for company link (shows in manual mode) -->
-            <div x-show="manualMode" class="mt-1 text-right">
-                <span @click.stop="enableSearch" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                    <?= $escaper->escapeHtml(__("Search for company")) ?>
-                </span>
-            </div>
-            <!-- Search Results Dropdown -->
-            <div
-                x-show="showDropdown"
-                @click.stop
-                @mousedown.stop
-                class="w-full z-40 border border-gray-200 rounded-b-lg bg-white absolute mt-1 shadow-lg"
-            >
-                <div class="flex flex-col w-full max-h-[250px] overflow-y-auto">
-                    <template x-for="(item, index) in items" :key="item.companyId">
-                        <div
-                            :data-index="index"
-                            @click.stop="handleItemClick"
-                            @mousedown.stop
-                            class="cursor-pointer hover:bg-gray-100 p-2 border-b border-gray-100"
-                        >
-                            <span x-html="item.companyDisplayName"></span>
-                        </div>
-                    </template>
-                </div>
-                <!-- Enter manually link inside dropdown -->
-                <div class="px-2 py-3 border-t border-gray-200">
-                    <span @click.stop="enterManually" @mousedown.stop class="text-blue-600 text-sm cursor-pointer">
-                        <?= $escaper->escapeHtml(
-                            __("Enter details manually"),
-                        ) ?>
-                    </span>
-                </div>
-            </div>
         </div>
-        <?php if ($element->hasTooltip()): ?>
-            <?= /* @noEscape */ $element
-                    ->getRenderer()
-                    ->renderTooltip($element) ?>
-        <?php endif; ?>
-    </div>
-    <?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>
+    <?php endif ?>
+    <?php if ($element->hasTooltip()): ?>
+        <?= /* @noEscape */ $element
+                ->getRenderer()
+                ->renderTooltip($element) ?>
+    <?php endif; ?>
 </div>
+<?php
+/*
+ * Outside the field wrapper, as before. The wrapper's own closing tag used to
+ * be emitted twice on the plain-field branch and once on the search branch —
+ * one `</div>` did double duty as the search control's group closer — which
+ * left the plain-field rendering with one unbalanced tag. Both branches now
+ * close exactly what they open.
+ */
+?>
+<?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>

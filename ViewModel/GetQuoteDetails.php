@@ -32,6 +32,28 @@ class GetQuoteDetails implements ArgumentInterface
     }
 
     /**
+     * The current store view id, resolved INDEPENDENTLY of the quote.
+     *
+     * getQuoteDetails() returns [] on a LocalizedException, so reading the store
+     * id out of that array meant a degraded quote collapsed the company-selection
+     * storage key to a single store-less bucket shared by every store view — the
+     * cross-store leak the keying exists to prevent, back again and silent.
+     * Its own accessor, its own catch, so the two failures cannot be coupled.
+     *
+     * Returns '' when the store cannot be resolved at all; the JS side treats an
+     * empty store id as "no storage", which carries nothing over rather than
+     * sharing a bucket.
+     */
+    public function getCurrentStoreId(): string
+    {
+        try {
+            return (string) $this->_storeManager->getStore()->getId();
+        } catch (LocalizedException $exception) {
+            return '';
+        }
+    }
+
+    /**
      * Get all available shipping methods.
      */
     public function getQuoteDetails()
@@ -41,7 +63,13 @@ class GetQuoteDetails implements ArgumentInterface
 
             $quoteDetails = [];
             // Include quote ID to detect new checkout sessions and clear stale storage data
-            $quoteDetails["quote_id"] = $quote->getId();
+            // Cast for the same reason as store_id below: this value is
+            // compared, as a string, by TWO separate clearers — one reading it
+            // out of json_encode() (where an int stays a number) and one out of
+            // an escapeJs()'d PHP string. An int on one side and a string on the
+            // other makes `!==` true forever, and the two clearers then wipe the
+            // buyer's company on every page load.
+            $quoteDetails["quote_id"] = (string) $quote->getId();
             $quoteDetails["email"] = $quote->getCustomerEmail();
             if (!$quoteDetails["email"]) {
                 $quoteDetails["email"] = $quote

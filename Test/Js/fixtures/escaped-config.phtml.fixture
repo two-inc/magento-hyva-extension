@@ -1,0 +1,12 @@
+<?php
+/**
+ * Fixture: config values wrapped in escapeJs(), with and without a (string)
+ * cast, alongside an escapeJs() of a translated string. The first two must
+ * resolve to their own rule's value; only the last may fall back.
+ */
+?>
+<script>
+const apiUrl = '<?= $escaper->escapeJs($checkoutApiUrl) ?>';
+const limit = '<?= $escaper->escapeJs((string) $companySearchLimit) ?>';
+const message = '<?= $escaper->escapeJs(__('Please select a country first')) ?>';
+</script>

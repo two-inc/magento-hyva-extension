@@ -10,7 +10,7 @@ use Magento\Framework\View\Element\Block\ArgumentInterface;
 /**
  * Brand-aware values surfaced into Hyva templates. The default DI binding
  * resolves to {@see TwoBrandedHyvaViewModel}; brand overlays (e.g.
- * ABN_GatewayHyva) override via etc/frontend/di.xml preference.
+ * Overlay_GatewayHyva) override via etc/frontend/di.xml preference.
  *
  * Values returned MUST be install-stable across renders so that Hyva's
  * sha256-based inline-script CSP hashes remain valid — see
@@ -55,9 +55,8 @@ interface BrandedHyvaViewModelInterface extends ArgumentInterface
      *     ConfigRepository dependencies. Used as the `href` of the
      *     hyperlink that wraps the translated "payment terms" phrase.
      * @param string $brandFullName Legal/full brand name surfaced in
-     *     the sentence (e.g. "Two" or "ABN AMRO Asset Based Finance
-     *     N.V.") — the entity the buyer is authorising to process
-     *     their data.
+     *     the sentence (e.g. "Two" or "<Partner Name>") — the entity
+     *     the buyer is authorising to process their data.
      */
     public function getPaymentTermsMessage(string $termsLink, string $brandFullName): Phrase;
 }

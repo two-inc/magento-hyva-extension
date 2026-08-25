@@ -1,6 +1,6 @@
 # Two Gateway Hyva Extension
 
-- **Two Gateway Module Version**: 2.0.3
+- **Two Gateway Module Version**: 2.1.0
 
 ## Introduction
 
@@ -11,7 +11,7 @@ This document provides instructions for installing the Two Gateway Payment Metho
 | Component          | Version | Link                                                                                                                    |
 | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Magento            | 2.4.x   | [Release Notes](https://experienceleague.adobe.com/en/docs/commerce-operations/release/notes/magento-open-source/2-4-8) |
-| Two Gateway Module | ^1.13.1 | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
+| Two Gateway Module | ^2.0    | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
 | Hyvä Checkout      | ^1.2    | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html)                                                                 |
 
 ## Prerequisites

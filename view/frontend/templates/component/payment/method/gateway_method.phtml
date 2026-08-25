@@ -26,18 +26,45 @@ $gwBase = $fnPrefix . 'GatewayHyva';
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
+// TWO-25326 §7.1 (2026-08-03 ruling, corrected 2026-08-04): the ONE
+// company-search control renders either here (in this tile) or on the
+// address step — never both, never neither. Decided by the CORE module's
+// `enable_company_search` setting, not a Hyvä-local one. See
+// CheckoutConfig::getIsCompanySearchInPaymentTile().
+$isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
 $termsNotAcceptedMessage = $configModel->getTermsNotAcceptedMessage();
 $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetails = json_encode(
     $quoteDetails,
-    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-);
+    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>
+<?php
+/*
+ * TWO-25326 tile bugfix batch, bug 4: `w-full min-w-0` on the tile's own
+ * root, not present before this fix.
+ *
+ * Reported only with company search IN THE TILE
+ * ($isCompanySearchInPaymentTile true): the tile then renders substantial
+ * markup with real content (the search field, its absolutely-positioned
+ * dropdown, the Company Number block) in place of the near-empty two hidden
+ * inputs the text-only mode renders. Without `min-w-0` a flex/grid child
+ * defaults to `min-width: auto`, sized to its content's intrinsic minimum —
+ * so nothing here stopped this root from being pushed wider than its
+ * intended column the moment it held content with a wider minimum than two
+ * hidden inputs (whose own minimum is zero). `w-full` is the complementary
+ * half: it makes the root explicitly claim exactly its column's width rather
+ * than an undefined natural one, so it can only ever match the column, never
+ * exceed it. Same pairing as `two_surcharge.phtml`'s `min-w-0 break-words`
+ * for the identical class of flex-overflow bug on this checkout.
+ */
+?>
 <div
-     x-data="<?= $gwBase ?>PaymentMethodBase" class="space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
+     x-data="<?= $gwBase ?>PaymentMethodBase" class="w-full min-w-0 space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
     <div class="two-payment-subtitle"><?= /* @noEscape */ $configModel->getCheckoutSubtitleHtml() ?></div>
     <?php if ($showChip): ?>
         <div class="two-term-chips field">
@@ -81,20 +108,25 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         // Single available term: one informational, non-clickable chip,
         // preselected — matching Luma. Reuses the TermChip component (label +
         // surcharge formatting) in `single` mode (--single styling, no click).
+        //
+        // There is deliberately NO "Selected payment terms" heading here: with
+        // nothing to select, the selector wording is wrong, so the term is
+        // named inside the chip instead ("Payment Terms 30 days"). Luma does
+        // exactly this — `showSingleTerm` has no <label> and binds
+        // `singleTermLabel` = $t('Payment Terms %1 days'). Keep the two in step.
         $singleDay = (int) ($magewire->availableTerms[0] ?? 0);
         $singularLabel = '1 ' . __('day');
         $pluralLabel = __('%1 days');
+        $singleLabel = __('Payment Terms %1 days');
         ?>
         <div class="two-term-chips field">
-            <label class="label block text-sm font-medium text-gray-700 mb-1">
-                <span><?= $escaper->escapeHtml(__('Selected payment terms')) ?></span>
-            </label>
             <div class="two-term-chips__container">
                 <span x-data="<?= $gwBase ?>TermChip"
                       data-days="<?= $singleDay ?>"
                       data-single="1"
                       data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
                       data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
+                      data-label-single="<?= $escaper->escapeHtmlAttr($singleLabel) ?>"
                       :class="chipClasses">
                     <span class="two-term-chip__days" x-text="label"></span>
                     <template x-if="isLoading">
@@ -123,9 +155,9 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
      * values via document.querySelector at place-time, not via Magewire
      * state.
      *
-     * Mitigates ABN-431 (chip-switch wipes payment-form fields). Also
+     * Mitigates the chip-switch wiping payment-form fields. Also
      * reduces Magewire DOM churn on the form, contributing to lower
-     * session-lock pressure (ABN-432).
+     * session-lock pressure.
      */
     ?>
     <form
@@ -140,130 +172,410 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         @keydown.window.prevent.enter
         class="">
         <fieldset class="space-y-4">
-            <!-- Company Name (manual / search dual-mode) -->
-            <div class="min-h-108">
-                <div class="flex flex-col field required gap-2" x-show="showManual">
-                    <div class="field required">
-                        <label for="company_name" class="font-semibold text-gray-700">
-                            <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
-                        </label>
-                        <input
-                            type="text"
-                            :id="<?= $gwBase ?>GetManualCompanyNameId"
-                            :name="<?= $gwBase ?>GetManualCompanyNameField"
-                            class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                            autocomplete="off"
-                            required
-                            data-manual="true"
-                            data-validate='{"required": true}'
-                          />
-                    </div>
-                    <div class="search_for_company w-full text-right" @click="<?= $gwBase ?>OnSearchModeClick" title="Search for company">
-                        <span class="text-blue-600 text-sm cursor-pointer">
-                            <?= $escaper->escapeHtmlAttr(__("Search for company")) ?>
-                        </span>
-                    </div>
-                </div>
-                <div class="flex flex-col field required w-full relative" x-show="!showManual">
-                    <div class="flex flex-col items-center w-full">
-                        <div class="bg-white w-full gap-2 flex-col flex">
-                            <div class="field required">
-                                <label class="font-semibold text-gray-700">
-                                    <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
-                                </label>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
-                                </p>
-                            </div>
-                        </div>
-                        <div class="w-full" @click.outside="<?= $gwBase ?>OnCompanySearchClickOutside">
-                            <input
-                                type="text"
-                                @input.debounce.500ms="getItems"
-                                @focus="<?= $gwBase ?>OnCompanySearchFocus"
-                                @keydown.arrow-down="<?= $gwBase ?>OnArrowDown"
-                                @keydown.arrow-up="<?= $gwBase ?>OnArrowUp"
-                                @keydown.enter.prevent="<?= $gwBase ?>OnEnterSelect"
-                                @keydown.tab="closeCompanyList"
-                                placeholder="<?= $escaper->escapeHtmlAttr(__("Enter company name to search")) ?>"
-                                :value="search"
-                                class="company_name w-full border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate block form-input grow renderer-text"
-                                :id="<?= $gwBase ?>GetCompanyNameId"
-                                :name="<?= $gwBase ?>GetCompanyNameField"
-                                autocomplete="off"
-                                data-manual="false"
-                                data-name="company_name"
-                                required
-                                data-validate='{"required": true}'
-                                >
-                            <!-- Search Results Dropdown -->
-                            <div
-                                x-show="isOpen"
-                                x-transition
-                                class="w-full z-40 border border-light-100 rounded-b-lg bg-white absolute"
-                            >
-                                <div class="company-results flex flex-col w-full max-h-select overflow-y-auto max-h-[250px]">
-                                    <template
-                                        x-for="(item, index) in items"
-                                        :key="<?= $gwBase ?>GetCompanyId"
-                                    >
-                                        <div
-                                            :data-index="index"
-                                            @click="<?= $gwBase ?>OnCompanyItemClick"
-                                            @mouseover="<?= $gwBase ?>OnItemMouseover"
-                                            :class="<?= $gwBase ?>GetItemClass"
-                                            class="cursor-pointer hover:bg-gray-100 p-2"
-                                        >
-                                            <div class="flex items-center">
-                                                <div>
-                                                    <span x-html="<?= $gwBase ?>GetCompanyDisplayName"></span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                                <div x-show="<?= $gwBase ?>ShouldShowMinCharsMessage" class="px-2 pt-4 text-sm text-gray-700"><?= $escaper->escapeHtmlAttr(__("Please enter 3 or more characters")) ?>
-                                </div>
-                                <div
-                                    id="billing_enter_company"
-                                    class="enter_for_company w-full px-2 py-3"
-                                    @click="<?= $gwBase ?>OnManualEntryClick"
-                                    title="Enter details manually">
-                                    <span class="text-blue-600 text-sm cursor-pointer">
-                                        <?= $escaper->escapeHtmlAttr(__("Enter details manually")) ?>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php
+            /*
+             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): the captured-company
+             * label + "Change company" button only make sense where the
+             * enhanced company-search control lives — i.e. in THIS tile, when
+             * the admin setting points the one control here.
+             *
+             * When the control lives on the address step instead (the
+             * default), the tile is text-only and carries no editable route
+             * back into a captured company at all — that route is the
+             * address-step control itself. See the `else` branch below for
+             * that mode.
+             */
+            ?>
+            <?php if ($isCompanySearchInPaymentTile): ?>
+            <?php
+            /*
+             * TWO-25326 §7: the ONE captured-company label.
+             *
+             * Reads "<name> (<number>)" and replaces three separate things the
+             * tile used to show once a company had been captured — an editable
+             * search control still holding the name, a static "Company Number"
+             * caption, and the number rendered again below it. §7 asks for a
+             * single read-only line, so the two inline hint paragraphs that
+             * preceded this (`company_name_hint` / `company_id_hint`) are gone
+             * with it rather than kept alongside.
+             *
+             * First child of the fieldset, so it sits between the term chips
+             * above and the order-intent notice below. Inside the FORM's
+             * Alpine scope, not the outer tile's, because the form instance is
+             * the one holding company state.
+             *
+             * WHEN it shows is the 2026-08-03 ruling on TWO-25326: shown
+             * exactly when the order-intent notice below is shown, hidden
+             * exactly when it is hidden. Both bindings therefore name the SAME
+             * getter, `orderIntentMessageVisible`, rather than each testing a
+             * condition of its own that happens to agree. This supersedes the
+             * earlier gate, which showed the label whenever a company number
+             * had been captured.
+             *
+             * The label is consequently NOT a swap with the tile's company
+             * controls any more either. TWO-25326 tile bugfix batch, bug 5
+             * (2026-08-05 ruling): the search control's visibility is no
+             * longer conditioned on capture at all — it is decided solely by
+             * the admin setting that says WHERE the one control renders. The
+             * "Change company" button that
+             * used to sit beside this label, as the only route back out of a
+             * hidden search block, is REMOVED along with that hiding: the
+             * search field is now the buyer's route to a different company at
+             * every point, exactly as it is before any company is captured.
+             *
+             * Both bindings are bare getter names: this file's CSP-friendly
+             * Alpine build looks a bound expression up as a key on the
+             * component rather than evaluating it, so `companyTileLabelText`
+             * does the concatenation in JS (see the same reasoning on
+             * `companyIdHiddenClass` below).
+             */
+            ?>
+            <div class="two-company-tile-label-row flex items-center gap-2">
+                <span
+                    class="two-company-tile-label font-semibold text-gray-700"
+                    data-name="company_tile_label"
+                    x-show="orderIntentMessageVisible"
+                    x-text="companyTileLabelText"
+                ></span>
+            </div>
+            <?php endif ?>
+            <?php
+            /*
+             * TWO-25326 tile bugfix batch, bug 5: the order-intent check had no
+             * visible progress indicator at all on Hyvä, so a buyer who picked
+             * a company sat looking at an unchanged tile for however long the
+             * decision took and had no way to tell it was working.
+             *
+             * LOCAL to the tile, never a page overlay — the standing
+             * cross-platform rule (requirement 11), and the same reason the
+             * company-search spinner is an in-field element rather than
+             * `magewire:loader:start`: a full-screen overlay over a checkout the
+             * buyer is still filling in blocks interaction for a background
+             * check they did not ask for. This element sits in the tile's own
+             * flow, exactly where the verdict will appear a moment later, so it
+             * is replaced by its own result rather than by nothing.
+             *
+             * `role="status"` and a real text label, not a bare spinner: the two
+             * notices it precedes are announced the same way, and a decorative
+             * GIF alone tells a screen-reader user nothing at all. The GIF is
+             * `.two-company-search__spinner`, the same asset and the same
+             * childless-element mechanism the search field uses — it is
+             * positioned absolutely against this row.
+             *
+             * Rendered in BOTH company-search-location modes: the intent check
+             * runs whichever surface captured the company.
+             *
+             * The box (border, radius, padding, colour) is `custom.css`'s, not
+             * Tailwind utilities': it is one of four states of ONE box — this
+             * row and the three verdicts below it — and the four have to agree
+             * on their geometry, which they cannot do if each restates it in a
+             * class list. The same reason `input.company_id:disabled` and
+             * `.two-company-search__unavailable` are CSS here rather than
+             * utilities: the module must not depend on the merchant's Tailwind
+             * build having generated a colour only this module asks for, and an
+             * uncompiled `bg-red-50` is an invisible box rather than a loud
+             * failure.
+             */
+            ?>
+            <div
+                class="two-order-intent-box two-order-intent-checking"
+                x-cloak
+                role="status"
+                data-name="order_intent_checking"
+                x-show="orderIntentChecking"
+            >
+                <span><?= $escaper->escapeHtml(__('Checking availability')) ?></span>
+                <span class="two-company-search__spinner" aria-hidden="true"></span>
+            </div>
+            <?php
+            /*
+             * Persistent inline "order intent approved" notice, inside the
+             * payment tile. Replaces the window.dispatchMessages() toast,
+             * which was visible but self-dismissed after 5 seconds — long
+             * before a buyer still filling in the form had any use for it.
+             *
+             * Emitted only when the brand has not switched the notice off, so
+             * a suppressing brand yields no element at all rather than a
+             * permanently hidden wrapper. Class name matches the Luma,
+             * WooCommerce and PrestaShop surfaces so the four checkout
+             * treatments stay greppable; the Tailwind utilities alongside it
+             * follow the same idiom as the payment-terms box below.
+             *
+             * It sits inside the form's Alpine scope, not the outer tile's,
+             * because the form is the instance that runs initialize() and so
+             * the one holding the order-intent state.
+             *
+             * `x-show` reads `orderIntentMessageVisible` rather than the notice
+             * text directly — same truth value, but it makes the shared gate
+             * literal: the company label above reads the identical getter, so
+             * the two cannot drift apart. `x-text` still reads the text.
+             */
+            ?>
+            <?php if ($configModel->getOrderIntentApprovedNotice() !== null): ?>
+                <div
+                    class="two-order-intent-box two-order-intent-message approved"
+                    x-cloak
+                    role="status"
+                    data-name="order_intent_message"
+                    x-show="orderIntentMessageVisible"
+                    x-text="orderIntentApprovedNotice"
+                ></div>
+            <?php endif ?>
+            <?php
+            /*
+             * TWO-25326 §7.2/§7.3 (2026-08-03 ruling): the sibling "not
+             * approved / no intent" text. Same shape and same reasoning as
+             * the approved notice above — a persistent inline element rather
+             * than a toast, gated on the identical brand switch (see
+             * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its
+             * own element, because it needs its own (unavailable, not
+             * success) styling and its own `x-text`.
+             *
+             * Rendered in BOTH company-search-location modes, not only the
+             * text-only tile: it is the ENTIRE story for a declined/no-intent
+             * company on either surface. As of the 2026-08-06 ruling it is also
+             * the only notice — the 5-second decline toast that used to fire
+             * alongside it is gone, so one verdict produces exactly one notice.
+             *
+             * Which makes the CONDITION on this element load-bearing beyond
+             * this file: when the brand switch suppresses the copy there is no
+             * element here at all, so `processOrderIntentSuccessResponse()`
+             * falls back to a toast for a decline that has no sentence to show.
+             *
+             * The two conditions are deliberately NOT the same test. This one
+             * decides whether the ELEMENT exists
+             * (`getOrderIntentNotAvailableNotice() !== null`); the JS one asks
+             * the wider question, whether there is a SENTENCE
+             * (`resolveOrderIntentNotAvailableNotice() === ''`), which is also
+             * true for copy that is present but unusable and would otherwise
+             * render this element empty and silent. Absent copy is the case
+             * where both agree, and it is the case this condition exists for.
+             */
+            ?>
+            <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
+                <div
+                    class="two-order-intent-box two-order-intent-message unavailable"
+                    x-cloak
+                    role="status"
+                    data-name="order_intent_not_available_message"
+                    x-show="twoTileNotAvailableVisible"
+                    x-text="orderIntentNotAvailableNotice"
+                ></div>
+            <?php endif ?>
+            <?php
+            /*
+             * The THIRD verdict state (2026-08-05, cross-platform order-intent
+             * UI unification): the check itself failed.
+             *
+             * Until now an errored intent check produced a self-dismissing
+             * toast and nothing else, so the tile that had just been showing
+             * "Checking availability" went back to showing nothing at all —
+             * indistinguishable from a check that never ran. The three verdicts
+             * an intent check can reach (available / not available / could not
+             * be determined) now each land in the same box in the same place,
+             * differing only in colour, which is the shape the other three
+             * platforms render.
+             *
+             * `role="alert"`, not `role="status"`: unlike its two siblings this
+             * one reports a failure the buyer may need to act on (retry, or
+             * pick a different company), and it appears without the buyer
+             * having asked for anything.
+             *
+             * Unconditional, with no brand switch of its own — the two notices
+             * above are brand-configurable COPY (a brand may have nothing it
+             * wants said about an approval), whereas this text is the existing
+             * `generalErrorMessage`/error-response wording the toast already
+             * used, and there is no configuration that suppresses it.
+             */
+            ?>
+            <div
+                class="two-order-intent-box two-order-intent-message error"
+                x-cloak
+                role="alert"
+                data-name="order_intent_error_message"
+                x-show="twoTileErrorVisible"
+                x-text="orderIntentErrorNotice"
+            ></div>
+            <?php if (!$isCompanySearchInPaymentTile): ?>
+            <?php
+            /*
+             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): text-only tile.
+             *
+             * The enhanced company-search control lives on the address step
+             * in this (default) configuration, so the tile carries NO input
+             * fields, no search control, and no "Change company" link — only
+             * the intent-message text above, which now embeds the company
+             * name and number directly (§7.3).
+             *
+             * `payment[company_name]` / `payment[company_id]` still have to
+             * reach the server, so they stay as hidden inputs rather than
+             * disappearing outright — twoValidatePaymentForm()'s doSave()
+             * reads them by name, and fillCompanyData() / initialize() are
+             * unchanged: they already write these two elements' `.value`
+             * imperatively by id, and do so regardless of which markup mode
+             * is rendered.
+             *
+             * `data-name` is LOAD-BEARING on both, and its absence was the
+             * order-intent regression reported on 2026-08-06: with the control
+             * in the address area, picking a company dispatched no intent.
+             * `data-name` is the contract company-name-payment.phtml resolves
+             * the payment step's company pair by — `[data-name="company_name"]`
+             * and `[data-name="company_id"]` — and every path that WRITES that
+             * pair bails out when either input is missing: the address-step pick
+             * sync (`shipping-company-selected`), the on-load initialisation
+             * (`observeForPaymentForm`, which also carries the initial
+             * dispatch), and `updatePaymentFields()` itself, where those paths'
+             * `dispatch-order-intent` lives. The tile-mode markup below carries
+             * the attribute on its visible field, so tile mode dispatched on
+             * every pick and this mode dispatched on none — one missing
+             * attribute, not a missing code path.
+             *
+             * NOT total silence, and the distinction matters for anyone
+             * diagnosing it again: the `checkout:payment:method-activate` re-arm
+             * in that same file dispatches from the STORED selection alone, so
+             * an intent could still fire when the buyer activated the method
+             * with a company already captured. A feature that fires once and
+             * then never again on any pick reads as working intermittently,
+             * which is why this took a live report to find rather than a test.
+             *
+             * The attribute also restores the `update-company-data` sync, so the
+             * tile's own component learns the company the address step captured
+             * instead of relying on the storage restore in initialize().
+             */
+            ?>
+            <input type="hidden" id="company_name" name="payment[company_name]" data-name="company_name" />
+            <input type="hidden" id="company_id" name="payment[company_id]" data-name="company_id" />
+            <?php else: ?>
+            <?php
+            /*
+             * THE company-search control, mounted from the ONE file that
+             * defines it (TWO-25326, 2026-08-05 ruling). This tile used to
+             * carry a second, divergent control of its own — its own dropdown
+             * markup, its own "Enter details manually" link, its own
+             * min-characters guard, and a manual/search dual-input pair whose
+             * `:id`/`:name` bindings swapped between two copies of each field.
+             * That duplication is what produced the three cosmetic bugs
+             * reported against this surface (a control wider than the tile, a
+             * manual-entry link painted before any interaction, a stray border
+             * around the field pair), so it is deleted rather than patched.
+             *
+             * No `x-data`: the control's state lives on THIS form's component
+             * (`PaymentFormWithValidation`, which composes
+             * `twoGatewayCompanySearchControl`), because the tile label, the
+             * order-intent dispatch and the Company Number block below all read
+             * the same captured-company state. `$twoControlAlpineData` is
+             * therefore empty and the control inherits this scope.
+             *
+             * The input carries the canonical `payment[company_name]` in BOTH
+             * modes — there is one field now, not a visible/hidden mirror pair —
+             * so `twoValidatePaymentForm()`'s doSave() and fillCompanyData()
+             * keep reading it by exactly the name and id they always did.
+             */
+            $twoControlAlpineData = '';
+            $twoControlInputClass = 'company_name block w-full form-input grow renderer-text'
+                . ' border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate';
+            $twoControlInputAttributes = 'id="company_name" name="payment[company_name]"'
+                . ' data-name="company_name" required data-validate=\'{"required": true}\'';
+            ?>
+            <div class="w-full min-w-0">
+                <label for="company_name" class="font-semibold text-gray-700">
+                    <?= $escaper->escapeHtmlAttr(__("Company Name")) ?>
+                </label>
+                <p class="text-xs text-gray-500 mt-1 mb-1">
+                    <?= $escaper->escapeHtmlAttr(__("Select your company from the dropdown to continue.")) ?>
+                </p>
+                <?php include $block->getTemplateFile(
+                    'Two_GatewayHyva::form/field/company-search-control.phtml',
+                ) ?>
             </div>
 
-            <!-- Company Number (dual-input — exactly one is visible per mode) -->
-            <div class="flex flex-col field field-reserved required">
+            <!-- Company Number -->
+            <?php
+            /*
+             * TWO-25326 §7: once a company is captured the whole block —
+             * the static "Company Number" caption included — is hidden, and
+             * the single `two-company-tile-label` line carries the number
+             * instead. The caption was the second of §7's three complaints;
+             * hiding only the input would have left it captioning nothing.
+             *
+             * A class, not `x-show`: the inputs inside carry their own
+             * `x-show` for the manual/search mirror pair, and a wrapper
+             * `x-show` writing `display:none` on this div is independent of
+             * those, but `:class` keeps the two mechanisms from being confused
+             * for one another and matches `companyIdHiddenClass` on the input
+             * below. Bound to a getter returning a plain class-name STRING —
+             * this CSP-friendly Alpine build cannot evaluate an object literal
+             * (see the longer note on the input).
+             *
+             * Same CAPTURED gate as the search block used to carry before the
+             * 2026-08-05 ruling (bug 5, see gateway_method-csp-js.phtml) — the
+             * ruling was about the EDITABLE search control and the "Change
+             * company" swap specifically, not about this block, so this gate
+             * is deliberately UNCHANGED: a buyer who has no captured company
+             * still sees and can fill the field, and once captured the number
+             * is carried by the tile label instead. The inputs stay in the
+             * DOM either way, so `payment[company_id]` still submits.
+             */
+            ?>
+            <div class="flex flex-col field field-reserved required" :class="companyNumberBlockHiddenClass">
               <label for="company_id" class="font-semibold text-gray-700">
                 <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
               </label>
+              <!--
+                  `:disabled` is the ONLY thing that locks this field. It used
+                  to be set imperatively from company-name-payment.phtml, which
+                  disabled it on every shipping sync and never reversed it — so
+                  a company whose national identifier the search response
+                  omitted left the buyer with a required field that was empty
+                  AND uneditable. The lock is now derived state
+                  (`manualMode || companyIdEntryRequired`, see
+                  applyCompanyIdEditability()) with exactly one writer.
+
+                  The greyed-out look is `input.company_id:disabled` in
+                  custom.css, NOT a `:style` binding: CSP-friendly Alpine does
+                  not EVALUATE an attribute expression at all — it looks the
+                  whole string up as a key on the component — so an object
+                  literal `:style="{ backgroundColor: … }"` is not something it
+                  can compute, and a STRING `:style` would set the whole style
+                  attribute, which is where `x-show` writes `display: none`.
+
+                  `:class="companyIdHiddenClass"` hides the input once the
+                  number is locked AND actually present, because the captured
+                  number is then carried by the tile label above instead.
+                  `companyIdDisabled` can only be true when NOT in manual mode
+                  (see applyCompanyIdEditability()), so this never hides the
+                  field while the buyer still needs to fill it in (empty,
+                  enabled, required); the non-empty `companyId` term (see
+                  `companyIdHintVisible`) is what stops it being hidden a tick
+                  before its value has arrived. A class-name STRING, not an
+                  object literal, for the same CSP reason as above.
+              -->
+              <?php
+              /*
+               * ONE input, not the visible/hidden mirror pair this block used
+               * to carry (TWO-25326, 2026-08-05). The pair existed because the
+               * old tile-local search control duplicated every field between a
+               * search-mode copy and a manual-mode copy and swapped their
+               * `:id`/`:name` bindings so that only the visible one submitted
+               * canonically. The shared control has ONE company-name field in
+               * both modes, so the number needs one too — and eight
+               * id/name-resolution getters, each a place for the two copies to
+               * disagree about which is canonical, are gone with it.
+               */
+              ?>
               <input
                 type="text"
-                x-show="!showManual"
-                :id="<?= $gwBase ?>GetCompanyIdFieldId"
-                :name="<?= $gwBase ?>GetCompanyIdFieldName"
+                :class="companyIdHiddenClass"
+                id="company_id"
+                name="payment[company_id]"
+                :disabled="companyIdDisabled"
                 data-name="company_id"
                 required
                 data-validate='{"required": true}'
                 class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
               />
-              <input
-                type="text"
-                x-show="showManual"
-                :id="<?= $gwBase ?>GetManualCompanyIdFieldId"
-                :name="<?= $gwBase ?>GetManualCompanyIdFieldName"
-                required
-                data-validate='{"required": true}'
-                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
-              />
             </div>
+            <?php endif // !$isCompanySearchInPaymentTile ?>
 
             <!-- Invoice Email (Conditional) -->
             <div class="flex flex-col" x-show="isInvoiceEmailsEnabled">
@@ -275,6 +587,21 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 id="invoice_emails"
                 name="payment[invoiceEmails]"
                 :value="invoiceEmails" @change="<?= $gwBase ?>OnInvoiceEmailsChange"
+                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
+              />
+              <div class="field field-error messages"></div>
+            </div>
+
+            <!-- PO Number Field (Conditional) -->
+            <div class="flex flex-col" x-show="isPONumberFieldEnabled">
+              <label for="two_po_number" class="font-semibold text-gray-700">
+                <?= $escaper->escapeHtmlAttr(__("PO Number")) ?>
+              </label>
+              <input
+                type="text"
+                id="two_po_number"
+                name="payment[poNumber]"
+                :value="poNumber" @change="<?= $gwBase ?>OnPoNumberChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>
@@ -320,21 +647,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 id="two_order_note"
                 name="payment[orderNote]"
                 :value="orderNote" @change="<?= $gwBase ?>OnOrderNoteChange"
-                class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
-              />
-              <div class="field field-error messages"></div>
-            </div>
-
-            <!-- PO Number Field (Conditional) -->
-            <div class="flex flex-col" x-show="isPONumberFieldEnabled">
-              <label for="two_po_number" class="font-semibold text-gray-700">
-                <?= $escaper->escapeHtmlAttr(__("PO Number")) ?>
-              </label>
-              <input
-                type="text"
-                id="two_po_number"
-                name="payment[poNumber]"
-                :value="poNumber" @change="<?= $gwBase ?>OnPoNumberChange"
                 class="border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300"
               />
               <div class="field field-error messages"></div>

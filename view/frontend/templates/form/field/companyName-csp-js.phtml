@@ -30,221 +30,228 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
 $quoteDetails = $quoteModel->getQuoteDetails();
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+// Same flag set as gateway_method-csp-js.phtml, for the same reason: this
+// lands in an inline script and carries buyer-supplied values (email,
+// telephone, name, product names and descriptions). JSON_HEX_TAG is the
+// load-bearing one — without it a product named with a script end tag closes
+// the block early, which is both script injection and a second way to move
+// where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
+// is deliberately absent: it strips the incidental protection plain
+// json_encode() gives by escaping the slash in an end tag.
+// JSON_INVALID_UTF8_SUBSTITUTE and the `?: '{}'` are not belt-and-braces. A
+// single malformed byte in a product name makes json_encode() return false, and
+// this value is interpolated bare, so the template would emit `quote : ,` — a
+// syntax error that kills every Alpine.data() registration in the block. That is
+// this very outage arriving through data. Substitute the bad byte, and if the
+// encode still fails fall back to an empty object: the country lookup then falls
+// through to reading the DOM, which degrades instead of dying.
+$quoteDetailsJson = json_encode(
+    $quoteDetails,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 
 /** Generated with hyva-csp-helper.php */
 ?>
 <script>
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoAddressReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoAddressWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
 function <?= $gwBase ?>CompanySearchField() {
-    return {
-        isOpen: false,
-        search: '',
-        items: [],
-        selectedIndex: -1,
-        isSelecting: false,
-        manualMode: false,
-        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-        isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
+    /*
+     * TWO-25326, 2026-08-05 ruling: this is an ADAPTER, not a control.
+     *
+     * The whole of the company-search control — the query/name split, the
+     * dropdown, the keyboard and focus management, the manual-entry route, the
+     * min-chars / no-matches / unavailable verdicts — is
+     * `twoGatewayCompanySearchControl()` in gateway_method-csp-js.phtml, layered
+     * over `twoGatewayCompanySearchEngine()`. The payment tile mounts the SAME
+     * factory with the same markup; there is exactly one implementation and this
+     * file is not it.
+     *
+     * What follows is only what is genuinely specific to the ADDRESS STEP: which
+     * storage record it reads and writes, which container an address lookup
+     * fills in, and restoring a captured company across the Magewire re-renders
+     * that destroy and rebuild this component.
+     */
+    // Both cross-file globals guarded the same way as twoAddressReadSelection/
+    // twoAddressWriteSelection above: gateway_method-csp-js.phtml's inline
+    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // failure there must degrade this surface, not throw a ReferenceError
+    // out of it.
+    const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
+        || function(target) { return target; };
+    const twoGatewayCompanySearchControlFn = window.twoGatewayCompanySearchControl
+        || function() { return {}; };
+    return twoGatewayComposeLiveFn(twoGatewayCompanySearchControlFn({
+        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+        isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
+        isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
+        minSearchChars: <?= (int) $companySearchMinChars ?>,
+        companySearchLimit: 10,
+        editableCompanyId: true,
+        // The address step unlocks the (unused, provenance-only —
+        // companyName.phtml binds nothing to it, see the doc comment there)
+        // id-lock formula whenever search itself is off, a term the payment
+        // tile's own formula does not carry.
+        editableCompanyIdExtraUnlock: function () { return !this.isCompanySearchEnabled; },
+        countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+        selectEventName: 'shipping-company-selected',
+        companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
+        getQuote: function () { return this.quoteData; },
+        readSelection: function () { return twoAddressReadSelection(); },
+        writeSelection: function (patch) { return twoAddressWriteSelection(patch); },
+        // Traverse up levels from the control root to find the container with
+        // all the address inputs — still 4 parentElement hops, and the control
+        // root is still this component's own `$root`, because on this surface
+        // the control IS the Alpine component.
+        resolveAddressContainer: function () {
+            let container = this.controlRoot();
+            for (let i = 0; i < 4 && container; i++) {
+                container = container.parentElement;
+            }
+            return container;
+        },
+        addressContainerWarning: 'Could not find address container',
+    }), {
         quoteData: <?= $quoteDetailsJson ?>,
-        countrySelectionShown: false,
 
         init() {
             // Restore manualMode from storage
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            const data = twoAddressReadSelection();
             this.manualMode = data.manual_mode || false;
+
+            /*
+             * Restore the company pair too, so the number the buyer typed on a
+             * previous page load — or the one a registry pick supplied —
+             * survives the Magewire re-renders that destroy and rebuild this
+             * component. Only selectItem() and onCompanyIdInput() write
+             * storage, so an unrestored component would come back empty and
+             * the checkout would lose the identifier placement needs.
+             *
+             * `companyName` is restored alongside the id deliberately: the
+             * editability rule compares the field text against it, and
+             * restoring one without the other would make a restored pick look
+             * like an edited name and unlock a registry-supplied number.
+             *
+             * The provenance is restored with them and the lock derives from it,
+             * NOT from "is there a number". Both a registry pick and a
+             * hand-typed number land under the same key, so an unqualified
+             * `!this.companyId` re-locked the field over the buyer's own value
+             * on the next re-render and made a typo uncorrectable. An absent or
+             * unrecognised source leaves the field typeable: nothing has vouched
+             * for that number, and the failure that direction is recoverable
+             * while the other one is a dead end.
+             */
+            this.companyName = data.company_name || '';
+            this.companyId = data.company_id || '';
+            this.companyIdSource = data.company_id_source || '';
+            this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+            this.applyCompanyIdEditability();
+            /*
+             * A restored pick with a valid identifier is a completed selection,
+             * exactly like one made this page load via selectItem(). Without
+             * this, `isCompanySelected` stayed at its `false` default across a
+             * reload.
+             *
+             * Keyed off `companyId` alone, not `hasVouchedCompanyId()`: a
+             * restored MANUAL identifier is just as complete a pick as a
+             * registry one, and `hasVouchedCompanyId()` answers a narrower
+             * question — whether the number may still be edited — not whether
+             * a company has been chosen.
+             */
+            this.isCompanySelected = Boolean(this.companyId);
+
+            /*
+             * NOT reconciled against the field's own value, deliberately.
+             *
+             * Review round 2 added a guard here that dropped a restored pair
+             * when the company-name field held a different name — the case
+             * where the payment tile has overwritten the address step's pick in
+             * the ONE shared selection blob. Review round 3 showed the guard
+             * can destroy a GOOD pick instead: `wire:model.defer` means the
+             * server's `address.company` lags the client value, so any Magewire
+             * re-render landing before the roundtrip rebuilds this field from
+             * the stale name and the guard then discards the pick that was
+             * perfectly correct.
+             *
+             * Unguarded is now also CORRECT, not merely the prior behaviour.
+             * Both directions were heuristics over one storage key being asked
+             * to hold what may be two different companies; the key has since
+             * been split (`billing_company_selection:<store>`, written only by
+             * the payment tile), so this key holds the shipping company alone
+             * and nothing else can contradict it. There is nothing left to
+             * reconcile against.
+             */
         },
 
-        showDropdown() {
-            return this.isOpen && this.items.length > 0;
-        },
+        /**
+         * The buyer typed into a company-number field.
+         *
+         * Bound to NOTHING in companyName.phtml (TWO-25326 §5 removed the
+         * editable company-number input this surface used to have) but kept as
+         * a real, working method rather than deleted: it still maintains the
+         * `company_id_source` provenance the payment step reads out of the
+         * shared selection blob, on the chance a future revision of this
+         * surface (or a branded overlay) re-adds a binding for it.
+         *
+         * Debounced by whichever template binds it. Writes through the
+         * store-view-keyed accessor and re-announces the pair on the same
+         * event a registry pick uses, so the payment step sees a hand-typed
+         * identifier by exactly the route it already sees a searched one.
+         */
+        onCompanyIdInput() {
+            const value = this.$el.value;
+            if (value === this.companyId) return;
 
-        async getItems() {
-            if (this.isSelecting) { this.isSelecting = false; return; }
-            if (this.manualMode) return;
-            this.search = this.$el.value;
-            this.selectedIndex = -1;
-            if (this.search.length < 3) {
-                this.items = [];
-                return;
-            }
-
-            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const countryCode = window.twoGatewayGetCountryCode(this.quoteData);
-
-            // If no country available from any source, show a friendly message once
-            if (!countryCode) {
-                if (!this.countrySelectionShown) {
-                    this.countrySelectionShown = true;
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: '<?= $escaper->escapeJs(__('Please select a country first')) ?>'
-                    }], 5000);
-                }
-                return;
-            }
-            this.countrySelectionShown = false;
-
-            try {
-                const queryParams = new URLSearchParams({
-                    country: countryCode.toUpperCase(),
-                    limit: 10,
-                    offset: 0,
-                    q: unescape(this.search),
-                });
-                const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                this.items = data.items.map(item => ({
-                    companyName: item.name,
-                    companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                    companyId: item.national_identifier.id,
-                    lookupId: item.lookup_id,
-                }));
-                if (this.items.length > 0) this.isOpen = true;
-            } catch (error) {
-                console.error("Error fetching companies:", error);
-                this.items = [];
-            }
-        },
-
-        handleItemClick(event) {
-            // Stop all event propagation to prevent address book modal from closing
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            if (event.preventDefault) event.preventDefault();
-
-            const index = event.currentTarget.dataset.index;
-            if (index !== undefined && this.items[index]) {
-                this.selectItem(this.items[index]);
-            }
-        },
-
-        selectItem(item) {
-            this.isSelecting = true;
-            this.isOpen = false;
-            this.items = [];
-            this.search = item.companyName;
-            this.manualMode = false;
-
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) {
-                input.value = item.companyName;
-                // Use bubbles: false to prevent address book modal from closing
-                input.dispatchEvent(new Event('input', { bubbles: false }));
-            }
-
-            // Preserve quote_id for session detection
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const companyData = {
-                quote_id: existingData.quote_id || '',
-                company_name: item.companyName,
-                company_id: item.companyId,
-                manual_mode: false
-            };
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(companyData));
+            this.companyId = value;
+            this.companyIdSource = 'manual';
+            const companyData = twoAddressWriteSelection({
+                company_id: value,
+                company_id_source: 'manual'
+            });
 
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: companyData
             }));
-
-            // Address lookup if enabled
-            if (this.isAddressSearchEnabled && item.lookupId) {
-                this.addressLookup(item.lookupId);
-            }
         },
-
-        async addressLookup(lookupId) {
-            // Capture root element before async call since $root may not be available in callbacks
-            const rootEl = this.$root;
-            try {
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
-                const data = await response.json();
-
-                if (data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0], rootEl);
-                }
-            } catch (error) {
-                console.error("Error fetching address:", error);
-            }
-        },
-
-        setAddressData(address, rootEl) {
-            // Find the address section containing this company field
-            // Traverse up levels from the component root to find the container with all address inputs
-            let container = rootEl;
-            for (let i = 0; i < 4 && container; i++) {
-                container = container.parentElement;
-            }
-
-            if (!container) {
-                console.warn('Could not find address container');
-                return;
-            }
-
-            const cityInput = container.querySelector('input[name="city"]');
-            const postcodeInput = container.querySelector('input[name="postcode"]');
-            const streetInput = container.querySelector('input[name="street[0]"]');
-
-            if (cityInput) {
-                cityInput.value = address.city || "";
-            }
-
-            if (postcodeInput) {
-                postcodeInput.value = address.postal_code || "";
-            }
-
-            if (streetInput) {
-                streetInput.value = address.street_address || "";
-            }
-
-            // Trigger 'input' event with bubbles: false to prevent modal closure
-            [cityInput, postcodeInput, streetInput].forEach(input => {
-                if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: false }));
-                }
-            });
-        },
-
-        enterManually(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.manualMode = true;
-            this.isOpen = false;
-            this.items = [];
-            this.saveManualModeToStorage(true);
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) input.focus();
-        },
-
-        enableSearch(event) {
-            // Stop event propagation to prevent address book modal from closing
-            if (event) {
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-            }
-
-            this.manualMode = false;
-            this.saveManualModeToStorage(false);
-            const input = this.$root.querySelector('input[type="text"]');
-            if (input) input.focus();
-        },
-
-        saveManualModeToStorage(manualMode) {
-            const data = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            data.manual_mode = manualMode;
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(data));
-        },
-
-        closeDropdown() {
-            this.isOpen = false;
-            this.items = [];
-        },
-    }
+    });
 }
 document.addEventListener('alpine:init', () => {
     Alpine.data('<?= $gwBase ?>CompanySearchField', <?= $gwBase ?>CompanySearchField);

@@ -10,7 +10,7 @@
     totals. Hyvä's PHP cart renders totals server-side (no KnockoutJS), so
     the jsLayout component Two_Gateway registers for the Luma cart never
     fires here — the surcharge was folded into the grand total but shown
-    without its own row (ABN-458). Hyvä's php-cart/totals.phtml loops the
+    without its own row. Hyvä's php-cart/totals.phtml loops the
     `total_segments` and renders every child of checkout.cart.totals; each
     child gates itself on `segment.code`. Registering our segment template
     as a child is therefore all that's needed.

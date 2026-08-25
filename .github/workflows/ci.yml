@@ -207,8 +207,26 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
-  # NOTE: no jest job — this module ships no JS tests (package.json is
-  # prettier-only). A `prettier --check` gate was considered (TWO-24999) but
+  # A real gate, deliberately not continue-on-error and not conditional
+  # (TWO-25245). The company-search defects this suite pins — the magewire
+  # overlay latching on forever after "type three characters then backspace", a
+  # timeout rendering as "no companies found", a superseded response
+  # repopulating the dropdown — are all invisible to the PHPUnit suites, which
+  # never execute the templates' inline JS. An advisory job would have caught
+  # none of them.
+  jest:
+    name: Jest (Node 20)
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:js
+
+  # NOTE: no `prettier --check` gate. It was considered (TWO-24999) but
   # deferred: the tree is not currently prettier-clean (23 files), so the gate
   # would require a repo-wide `prettier --write` reformat first — a separate
   # formatting decision, tracked out of this CI-enablement change.
