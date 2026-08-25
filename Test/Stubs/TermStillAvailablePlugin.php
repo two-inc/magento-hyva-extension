@@ -42,31 +42,8 @@ namespace Magento\Quote\Model {
     }
 }
 
-namespace Magento\Framework {
-    if (!class_exists(Phrase::class, false)) {
-        class Phrase
-        {
-            /** @param array<int, mixed> $args */
-            public function __construct(private string $text, private array $args = [])
-            {
-            }
-
-            public function __toString(): string
-            {
-                return $this->args === [] ? $this->text : vsprintf($this->text, $this->args);
-            }
-        }
-    }
-}
-
-namespace {
-    if (!function_exists('__')) {
-        function __(string $text, ...$args): \Magento\Framework\Phrase
-        {
-            return new \Magento\Framework\Phrase($text, $args);
-        }
-    }
-}
+// Magento\Framework\Phrase and the global __() are stubbed in
+// MagentoTranslate.php, required before this file — see Test/bootstrap.php.
 
 namespace Magento\Framework\Exception {
     if (!class_exists(LocalizedException::class, false)) {
