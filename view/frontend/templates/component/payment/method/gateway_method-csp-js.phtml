@@ -53,7 +53,7 @@ $isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnable
     : "false";
 // Where `rest/V1/two/...` lives. The link base URL rather than a hand-built
 // host, so a store served under a subdirectory or a store-coded URL reaches
-// its own REST entry point — the same value Luma's `url.build()` prepends.
+// its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $merchantDetails = $orderIntentConfig["merchant"] ?? [];
 $merchantId = $merchantDetails["id"] ?? "";
@@ -3791,7 +3791,7 @@ $quoteDetails = json_encode(
              *
              * TWO-25503. Ported from the Luma renderer's sole-trader flow, which
              * this checkout never loaded: Hyvä's payment step is Alpine, so none
-             * of `gateway_method.js` runs here and every step below had no Hyvä
+             * of that renderer runs here and every step below had no Hyvä
              * equivalent at all.
              *
              * The sequence, unchanged from Luma: the billing country's registry

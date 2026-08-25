@@ -130,10 +130,10 @@ summary::marker {
   color: #fff;
 }
 
-/* The Registered company / Sole trader toggle (TWO-25503) — Luma's
-   `.mode_item` pair, sharing the term chips' palette above because it is the
-   same control in the same tile. Its own container rule: the mode chips sit on
-   one row of text rather than stacking a label over a fee. */
+/* The Registered company / Sole trader toggle (TWO-25503). Shares the term
+   chips' palette above because it is the same control in the same tile; its own
+   container rule because the mode chips sit on one row of text rather than
+   stacking a label over a fee. */
 .two-mode-chips {
   display: flex;
   gap: 8px;
