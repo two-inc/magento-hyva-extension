@@ -57,6 +57,14 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $brandedViewModel;
 
+    /**
+     * Memoized result of getOrderIntentConfig() — avoids repeating the
+     * verify_api_key round trip when multiple templates on one page need it.
+     *
+     * @var array|null
+     */
+    private $orderIntentConfig;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -129,6 +137,10 @@ class CheckoutConfig implements ArgumentInterface
 
     public function getOrderIntentConfig()
     {
+        if ($this->orderIntentConfig !== null) {
+            return $this->orderIntentConfig;
+        }
+
         $merchant = null;
         if ($this->configRepository->getApiKey()) {
             $merchant = $this->adapter->execute(
@@ -137,14 +149,39 @@ class CheckoutConfig implements ArgumentInterface
                 "GET",
             );
         }
-        $orderIntentConfig = [
+        $this->orderIntentConfig = [
             "extensionPlatformName" => $this->configRepository->getExtensionPlatformName(),
             "extensionDBVersion" => $this->configRepository->getExtensionDBVersion(),
             "weightUnit" => $this->configRepository->getWeightUnit(),
             "merchant" => $merchant,
         ];
-        return $orderIntentConfig;
+        return $this->orderIntentConfig;
     }
+
+    /**
+     * Plugin identifier for the `client` query param on browser-side Two API calls.
+     */
+    public function getClientName(): ?string
+    {
+        return $this->configRepository->getExtensionPlatformName();
+    }
+
+    /**
+     * Plugin version for the `client_v` query param on browser-side Two API calls.
+     */
+    public function getClientVersion(): ?string
+    {
+        return $this->configRepository->getExtensionDBVersion();
+    }
+
+    /**
+     * Merchant slug for the `merchant` query param on browser-side Two API calls.
+     */
+    public function getMerchantShortName(): string
+    {
+        return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
+    }
+
     public function getIsCompanySearchEnabled()
     {
         return $this->configRepository->isCompanySearchEnabled();

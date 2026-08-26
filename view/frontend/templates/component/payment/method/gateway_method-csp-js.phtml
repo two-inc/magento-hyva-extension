@@ -501,6 +501,9 @@ $quoteDetails = json_encode($quoteDetails);
                         limit: this.companySearchLimit,
                         offset: 0,
                         q: unescape(this.search),
+                        client: this.orderIntentConfig_extensionPlatformName,
+                        client_v: this.orderIntentConfig_extensionDBVersion,
+                        merchant: this.orderIntentConfig_merchant_shortName,
                     });
 
                     const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
@@ -648,7 +651,8 @@ $quoteDetails = json_encode($quoteDetails);
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
                     const queryParams = new URLSearchParams({
                         client: this.orderIntentConfig_extensionPlatformName,
-                        client_v: this.orderIntentConfig_extensionDBVersion
+                        client_v: this.orderIntentConfig_extensionDBVersion,
+                        merchant: this.orderIntentConfig_merchant_shortName
                     });
 
                     const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {

@@ -25,6 +25,9 @@ $companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
+$clientName = $configModel->getClientName();
+$clientVersion = $configModel->getClientVersion();
+$merchantShortName = $configModel->getMerchantShortName();
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 $quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 ?>
@@ -65,6 +68,9 @@ document.addEventListener('alpine:init', () => {
         lookupId: '',
         checkoutApiUrl: '<?= $checkoutApiUrl ?>',
         companySearchLimit: '<?= $companySearchLimit ?>',
+        client: '<?= $clientName ?>',
+        clientV: '<?= $clientVersion ?>',
+        merchant: '<?= $merchantShortName ?>',
         countryCode : "",
         isAddressSearchEnabled : '<?= $isAddressSearchEnabled ?>',
         isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
@@ -109,6 +115,9 @@ document.addEventListener('alpine:init', () => {
                             limit: self.companySearchLimit,
                             offset: 0,
                             q: unescape(self.search),
+                            client: self.client,
+                            client_v: self.clientV,
+                            merchant: self.merchant,
                         });
 
                         // Fetch company data
@@ -238,7 +247,12 @@ document.addEventListener('alpine:init', () => {
         },
         async addressLookup(lookupId) {
             try {
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
+                const queryParams = new URLSearchParams({
+                    client: this.client,
+                    client_v: this.clientV,
+                    merchant: this.merchant,
+                });
+                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`);
                 const data = await response.json();
 
                 if (data.addresses && data.addresses.length > 0) {
