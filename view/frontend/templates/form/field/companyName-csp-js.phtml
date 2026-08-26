@@ -30,6 +30,9 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$clientName = $configModel->getClientName();
+$clientVersion = $configModel->getClientVersion();
+$merchantShortName = $configModel->getMerchantShortName();
 $quoteDetails = $quoteModel->getQuoteDetails();
 $quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
@@ -46,6 +49,9 @@ function <?= $gwBase ?>CompanySearchField() {
         manualMode: false,
         checkoutApiUrl: '<?= $checkoutApiUrl ?>',
         isAddressSearchEnabled: '<?= $isAddressSearchEnabled ?>',
+        client: '<?= $clientName ?>',
+        clientV: '<?= $clientVersion ?>',
+        merchant: '<?= $merchantShortName ?>',
         quoteData: <?= $quoteDetailsJson ?>,
         countrySelectionShown: false,
 
@@ -91,6 +97,9 @@ function <?= $gwBase ?>CompanySearchField() {
                     limit: 10,
                     offset: 0,
                     q: unescape(this.search),
+                    client: this.client,
+                    client_v: this.clientV,
+                    merchant: this.merchant,
                 });
                 const response = await fetch(this.checkoutApiUrl + '/companies/v2/company?' + queryParams);
                 if (!response.ok) throw new Error("Network response was not ok");
@@ -158,7 +167,12 @@ function <?= $gwBase ?>CompanySearchField() {
             // Capture root element before async call since $root may not be available in callbacks
             const rootEl = this.$root;
             try {
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}`);
+                const queryParams = new URLSearchParams({
+                    client: this.client,
+                    client_v: this.clientV,
+                    merchant: this.merchant,
+                });
+                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`);
                 const data = await response.json();
 
                 if (data.addresses && data.addresses.length > 0) {
