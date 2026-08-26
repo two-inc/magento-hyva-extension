@@ -29,6 +29,9 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
+$clientName = $configModel->getClientName();
+$clientVersion = $configModel->getClientVersion();
+$merchantShortName = $configModel->getMerchantShortName();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -121,6 +124,9 @@ function <?= $gwBase ?>CompanySearchField() {
         || function() { return {}; };
     return twoGatewayComposeLiveFn(twoGatewayCompanySearchControlFn({
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+        merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
