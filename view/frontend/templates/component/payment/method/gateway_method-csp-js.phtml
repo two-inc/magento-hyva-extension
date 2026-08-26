@@ -58,6 +58,8 @@ $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $merchantDetails = $orderIntentConfig["merchant"] ?? [];
 $merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
+$clientName = $configModel->getClientName();
+$clientVersion = $configModel->getClientVersion();
 
 $quoteDetails = $quoteModel->getQuoteDetails();
 $currentStoreId = $quoteModel->getCurrentStoreId();
@@ -896,6 +898,9 @@ $quoteDetails = json_encode(
             limit: options.limit,
             offset: 0,
             q: unescape(options.query),
+            client: options.client || '',
+            client_v: options.clientV || '',
+            merchant: options.merchant || '',
         });
         const url = options.checkoutApiUrl + '/companies/v2/company?' + queryParams;
 
@@ -1025,9 +1030,12 @@ $quoteDetails = json_encode(
      *
      * @param {string} checkoutApiUrl
      * @param {string} lookupId
+     * @param {string} [client]
+     * @param {string} [clientV]
+     * @param {string} [merchant]
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
-    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId) {
+    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId, client, clientV, merchant) {
         const controller = new AbortController();
         // No reason argument: nothing reads it, and the sibling search helper
         // does not pass one either.
@@ -1036,7 +1044,12 @@ $quoteDetails = json_encode(
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
         try {
-            const response = await fetch(`${checkoutApiUrl}/companies/v2/company/${lookupId}`, {
+            const queryParams = new URLSearchParams({
+                client: client || '',
+                client_v: clientV || '',
+                merchant: merchant || '',
+            });
+            const response = await fetch(`${checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`, {
                 signal: controller.signal,
             });
             // Without this check an error body parses as an address payload
@@ -1222,6 +1235,12 @@ $quoteDetails = json_encode(
      *
      * @param {Object} options
      * @param {string} options.checkoutApiUrl
+     * @param {string} [options.client] `client` query param stamped on every
+     *   browser-side Two API call this engine makes.
+     * @param {string} [options.clientV] `client_v` query param, sibling of
+     *   `client` above.
+     * @param {string} [options.merchant] `merchant` query param, sibling of
+     *   `client` above.
      * @param {number} options.companySearchLimit
      * @param {number} options.minSearchChars
      * @param {boolean} options.isCompanySearchEnabled
@@ -1289,6 +1308,9 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanySearchEngine = window.twoGatewayCompanySearchEngine || function twoGatewayCompanySearchEngine(options) {
         const cfg = Object.assign({
             checkoutApiUrl: '',
+            client: '',
+            clientV: '',
+            merchant: '',
             companySearchLimit: 10,
             minSearchChars: 3,
             isCompanySearchEnabled: true,
@@ -1357,6 +1379,9 @@ $quoteDetails = json_encode(
             // it post-mount to simulate exactly that), so the engine's own
             // methods read `this.X` for these, never `cfg.X`.
             checkoutApiUrl: cfg.checkoutApiUrl,
+            client: cfg.client,
+            clientV: cfg.clientV,
+            merchant: cfg.merchant,
             companySearchLimit: cfg.companySearchLimit,
             minSearchChars: cfg.minSearchChars,
             isCompanySearchEnabled: cfg.isCompanySearchEnabled,
@@ -1509,6 +1534,9 @@ $quoteDetails = json_encode(
                         countryCode: this.countryCode,
                         query: term,
                         limit: this.companySearchLimit,
+                        client: this.client,
+                        clientV: this.clientV,
+                        merchant: this.merchant,
                         signal: controller.signal,
                     });
                 } catch (error) {
@@ -1769,7 +1797,7 @@ $quoteDetails = json_encode(
 
             // --- address lookup (identical across every surface that offers it) ---
             async addressLookup(lookupId, container) {
-                const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId);
+                const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId, this.client, this.clientV, this.merchant);
                 if (data && data.addresses && data.addresses.length > 0) {
                     this.setAddressData(data.addresses[0], container);
                 }
@@ -2893,6 +2921,9 @@ $quoteDetails = json_encode(
          */
         return twoGatewayComposeLive(window.twoGatewayCompanySearchControl({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+            merchant: '<?= $escaper->escapeJs($merchantName) ?>',
             companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isCompanySearchEnabled: true,
@@ -4333,7 +4364,8 @@ $quoteDetails = json_encode(
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
                     const queryParams = new URLSearchParams({
                         client: this.orderIntentConfig_extensionPlatformName,
-                        client_v: this.orderIntentConfig_extensionDBVersion
+                        client_v: this.orderIntentConfig_extensionDBVersion,
+                        merchant: this.orderIntentConfig_merchant_shortName
                     });
 
                     const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
