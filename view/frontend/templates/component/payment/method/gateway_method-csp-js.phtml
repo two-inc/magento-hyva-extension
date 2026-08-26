@@ -2284,9 +2284,16 @@ $quoteDetails = json_encode(
              * the company-name field. Plain Tab is left to the browser: the "not
              * on the list" button is the very next focusable element in document
              * order, and the panel must stay open for it.
+             *
+             * TWO-25503: where that button is not offered, the query field is
+             * the panel's last focusable, so plain Tab has to do the button's
+             * half of the job — otherwise focus leaves an open panel behind it.
              */
             onQueryTab(event) {
-                if (!event.shiftKey) return;
+                if (!event.shiftKey) {
+                    if (!this.manualEntryVisible) this.onManualEntryTab(event);
+                    return;
+                }
                 event.preventDefault();
                 this.closeDropdownAndFocusName();
             },
@@ -2525,6 +2532,15 @@ $quoteDetails = json_encode(
             // `['!showManual']` on the payment tile.
             ['!companyIdDisplayVisible']() {
                 return !this.companyIdDisplayVisible;
+            },
+
+            /**
+             * Gates the in-panel manual-entry row (TWO-25503).
+             *
+             * @returns {boolean}
+             */
+            get manualEntryVisible() {
+                return true;
             },
 
             /**
@@ -3157,6 +3173,14 @@ $quoteDetails = json_encode(
             // twice. A constant rather than a narrowed condition: this surface
             // has no state in which that display is the right place for it.
             get companyIdDisplayVisible() {
+                return false;
+            },
+
+            // TWO-25503: this tile hosts the control only when the address-step
+            // company search is off, and manual entry captures no company
+            // number — which Two's payment method requires — so the registry
+            // lookup is the only route left here.
+            get manualEntryVisible() {
                 return false;
             },
 

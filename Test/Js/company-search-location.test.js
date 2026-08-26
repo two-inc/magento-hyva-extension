@@ -209,4 +209,128 @@ describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
       expect(component.twoTileNotAvailableVisible).toBe(false);
     });
   });
+
+  /**
+   * TWO-25503. Manual entry captures no company number and Two's payment method
+   * requires one, so the affordance is offered only where the address-step
+   * lookup is — which is exactly where the control is NOT in the tile.
+   *
+   * The gate is component state, not a PHP branch, so the control's markup stays
+   * byte-identical across both mount points (pinned by
+   * company-search-one-control.test.js). That makes the binding and the getter
+   * two halves of one claim: a getter nothing consults, or a binding naming a
+   * property no component has, are both silently inert.
+   */
+  describe("manual entry follows the company-search setting", () => {
+    const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
+    const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+    const ROW_WRAPPER = ".two-company-manual-entry-row";
+
+    let env;
+
+    beforeEach(() => {
+      document.body.innerHTML = [
+        '<div id="root" class="two-company-search">',
+        '  <input type="text" id="field" value="" />',
+        '  <input type="text" class="two-company-query" id="query" value="" />',
+        "</div>",
+        // The next real control after the whole component — what a Tab out of
+        // the panel has to land on.
+        '<input type="text" id="next-control" />',
+      ].join("\n");
+
+      env = H.installHyvaEnvironment();
+      H.loadSharedHelpers();
+      H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
+      env.fireAlpineInit();
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    [
+      [H.COMPANY_NAME_MARKUP_TEMPLATE, ADDRESS_AREA, "the address step"],
+      [H.GATEWAY_METHOD_MARKUP_TEMPLATE, PAYMENT_TILE_TRUE, "the payment tile"],
+    ].forEach(function (row) {
+      const relPath = row[0];
+      const rules = row[1];
+      const description = row[2];
+
+      test("the row is gated on manualEntryVisible in " + description, () => {
+        const markup = H.renderTemplateMarkup(relPath, rules);
+        const doc = new DOMParser().parseFromString(markup, "text/html");
+        const button = doc.querySelector(ROW_WRAPPER);
+        expect(button).not.toBeNull();
+
+        expect(button.parentElement.getAttribute("x-show")).toBe(
+          "manualEntryVisible",
+        );
+      });
+    });
+
+    /**
+     * @param {string} componentName
+     * @returns {Object} the mounted component
+     */
+    function mount(componentName) {
+      const factory = env.alpineComponents[componentName];
+      expect(typeof factory).toBe("function");
+
+      return H.mountComponent(factory, {
+        el: document.getElementById("field"),
+        root: document.getElementById("root"),
+      });
+    }
+
+    [
+      [ADDRESS_COMPONENT, true, "offered on the address step"],
+      [TILE_COMPONENT, false, "withheld in the payment tile"],
+    ].forEach(function (row) {
+      const componentName = row[0];
+      const expected = row[1];
+      const description = row[2];
+
+      test("manual entry is " + description, () => {
+        expect(mount(componentName).manualEntryVisible).toBe(expected);
+      });
+    });
+
+    /*
+     * The panel's forward Tab-out. The "not on the list" button is the panel's
+     * last focusable and its `@keydown.tab` is what closes the panel on the way
+     * out, so where the button is withheld the query field inherits that job —
+     * otherwise focus walks off and leaves an open panel over the rest of the
+     * form, which is the TWO-25326 §4 defect coming back by another route.
+     */
+    [
+      [ADDRESS_COMPONENT, false, true, "left to the browser on the address step"],
+      [TILE_COMPONENT, true, false, "handled here in the payment tile"],
+    ].forEach(function (row) {
+      const componentName = row[0];
+      const prevented = row[1];
+      const stillOpen = row[2];
+      const description = row[3];
+
+      test("plain Tab out of the query field is " + description, () => {
+        const component = mount(componentName);
+        component.isOpen = true;
+
+        const event = {
+          key: "Tab",
+          shiftKey: false,
+          prevented: false,
+          preventDefault: function () {
+            this.prevented = true;
+          },
+          stopPropagation: function () {},
+        };
+
+        component.onQueryTab(event);
+
+        expect(event.prevented).toBe(prevented);
+        expect(component.isOpen).toBe(stillOpen);
+      });
+    });
+  });
 });

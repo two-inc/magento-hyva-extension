@@ -307,9 +307,14 @@ use Magento\Framework\Escaper;
              * the browser: closing the panel removes this button from the
              * document, and a native Tab computed against a document that no
              * longer contains the focused element lands on `<body>`.
+             *
+             * TWO-25503: gated on `manualEntryVisible`, which the payment tile
+             * overrides to a constant false — manual entry captures no company
+             * number and Two's payment method requires one, so it is offered
+             * only where the address-step lookup that does capture one is on.
              */
             ?>
-            <div class="px-2 py-3 border-t border-gray-200">
+            <div x-show="manualEntryVisible" class="px-2 py-3 border-t border-gray-200">
                 <button
                     type="button"
                     @click.stop="enterManually"
