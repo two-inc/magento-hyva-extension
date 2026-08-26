@@ -473,7 +473,7 @@ describe("shared company-search helpers", () => {
       );
 
       expect(fetchStub.last().url).toBe(
-        "https://checkout-api.test.invalid/companies/v2/company/lookup-111",
+        "https://checkout-api.test.invalid/companies/v2/company/lookup-111?client=&client_v=&merchant=",
       );
       fetchStub.last().respond({ addresses: [{ city: "Oslo" }] });
 
