@@ -122,6 +122,102 @@ describe("the Hyvä adapter over the shared popover", () => {
       expect(document.querySelectorAll(panel().options.fieldSelector)).toHaveLength(1);
     });
 
+    test("a rebuild's abandoned panel is torn down, not left listening", () => {
+      /*
+       * The closure guard is not enough on its own. A Magewire re-render
+       * re-invokes the Alpine factory, so the rebuilt component gets a FRESH
+       * closure whose panel is null and builds a second one — and the base
+       * panel ADOPTS the existing DOM rather than duplicating it, which hides
+       * the problem: two instances then hold live listeners on the same field
+       * and the same document, and one keystroke searches twice.
+       */
+      const abandoned = panel();
+      document.body.innerHTML = [
+        '<div id="root3" class="two-company-search">',
+        '  <input type="text" id="field3" value="" />',
+        "</div>",
+      ].join("\n");
+
+      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: document.getElementById("field3"),
+        root: document.getElementById("root3"),
+      });
+      rebuilt.init();
+
+      expect(abandoned.calls).toContain("destroy");
+    });
+
+    test("a panel whose field is still on the page is left alone", () => {
+      // Two mounts on one page are legitimate — the address field renderer
+      // mounts on the delivery form AND the invoice form.
+      const first = panel();
+      const second = document.createElement("div");
+      second.className = "two-company-search";
+      second.innerHTML = '<input type="text" id="field4" value="" />';
+      document.body.appendChild(second);
+
+      const other = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: document.getElementById("field4"),
+        root: second,
+      });
+      other.init();
+
+      expect(first.calls).not.toContain("destroy");
+      expect(env.companyPanels).toHaveLength(2);
+    });
+
+    test("a company already in the field survives the mount", () => {
+      // A returning customer's saved company arrives in the input's
+      // server-rendered value, and nothing on the Two side has read it. The
+      // panel repaints the field from getDisplayText() as it attaches, so a
+      // getter that answered '' would wipe the company AND carry the wipe into
+      // the quote on the `change` it fires.
+      document.body.innerHTML = [
+        '<div id="root2" class="two-company-search">',
+        '  <input type="text" id="field2" value="Existing Trading Ltd" />',
+        "</div>",
+      ].join("\n");
+      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: document.getElementById("field2"),
+        root: document.getElementById("root2"),
+      });
+      rebuilt.init();
+
+      expect(panel().options.getDisplayText()).toBe("Existing Trading Ltd");
+    });
+
+    test("a captured company still wins over what the field held", () => {
+      component.companyName = "Picked Ltd";
+
+      expect(panel().options.getDisplayText()).toBe("Picked Ltd");
+    });
+
+    test("no popover is built at all where the lookup is switched off", () => {
+      // The control still renders — the checkout needs a company field either
+      // way — but a popover here binds the field's openers and moves every
+      // keystroke into a query box whose searches can never run, with the
+      // manual chip withheld for the same reason. The buyer could not type a
+      // company name at all.
+      // A FRESH component, not the mounted one: re-calling mount on a
+      // component that already built its panel takes the re-point branch and
+      // adds nothing either way, so it cannot tell the gate from its absence.
+      document.body.innerHTML = [
+        '<div id="root5" class="two-company-search">',
+        '  <input type="text" id="field5" value="" />',
+        "</div>",
+      ].join("\n");
+      const before = env.companyPanels.length;
+      const disabled = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: document.getElementById("field5"),
+        root: document.getElementById("root5"),
+      });
+      disabled.isCompanySearchEnabled = "";
+
+      disabled.init();
+
+      expect(env.companyPanels).toHaveLength(before);
+    });
+
     test("a missing panel module degrades to a plain field rather than throwing", () => {
       // A CSP or deploy failure on the base module must not take init() down.
       delete window.TwoCompanySearchPanel;

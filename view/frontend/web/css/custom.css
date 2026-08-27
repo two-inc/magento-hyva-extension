@@ -338,7 +338,15 @@ summary::marker {
   box-shadow: none;
 }
 
-.two-company-search > input:focus {
+/*
+ * NOT a direct-child selector. The popover wraps the company-name input in
+ * `span.two-company-field-wrap` as it attaches, so `> input` stops matching the
+ * moment the control is live — which is every moment that matters.
+ *
+ * The popover's own query box is excluded: it has its own rules, and the inset
+ * below would double up on the one it already reserves for its spinner.
+ */
+.two-company-search input:not(.two-company-dropdown__query):focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
 }
@@ -348,23 +356,12 @@ summary::marker {
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  *
- * The inset is kept on the company-NAME field even though the popover's query
- * box is what carries a spinner, so the two inputs the control stacks line
- * their text up rather than one sitting 34px wider than the other. The query
- * box's own rules are the popover's, further down.
+ * Kept on the company-NAME field even though the popover's query box is what
+ * carries a spinner, so the two inputs line their text up rather than one
+ * sitting 34px wider than the other.
  */
-.two-company-search > input {
+.two-company-search input:not(.two-company-dropdown__query) {
   padding-right: 34px;
-}
-
-/*
- * The results scroller is `tabindex="-1"` (see companyName.phtml) so Chrome
- * does not make it a tab stop. Chrome still paints a focus ring on a
- * programmatically-focused scroller; suppress it, since nothing here is ever
- * deliberately focused.
- */
-.two-company-search__results:focus {
-  outline: none;
 }
 
 /*
@@ -400,12 +397,6 @@ summary::marker {
   background-size: 16px 16px;
 }
 
-.two-company-search__unavailable {
-  border-radius: 3px;
-  background: #fdf0d5;
-  color: #6f4900;
-  line-height: 1.4;
-}
 
 /*
  * The order-intent box (2026-08-05, cross-platform order-intent UI
@@ -415,9 +406,9 @@ summary::marker {
  * three verdicts an intent check can reach. Between the STATES only the colours
  * differ, so only the colours are stated per state — geometry is declared once
  * here rather than four times in four class lists, which is how the states
- * drifted apart in the first place. (Against the previous markup the radius also
- * changes, 6px to 3px, deliberately: it matches `.two-company-search__unavailable`
- * above, so the tile's boxes and the control's agree.) There is deliberately no title element in any of them: the box
+ * drifted apart in the first place. (The 3px radius matches the popover's own
+ * `.two-company-dropdown__message--unavailable`, so the tile's boxes and the
+ * popover's agree.) There is deliberately no title element in any of them: the box
  * holds the message and nothing else, matching the other three platforms'
  * treatment.
  *
@@ -465,6 +456,21 @@ summary::marker {
  * stylesheet would otherwise silently shrink it back to the shared padding.
  */
 .two-order-intent-box.two-order-intent-checking {
+  position: relative;
+  padding-right: 2rem;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+/*
+ * The sole-trader token mint and buyer read wear the same in-progress
+ * treatment, and carry a class of their own rather than joining the rule
+ * above: the order-intent box is ONE box in FOUR states, and a fifth element
+ * answering to a state's class means a query for that state can find something
+ * that is not it.
+ */
+.two-order-intent-box.two-soletrader-checking {
   position: relative;
   padding-right: 2rem;
   border-color: #e5e7eb;

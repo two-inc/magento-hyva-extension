@@ -95,11 +95,11 @@ describe("company-search focus scope (bug 4.1)", () => {
     // (nested under `.two-company-id`), so a bare descendant selector here
     // would re-introduce a ring on BOTH inputs — the exact bug, moved down
     // one level rather than fixed.
-    const body = ruleBody(".two-company-search > input:focus");
+    const body = ruleBody(".two-company-search input:not(.two-company-dropdown__query):focus");
 
     if (body === null) {
       throw new Error(
-        "no `.two-company-search > input:focus` rule in " +
+        "no focus rule scoped to the company-name input in " +
           STYLESHEET +
           " — suppressing the wrapper's ring with nothing scoped to the " +
           "input itself would leave the search field with no visible focus " +

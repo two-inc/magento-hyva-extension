@@ -751,6 +751,13 @@ function installCompanyPanelStub() {
   CompanySearchPanelStub.prototype.isBound = function () {
     return true;
   };
+  // Array-shaped like the real panel's, and RESOLVED rather than remembered:
+  // the orphan reaper asks whether a panel's field is still connected, so a
+  // stub holding the node it was built with could never answer no.
+  CompanySearchPanelStub.prototype.getField = function () {
+    const node = document.querySelector(this.fieldSelector);
+    return node ? [node] : [];
+  };
   // Open/close move a flag rather than only recording, because callers ASK:
   // the order-intent box refuses to paint a verdict under an open panel, and a
   // stub that always answered shut would let that rule pass untested.

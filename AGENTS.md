@@ -235,9 +235,12 @@ Three layers, innermost first:
 
 **The popover is framework-free with a UMD tail**, which is why this checkout can
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
-options — `search`, `translate`, `observe` — and Magento's own renderer injects
-the same three. Do not reach into it; if it needs to do something new, change it
-in the base plugin so both checkouts get it.
+options — `search`, `translate` and `observe`. This checkout injects the first
+two and deliberately withholds `observe`: `$.async` has no equivalent here, and
+a MutationObserver per mount is what froze the checkout on this ticket, so each
+surface re-binds from its own `init()` instead. Do not reach into the panel; if
+it needs to do something new, change it in the base plugin so both checkouts
+get it.
 
 **Its markup is not testable here.** The file is not in this repo and there is no
 vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at

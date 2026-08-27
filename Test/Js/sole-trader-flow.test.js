@@ -794,6 +794,31 @@ describe("the wires between markup and component", () => {
     },
   );
 
+  test("clicking the sole-trader chip repaints the popover", () => {
+    // syncChips() is the only caller of the panel's query-row visibility, so
+    // without it the buyer lands in sole-trader mode looking at a search box
+    // with "Registered company" still marked selected. The signup's own
+    // adoption path syncs; the ordinary hosted-signup path did not.
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    tile.component.mountCompanyPopover();
+
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    expect(built).toBeDefined();
+    built.calls.length = 0;
+
+    tile.component
+      .companyPopoverChips()
+      .find((entry) => entry.mode === "soletrader")
+      .onActivate();
+
+    expect(built.calls).toContain("syncChips");
+  });
+
   test("the sole-trader chip is offered in BOTH company-search-location modes", () => {
     // The sole-trader entry point is a property of the payment method, not of
     // where the company-search control happens to be mounted. Asserted on the

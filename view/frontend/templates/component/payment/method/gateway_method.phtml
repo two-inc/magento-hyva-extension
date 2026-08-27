@@ -250,10 +250,23 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * `.two-company-mode-chips` as the last child of the panel, after the
              * results, because DOM order is what makes the tab order correct.
              *
-             * The in-field spinner for the sole-trader token mint went with it —
-             * the chip it annotated is now inside the panel.
+             * The progress row below is what the chip row's in-field spinner
+             * became. It cannot go into the panel — the panel builds only the
+             * search spinner, driven by the search API — and the wait it covers
+             * is real: the token mint and the buyer read both happen before the
+             * hosted signup popup can open.
              */
             ?>
+            <div
+                class="two-order-intent-box two-soletrader-checking"
+                x-cloak
+                role="status"
+                data-name="soletrader_checking"
+                x-show="soleTraderSpinnerVisible"
+            >
+                <span><?= $escaper->escapeHtml(__('Opening sole trader sign-up')) ?></span>
+                <span class="two-company-search__spinner" aria-hidden="true"></span>
+            </div>
             <?php
             /*
              * The blocked-popup fallback. The signup popup opens after an await

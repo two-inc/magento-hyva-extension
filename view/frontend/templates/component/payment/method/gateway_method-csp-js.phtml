@@ -324,8 +324,7 @@ $quoteDetails = json_encode(
      * codebase also hides with the `hidden` class, `offsetParent` answers null
      * for a `position: fixed` element that IS visible, and it is unimplemented
      * in jsdom — so a test written against it would pass while proving nothing.
-     * Same reasoning, and the same three checks, as the control's own
-     * `isDisplayNone()`.
+     * `disabled` is tested on every ANCESTOR too, not only the field.
      *
      * `disabled` is tested on every ANCESTOR too, not only the field: a
      * `<fieldset disabled>` disables everything inside it without setting the
@@ -1280,8 +1279,8 @@ $quoteDetails = json_encode(
      * @param {string} [options.selectEventName] custom event name dispatched
      *   after a pick or a manual commit, `detail` = the merged storage blob.
      * @param {Function} [options.resolveNameField] `() => HTMLInputElement|null`
-     *   the field selectItem()/getItems() read/write the captured name
-     *   through. Defaults to `this.$el` (the field the search is bound to).
+     *   the field selectItem() and the manual commit read/write the
+     *   captured name through. Defaults to `this.$el` (the field the search is bound to).
      * @param {Function} [options.onCompanyCommitted] `(companyName, companyId,
      *   source) => void`, called with the component as `this` after
      *   selectItem() or a manual-entry commit has updated state, written
@@ -1979,6 +1978,36 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanyFieldSeq = window.twoGatewayCompanyFieldSeq || 0;
 
     /**
+     * Every popover built on this page, so an abandoned one can be torn down.
+     *
+     * The per-component closure is not enough. A Magewire re-render re-invokes
+     * the Alpine factory, which produces a FRESH closure whose `panel` is null,
+     * so the rebuilt component builds a second panel — and the base panel
+     * adopts the existing DOM rather than duplicating it, which hides the
+     * problem: two instances then hold live listeners on the same query field
+     * and the same document, so one keystroke searches twice.
+     *
+     * Reaped by connectedness rather than by count, because a page legitimately
+     * holds two panels at once — the address field renderer mounts on the
+     * delivery form AND the invoice form.
+     */
+    window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels || [];
+
+    /**
+     * @param {Object} panel the newly built popover
+     */
+    function twoGatewayRegisterCompanyPanel(panel) {
+        window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels
+            .filter(function (existing) {
+                const field = existing.getField()[0];
+                if (field && field.isConnected) return true;
+                existing.destroy();
+                return false;
+            });
+        window.twoGatewayCompanyPanels.push(panel);
+    }
+
+    /**
      * THE company-capture control — the Hyvä ADAPTER over one shared popover.
      *
      * TWO-25503. The popover itself is not here and must never be again: it is
@@ -2167,7 +2196,7 @@ $quoteDetails = json_encode(
                      * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
                      */
                     async searchCompanies(request) {
-                        // The gate the deleted `getItems()` used to hold. With
+                        // The second half of the lookup-off gate. With
                         // company search off — an admin setting, or an API key
                         // that has not verified — this control still mounts so
                         // the buyer has a company field, and without this it
@@ -2243,7 +2272,18 @@ $quoteDetails = json_encode(
                             // Fire-and-forget: the chip handler is synchronous so
                             // the popup opens inside the click and a blocker
                             // allows it.
-                            self.soleTraderMode();
+                            const launched = self.soleTraderMode();
+                            /*
+                             * Synchronously after, not in a `then`:
+                             * enterSoleTraderUi() sets the mode before the first
+                             * await, and this is the only thing that repaints
+                             * the selected chip AND takes the registered-mode
+                             * search row down. Without it the buyer sits in
+                             * sole-trader mode looking at a search box, with
+                             * "Registered company" still marked selected.
+                             */
+                            if (panel) panel.syncChips();
+                            return launched;
                         }
                     },
                     {
@@ -2319,6 +2359,21 @@ $quoteDetails = json_encode(
              */
             mountCompanyPopover() {
                 const self = this;
+                /*
+                 * NO POPOVER AT ALL where the lookup is switched off — an admin
+                 * setting, or an API key that has not verified.
+                 *
+                 * This surface still renders, because the checkout needs a
+                 * company field either way, but the popover must not take it:
+                 * it binds the field's own openers and moves every keystroke
+                 * into a query box whose searches can never run, and the way
+                 * out is shut too because the manual chip is withheld for the
+                 * same reason the search is. The buyer would be left unable to
+                 * type a company name at all. Gating the REQUEST is not enough;
+                 * the gate belongs at the mount.
+                 */
+                if (!this.isCompanySearchEnabled) return;
+
                 const Panel = window.TwoCompanySearchPanel;
                 if (typeof Panel !== 'function') {
                     // A CSP or deploy failure on the base module must degrade
@@ -2326,6 +2381,7 @@ $quoteDetails = json_encode(
                     console.error('Two: company popover module is not loaded');
                     return;
                 }
+                const field = this.companyNameField();
                 const selector = this.companyFieldSelector();
                 if (!selector) return;
 
@@ -2334,6 +2390,19 @@ $quoteDetails = json_encode(
                     panel.bind();
                     return;
                 }
+
+                /*
+                 * What the field already held when this panel took it over.
+                 *
+                 * A returning customer's saved company arrives in the input's
+                 * server-rendered `value`, and nothing on the Two side has read
+                 * it — `companyName` is seeded only from our own selection
+                 * record. The panel repaints the field from `getDisplayText()`
+                 * as it attaches, so without this the mount silently wipes that
+                 * company and the `change` it fires carries the wipe into the
+                 * quote.
+                 */
+                const mountedValue = field ? field.value : '';
 
                 panel = new Panel({
                     fieldSelector: selector,
@@ -2344,7 +2413,7 @@ $quoteDetails = json_encode(
                     getChips() { return self.companyPopoverChips(); },
                     isChipVisible(mode) { return self.companyPopoverModeOffered(mode); },
                     getSelectedMode() { return self.companyPopoverSelectedMode(); },
-                    getDisplayText() { return self.companyName || ''; },
+                    getDisplayText() { return self.companyName || mountedValue; },
                     onExitManualEntry() { self.enableSearch(); },
                     onSelect(item) {
                         self.selectItem({
@@ -2354,6 +2423,7 @@ $quoteDetails = json_encode(
                         });
                     }
                 });
+                twoGatewayRegisterCompanyPanel(panel);
                 panel.bind();
                 if (this.manualMode) panel.releaseField();
             },
@@ -2640,9 +2710,9 @@ $quoteDetails = json_encode(
          * control (`twoGatewayCompanySearchControl`, defined above) — the same
          * factory and the same markup the address step mounts. It used to carry
          * a second control of its own instead: its own dropdown markup, its own
-         * manual-entry link, its own min-characters guard, its own
-         * `getItems()`/focus/blur handlers, and a manual/search dual-input pair
-         * with eight id/name-resolution getters. All of that is DELETED, not
+         * manual-entry link, its own min-characters guard, its own search
+         * and focus handlers, and a manual/search dual-input pair with eight
+         * id/name-resolution getters. All of that is DELETED, not
          * rewired — the three cosmetic bugs reported against this surface were
          * consequences of the duplication, not defects of their own.
          *
@@ -2924,10 +2994,9 @@ $quoteDetails = json_encode(
              * `GetCompanyNameId`-style getters that resolved which of two copies
              * of each field was canonical. There is one copy of each field now.
              *
-             * `getItems()`, `showDropdown()`, `ShouldShowMinCharsMessage()`,
-             * `GetCompanyId()`, `GetCompanyDisplayName()`, `GetItemClass()`,
-             * `OnArrowDown()`/`OnArrowUp()`/`OnEnterSelect()`/`OnItemMouseover()`
-             * and the placeholder getter are all the shared control's.
+             * The search box, the results, the min-characters hint, the row
+             * keying and the arrow/Enter handling are the shared POPOVER's, and
+             * this file no longer has members for any of them.
              */
 
             // The captured number is shown by the tile label below, never by
@@ -3007,8 +3076,8 @@ $quoteDetails = json_encode(
                  * Adopting another surface's mode as this tile's opening state
                  * is the bug: the tile came up with a live-looking
                  * company-search box whose every keystroke returned early at
-                 * the `manualMode` guard in getItems() — no request, no
-                 * spinner, no dropdown — and with no way out, because
+                 * the manual-mode guard — no request, no spinner, no results —
+                 * and with no way out, because
                  * enableSearch() is bound on the address form and never here.
                  *
                  * So the tile now opens in search mode always. It is NOT
@@ -3021,8 +3090,7 @@ $quoteDetails = json_encode(
                  *
                  * ---
                  *
-                 * The SAME invariant getItems() recomputes and
-                 * applyCompanyIdEditability() consumes:
+                 * The SAME invariant applyCompanyIdEditability() consumes:
                  * `!(company_id && company_name === search)` — enabled whenever
                  * there is no registry-supplied identifier for the name the
                  * field is about to hold, locked exactly when one has been
@@ -3031,7 +3099,7 @@ $quoteDetails = json_encode(
                  * initialize() is not only first paint. Magewire re-renders
                  * destroy and rebuild this component (see the search-cache
                  * comment at the top of this file), so every state the
-                 * getItems() recompute produced re-enters here — and only
+                 * editability recompute produced re-enters here — and only
                  * selectItem() ever writes storage. A name the buyer typed and
                  * never picked therefore leaves NOTHING stored, so deriving the
                  * flag from `Boolean(company_name) && !company_id` made the
@@ -3648,6 +3716,11 @@ $quoteDetails = json_encode(
              */
             get soleTraderPopupMessageVisible() {
                 return this.showPopupMessage;
+            },
+            // The token mint and the buyer read both run before the hosted
+            // signup can open, so the wait is real and needs saying.
+            get soleTraderSpinnerVisible() {
+                return this.soleTraderLookupInFlight;
             },
             // Offered only once an identity has been adopted: the hosted flow
             // needs something to replace.

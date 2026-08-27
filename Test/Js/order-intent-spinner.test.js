@@ -44,6 +44,14 @@ function deferred() {
   return { promise: promise, resolve: resolve };
 }
 
+/**
+ * Take the popover back down, so a verdict the open panel suppressed appears.
+ *
+ * @param {Object} env the installed Hyvä environment
+ */
+function closeCompanyPopover(env) {
+  env.companyPanels[env.companyPanels.length - 1].close();
+}
 
 /**
  * Put the popover on screen, the way clicking the company field does.
@@ -54,15 +62,6 @@ function deferred() {
  *
  * @param {Object} env the installed Hyvä environment
  */
-/**
- * Take the popover back down, so a verdict the open panel suppressed appears.
- *
- * @param {Object} env the installed Hyvä environment
- */
-function closeCompanyPopover(env) {
-  env.companyPanels[env.companyPanels.length - 1].close();
-}
-
 function openCompanyPopover(env) {
   expect(env.companyPanels.length).toBeGreaterThan(0);
   env.companyPanels[env.companyPanels.length - 1].open();
