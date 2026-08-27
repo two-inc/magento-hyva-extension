@@ -2,29 +2,19 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. The company-search spinner, on BOTH surfaces that search.
+ * TWO-25288, TWO-25503. Search feedback, on BOTH surfaces that search.
  *
- * The spinner is an animated GIF applied by the stylesheet as a background image
- * on one childless element, so what the templates have to get right is a very
- * small set of things that are all invisible to every other suite:
+ * The original defect: the shipping-address field carried `isSearching` in
+ * component state, drove it correctly on every exit path, and bound it to
+ * nothing — so that form searched with no feedback whatsoever.
  *
- *  - it exists at all. The shipping-address field carried `isSearching` in
- *    component state, driven correctly on every exit path, and bound it to
- *    nothing — so that form searched with no feedback whatsoever. A state
- *    property bound to nothing has no user-visible effect, which is why the
- *    binding is read out of the shipped markup here rather than assumed.
- *  - it keeps BOTH classes, spelled exactly. The positioning class carries
- *    position, size and the background image. The chip-loading class paints
- *    nothing here — it is the shared loading hook this markup has always
- *    carried, kept for merchant and brand overlays that style it. Drop either
- *    and nothing else in CI notices.
- *  - it has NO children. The old markup carried three dot spans. Leaving them in
- *    would paint three stray dots on top of the GIF.
- *  - it stays `aria-hidden`. It is decorative; the search result is what gets
- *    announced.
- *
- * Assertions are made against the rendered shipped templates, not against a
- * fixture copy of the markup, so a template edit is what makes them fail.
+ * The indicator itself is no longer this module's markup. The shared popover
+ * (`Two_Gateway/js/model/company-search-panel.js`) renders and gates its own,
+ * off the promise `searchCompanies()` returns, so what this repo can still be
+ * wrong about is whether either surface hands the panel a promise that spans
+ * the request at all. A `searchCompanies()` that settled before its fetch did
+ * would reproduce the original defect exactly — a search running with the
+ * indicator already down — and no other suite in this directory looks at it.
  */
 
 "use strict";
@@ -37,175 +27,129 @@ const H = require("./hyva-harness");
 /** The one stylesheet the Hyva checkout loads for this module. */
 const STYLESHEET = "view/frontend/web/css/custom.css";
 
-/**
- * Both classes, in the order the templates spell them.
- *
- * `POSITION_CLASS` is what paints the spinner: position, box and background
- * image. `LEGACY_HOOK_CLASS` paints nothing on this element — its declarations
- * are text-level and inert on a childless fixed-size box — but it is carried
- * deliberately, as the shared loading hook a merchant or brand overlay may
- * style. It is asserted below because dropping it is a silent behaviour change
- * for those overlays, not because the spinner needs it to render.
- */
 const POSITION_CLASS = "two-company-search__spinner";
 const LEGACY_HOOK_CLASS = "two-term-chip__loading";
 
 /**
- * The SEARCH spinner, scoped to the query row it is positioned against.
+ * The two surfaces that run a company search, each with the `-csp-js` template
+ * defining its component, that component's registered Alpine name, the entry
+ * point Magewire re-runs, and the fixture it resolves against.
  *
- * Scoping added 2026-08-05 (TWO-25326 tile bugfix batch). Two things changed
- * under this suite at once and the bare `.two-company-search__spinner` selector
- * stopped identifying one element:
- *
- *  - the payment tile gained a SECOND element carrying the same class, the
- *    order-intent progress row (`[data-name="order_intent_checking"]`, bug 5).
- *    It reuses the same GIF and the same childless-element mechanism, but it is
- *    a different indicator with a different gate and its own coverage —
- *    order-intent-spinner.test.js. It is not this suite's subject.
- *  - the search spinner itself is no longer tile-local markup at all. Both
- *    surfaces now include the ONE control, form/field/company-search-control.
- *    phtml, so the element the tile renders and the element the address step
- *    renders are the same source lines.
- *
- * `.two-company-search__query` is the control's own positioned ancestor — the
- * element the stylesheet resolves the spinner's absolute position against — so
- * scoping to it names exactly the search spinner on either surface.
- */
-const SPINNER_SELECTOR = ".two-company-search__query ." + POSITION_CLASS;
-
-/** The component state property the spinner must be bound to. */
-const SEARCHING_STATE = "isSearching";
-
-/**
- * The two surfaces that run a company search, each with its markup template,
- * the `-csp-js` template defining its component, and that component's
- * registered Alpine name.
+ * The tile's fixture is its own SHIPPED markup: on that surface the control has
+ * no `x-data`, so its state lands on the payment form's component, and a
+ * hand-built stand-in would not prove the two resolve to each other. The
+ * harness substitutes one value for `$twoControlAlpineData` at both mount
+ * points, so the address step's `x-data` has to be stripped back out.
  */
 const SURFACES = [
   {
     label: "payment tile",
-    markup: H.GATEWAY_METHOD_MARKUP_TEMPLATE,
     js: H.GATEWAY_METHOD_TEMPLATE,
     component: "twoGatewayHyvaPaymentMethodBase",
+    fixture: function () {
+      return [
+        '<input id="shipping-country_id" value="GB" />',
+        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE).replace(
+          /x-data="twoGatewayHyvaCompanySearchField"/,
+          "",
+        ),
+      ].join("\n");
+    },
+    start: function (component) {
+      component.$watch = function () {};
+      component.initialize(JSON.parse(H.QUOTE_JSON));
+    },
+    rootId: "two_payment_form",
   },
   {
     label: "shipping-address field",
-    markup: H.COMPANY_NAME_MARKUP_TEMPLATE,
     js: H.COMPANY_NAME_TEMPLATE,
     component: "twoGatewayHyvaCompanySearchField",
+    fixture: function () {
+      return [
+        '<input id="shipping-country_id" value="GB" />',
+        '<div id="control-root" class="two-company-search">',
+        '  <input type="text" id="company-field" value="" />',
+        "</div>",
+      ].join("\n");
+    },
+    start: function (component) {
+      component.init();
+    },
+    rootId: "control-root",
   },
 ];
 
-/**
- * The spinner element as the surface's shipped template renders it.
- *
- * @param {string} relPath repo-relative markup template path
- * @returns {Element}
- */
-function spinnerFrom(relPath) {
-  const markup = H.renderTemplateMarkup(relPath);
-  const doc = new DOMParser().parseFromString(markup, "text/html");
-  const spinners = doc.querySelectorAll(SPINNER_SELECTOR);
-  // Exactly one per surface: a second one would mean two spinners fighting over
-  // the same absolute position, and a `querySelector` assertion would not see
-  // it.
-  expect(spinners.length).toBe(1);
-  return spinners[0];
-}
+describe.each(SURFACES)("search feedback — $label", (surface) => {
+  let env;
+  let fetchStub;
+  let panel;
 
-describe.each(SURFACES)("company-search spinner — $label", (surface) => {
-  test("renders exactly one spinner element", () => {
-    expect(spinnerFrom(surface.markup)).not.toBeNull();
+  beforeEach(() => {
+    document.body.innerHTML = surface.fixture();
+
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+
+    H.loadSharedHelpers();
+    H.loadTemplate(surface.js);
+    env.fireAlpineInit();
+
+    const root = document.getElementById(surface.rootId);
+    const component = H.mountComponent(env.alpineComponents[surface.component], {
+      el: root,
+      root: root,
+    });
+    surface.start(component);
+
+    expect(env.companyPanels).toHaveLength(1);
+    panel = env.companyPanels[0];
   });
 
-  // The legacy hook is inert on the spinner, so this is not a rendering
-  // assertion — it pins the class on the element for overlays that style it.
-  test("carries both the positioning and the legacy hook class", () => {
-    const spinner = spinnerFrom(surface.markup);
-
-    expect(spinner.classList.contains(POSITION_CLASS)).toBe(true);
-    expect(spinner.classList.contains(LEGACY_HOOK_CLASS)).toBe(true);
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    document.body.innerHTML = "";
   });
 
-  test("has no child nodes for the CSS to fight with", () => {
-    const spinner = spinnerFrom(surface.markup);
-
-    expect(spinner.childElementCount).toBe(0);
-    // Text children are just as wrong as element ones — the old markup's dots
-    // were text inside spans, and a stray `.` survives an element-count check.
-    expect(spinner.textContent.trim()).toBe("");
+  test("the panel is given something to gate its indicator on", () => {
+    expect(typeof panel.options.search.searchCompanies).toBe("function");
+    expect(typeof panel.options.search.abortActiveRequest).toBe("function");
   });
 
-  test("is hidden from assistive technology", () => {
-    const spinner = spinnerFrom(surface.markup);
+  test("the promise it returns spans the request rather than settling first", async () => {
+    let settled = false;
+    const pending = panel.options.search
+      .searchCompanies({ term: "example trading" })
+      .then(function (result) {
+        settled = true;
+        return result;
+      });
 
-    expect(spinner.getAttribute("aria-hidden")).toBe("true");
-  });
+    await H.flushPromises();
 
-  test("is bound to the searching state, which the component defines", () => {
-    // Throws if the element has no `x-show` at all, which is the shipping
-    // field's original defect.
-    const bound = H.readAlpineBinding(
-      surface.markup,
-      SPINNER_SELECTOR,
-      "x-show",
-    );
-    expect(bound).toBe(SEARCHING_STATE);
+    // A request is on the wire and nothing has come back: the indicator is up
+    // for exactly this window, so resolving here is the original defect.
+    expect(fetchStub.calls.length).toBe(1);
+    expect(settled).toBe(false);
 
-    // Under CSP Alpine the binding is a key lookup on the component, so a
-    // binding whose name the component does not define resolves to undefined
-    // and the spinner never shows. Mount the real component and check.
-    const env = H.installHyvaEnvironment();
-    const fetchStub = H.stubFetch();
-    try {
-      H.loadSharedHelpers();
-      H.loadTemplate(surface.js);
-      // The templates register their components from an `alpine:init` listener,
-      // so nothing is in `alpineComponents` until that event fires.
-      env.fireAlpineInit();
-      const component = H.mountComponent(
-        env.alpineComponents[surface.component],
-        {},
-      );
+    fetchStub.last().respond({ items: [] });
+    await pending;
 
-      expect(component[bound]).toBe(false);
-    } finally {
-      fetchStub.restore();
-      env.restore();
-    }
+    expect(settled).toBe(true);
   });
 });
 
-/*
- * On the two `describe.each` blocks above being NEAR-DUPLICATES since 2026-08-05:
- * both surfaces `include` the same form/field/company-search-control.phtml, so
- * every structural assertion up there is now made twice about one set of source
- * lines.
- *
- * They are deliberately kept rather than collapsed to a single pass over the
- * control template on its own, because what they still prove that a single pass
- * cannot is that the include actually LANDS on both mount points. A control that
- * stopped being included by the tile would leave that surface searching with no
- * feedback at all — the original defect this file was written for — and a suite
- * that only rendered the partial would pass right through it.
- *
- * A test asserting the two surfaces render BYTE-IDENTICAL spinner markup was
- * written here and then deleted: `company-search-one-control.test.js` → "the
- * control subtree they render is byte-identical" makes the same claim about the
- * whole control rather than one element inside it, which is strictly stronger and
- * is where that guarantee belongs.
- */
-
 /**
- * The stylesheet is the entire spinner: the element is childless, so the image
- * and the box it is painted into come from here and nowhere else.
+ * The GIF rule itself, which this module still ships and still paints with —
+ * the order-intent progress row carries the class now that the search spinner
+ * is the panel's. The element is childless, so the image and the box it is
+ * painted into come from here and nowhere else.
  *
- * The motion comes from the GIF itself, which is why nothing here asserts a CSS
- * animation. The previous revision of this branch drew the spinner with a
- * conic-gradient and a rotate keyframe; that shipped visibly motionless and was
- * abandoned in favour of the animated GIF the PrestaShop plugin already uses.
- * A CSS rule cannot pause, slow or step a GIF, so there is deliberately no
- * reduced-motion rule to assert either.
+ * The motion comes from the GIF, which is why nothing here asserts a CSS
+ * animation. A CSS rule cannot pause, slow or step a GIF, so there is
+ * deliberately no reduced-motion rule to assert either.
  *
  * Where it can, this reads the real declarations back through jsdom's cascade
  * rather than regex-matching the file, so a rule that parses differently from
@@ -213,7 +157,7 @@ describe.each(SURFACES)("company-search spinner — $label", (surface) => {
  * `background-size`; it does NOT resolve the multi-value `background-position`
  * shorthand, so that one is not asserted.
  */
-describe("company-search spinner stylesheet", () => {
+describe("the GIF spinner rule", () => {
   /** @returns {string} the shipped stylesheet, verbatim */
   function stylesheetText() {
     return fs.readFileSync(path.join(H.REPO_ROOT, STYLESHEET), "utf8");

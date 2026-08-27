@@ -621,6 +621,12 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyDetail",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The popover's translated copy, and the per-mount field counter beside it.
+  // Same `window.X = window.X || …` shape as the cache below, so without these
+  // the FIRST test in a file wins the panel's strings for every later one and
+  // any assertion on them is silently order-dependent.
+  "twoGatewayPanelStrings",
+  "twoGatewayCompanyFieldSeq",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
   // correct in production (the publisher can render once per payment method and

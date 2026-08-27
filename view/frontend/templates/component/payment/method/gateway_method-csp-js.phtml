@@ -1969,6 +1969,15 @@ $quoteDetails = json_encode(
         'Enter manually': '<?= $escaper->escapeJs(__('Enter manually')) ?>',
     };
 
+    /*
+     * Per-page counter for the attribute each mount stamps on its own company
+     * field. One page can hold two of these — the address-step field renderer
+     * is registered globally and mounts on the delivery form AND the invoice
+     * form — and the panel resolves its host with a document-wide selector, so
+     * each mount needs one nothing else answers to.
+     */
+    window.twoGatewayCompanyFieldSeq = window.twoGatewayCompanyFieldSeq || 0;
+
     /**
      * THE company-capture control — the Hyvä ADAPTER over one shared popover.
      *
@@ -2023,9 +2032,6 @@ $quoteDetails = json_encode(
          * the popover stops responding to its own field, silently.
          */
         let panel = null;
-
-        /** One per page, so a generated id cannot collide with another mount's. */
-        window.twoGatewayCompanyFieldSeq = window.twoGatewayCompanyFieldSeq || 0;
 
         const engineOptions = Object.assign({}, opts, {
             resolveCountryContext: surfaceCountryContext,

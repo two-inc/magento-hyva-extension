@@ -227,6 +227,45 @@ describe("the Hyvä adapter over the shared popover", () => {
     });
   });
 
+  describe("the manual-entry handoff", () => {
+    test("entering manual entry hands the field over to the buyer", () => {
+      // The panel binds the field's own openers; without releasing it the
+      // popover reopens over the input manual entry exists to be typed into.
+      component.enterManually();
+
+      expect(panel().calls).toContain("releaseField");
+    });
+
+    test("leaving it takes the field back and opens the search", () => {
+      component.enterManually();
+      panel().calls.length = 0;
+
+      component.enableSearch();
+
+      // Reclaim BEFORE bind: coming back has to make the field a trigger again
+      // before the panel is opened on it.
+      expect(panel().calls.indexOf("reclaimField")).toBeGreaterThan(-1);
+      expect(panel().calls.indexOf("bind")).toBeGreaterThan(
+        panel().calls.indexOf("reclaimField"),
+      );
+    });
+
+    test("a search is not attempted while the lookup is switched off", async () => {
+      // The gate the deleted control held: this surface still mounts so the
+      // buyer has a company field, but an unverified merchant must not have
+      // checkout-api requests put on the wire for them.
+      component.isCompanySearchEnabled = "";
+
+      const result = await component
+        .companyPopoverSearchApi()
+        .searchCompanies({ term: "alpha" });
+
+      expect(result.aborted).toBe(true);
+      expect(result.items).toEqual([]);
+      expect(fetchStub.calls).toHaveLength(0);
+    });
+  });
+
   describe("the chips", () => {
     test("all three are offered, in display order", () => {
       expect(component.companyPopoverChips().map((chip) => chip.mode)).toEqual([

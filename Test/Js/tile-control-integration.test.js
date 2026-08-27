@@ -15,9 +15,13 @@
  * order — all invisible to a fixture written to agree with the component.
  *
  * So this suite renders the tile's REAL markup, mounts the REAL component over
- * it, and walks one whole capture: click the name field, type in the panel's
- * query box, take a result, and check what the buyer and the order end up with.
- * Only `fetch` is stubbed.
+ * it, and walks one whole capture: search for a term, take a result, and check
+ * what the buyer and the order end up with. Only `fetch` is stubbed.
+ *
+ * TWO-25503 moved the popover into the base plugin, so the walk goes through the
+ * options the tile hands the panel rather than through markup this repo renders.
+ * That is the wiring claim now: the panel's own DOM, its open/close and its
+ * keyboard handling are covered against the real file in magento-plugin's suite.
  *
  * The one thing it cannot render faithfully is `$twoControlAlpineData`: the
  * harness substitutes a single value for both mount points, so the address
@@ -39,7 +43,7 @@ describe("the payment tile's mounted control (integration)", () => {
   let component;
   let form;
   let nameField;
-  let queryField;
+  let panel;
 
   beforeEach(() => {
     const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
@@ -70,7 +74,8 @@ describe("the payment tile's mounted control (integration)", () => {
     component.initialize(JSON.parse(H.QUOTE_JSON));
 
     nameField = form.querySelector('input[name="payment[company_name]"]');
-    queryField = form.querySelector(".two-company-query");
+    expect(env.companyPanels).toHaveLength(1);
+    panel = env.companyPanels[0];
   });
 
   afterEach(() => {
@@ -80,19 +85,14 @@ describe("the payment tile's mounted control (integration)", () => {
   });
 
   /**
-   * Type into the panel's query box and settle the search with one hit.
+   * Run a search the way the panel does, and settle it with one hit.
    *
    * @param {string} term
    * @param {string} identifier value for `national_identifier.id`
-   * @returns {Promise<void>}
+   * @returns {Promise<Object>} the panel-shaped result
    */
   async function search(term, identifier) {
-    queryField.value = term;
-    // Alpine resolves `$el` per expression; both handlers below are bound on
-    // the query input, so that is what `$el` is when they run.
-    component.$el = queryField;
-    component.noteCompanyQuery();
-    const pending = component.getItems();
+    const pending = panel.options.search.searchCompanies({ term: term });
     await H.flushPromises();
     fetchStub.last().respond({
       items: [
@@ -104,13 +104,23 @@ describe("the payment tile's mounted control (integration)", () => {
         },
       ],
     });
-    await pending;
+    const result = await pending;
     await H.flushPromises();
+    return result;
+  }
+
+  /**
+   * Take a result the way the panel does.
+   *
+   * @param {Object} item one entry from `search()`'s result
+   * @returns {void}
+   */
+  function select(item) {
+    panel.options.onSelect(item);
   }
 
   test("the shipped markup and the shipped component resolve to each other", () => {
     expect(nameField).not.toBeNull();
-    expect(queryField).not.toBeNull();
 
     // The control's DOM resolvers, against the real markup rather than a
     // fixture. `controlRoot()` returning null is the failure that silently
@@ -118,42 +128,38 @@ describe("the payment tile's mounted control (integration)", () => {
     // whole `<form>`, not the control.
     expect(component.controlRoot()).not.toBeNull();
     expect(component.companyNameField()).toBe(nameField);
-    expect(component.queryField()).toBe(queryField);
-    // The name field must never be mistaken for the query box or the number
-    // input — that resolver decides what is published as the order's company
-    // name.
-    expect(component.companyNameField()).not.toBe(queryField);
+    // The name field must never be mistaken for the number input — that
+    // resolver decides what is published as the order's company name.
+    expect(component.companyNameField()).not.toBe(
+      document.getElementById("company_id"),
+    );
   });
 
-  test("the panel opens on a click on the name field, not before", () => {
-    expect(component.showDropdown()).toBe(false);
-
-    component.onCompanyNameClick();
-
-    expect(component.showDropdown()).toBe(true);
-    // From zero typed characters — which is what makes the in-panel
-    // manual-entry row the single route it now is.
-    expect(component.query).toBe("");
+  test("the popover is built on that field and no other", () => {
+    expect(panel.calls).toContain("bind");
+    // Document-wide, because that is how the panel resolves its host: a
+    // selector matching anything else would give it the wrong input.
+    const matched = document.querySelectorAll(panel.options.fieldSelector);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]).toBe(nameField);
   });
 
-  test("typing in the panel searches, and leaves the captured name alone", async () => {
-    component.onCompanyNameClick();
-    await search("example", "123456789");
+  test("searching goes on the wire, and leaves the captured name alone", async () => {
+    const result = await search("example", "123456789");
 
     expect(fetchStub.calls.length).toBe(1);
     expect(fetchStub.last().url).toContain("country=GB");
     expect(fetchStub.last().url).toContain("q=example");
-    expect(component.items.length).toBe(1);
-    // The name field is `readonly` in search mode and holds nothing until a
-    // result is taken; the query never leaks into it.
+    expect(result.items).toHaveLength(1);
+    // The panel holds the query in its own box; it never leaks into the field
+    // that submits.
     expect(nameField.value).toBe("");
   });
 
   test("taking a result captures it everywhere the order and the tile need it", async () => {
-    component.onCompanyNameClick();
-    await search("example", "123456789");
+    const result = await search("example", "123456789");
 
-    component.selectItem(component.items[0]);
+    select(result.items[0]);
 
     // What submits.
     expect(nameField.value).toBe("Example Trading Ltd");
@@ -162,23 +168,20 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.companyTileLabelText).toBe(
       "Example Trading Ltd (123456789)",
     );
-    // The panel is done with.
-    expect(component.showDropdown()).toBe(false);
-    expect(component.items).toEqual([]);
+    // The chips are repainted, so the mode the pick put the control in reads
+    // as selected.
+    expect(panel.calls).toContain("syncChips");
     // And the intent check has visibly started.
     expect(component.orderIntentChecking).toBe(true);
   });
 
   test("a placeholder identifier is captured but never rendered", async () => {
-    component.onCompanyNameClick();
-    await search("example", "TWO:ST-0001");
+    const result = await search("example", "TWO:ST-0001");
 
     // The results row the buyer chose from already hid it.
-    expect(component.items[0].companyDisplayName).toBe(
-      "<em>Example</em> Trading Ltd",
-    );
+    expect(result.items[0].html).toBe("<em>Example</em> Trading Ltd");
 
-    component.selectItem(component.items[0]);
+    select(result.items[0]);
 
     // Captured for the API…
     expect(document.getElementById("company_id").value).toBe("TWO:ST-0001");
@@ -187,16 +190,13 @@ describe("the payment tile's mounted control (integration)", () => {
   });
 
   test("manual entry is reachable from the panel and hands the field back", () => {
-    component.onCompanyNameClick();
-    expect(component.showDropdown()).toBe(true);
-
     component.enterManually();
 
     expect(component.manualMode).toBe(true);
     expect(component.manualModeActive).toBe(true);
-    // The panel is gone and the field is now the buyer's own to type in — the
-    // `:readonly` binding follows `searchModeActive`.
-    expect(component.showDropdown()).toBe(false);
+    // The field is now the buyer's own to type in, which on this surface means
+    // the panel has let go of it.
+    expect(panel.calls).toContain("releaseField");
     expect(component.searchModeActive).toBe(false);
     // The company-number input unlocks with it, since nothing has vouched for
     // an identifier for a hand-typed name.
@@ -204,6 +204,7 @@ describe("the payment tile's mounted control (integration)", () => {
 
     component.enableSearch();
     expect(component.searchModeActive).toBe(true);
+    expect(panel.calls).toContain("reclaimField");
   });
 
   test("a hand-typed name is committed as the company, with no identifier", () => {
@@ -236,11 +237,7 @@ describe("the payment tile's mounted control (integration)", () => {
     component.orderIntentNotAvailableNotice = "stale not-available";
     component.orderIntentErrorNotice = "stale error";
 
-    component.onCompanyNameClick();
-    queryField.value = "example";
-    component.$el = queryField;
-    component.noteCompanyQuery();
-    const pending = component.getItems();
+    const pending = panel.options.search.searchCompanies({ term: "example" });
     await H.flushPromises();
 
     // A request is on the wire and NOTHING has come back yet.
@@ -262,9 +259,7 @@ describe("the payment tile's mounted control (integration)", () => {
     // same synchronous call and erases the wrong-company repaint before anything
     // can observe it. So observe the hook ITSELF: what the company was at the
     // moment it ran is the whole claim.
-    component.onCompanyNameClick();
-    await search("alpha", "111111111");
-    component.selectItem(component.items[0]);
+    select((await search("alpha", "111111111")).items[0]);
 
     const seenAtHookTime = [];
     const real = component.refreshOrderIntentVerdict.bind(component);
@@ -273,9 +268,7 @@ describe("the payment tile's mounted control (integration)", () => {
       return real();
     };
 
-    component.onCompanyNameClick();
-    await search("beta", "222222222");
-    component.selectItem(component.items[0]);
+    select((await search("beta", "222222222")).items[0]);
 
     // It did fire — otherwise this test would pass by observing nothing.
     expect(seenAtHookTime.length).toBeGreaterThan(0);
@@ -294,9 +287,7 @@ describe("the payment tile's mounted control (integration)", () => {
     // briefly repainting the previous company's verdict and lowering the progress
     // row of the request that had just gone out for its replacement. Ordering was
     // the fix, so this is assertable synchronously.
-    component.onCompanyNameClick();
-    await search("alpha", "111111111");
-    component.selectItem(component.items[0]);
+    select((await search("alpha", "111111111")).items[0]);
     component.orderIntentApprovedNoticeCopy = {
       withCompany: "Available for {{companyName}}",
       withoutCompany: "Available",
@@ -312,9 +303,7 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.orderIntentApprovedNotice).not.toBe("");
 
     // A different company is picked.
-    component.onCompanyNameClick();
-    await search("beta", "222222222");
-    component.selectItem(component.items[0]);
+    select((await search("beta", "222222222")).items[0]);
 
     // The previous company's verdict is not on screen next to the new company,
     // and the new company's check is visibly running.
@@ -331,9 +320,7 @@ describe("the payment tile's mounted control (integration)", () => {
     // nothing else writes the notices, so the verdict was gone for the rest of
     // the session. In the declined case that removes the explanation for a
     // decline that still stands.
-    component.onCompanyNameClick();
-    await search("example", "123456789");
-    component.selectItem(component.items[0]);
+    select((await search("example", "123456789")).items[0]);
     // A real copy OBJECT. The harness's default stand-in for this getter is a
     // bare JSON string, which the resolver cannot substitute into.
     component.orderIntentApprovedNoticeCopy = {
@@ -355,11 +342,7 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.orderIntentApprovedNotice).not.toBe("");
 
     // Search again — the box goes down.
-    component.onCompanyNameClick();
-    queryField.value = "example";
-    component.$el = queryField;
-    component.noteCompanyQuery();
-    const pending = component.getItems();
+    const pending = panel.options.search.searchCompanies({ term: "example" });
     await H.flushPromises();
     expect(component.orderIntentApprovedNotice).toBe("");
     fetchStub.last().respond({ items: [] });
@@ -382,11 +365,7 @@ describe("the payment tile's mounted control (integration)", () => {
     // yet and must not lose the verdict for the company they still have.
     component.orderIntentApprovedNotice = "Available for Example Trading Ltd";
 
-    component.onCompanyNameClick();
-    queryField.value = "e";
-    component.$el = queryField;
-    component.noteCompanyQuery();
-    await component.getItems();
+    await panel.options.search.searchCompanies({ term: "e" });
     await H.flushPromises();
 
     expect(fetchStub.calls.length).toBe(0);
@@ -396,9 +375,7 @@ describe("the payment tile's mounted control (integration)", () => {
   });
 
   test("the control's own number display stays down on this surface", async () => {
-    component.onCompanyNameClick();
-    await search("example", "123456789");
-    component.selectItem(component.items[0]);
+    select((await search("example", "123456789")).items[0]);
 
     // The tile carries the number in its single `<name> (<number>)` label, so
     // the control's display would print it twice.

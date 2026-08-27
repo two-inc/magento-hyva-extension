@@ -42,7 +42,7 @@ const H = require("./hyva-harness");
 
 /** The exact English source strings. A byte off and the dictionaries miss. */
 const PLACEHOLDER_MSGID = "Enter company name to search";
-const MIN_CHARS_MSGID = "Please enter %1 or more characters";
+const MIN_CHARS_MSGID = "Enter %1 or more characters";
 
 /** The PHP variable every surface reads the threshold out of. */
 const PHP_THRESHOLD_VAR = "$companySearchMinChars";
@@ -68,9 +68,19 @@ const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
 const PAYMENT_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
 const SHIPPING_COMPONENT = "searchInput";
 
-/** The address field's input and its min-characters hint, by selector. */
+/** The address field's own input, by selector. */
 const ADDRESS_INPUT = "input[type=text]";
-const MIN_CHARS_SELECTOR = ".two-company-search__min-chars";
+
+/**
+ * The min-characters hint, with a body this repo can see the count land in.
+ *
+ * The harness resolves every `__()` to one constant, so the shipped msgid's
+ * `%1` is gone by the time the component reads it and the interpolation cannot
+ * be observed at all. This substitutes a body that keeps the placeholder.
+ */
+const HINT_RULE = [
+  [/^__\('Enter %1 or more characters'\)$/, "at least %1 characters"],
+];
 
 /**
  * The ONE company-search control's markup (TWO-25326, 2026-08-05).
@@ -156,17 +166,21 @@ function expectBootstrapped(component, name) {
  * @param {string} jsTemplate repo-relative `-csp-js` template path
  * @param {string} name the registered Alpine name
  * @param {Object} [mountOptions] passed to mountComponent
- * @returns {{component: Object, restore: Function}}
+ * @param {Array<[RegExp, string]>} [extraRules] applied ahead of the threshold
+ * @returns {{component: Object, env: Object, fetchStub: Object, restore: Function}}
  */
-function mountWithInjectedThreshold(jsTemplate, name, mountOptions) {
+function mountWithInjectedThreshold(jsTemplate, name, mountOptions, extraRules) {
   const env = H.installHyvaEnvironment();
   const fetchStub = H.stubFetch();
   const consoleError = jest
     .spyOn(console, "error")
     .mockImplementation(() => {});
 
-  H.loadSharedHelpers();
-  H.loadTemplate(jsTemplate, INJECT_RULE);
+  const rules = (extraRules || []).concat(INJECT_RULE);
+  // The shared helpers are the payment tile's template, which is also where the
+  // panel's string map lives — so a rule aimed at either has to reach both.
+  H.loadSharedHelpers(rules);
+  H.loadTemplate(jsTemplate, rules);
   env.fireAlpineInit();
 
   const component = H.mountComponent(
@@ -176,6 +190,7 @@ function mountWithInjectedThreshold(jsTemplate, name, mountOptions) {
 
   return {
     component: expectBootstrapped(component, name),
+    env: env,
     fetchStub: fetchStub,
     restore: function () {
       consoleError.mockRestore();
@@ -214,7 +229,7 @@ describe("company-search threshold provenance", () => {
     THRESHOLD_TEMPLATES.forEach((relPath) => {
       const source = templateSource(relPath);
 
-      expect(source).not.toMatch(/Please enter \d+ or more characters/);
+      expect(source).not.toMatch(/Enter \d+ or more characters/);
     });
   });
 
@@ -279,19 +294,15 @@ describe("company-search threshold provenance", () => {
       },
     );
 
-    // The min-characters key is the `%1` placeholder form, with the count passed
-    // as an argument. A key that spelled the number would need one dictionary
-    // entry per threshold and would drift the moment the threshold moved.
-    expect(control).toContain(MIN_CHARS_MSGID);
-    expect(control).toMatch(
-      new RegExp(
-        "__\\(\\s*[\"']" +
-          MIN_CHARS_MSGID.replace(/[%$]/g, "\\$&") +
-          "[\"']\\s*,\\s*\\" +
-          PHP_THRESHOLD_VAR +
-          "\\s*,?\\s*,?\\s*\\)",
-      ),
+    // The min-characters key moved to the panel's string map (TWO-25503): the
+    // shared popover renders the hint, so the count is substituted in JS from
+    // `minSearchChars` rather than passed to `__()`. The key keeps its `%1`
+    // form — one that spelled the number would need a dictionary entry per
+    // threshold and would drift the moment the threshold moved.
+    expect(templateSource(H.GATEWAY_METHOD_TEMPLATE)).toContain(
+      "__('" + MIN_CHARS_MSGID + "')",
     );
+    expect(control).not.toContain(MIN_CHARS_MSGID);
   });
 
   test("this repo's own dictionary does not shadow the company-search keys", () => {
@@ -322,7 +333,7 @@ describe("company-search threshold provenance", () => {
       expect(csv).not.toContain(MIN_CHARS_MSGID);
       // And never the count spelled into the key, in any locale: that needs one
       // row per threshold value and silently misses the day the threshold moves.
-      expect(csv).not.toMatch(/Please enter \d+ or more characters/);
+      expect(csv).not.toMatch(/Enter \d+ or more characters/);
     });
   });
 
@@ -493,278 +504,92 @@ describe("address field — empty-field hint (element 3)", () => {
   });
 });
 
+/**
+ * TWO-25503 moved the hint into the shared popover, which renders it from the
+ * `minInputLengthMessage()` this module hands it. The drift this suite exists
+ * for therefore lives on one seam now: the number the message states and the
+ * number `searchCompanies()` enforces both come off `minSearchChars`, and they
+ * are checked against each other below rather than each against a fixture.
+ */
 describe("address field — minimum-characters hint (element 4)", () => {
-  /** @returns {Element} the hint element as the shipped template renders it */
-  function hintElement() {
-    const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-    const doc = new DOMParser().parseFromString(markup, "text/html");
-    const hints = doc.querySelectorAll(MIN_CHARS_SELECTOR);
+  let mounted;
+  let searchApi;
 
-    // Exactly one: a second would be a duplicate message a querySelector
-    // assertion could not see.
-    expect(hints.length).toBe(1);
-    return hints[0];
-  }
+  beforeEach(() => {
+    // The panel's string map is `window.X = window.X || —` and the harness does
+    // not reset it, so an earlier test's translations would win over HINT_RULE.
+    delete window.twoGatewayPanelStrings;
 
-  test("the hint is rendered on this surface at all", () => {
-    // It was absent entirely — below the threshold getItems() returned early
-    // and the address step showed nothing, indistinguishable from a search that
-    // had failed.
-    expect(hintElement()).not.toBeNull();
-    expect(hintElement().textContent.trim()).toBe(H.ESCAPED_STRING);
-  });
-
-  test("the hint sits inside the panel but outside the results scroller", () => {
-    // REPLACES "the hint sits outside the results dropdown", whose reasoning
-    // was that the panel and the hint were mutually exclusive — the panel
-    // opened at or above the threshold, the hint showed only below it. TWO-25326
-    // §1 inverted exactly that: the panel opens on interaction and the hint is
-    // what a freshly-opened, empty panel shows, so the hint has to be INSIDE
-    // the panel or it can never be seen at the moment it is needed. It still
-    // must not be inside the results scroller, which `x-for` owns.
-    const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
-    const doc = new DOMParser().parseFromString(markup, "text/html");
-    const hint = doc.querySelector(MIN_CHARS_SELECTOR);
-    const panel = doc.querySelector("[x-show='showDropdown']");
-    const dropdownItems = doc.querySelector("template[x-for]");
-
-    expect(panel).not.toBeNull();
-    expect(panel.contains(hint)).toBe(true);
-    expect(dropdownItems).not.toBeNull();
-    expect(dropdownItems.contains(hint)).toBe(false);
-  });
-
-  test("the x-show binding names a getter the component defines", () => {
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      MIN_CHARS_SELECTOR,
-      "x-show",
-    );
-    const mounted = mountWithInjectedThreshold(
-      H.COMPANY_NAME_TEMPLATE,
-      ADDRESS_COMPONENT,
-    );
-    try {
-      expect(typeof mounted.component[bound]).toBe("function");
-    } finally {
-      mounted.restore();
-    }
-  });
-
-  /**
-   * The visibility table, evaluated against the INJECTED threshold so a literal
-   * 3 anywhere in the chain fails at least one row.
-   */
-  test("the hint shows from ZERO characters up to the threshold, and measures the QUERY", () => {
-    // REPLACES "the hint shows only between one character and the threshold".
-    // The zero-length exclusion WAS the bug TWO-25326 §1 reports: the buyer
-    // opened the panel, saw nothing, and had to type a letter before the
-    // surface would explain what it wanted. The hint now lives inside the
-    // panel — being open at all is the condition the old `search.length > 0`
-    // and `isCompanySelected` terms were standing in for — so it fires at
-    // zero, and it measures `query`, the panel's own text, not the
-    // company-name field.
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      MIN_CHARS_SELECTOR,
-      "x-show",
-    );
-    const mounted = mountWithInjectedThreshold(
-      H.COMPANY_NAME_TEMPLATE,
-      ADDRESS_COMPONENT,
-    );
-    try {
-      const component = mounted.component;
-
-      for (let n = 0; n < INJECTED_MIN; n += 1) {
-        component.query = "x".repeat(n);
-        expect(component[bound]()).toBe(true);
-      }
-
-      // At the threshold the search runs, so the hint must be gone.
-      component.query = "x".repeat(INJECTED_MIN);
-      expect(component[bound]()).toBe(false);
-      component.query = "x".repeat(INJECTED_MIN + 4);
-      expect(component[bound]()).toBe(false);
-
-      // Under a literal 3 the row below would be the one that fails: three
-      // characters would be treated as long enough to search.
-      component.query = "xxx";
-      expect(component[bound]()).toBe(true);
-
-      // And the company-NAME field is not what it reads. A long chosen name
-      // beside an empty query must still hint, or a reopened panel would sit
-      // silent again — the same defect by the other door.
-      component.query = "";
-      component.search = "Some Very Long Company Name Ltd";
-      expect(component[bound]()).toBe(true);
-    } finally {
-      mounted.restore();
-    }
-  });
-
-  test("manual entry suppresses the hint", () => {
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      MIN_CHARS_SELECTOR,
-      "x-show",
-    );
-    const mounted = mountWithInjectedThreshold(
-      H.COMPANY_NAME_TEMPLATE,
-      ADDRESS_COMPONENT,
-    );
-    try {
-      mounted.component.query = "x";
-      expect(mounted.component[bound]()).toBe(true);
-
-      // No search runs in manual mode, so telling the buyer to type more is
-      // instructing them to satisfy a threshold that no longer applies.
-      mounted.component.manualMode = true;
-      expect(mounted.component[bound]()).toBe(false);
-    } finally {
-      mounted.restore();
-    }
-  });
-
-  /**
-   * A mounted component over a root that carries its own input, which is what
-   * `selectItem()` and the manual-entry helpers reach for through `$root`.
-   *
-   * @returns {{component: Object, bound: string, field: HTMLElement, restore: Function}}
-   */
-  function mountOverField() {
-    // Both inputs, in shipped order — the hint measures the SECOND one.
     document.body.innerHTML = [
-      '<div id="root">',
+      // Without a country the engine refuses to search at all, and every row of
+      // the sweep below would read as "too short".
+      '<input id="shipping-country_id" value="GB" />',
+      '<div id="root" class="two-company-search">',
       '  <input type="text" id="field" value="" />',
-      '  <input type="text" class="two-company-query" id="query" value="" />',
       "</div>",
     ].join("\n");
-    const field = document.getElementById("field");
-    const queryInput = document.getElementById("query");
-    const root = document.getElementById("root");
 
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      MIN_CHARS_SELECTOR,
-      "x-show",
-    );
-    const mounted = mountWithInjectedThreshold(
+    mounted = mountWithInjectedThreshold(
       H.COMPANY_NAME_TEMPLATE,
       ADDRESS_COMPONENT,
-      { el: field, root: root },
+      {
+        el: document.getElementById("field"),
+        root: document.getElementById("root"),
+      },
+      HINT_RULE,
     );
     mounted.component.init();
 
-    return {
-      component: mounted.component,
-      bound: bound,
-      field: field,
-      queryInput: queryInput,
-      fetchStub: mounted.fetchStub,
-      restore: mounted.restore,
-    };
-  }
-
-  test("choosing a company closes the panel, which is what takes the hint off screen", async () => {
-    // REPLACES "choosing a company shorter than the threshold hides the hint".
-    // The old defect was that `selectItem()` wrote the chosen name into
-    // `search` — the very value the hint measured — so a registered name
-    // shorter than the threshold left "please enter N or more characters"
-    // sitting under a populated, closed field. `isCompanySelected` was the
-    // term added to suppress it.
-    //
-    // TWO-25326 §1 removed the coupling instead of patching it: the hint reads
-    // the panel's `query`, and the panel is what carries it. A pick empties the
-    // query AND closes the panel, so the getter is free to say "yes, an empty
-    // query is below the threshold" — nothing renders it. Asserting the getter
-    // alone here would now be asserting the wrong thing, so the panel gate is
-    // asserted with it.
-    const mounted = mountOverField();
-    try {
-      const component = mounted.component;
-      const shortName = "Ab";
-      expect(shortName.length).toBeLessThan(INJECTED_MIN);
-
-      component.openDropdown("");
-      component.query = shortName;
-      expect(component.showDropdown()).toBe(true);
-      expect(component[mounted.bound]()).toBe(true);
-
-      component.selectItem({ companyName: shortName, companyId: "1" });
-
-      expect(component.search).toBe(shortName);
-      expect(component.query).toBe("");
-      // The panel is shut, so the hint is not on screen whatever the getter
-      // says about an empty query.
-      expect(component.showDropdown()).toBe(false);
-
-      // Reopening deliberately brings it back: an empty query IS the state the
-      // hint exists to explain (§1), and a panel that opened silent is the bug.
-      component.openDropdown("");
-      expect(component.showDropdown()).toBe(true);
-      expect(component[mounted.bound]()).toBe(true);
-    } finally {
-      mounted.restore();
-    }
+    expect(mounted.env.companyPanels).toHaveLength(1);
+    searchApi = mounted.env.companyPanels[0].options.search;
   });
 
-  test("returning to search opens the panel onto the hint, whatever was typed by hand", async () => {
-    // REPLACES "text typed by hand reaches the hint on switching back to
-    // search", which existed because `search` had to be refreshed from the
-    // field for the hint to be right. §3 removed the whole question: the hint
-    // measures the panel's query, enableSearch() opens the panel with that
-    // query EMPTY, and the hand-typed company name is left alone in the name
-    // field rather than being adopted as a search term.
-    const mounted = mountOverField();
-    try {
-      const component = mounted.component;
-
-      component.enterManually();
-      mounted.field.value = "Ab";
-      component.onNameFieldInput();
-
-      expect(component.search).toBe("Ab");
-      // Suppressed while manual entry is in effect: no search runs, so there
-      // is no threshold to satisfy.
-      expect(component[mounted.bound]()).toBe(false);
-
-      component.enableSearch();
-
-      expect(component.showDropdown()).toBe(true);
-      expect(component.query).toBe("");
-      expect(component[mounted.bound]()).toBe(true);
-      // The typed name survives the trip; it is a name, not a query.
-      expect(mounted.field.value).toBe("Ab");
-    } finally {
-      mounted.restore();
-    }
+  afterEach(() => {
+    mounted.restore();
+    document.body.innerHTML = "";
   });
 
-  test("the hint is shown at exactly the query lengths that issue no request", () => {
-    // The claim and the enforcement, checked against each other rather than
-    // each against a fixture. This is the drift the ticket is about: a hint
-    // visible at a length that DOES search, or absent at one that does not,
-    // fails here whichever half moved.
-    //
-    // Swept from ZERO now, not one — that boundary is the §1 fix, and starting
-    // at one would step straight over it.
-    const mounted = mountOverField();
-    try {
-      const component = mounted.component;
+  test("the panel is handed the hint and the threshold behind it", () => {
+    expect(typeof searchApi.minInputLengthMessage).toBe("function");
+    expect(searchApi.MIN_INPUT_LENGTH).toBe(INJECTED_MIN);
+  });
 
-      for (let n = 0; n <= INJECTED_MIN; n += 1) {
-        const before = mounted.fetchStub.calls.length;
-        mounted.queryInput.value = "x".repeat(n);
-        component.getItems();
+  test.each([
+    [".two-company-search__min-chars", "the hint element"],
+    ['[data-name="company_search_min_chars"]', "its data hook"],
+  ])("no mount point renders %s of its own (%s)", (selector) => {
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, H.GATEWAY_METHOD_MARKUP_TEMPLATE].forEach(
+      (relPath) => {
+        const doc = new DOMParser().parseFromString(
+          H.renderTemplateMarkup(relPath),
+          "text/html",
+        );
 
-        const searched = mounted.fetchStub.calls.length > before;
-        const hinted = component[mounted.bound]();
+        expect(doc.querySelectorAll(selector)).toHaveLength(0);
+      },
+    );
+  });
 
-        expect(hinted).toBe(!searched);
-      }
-    } finally {
-      mounted.restore();
+  test("the hint interpolates the threshold instead of restating it", () => {
+    expect(searchApi.minInputLengthMessage()).toBe(
+      "at least " + INJECTED_MIN + " characters",
+    );
+    // A literal 3 anywhere in the chain lands here as 3.
+    expect(searchApi.minInputLengthMessage()).not.toContain("3");
+  });
+
+  test("the threshold it states is the threshold enforced", async () => {
+    for (let n = 0; n <= INJECTED_MIN; n += 1) {
+      const before = mounted.fetchStub.calls.length;
+      const pending = searchApi.searchCompanies({ term: "x".repeat(n) });
+      await H.flushPromises();
+
+      const searched = mounted.fetchStub.calls.length > before;
+      expect(searched).toBe(n >= INJECTED_MIN);
+
+      if (searched) mounted.fetchStub.last().respond({ items: [] });
+      await pending;
     }
   });
 });
+
