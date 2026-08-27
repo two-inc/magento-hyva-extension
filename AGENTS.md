@@ -487,6 +487,18 @@ that ran cleanly and proved nothing:
   a statement rather than a comment beside one. Read the mutated region back,
   or anchor through enough surrounding text to be unique.
 
+And the reason those two rules need writing down at all:
+
+- **Agreement between a test and the thing it tests is worth nothing when one
+  person wrote both.** TWO-25503's worst defect was a test double that diverged
+  from the real component in exactly the direction that hid the leak the test
+  existed to catch — with a comment confidently explaining why the divergence
+  was correct. Both halves were mine and they agreed, so nothing about writing
+  them more carefully would have surfaced it. When a test and its subject were
+  authored together, the thing to hunt is the divergence that would make the
+  test agree with a bug, and **the person to hunt it is not the author** — which
+  is what the adversarial review round is for, not a formality before merge.
+
 ### Common Issues
 
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface
