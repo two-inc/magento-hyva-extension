@@ -44,6 +44,30 @@ function deferred() {
   return { promise: promise, resolve: resolve };
 }
 
+
+/**
+ * Put the popover on screen, the way clicking the company field does.
+ *
+ * Drives the panel the component actually built rather than stubbing the
+ * question away, so a component that never mounted one fails here instead of
+ * passing on a fake answer.
+ *
+ * @param {Object} env the installed Hyvä environment
+ */
+/**
+ * Take the popover back down, so a verdict the open panel suppressed appears.
+ *
+ * @param {Object} env the installed Hyvä environment
+ */
+function closeCompanyPopover(env) {
+  env.companyPanels[env.companyPanels.length - 1].close();
+}
+
+function openCompanyPopover(env) {
+  expect(env.companyPanels.length).toBeGreaterThan(0);
+  env.companyPanels[env.companyPanels.length - 1].open();
+}
+
 describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
   describe("the shipped markup", () => {
     let doc;
@@ -535,10 +559,23 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     let component;
 
     beforeEach(() => {
+      // A real control root and company field, because one of this describe's
+      // rules is about what happens UNDER AN OPEN POPOVER — and the popover is
+      // built around that field. Mounted with neither, there is no panel to
+      // open and the rule cannot be expressed.
+      document.body.innerHTML = [
+        '<div id="root" class="two-company-search">',
+        '  <input type="text" id="field" value="" />',
+        "</div>",
+      ].join("\n");
+
       env = H.installHyvaEnvironment();
       H.loadSharedHelpers();
       env.fireAlpineInit();
-      component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {});
+      component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        root: document.getElementById("root"),
+      });
+      component.mountCompanyPopover();
       component.orderIntentApprovedNoticeCopy = null;
       component.orderIntentNotAvailableCopy = null;
     });
@@ -815,9 +852,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentApprovedNotice).toBe("YES Alpha Ltd");
 
       component.clearOrderIntentNotices();
-      component.showDropdown = function () {
-        return true;
-      };
+      openCompanyPopover(env);
       component.refreshOrderIntentVerdict();
 
       expect(component.orderIntentApprovedNotice).toBe("");
@@ -936,9 +971,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         companyNameToken: "{{companyName}}",
         companyNumberToken: "{{companyNumber}}",
       };
-      component.showDropdown = function () {
-        return true;
-      };
+      openCompanyPopover(env);
 
       component.processOrderIntentSuccessResponse(
         { approved: true },
@@ -949,9 +982,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentApprovedNotice).toBe("");
       // But it is on record, so closing the panel shows it.
       expect(component.orderIntentDecisions["111111111"].approved).toBe(true);
-      component.showDropdown = function () {
-        return false;
-      };
+      closeCompanyPopover(env);
       component.refreshOrderIntentVerdict();
       expect(component.orderIntentApprovedNotice).not.toBe("");
     });
@@ -1090,9 +1121,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
       component.generalErrorMessage = "SENTINEL-general-error";
-      component.showDropdown = function () {
-        return true;
-      };
+      openCompanyPopover(env);
 
       component.processOrderIntentErrorResponse({}, "111111111", "Alpha Ltd");
 
@@ -1101,9 +1130,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(component.orderIntentFailures["111111111"]).toEqual({
         name: "Alpha Ltd",
       });
-      component.showDropdown = function () {
-        return false;
-      };
+      closeCompanyPopover(env);
       component.refreshOrderIntentVerdict();
       expect(component.orderIntentErrorNotice).toBe("SENTINEL-general-error");
     });

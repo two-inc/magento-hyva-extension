@@ -732,11 +732,12 @@ function installCompanyPanelStub() {
     this.options = options || {};
     this.fieldSelector = this.options.fieldSelector;
     this.calls = [];
+    this.opened = false;
     instances.push(this);
   }
 
-  ["bind", "syncChips", "close", "open", "releaseField", "reclaimField",
-    "setDisplayText", "destroy"].forEach(function (name) {
+  ["bind", "syncChips", "releaseField", "reclaimField", "setDisplayText",
+    "destroy"].forEach(function (name) {
     CompanySearchPanelStub.prototype[name] = function () {
       this.calls.push(name);
     };
@@ -744,8 +745,19 @@ function installCompanyPanelStub() {
   CompanySearchPanelStub.prototype.isBound = function () {
     return true;
   };
+  // Open/close move a flag rather than only recording, because callers ASK:
+  // the order-intent box refuses to paint a verdict under an open panel, and a
+  // stub that always answered shut would let that rule pass untested.
+  CompanySearchPanelStub.prototype.open = function () {
+    this.calls.push("open");
+    this.opened = true;
+  };
+  CompanySearchPanelStub.prototype.close = function () {
+    this.calls.push("close");
+    this.opened = false;
+  };
   CompanySearchPanelStub.prototype.isOpen = function () {
-    return false;
+    return this.opened;
   };
   CompanySearchPanelStub.prototype.abortActiveRequest = function () {
     this.calls.push("abortActiveRequest");
