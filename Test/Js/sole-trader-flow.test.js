@@ -194,7 +194,8 @@ describe("toggle visibility gating", () => {
     await pending;
 
     expect(tile.component.showModeTab).toBe(expected);
-    expect(tile.component.soleTraderTabVisible).toBe(expected);
+    // The chip the buyer actually sees follows the same answer.
+    expect(tile.component.companyPopoverModeOffered("soletrader")).toBe(expected);
   });
 
   test("the lookup is made for the QUOTE's billing country, not the address form's", async () => {
@@ -763,9 +764,10 @@ describe("the wires between markup and component", () => {
 
   afterEach(() => tile && tile.restore());
 
+  // The two mode chips are NOT here any more: they are rendered by the shared
+  // popover, which this repo does not ship. What is left in this markup is the
+  // pair of sole-trader links that have no equivalent there.
   test.each([
-    ['[data-name="mode_registered"]', ":class"],
-    ['[data-name="mode_soletrader"]', ":class"],
     ['[data-name="soletrader_signup_link"]', "@click"],
     ['[data-name="select_different_soletrader"]', "@click"],
   ])("%s %s names a key the component defines", (selector, attribute) => {
@@ -779,33 +781,29 @@ describe("the wires between markup and component", () => {
     expect(name in tile.component).toBe(true);
   });
 
-  test.each([
-    [".two-mode-chips", "soleTraderTabVisible"],
-    ['[data-name="mode_registered"]', null],
-  ])("%s is bound to the component's own gate", (selector, expectedGate) => {
-    tile = mountTile();
-    const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
-    const element = new DOMParser()
-      .parseFromString(markup, "text/html")
-      .querySelector(selector);
+  test.each([[".two-mode-chips"], ['[data-name="mode_registered"]'], ['[data-name="mode_soletrader"]']])(
+    "%s is gone from this markup — a chip row outside the popover is the defect",
+    (selector) => {
+      // It was a sibling the dropdown drew over, so the buyer was offered the
+      // other capture modes only while the control that offers them was shut.
+      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
 
-    expect(element).not.toBeNull();
-    expect(element.getAttribute("x-show")).toBe(expectedGate);
-    if (expectedGate) {
-      expect(expectedGate in tile.component).toBe(true);
-    }
-  });
+      expect(
+        new DOMParser().parseFromString(markup, "text/html").querySelector(selector),
+      ).toBeNull();
+    },
+  );
 
-  test("the toggle renders in BOTH company-search-location modes", () => {
+  test("the sole-trader chip is offered in BOTH company-search-location modes", () => {
     // The sole-trader entry point is a property of the payment method, not of
-    // where the company-search control happens to be mounted.
-    [["1"], ["0"]].forEach((value) => {
-      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE, [
-        [/^\$isCompanySearchInPaymentTile$/, value[0]],
-      ]);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
+    // where the company-search control happens to be mounted. Asserted on the
+    // component now, because the chip is no longer in anyone's markup.
+    tile = mountTile();
+    tile.component.showModeTab = true;
 
-      expect(doc.querySelector('[data-name="mode_soletrader"]')).not.toBeNull();
-    });
+    expect(tile.component.companyPopoverModeOffered("soletrader")).toBe(true);
+    expect(
+      tile.component.companyPopoverChips().map((chip) => chip.mode),
+    ).toContain("soletrader");
   });
 });
