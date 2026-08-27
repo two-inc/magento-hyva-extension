@@ -74,18 +74,16 @@ describe("address-step company number", () => {
     selectedEvents.push(event.detail);
   }
 
-  let queryInput;
 
   beforeEach(() => {
     // Nesting depth is load-bearing: setAddressData() walks four levels up
     // from $root to find the address container.
     //
-    // Three inputs: the company NAME field, the panel's own query field
-    // (TWO-25326 §1), and the number driver described at ID_DRIVER — a test
-    // stand-in for the payment step's input, since this surface renders none.
-    // The driver carries `.company_id` so that `companyNameField()`'s
-    // exclusion is exercised, and sits FIRST for the same reason: document
-    // order must not be what makes the resolver right.
+    // Two inputs: the company NAME field, and the number driver described at
+    // ID_DRIVER — a test stand-in for the payment step's input, since this
+    // surface renders none. The driver carries `.company_id` so that
+    // `companyNameField()`'s exclusion is exercised, and sits FIRST for the
+    // same reason: document order must not be what makes the resolver right.
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
@@ -93,7 +91,6 @@ describe("address-step company number", () => {
       '    <div id="company-root">',
       '      <input type="text" class="company_id" data-test-company-id-driver="true" value="" />',
       '      <input type="text" id="company-field" value="" />',
-      '      <input type="text" class="two-company-query" id="company-query" value="" />',
       "    </div>",
       "  </div></div></div>",
       "</div>",
@@ -108,7 +105,6 @@ describe("address-step company number", () => {
     env.fireAlpineInit();
 
     nameField = document.getElementById("company-field");
-    queryInput = document.getElementById("company-query");
     idField = document.querySelector(ID_DRIVER);
     root = document.getElementById("company-root");
 
@@ -125,7 +121,7 @@ describe("address-step company number", () => {
 
   /**
    * Mount the picker. `el` is the NAME field, because that is the element the
-   * component's `x-data` node contains and the one `getItems` reads.
+   * component's `x-data` node contains and the one `companyNameField()` resolves.
    *
    * @param {Object} [stored] a selection blob to seed storage with
    * @returns {Object} the mounted, initialised component
@@ -154,11 +150,10 @@ describe("address-step company number", () => {
   /**
    * Type into the company-name field, the way its binding does.
    *
-   * The binding is `@input.debounce.300ms="onNameFieldInput"` since TWO-25326
-   * §1 — NOT `getItems`, which the name field no longer drives at all. In
-   * search mode this handler only keeps `search` in step; in manual mode, and
-   * on a store with the lookup off, it takes the commit/clear path getItems()
-   * used to run. Both are exercised below, in the mode that owns them.
+   * The binding is `@input.debounce.300ms="onNameFieldInput"`. In search mode
+   * this handler only keeps `search` in step, because the panel owns the field
+   * there; in manual mode, and on a store with the lookup off, it is the commit
+   * path. Both are exercised below, in the mode that owns them.
    *
    * @param {string} text
    * @returns {Promise<void>}
@@ -170,7 +165,8 @@ describe("address-step company number", () => {
   }
 
   /**
-   * Type into the PANEL's query field and run the debounced search behind it.
+   * Run a search the way the panel does — through the six-member search API,
+   * which is the only route from the popover's query box to this engine.
    *
    * Any search this starts is settled before returning. An unsettled one leaves
    * the helper's live 30s timeout armed behind the test, which shows up as a
@@ -180,8 +176,9 @@ describe("address-step company number", () => {
    * @returns {Promise<void>}
    */
   async function typeQuery(text) {
-    queryInput.value = text;
-    const pending = component.getItems();
+    const pending = component
+      .companyPopoverSearchApi()
+      .searchCompanies({ term: text });
     await H.flushPromises();
     const call = fetchStub.last();
     if (call !== undefined && !call.settled) {
@@ -193,8 +190,8 @@ describe("address-step company number", () => {
   /**
    * Pick a search hit.
    *
-   * There is no echo to simulate any more. The old helper had to fire
-   * `noteCompanyQuery()` and then a `getItems()` tick by hand, because
+   * There is no echo to simulate any more. The old helper had to fire a search
+   * tick by hand, because
    * selectItem() writing the chosen name back into the company-name field
    * re-entered the SEARCH path through that field's `input` binding, and two
    * one-shot flags (`awaitingSelectionEcho`, `isSelecting`) existed to swallow
@@ -277,13 +274,13 @@ describe("address-step company number", () => {
 
       expect(display).not.toBeNull();
       expect(display.tagName).not.toBe("INPUT");
-      // Every text input this component owns, enumerated: the company NAME
-      // field and the panel's query field, and nothing else.
+      // Every text input the shipped markup owns, enumerated: the company NAME
+      // field and nothing else. The panel's query box is built at runtime.
       const textInputs = Array.from(
         doc.querySelectorAll('input[type="text"]'),
       );
-      expect(textInputs).toHaveLength(2);
-      expect(textInputs[1].className).toContain("two-company-query");
+      expect(textInputs).toHaveLength(1);
+      expect(textInputs[0].className).toContain("company_name");
     });
 
     test("the provenance state survives the removal, because the payment step reads it", () => {
@@ -442,20 +439,17 @@ describe("address-step company number", () => {
 
     test("a pick stays locked in SEARCH mode, because the name cannot be edited there", async () => {
       // REPLACES "editing the name after a pick unlocks the field again".
-      // TWO-25326 §1 makes that edit impossible on this surface: every editing
-      // key on the company-name field is prevented and routed into the panel,
-      // so there is no keystroke that can invalidate a registry pick here. The
-      // unlock still exists — see the manual-mode tests below, where the field
-      // IS the capture field and the buyer really is typing a new name.
+      // TWO-25326 §1 makes that edit impossible on this surface: the panel owns
+      // the name field in search mode and moves anything typed into its own
+      // query box, so `onNameFieldInput` returns before it can invalidate a
+      // registry pick. The unlock still exists — see the manual-mode tests
+      // below, where the field IS the capture field.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       expect(component.companyIdDisabled).toBe(true);
 
-      const event = { key: "x", preventDefault: jest.fn() };
-      component.onCompanyNameKeydown(event);
       await typeName("Acme Limited");
 
-      expect(event.preventDefault).toHaveBeenCalled();
       expect(component.companyIdDisabled).toBe(true);
       expect(component.companyId).toBe("111");
     });
@@ -597,10 +591,8 @@ describe("address-step company number", () => {
       // load but is never editable.
       //
       // Driven through `onNameFieldInput()` in MANUAL mode, which is where the
-      // clear now lives. `noteCompanyQuery()` — the old driver — belongs to the
-      // panel's query field since TWO-25326 §1 and no longer says anything
-      // about the captured company at all; in search mode there is no keystroke
-      // that reaches the name field, so nothing there can end the selection.
+      // clear lives: in search mode the panel holds the name field, so nothing
+      // typed there can end the selection.
       component = mount({
         company_name: "Acme Ltd",
         company_id: "111",
@@ -614,28 +606,19 @@ describe("address-step company number", () => {
       expect(component.isCompanySelected).toBe(false);
     });
 
-    test("a query typed in the panel does not touch the restored selection", () => {
+    test("a query run in the panel does not touch the restored selection", async () => {
       // The complement of the test above, and the reason the clear had to move.
-      // `noteCompanyQuery()` records the panel's search term; looking for
-      // alternatives is not the same act as abandoning the company already
-      // captured, and conflating them is what published half-typed queries as
-      // the order's company name.
+      // Looking for alternatives is not the same act as abandoning the company
+      // already captured, and conflating them is what published half-typed
+      // queries as the order's company name.
       component = mount({
         company_name: "Acme Ltd",
         company_id: "111",
         company_id_source: "registry",
       });
 
-      queryInput.value = "Something Else";
-      const previousEl = component.$el;
-      component.$el = queryInput;
-      try {
-        component.noteCompanyQuery();
-      } finally {
-        component.$el = previousEl;
-      }
+      await typeQuery("Something Else");
 
-      expect(component.query).toBe("Something Else");
       expect(component.isCompanySelected).toBe(true);
       expect(component.companyId).toBe("111");
       expect(storedSelection().company_name).toBe("Acme Ltd");
@@ -785,7 +768,8 @@ describe("address-step company number", () => {
     /*
      * TWO-25326 §1 narrowed WHERE a name edit can happen at all. In search mode
      * the company-name field is not editable, so there is no name edit to
-     * mishandle — `getItems()` deliberately no longer runs the stale-identifier
+     * mishandle — the search path deliberately no longer runs the
+     * stale-identifier
      * clear there, because reopening the panel to look at alternatives is not
      * evidence that the captured company changed, and clearing on it dropped a
      * perfectly good registry number. Every edit below therefore goes through
@@ -813,7 +797,7 @@ describe("address-step company number", () => {
 
     test("a search that reopens the panel does NOT drop a RESTORED registry pick", async () => {
       // The regression the narrowing exists to prevent, and the one a
-      // manual-mode-only suite would miss: getItems() used to run
+      // manual-mode-only suite would miss: the search path used to run
       // forgetStaleCompanyId() on every search, and that clear fires whenever
       // `search` differs from the name the number was written for.
       //
@@ -836,7 +820,6 @@ describe("address-step company number", () => {
       expect(component.search).toBe("");
       expect(component.companyName).toBe("Acme Ltd");
 
-      component.openDropdown("");
       await typeQuery("Different Company Ltd");
 
       expect(component.companyId).toBe("111");
@@ -981,11 +964,12 @@ describe("address-step company number", () => {
 
     test("never searches, whatever is typed", async () => {
       await typeName("Acme Widgets Limited");
-      // Driven through the debounced handler too: `onNameFieldInput()` alone
-      // never requests anything in any mode, so asserting on it would be an
-      // assertion that cannot fail. getItems() is the one that would.
-      queryInput.value = "Acme Widgets Limited";
-      await component.getItems();
+      // Driven through the panel's search API, not `onNameFieldInput()`: the
+      // latter never requests anything in any mode, so asserting on it would be
+      // an assertion that cannot fail. This surface is reachable with the
+      // lookup off — `enable_company_search` on but the API key unverified —
+      // and the popover is mounted unconditionally there.
+      await typeQuery("Acme Widgets Limited");
 
       expect(fetchStub.calls).toHaveLength(0);
       expect(component.isSearching).toBe(false);

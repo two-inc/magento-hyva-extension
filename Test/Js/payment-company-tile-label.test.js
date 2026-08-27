@@ -397,18 +397,17 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // keyed on it directly would leave the block hidden for a company the
       // buyer has just typed away from.
       //
-      // The name field is now the ONE input, shared between modes (TWO-25326,
-      // 2026-08-05 ruling) and `readonly` while `searchModeActive` — a
-      // registry pick was made in SEARCH mode above, so editing the name by
-      // hand is only reachable through manual mode, exactly as the shipped
-      // control gates it.
+      // The name field is the ONE input, shared between modes (TWO-25326,
+      // 2026-08-05 ruling), and the panel holds it in search mode — a registry
+      // pick was made in SEARCH mode above, so editing the name by hand is only
+      // reachable through manual mode, exactly as the shipped control gates it.
       component.enterManually();
       const nameInput = document.getElementById("company_name");
       nameInput.value = "Other Example";
       const previousEl = component.$el;
       component.$el = nameInput;
       try {
-        component.getItems().catch(() => {});
+        component.onNameFieldInput();
       } finally {
         component.$el = previousEl;
       }

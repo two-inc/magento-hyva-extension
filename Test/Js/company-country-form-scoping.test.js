@@ -38,10 +38,8 @@ describe("form-scoped country resolution", () => {
   /**
    * One address form: its own country select and its own company-search control.
    *
-   * `class="two-company-search"` on the control root and `.two-company-query`
-   * inside it are load-bearing for the same reasons as in the other control
-   * suites — `controlRoot()` finds itself by that class, and the panel's query
-   * box is what a search reads its term from.
+   * `class="two-company-search"` on the control root is load-bearing:
+   * `controlRoot()` finds itself by that class.
    *
    * The `<form>` element is load-bearing here too: it is the boundary the scope
    * walk stops at, so it is what stops a control climbing out of its own address
@@ -64,8 +62,6 @@ describe("form-scoped country resolution", () => {
       "  </select>",
       '  <div id="' + role + '-company-root" class="two-company-search">',
       '    <input type="text" id="' + role + '-company-field" value="" />',
-      '    <input type="text" class="two-company-query"',
-      '           id="' + role + '-company-query" value="" />',
       "  </div>",
       "</form>",
     ].join("\n");
@@ -92,8 +88,6 @@ describe("form-scoped country resolution", () => {
       '  <div id="tile-root">',
       '    <div class="two-company-search">',
       '      <input type="text" id="company_name" value="" />',
-      '      <input type="text" class="two-company-query"',
-      '             id="tile-company-query" value="" />',
       "    </div>",
       '    <input type="text" id="company_id" value="" disabled />',
       "  </div>",
@@ -153,13 +147,11 @@ describe("form-scoped country resolution", () => {
    * it went out with.
    *
    * @param {Object} component
-   * @param {string} queryFieldId
    * @returns {Promise<string|null>} the `country` parameter, or null if nothing
    *   reached the wire at all
    */
-  async function searchedCountry(component, queryFieldId) {
-    document.getElementById(queryFieldId).value = "Exa";
-    component.getItems();
+  async function searchedCountry(component) {
+    component.companyPopoverSearchApi().searchCompanies({ term: "Exa" });
     await H.flushPromises();
 
     const call = fetchStub.calls[fetchStub.calls.length - 1];
@@ -191,7 +183,7 @@ describe("form-scoped country resolution", () => {
     ])("%s control searches in %s — %s", async (role, expected) => {
       const component = mountAddressControl(role);
 
-      expect(await searchedCountry(component, role + "-company-query")).toBe(
+      expect(await searchedCountry(component)).toBe(
         expected,
       );
       expect(component.countryCode).toBe(expected);
@@ -249,7 +241,7 @@ describe("form-scoped country resolution", () => {
       render(addressForm(role, expected));
       const component = mountAddressControl(role);
 
-      expect(await searchedCountry(component, role + "-company-query")).toBe(
+      expect(await searchedCountry(component)).toBe(
         expected,
       );
     });
@@ -272,7 +264,7 @@ describe("form-scoped country resolution", () => {
       );
       const component = mountTile();
 
-      expect(await searchedCountry(component, "tile-company-query")).toBe(
+      expect(await searchedCountry(component)).toBe(
         expected,
       );
     });
@@ -284,7 +276,7 @@ describe("form-scoped country resolution", () => {
       render(addressForm("shipping", "NO") + paymentTile(false));
       const component = mountTile();
 
-      expect(await searchedCountry(component, "tile-company-query")).toBe("NO");
+      expect(await searchedCountry(component)).toBe("NO");
     });
 
     test("the order-intent check is sent with the same country the search used", () => {

@@ -2161,6 +2161,17 @@ $quoteDetails = json_encode(
                      * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
                      */
                     async searchCompanies(request) {
+                        // The gate the deleted `getItems()` used to hold. With
+                        // company search off — an admin setting, or an API key
+                        // that has not verified — this control still mounts so
+                        // the buyer has a company field, and without this it
+                        // would put live checkout-api requests on the wire for
+                        // a merchant whose lookup is switched off. `aborted`
+                        // rather than empty results: nothing was asked, so
+                        // there is nothing to report.
+                        if (!self.searchModeActive) {
+                            return { items: [], unavailable: false, aborted: true };
+                        }
                         await self.runCompanySearch(request.term);
                         // Still searching means a later call superseded this one
                         // and owns the state now; painting from it would show
