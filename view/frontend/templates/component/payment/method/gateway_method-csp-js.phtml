@@ -2022,6 +2022,56 @@ $quoteDetails = json_encode(
         window.twoGatewayCompanyPanels.push(panel);
     }
 
+    /*
+     * Every live company control on the page, so a Magewire re-render can put
+     * its popover back.
+     *
+     * A re-render MORPHS the server markup over the live DOM. The popover's
+     * `span.two-company-field-wrap` is not in that markup — the panel builds it
+     * around the field at runtime — so the morph deletes it, taking the panel,
+     * the chips and the attributes the panel wrote on the field with it, and
+     * leaving a bare input that answers to nothing until the page is reloaded.
+     *
+     * Nothing rebuilds it on its own. The morph KEEPS the element carrying this
+     * component's `x-data`, so Alpine keeps the component and never re-runs
+     * `init()` — the one thing that calls mountCompanyPopover(). That is why a
+     * shipping-method change survives (its re-render never reaches this form)
+     * while a country change, a payment-method pick and the return out of
+     * manual entry all destroy the control.
+     *
+     * The base plugin's Luma host has no equivalent, because it hands the panel
+     * Magento_Ui's `$.async` and the panel re-anchors itself. There is no
+     * `$.async` here and a MutationObserver per mount is how this checkout froze
+     * earlier on this ticket (TWO-25503), so the re-render's own hook is the
+     * signal.
+     */
+    window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts || [];
+
+    /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */
+    function twoGatewayRemountCompanyPopovers() {
+        window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts
+            .filter(function (mount) {
+                if (!mount.root.isConnected) return false;
+                mount.remount();
+                return true;
+            });
+    }
+
+    /**
+     * Watch for re-renders, once per page.
+     *
+     * `element.updated` fires many times per re-render and the sweep is a no-op
+     * for a popover the morph left alone, so the LAST update of a cycle is what
+     * settles it — which is what makes this correct without knowing where in the
+     * cycle the wrapper was removed.
+     */
+    function twoGatewayWatchCompanyMorphs() {
+        if (window.twoGatewayCompanyMorphHooked) return;
+        if (!window.Magewire || typeof window.Magewire.hook !== 'function') return;
+        window.twoGatewayCompanyMorphHooked = true;
+        window.Magewire.hook('element.updated', twoGatewayRemountCompanyPopovers);
+    }
+
     /**
      * THE company-capture control — the Hyvä ADAPTER over one shared popover.
      *
@@ -2403,6 +2453,9 @@ $quoteDetails = json_encode(
                 if (panel) {
                     panel.fieldSelector = selector;
                     panel.bind();
+                    // A re-render takes the return link with the wrapper, and
+                    // without it manual entry is a dead end.
+                    if (this.manualMode) panel.releaseField();
                     return;
                 }
 
@@ -2457,6 +2510,33 @@ $quoteDetails = json_encode(
                 twoGatewayRegisterCompanyPanel(panel, field);
                 panel.bind();
                 if (this.manualMode) panel.releaseField();
+                this.watchCompanyPopoverForMorphs();
+            },
+
+            /**
+             * Put this control on the page's re-render sweep.
+             *
+             * Keyed on the control's root, which is the node a morph keeps: a
+             * component rebuilt by Alpine brings a new root and a new closure,
+             * and the entry the old root left behind is dropped by the sweep
+             * itself once that root leaves the document.
+             */
+            watchCompanyPopoverForMorphs() {
+                const self = this;
+                const root = this.controlRoot();
+                if (!root) return;
+                twoGatewayWatchCompanyMorphs();
+                const watched = window.twoGatewayCompanyMounts.some(function (mount) {
+                    return mount.root === root;
+                });
+                if (watched) return;
+                window.twoGatewayCompanyMounts.push({
+                    root: root,
+                    remount: function () {
+                        if (panel && panel.isBound()) return;
+                        self.mountCompanyPopover();
+                    }
+                });
             },
 
             /** @returns {Object|null} the popover, for tests that drive it */

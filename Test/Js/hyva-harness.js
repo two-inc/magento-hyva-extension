@@ -628,6 +628,7 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayPanelStrings",
   "twoGatewayCompanyFieldSeq",
   "twoGatewayCompanyPanels",
+  "twoGatewayCompanyMounts",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
   // correct in production (the publisher can render once per payment method and
@@ -732,6 +733,31 @@ function loadSharedHelpers(extraRules) {
  *
  * @returns {Object} `{ instances }`, newest last
  */
+/**
+ * The two nodes the real panel puts around a field it has taken: a wrapper it
+ * builds, and the panel inside it. Class names are the base plugin's, because a
+ * morph is recognised by what it DELETES.
+ *
+ * @param {HTMLElement} field
+ * @returns {HTMLElement} the panel node
+ */
+function wrapField(field) {
+  let wrap = field.parentElement;
+  if (!wrap || !wrap.classList.contains("two-company-field-wrap")) {
+    wrap = document.createElement("span");
+    wrap.className = "two-company-field-wrap";
+    field.parentNode.insertBefore(wrap, field);
+    wrap.appendChild(field);
+  }
+  let panel = wrap.querySelector(".two-company-dropdown");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.className = "two-company-dropdown";
+    wrap.appendChild(panel);
+  }
+  return panel;
+}
+
 function installCompanyPanelStub() {
   const instances = [];
 
@@ -750,8 +776,33 @@ function installCompanyPanelStub() {
       };
     },
   );
+  // The real teardown takes its panel out of the wrapper, which is what makes
+  // the next instance build fresh instead of adopting a dead one's DOM.
+  CompanySearchPanelStub.prototype.destroy = function () {
+    this.calls.push("destroy");
+    if (this._panel) this._panel.remove();
+    this._panel = null;
+  };
+
+  /*
+   * The real panel's own predicate, not a constant.
+   *
+   * `true` unconditionally is the answer that AGREES WITH THE ADAPTER in
+   * exactly the direction that hides the bug this stub exists to expose: a
+   * checkout re-render morphs its server markup over the live DOM and deletes
+   * the wrapper the panel built, and a stub that keeps saying "bound" makes
+   * every recovery path untestable here. So the wrapper below is built at bind
+   * and read back here, exactly as `company-search-panel.js` does — the minimum
+   * DOM that makes a morph OBSERVABLE, not a second popover.
+   */
   CompanySearchPanelStub.prototype.isBound = function () {
-    return true;
+    return Boolean(
+      this._field &&
+        this._field.isConnected &&
+        this._panel &&
+        this._panel.isConnected &&
+        this._field.parentElement === this._panel.parentElement,
+    );
   };
   /*
    * Resolves ONCE, at bind, and remembers — exactly as the real panel does
@@ -770,6 +821,7 @@ function installCompanyPanelStub() {
   CompanySearchPanelStub.prototype.bind = function () {
     this.calls.push("bind");
     this._field = document.querySelector(this.fieldSelector);
+    this._panel = this._field ? wrapField(this._field) : null;
   };
   CompanySearchPanelStub.prototype.getField = function () {
     return this._field ? [this._field] : [];
@@ -886,6 +938,18 @@ function installHyvaEnvironment() {
   // path degrades to its console.error branch in every test.
   const companyPanel = installCompanyPanelStub();
 
+  /*
+   * Magewire's re-render hooks. Only `hook()` is stubbed, because that is the
+   * whole of the API this module uses: it registers callbacks and Magewire runs
+   * them, several times, once per element a re-render touched.
+   */
+  const magewireHooks = {};
+  window.Magewire = {
+    hook: function (name, handler) {
+      (magewireHooks[name] = magewireHooks[name] || []).push(handler);
+    },
+  };
+
   return {
     hyva: hyva,
     storage: storage,
@@ -900,6 +964,20 @@ function installHyvaEnvironment() {
     /** Fire the event Alpine fires once it is ready. */
     fireAlpineInit: function () {
       document.dispatchEvent(new Event("alpine:init"));
+    },
+    /**
+     * Run one re-render's worth of a Magewire hook.
+     *
+     * @param {string} name the hook, e.g. `element.updated`
+     * @param {number} [times] elements the re-render touched, default 1
+     */
+    fireMagewireHook: function (name, times) {
+      const handlers = magewireHooks[name] || [];
+      for (let run = 0; run < (times || 1); run++) {
+        handlers.slice().forEach(function (handler) {
+          handler();
+        });
+      }
     },
     /**
      * Undo everything installed here, plus the shared helpers themselves.
@@ -918,6 +996,12 @@ function installHyvaEnvironment() {
       delete window.hyva;
       delete window.Alpine;
       delete window.TwoCompanySearchPanel;
+      delete window.Magewire;
+      // Not in SHARED_HELPER_GLOBALS: it exists only once a hook has actually
+      // been registered, so the export check there would fail on it — and left
+      // behind it would tell every later file's first mount that the hook was
+      // already in place, with the previous file's Magewire holding it.
+      delete window.twoGatewayCompanyMorphHooked;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];
