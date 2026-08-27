@@ -76,10 +76,23 @@ describe('the popover has styling on a store that never rebuilt Tailwind', () =>
         expect(read(CUSTOM_CSS)).toContain(selector + ' {');
     });
 
-    test('the spinner points at an image this module actually ships', () => {
+    test('the popover spinner points at an image this module actually ships', () => {
+        // Scoped to the popover's OWN rule. This file already carries a second
+        // spinner (`.two-company-search__spinner`) naming the same asset, so an
+        // unscoped search for the URL passes on that one's strength and proves
+        // nothing about this one.
+        const block = read(CUSTOM_CSS).match(
+            /\.two-company-dropdown__spinner \{[^}]*\}/
+        );
+
+        expect(block).not.toBeNull();
+        const url = block[0].match(/url\("([^"]+)"\)/);
+        expect(url).not.toBeNull();
+
         // The rule is copied from the base plugin, whose own loader.gif sits at
         // the same relative offset — so a correct-looking URL can still 404.
-        expect(read(CUSTOM_CSS)).toContain('background-image: url("../images/loader.gif")');
-        expect(fs.existsSync(path.join(ROOT, 'view/frontend/web/images/loader.gif'))).toBe(true);
+        expect(fs.existsSync(
+            path.join(ROOT, 'view/frontend/web/css', url[1])
+        )).toBe(true);
     });
 });
