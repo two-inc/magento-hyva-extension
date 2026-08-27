@@ -22,18 +22,42 @@ Magewire/             # Magewire components (if applicable)
 
 ## Git Workflow
 
+- **PRs target `main`** (prod). `staging` is the GitHub default and deploy
+  branch; `merge-back.yml` syncs `main → staging` after merges. Branch off
+  `origin/main`. Ignore the lingering legacy branches — `main` is prod.
 - Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
 - Do NOT skip commit-msg hook on feature branches
 - Never use `--no-verify` flag
 
 ## Version Management
 
-Version bumps are done using `bumpver`:
+**Releases are automated** — `release.yml` runs on CI success on `main`,
+derives the bump from conventional commits since the last bare-semver tag
+(`feat!:` → major, `feat:` → minor, else patch), tags, and creates the
+GitHub Release. Don't hand-run bumpver.
 
-```bash
-SKIP=commit-msg bumpver update --patch  # or --minor, --major
-git push origin main --tags
-```
+- `bumpver.toml` `current_version` MUST equal the version strings in the
+  files it patches (`composer.json` `"version"`, `etc/config.xml`
+  `<version>`, `README.md`) or the release fails at the bump step with
+  "No match for pattern".
+- Re-cutting an exact version after deleting its tag: reset
+  `current_version` to the highest surviving semver tag first, or the next
+  release overshoots past the intended version. Recreating a tag that has
+  a Release demotes it to a draft (`gh release delete` +
+  `gh release create --verify-tag` repairs).
+- Packagist syncs off this repo's webhook — on a missing version, check
+  `gh api repos/two-inc/magento-hyva-extension/hooks` `last_response.code`
+  (403 = stale Packagist-side authorization; fix on Packagist).
+
+## Hyvä config registration
+
+The module registers itself for Hyvä's config merge via
+`etc/events.xml` (`hyva_config_generate_before`). On any install where
+this module arrives _after_ `app/etc/hyva-themes.json` was generated
+(e.g. baked images, runtime installs), run
+`bin/magento hyva:config:generate` before the theme's Tailwind build —
+otherwise the module's Tailwind classes are purged and its frontend
+renders broken (e.g. dropdowns behind form fields).
 
 ## Development Tips
 
