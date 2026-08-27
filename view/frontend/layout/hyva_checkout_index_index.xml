@@ -8,6 +8,31 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       layout="1column" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
 	<head>
+		<!--
+			The company popover itself, loaded from the BASE plugin rather than
+			reimplemented here (TWO-25503). It is framework-free with a UMD tail,
+			so with no RequireJS on the page it attaches
+			`window.TwoCompanySearchPanel`.
+
+			`Two_Gateway::` resolves because two-inc/magento2 is a hard composer
+			dependency and Magento deploys a module's web assets for every
+			frontend theme — verified on the deployed static tree, where
+			`Two_Gateway/js/model/surcharge.js` serves under Hyva/default.
+		-->
+		<script src="Two_Gateway::js/model/company-search-panel.js"/>
+		<!--
+			And its STYLING, from the same place and for the same reason. Copying
+			the popover's rules here would duplicate exactly what this ticket
+			de-duplicates.
+
+			This also restyles the term chips, which this checkout already paints
+			and which are a shipped, working surface — deliberately, and to be
+			judged by eye rather than pre-empted: any class that genuinely needs
+			to mesh with Hyvä's styling gets a selective override in custom.css
+			AFTER someone has looked at it, which is why this loads BEFORE
+			custom.css and that ordering is pinned by a test.
+		-->
+		<css src="Two_Gateway::css/style.css"/>
 		<css src="Two_GatewayHyva::css/custom.css"/>
 	</head>
     <body>

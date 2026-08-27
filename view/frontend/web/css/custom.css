@@ -84,8 +84,7 @@ summary::marker {
  * unselected. Brand overlays that ship a different palette override
  * these rules from their own custom.css which loads after this one.
  */
-.two-term-chip,
-.two-mode-chip {
+.two-term-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -104,12 +103,10 @@ summary::marker {
   position: relative;
 }
 
-.two-term-chip:hover,
-.two-mode-chip:hover {
+.two-term-chip:hover {
   border-color: #3043d1;
 }
-.two-term-chip:focus,
-.two-mode-chip:focus {
+.two-term-chip:focus {
   outline: none;
 }
 .two-term-chip[disabled] {
@@ -120,32 +117,10 @@ summary::marker {
 .two-term-chip--selected,
 .two-term-chip--selected:hover,
 .two-term-chip--selected:focus,
-.two-term-chip--selected:active,
-.two-mode-chip--selected,
-.two-mode-chip--selected:hover,
-.two-mode-chip--selected:focus,
-.two-mode-chip--selected:active {
+.two-term-chip--selected:active {
   border-color: #3043d1;
   background: #3043d1;
   color: #fff;
-}
-
-/* The Registered company / Sole trader toggle (TWO-25503). Shares the term
-   chips' palette above because it is the same control in the same tile; its own
-   container rule because the mode chips sit on one row of text rather than
-   stacking a label over a fee. */
-.two-mode-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 0.5em;
-}
-
-.two-mode-chip {
-  flex-direction: row;
-  font-size: 14px;
-  font-weight: 500;
 }
 
 .two-soletrader-link {
@@ -338,7 +313,15 @@ summary::marker {
   box-shadow: none;
 }
 
-.two-company-search > input:focus {
+/*
+ * NOT a direct-child selector. The popover wraps the company-name input in
+ * `span.two-company-field-wrap` as it attaches, so `> input` stops matching the
+ * moment the control is live — which is every moment that matters.
+ *
+ * The popover's own query box is excluded: it has its own rules, and the inset
+ * below would double up on the one it already reserves for its spinner.
+ */
+.two-company-search input:not(.two-company-dropdown__query):focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
 }
@@ -348,48 +331,12 @@ summary::marker {
  * searching — toggling padding would shift the caret mid-typing, and
  * without it the spinner sits on top of a long company name.
  *
- * The QUERY field is the one that actually carries a spinner: the company-NAME
- * field is `readonly` in search mode and never runs a search of its own. Its
- * inset is kept anyway, and deliberately, so the two inputs the control stacks
- * line their text up rather than one sitting 34px wider than the other.
+ * Kept on the company-NAME field even though the popover's query box is what
+ * carries a spinner, so the two inputs line their text up rather than one
+ * sitting 34px wider than the other.
  */
-.two-company-search > input,
-.two-company-search__query > input {
+.two-company-search input:not(.two-company-dropdown__query) {
   padding-right: 34px;
-}
-
-/*
- * The dropdown's query field (TWO-25326 §1).
- *
- * `position: relative` here rather than as a Tailwind utility for the reason
- * every other rule in this block gives — the module must not depend on the
- * merchant's Tailwind build having emitted a class only this module uses. It is
- * load-bearing: the spinner inside is absolutely positioned, and without a
- * positioned ancestor here it would resolve against `.two-company-search` and
- * land at the right-hand end of the COMPANY-NAME field instead.
- */
-.two-company-search__query {
-  position: relative;
-}
-
-/*
- * The query field takes focus the moment the panel opens, so it needs a focus
- * ring of its own — the `.two-company-search > input:focus` rule above is a
- * direct-child selector and does not reach it.
- */
-.two-company-search__query > input:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
-}
-
-/*
- * The results scroller is `tabindex="-1"` (see companyName.phtml) so Chrome
- * does not make it a tab stop. Chrome still paints a focus ring on a
- * programmatically-focused scroller; suppress it, since nothing here is ever
- * deliberately focused.
- */
-.two-company-search__results:focus {
-  outline: none;
 }
 
 /*
@@ -425,13 +372,6 @@ summary::marker {
   background-size: 16px 16px;
 }
 
-.two-company-search__unavailable {
-  border-radius: 3px;
-  background: #fdf0d5;
-  color: #6f4900;
-  line-height: 1.4;
-}
-
 /*
  * The order-intent box (2026-08-05, cross-platform order-intent UI
  * unification).
@@ -440,9 +380,9 @@ summary::marker {
  * three verdicts an intent check can reach. Between the STATES only the colours
  * differ, so only the colours are stated per state — geometry is declared once
  * here rather than four times in four class lists, which is how the states
- * drifted apart in the first place. (Against the previous markup the radius also
- * changes, 6px to 3px, deliberately: it matches `.two-company-search__unavailable`
- * above, so the tile's boxes and the control's agree.) There is deliberately no title element in any of them: the box
+ * drifted apart in the first place. (The 3px radius matches the popover's own
+ * `.two-company-dropdown__message--unavailable`, so the tile's boxes and the
+ * popover's agree.) There is deliberately no title element in any of them: the box
  * holds the message and nothing else, matching the other three platforms'
  * treatment.
  *
@@ -482,6 +422,14 @@ summary::marker {
   padding: 0.5rem;
   font-size: 0.875rem;
   line-height: 1.4;
+  /*
+   * Stated, not inherited. The base stylesheet this checkout now loads carries
+   * a bare `.two-order-intent-message { margin: 0 0 1.5em }`, which the three
+   * VERDICT boxes match and the two in-progress boxes do not — so leaving
+   * margin unset drifts the states of one box apart on an axis that is
+   * supposed to be declared once.
+   */
+  margin: 0;
 }
 
 /*
@@ -490,6 +438,21 @@ summary::marker {
  * stylesheet would otherwise silently shrink it back to the shared padding.
  */
 .two-order-intent-box.two-order-intent-checking {
+  position: relative;
+  padding-right: 2rem;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+/*
+ * The sole-trader token mint and buyer read wear the same in-progress
+ * treatment, and carry a class of their own rather than joining the rule
+ * above: the order-intent box is ONE box in FOUR states, and a fifth element
+ * answering to a state's class means a query for that state can find something
+ * that is not it.
+ */
+.two-order-intent-box.two-soletrader-checking {
   position: relative;
   padding-right: 2rem;
   border-color: #e5e7eb;

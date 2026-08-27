@@ -135,11 +135,6 @@ const COMPANY_CAPTURE_GATE_BINDING = H.readAlpineBinding(
  * checked. Its BEHAVIOUR is the shared control's and is covered once, in
  * company-search-min-chars.test.js.
  */
-const MIN_CHARS_HINT_SHOW_BINDING = H.readAlpineBinding(
-  H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-  '[data-name="company_search_min_chars"]',
-  "x-show",
-);
 
 describe("payment component company selection", () => {
   let env;
@@ -528,7 +523,10 @@ describe("payment component company selection", () => {
     const previousEl = component.$el;
     component.$el = nameInput;
     try {
-      component.getItems().catch(() => {});
+      // `runCompanySearch()` is the engine's own entry point and the one the
+      // popover's search API drives; the deleted control's `getItems()` was a
+      // wrapper around it.
+      component.runCompanySearch(text).catch(() => {});
     } finally {
       component.$el = previousEl;
       component.abortCompanySearch();
@@ -840,38 +838,6 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the dropdown's x-for key", () => {
-    test("stays unique across two hits that both lack an identifier", () => {
-      // `:key` is bound to this getter in gateway_method.phtml. Alpine renders
-      // one row per DISTINCT key, so two hits colliding on '' would silently
-      // cost the buyer one of the companies that matched.
-      const first = Object.assign(Object.create(component), {
-        item: pickerItem("Example Trading Ltd", ""),
-        index: 0,
-      });
-      const second = Object.assign(Object.create(component), {
-        item: pickerItem("Other Example Ltd", ""),
-        index: 1,
-      });
-
-      const firstKey = first.twoGatewayHyvaGetCompanyId();
-      const secondKey = second.twoGatewayHyvaGetCompanyId();
-
-      expect(firstKey).toBeTruthy();
-      expect(secondKey).toBeTruthy();
-      expect(firstKey).not.toBe(secondKey);
-    });
-
-    test("is the identifier itself when there is one", () => {
-      const row = Object.assign(Object.create(component), {
-        item: pickerItem("Example Trading Ltd", "12345678"),
-        index: 0,
-      });
-
-      expect(row.twoGatewayHyvaGetCompanyId()).toBe("12345678");
-    });
-  });
-
   describe("the capture gate (TWO-25326 §7) and the hidden number input", () => {
     test("stays hidden with an empty class before any company is picked", () => {
       // `companyIdDisabled` defaults locked, but with nothing stored
@@ -1135,12 +1101,18 @@ describe("payment component company selection", () => {
    * The WIRE test is kept below, because that part is genuinely per-surface: it is
    * the tile's copy of the markup and the tile's component that have to agree.
    */
-  describe("the min-characters hint (TWO-25326 tile bugfix batch, bug 1)", () => {
-    test("is a real binding, not just component state", () => {
-      expect(MIN_CHARS_HINT_SHOW_BINDING).toBe(
-        "twoGatewayHyvaShouldShowMinCharsMessage",
+  describe("the min-characters threshold reaches the popover", () => {
+    test("the search API hands the panel this component's own threshold", () => {
+      // The hint's markup is the shared panel's now, but the NUMBER is still
+      // this checkout's — emitted from PHP, never a literal — and it has to
+      // reach the panel or the count the buyer is told drifts from the one
+      // enforced.
+      // Asserted on the number, not the message: the harness resolves every
+      // `__()` to one placeholder, so an assertion on the rendered hint could
+      // not tell the threshold from any other string.
+      expect(component.companyPopoverSearchApi().MIN_INPUT_LENGTH).toBe(
+        component.minSearchChars,
       );
-      expect(typeof component[MIN_CHARS_HINT_SHOW_BINDING]).toBe("function");
     });
   });
 
@@ -1176,23 +1148,36 @@ describe("payment component company selection", () => {
    * what the tests below drive.
    */
   describe("a captured company cannot be typed over (TWO-25326 bug 5 follow-up)", () => {
-    test("in search mode the field is readonly, so there is no divergence to catch", () => {
-      // The wire AND the state, because either half alone passes vacuously: a
-      // `:readonly` binding naming a getter the component does not define resolves
-      // to undefined and the field is typeable, and a getter nothing binds locks
-      // nothing.
-      const bound = H.readAlpineBinding(
-        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-        'input[data-name="company_name"]',
-        ":readonly",
-      );
-      expect(bound).toBe("searchModeActive");
-
+    test("in search mode the field publishes nothing the buyer types", () => {
+      /*
+       * The field is deliberately NOT `readonly` any more. The shared popover
+       * binds `input` on it and moves whatever arrives — typed, pasted or
+       * composed through an IME — into its own query box, which a readonly
+       * field cannot receive at all; seeding off `input` rather than `keydown`
+       * is the only thing that makes paste and IME work.
+       *
+       * So the guarantee is no longer "it cannot be typed into". It is that
+       * typing there publishes nothing: the commit path returns early outside
+       * manual mode, and the popover restores the captured name.
+       */
       component.manualMode = false;
-      expect(component[bound]).toBe(true);
+      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+
+      const nameInput = document.getElementById("company_name");
+      nameInput.value = "Other Exampl";
+      const previousEl = component.$el;
+      component.$el = nameInput;
+      try {
+        component.onNameFieldInput();
+      } finally {
+        component.$el = previousEl;
+      }
+
+      expect(component.companyName).toBe("Example Trading Ltd");
+      expect(component.companyId).toBe("12345678");
 
       // And no `@blur` handler is left behind claiming to do this job. A second,
-      // stale mechanism alongside the readonly one is how the two disagreed.
+      // stale mechanism alongside it is how the two disagreed.
       expect(() =>
         H.readAlpineBinding(
           H.GATEWAY_METHOD_MARKUP_TEMPLATE,

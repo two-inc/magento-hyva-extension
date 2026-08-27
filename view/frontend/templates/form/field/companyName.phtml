@@ -24,7 +24,6 @@ $brandedViewModel = $block->getData('branded_view_model');
 $gwBase = $brandedViewModel->getAlpineFnPrefix() . 'GatewayHyva';
 
 $configModel = $viewModels->require(CheckoutConfig::class);
-$companySearchMinChars = $configModel->getCompanySearchMinChars();
 /** @Tailwind md:w-1/4 md:w-2/4 md:w-3/4 md:w-4/4 mb-2 */
 $element = $block->getData("element");
 $attributes = $element->getAttributes();

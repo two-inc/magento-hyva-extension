@@ -194,7 +194,8 @@ describe("toggle visibility gating", () => {
     await pending;
 
     expect(tile.component.showModeTab).toBe(expected);
-    expect(tile.component.soleTraderTabVisible).toBe(expected);
+    // The chip the buyer actually sees follows the same answer.
+    expect(tile.component.companyPopoverModeOffered("soletrader")).toBe(expected);
   });
 
   test("the lookup is made for the QUOTE's billing country, not the address form's", async () => {
@@ -763,9 +764,10 @@ describe("the wires between markup and component", () => {
 
   afterEach(() => tile && tile.restore());
 
+  // The two mode chips are NOT here any more: they are rendered by the shared
+  // popover, which this repo does not ship. What is left in this markup is the
+  // pair of sole-trader links that have no equivalent there.
   test.each([
-    ['[data-name="mode_registered"]', ":class"],
-    ['[data-name="mode_soletrader"]', ":class"],
     ['[data-name="soletrader_signup_link"]', "@click"],
     ['[data-name="select_different_soletrader"]', "@click"],
   ])("%s %s names a key the component defines", (selector, attribute) => {
@@ -779,33 +781,115 @@ describe("the wires between markup and component", () => {
     expect(name in tile.component).toBe(true);
   });
 
-  test.each([
-    [".two-mode-chips", "soleTraderTabVisible"],
-    ['[data-name="mode_registered"]', null],
-  ])("%s is bound to the component's own gate", (selector, expectedGate) => {
-    tile = mountTile();
-    const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
-    const element = new DOMParser()
-      .parseFromString(markup, "text/html")
-      .querySelector(selector);
+  test.each([[".two-mode-chips"], ['[data-name="mode_registered"]'], ['[data-name="mode_soletrader"]']])(
+    "%s is gone from this markup — a chip row outside the popover is the defect",
+    (selector) => {
+      // It was a sibling the dropdown drew over, so the buyer was offered the
+      // other capture modes only while the control that offers them was shut.
+      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
 
-    expect(element).not.toBeNull();
-    expect(element.getAttribute("x-show")).toBe(expectedGate);
-    if (expectedGate) {
-      expect(expectedGate in tile.component).toBe(true);
-    }
+      expect(
+        new DOMParser().parseFromString(markup, "text/html").querySelector(selector),
+      ).toBeNull();
+    },
+  );
+
+  test("clicking the sole-trader chip repaints the popover", () => {
+    // syncChips() is the only caller of the panel's query-row visibility, so
+    // without it the buyer lands in sole-trader mode looking at a search box
+    // with "Registered company" still marked selected. The signup's own
+    // adoption path syncs; the ordinary hosted-signup path did not.
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    // A chip the buyer can click is one the country's registry offers; without
+    // this the fixture clicks a chip the panel would not have rendered.
+    tile.component.showModeTab = true;
+    tile.component.mountCompanyPopover();
+
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    expect(built).toBeDefined();
+    built.calls.length = 0;
+
+    tile.component
+      .companyPopoverChips()
+      .find((entry) => entry.mode === "soletrader")
+      .onActivate();
+
+    // The MODE, not just the call: a sync that ran BEFORE the mode changed
+    // repaints the old state and is exactly the defect this covers, and a bare
+    // call name cannot tell the two apart.
+    expect(built.calls).toContain("syncChips:soletrader:st");
   });
 
-  test("the toggle renders in BOTH company-search-location modes", () => {
-    // The sole-trader entry point is a property of the payment method, not of
-    // where the company-search control happens to be mounted.
-    [["1"], ["0"]].forEach((value) => {
-      const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE, [
-        [/^\$isCompanySearchInPaymentTile$/, value[0]],
-      ]);
-      const doc = new DOMParser().parseFromString(markup, "text/html");
+  test("a company the buyer discarded for sole trader is not resurrected", () => {
+    /*
+     * The popover repaints the field from the adapter's display text whenever
+     * it re-attaches, and the very next chip click causes one. The field's
+     * adopted value therefore lives in `search` — live state every discard
+     * path clears — rather than in a remembered constant, which nothing could
+     * invalidate and which would put a deliberately abandoned company back.
+     */
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="Saved Co Ltd" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    tile.component.mountCompanyPopover();
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    expect(built.options.getDisplayText()).toBe("Saved Co Ltd");
 
-      expect(doc.querySelector('[data-name="mode_soletrader"]')).not.toBeNull();
-    });
+    tile.component.showSoleTrader = true;
+    tile.component.registeredOrganisationMode();
+
+    expect(built.options.getDisplayText()).toBe("");
+  });
+
+  test("a country that withdraws sole trader repaints the chips too", async () => {
+    // The chip's visibility follows `showModeTab`, so the panel has to hear
+    // about the withdrawal even when the buyer was not standing in the mode
+    // that disappeared — otherwise it keeps offering a mode the registry
+    // cannot serve.
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    // OFFERED to begin with, or the withdrawal changes nothing and a sync that
+    // ran before it records the same thing as one that ran after.
+    tile.component.showModeTab = true;
+    tile.component.mountCompanyPopover();
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    built.calls.length = 0;
+
+    const pending = tile.component.refreshSoleTraderAvailability();
+    await H.flushPromises();
+    tile.fetchStub.last().respond([]);
+    await pending;
+
+    expect(tile.component.showModeTab).toBe(false);
+    // The VISIBILITY, not the mode: nothing about the selected chip changes
+    // here — the buyer was never in sole-trader mode — so an assertion on the
+    // mode alone passes just as happily on a sync that ran before the
+    // withdrawal, repainting the stale state, which is the defect.
+    expect(built.calls).toContain("syncChips:registered:-");
+  });
+
+  test("the sole-trader chip is offered in BOTH company-search-location modes", () => {
+    // The sole-trader entry point is a property of the payment method, not of
+    // where the company-search control happens to be mounted. Asserted on the
+    // component now, because the chip is no longer in anyone's markup.
+    tile = mountTile();
+    tile.component.showModeTab = true;
+
+    expect(tile.component.companyPopoverModeOffered("soletrader")).toBe(true);
+    expect(
+      tile.component.companyPopoverChips().map((chip) => chip.mode),
+    ).toContain("soletrader");
   });
 });

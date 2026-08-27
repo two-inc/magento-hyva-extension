@@ -26,7 +26,6 @@ $gwBase = $fnPrefix . 'GatewayHyva';
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
-$companySearchMinChars = $configModel->getCompanySearchMinChars();
 // TWO-25326 §7.1 (2026-08-03 ruling, corrected 2026-08-04): the ONE
 // company-search control renders either here (in this tile) or on the
 // address step — never both, never neither. Decided by the CORE module's
@@ -239,58 +238,34 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 ></span>
             </div>
             <?php endif ?>
-            <?php
+﻿            <?php
             /*
-             * TWO-25503: the Registered company / Sole trader toggle.
+             * TWO-25503: the capture-mode chips are NOT here.
              *
-             * Rendered in BOTH company-search-location modes, unconditionally in
-             * markup and shown by `soleTraderTabVisible` — whether the buyer's
-             * billing country's registry recognises sole traders at all is a
-             * runtime answer from `rest/V1/two/supported-company-types`, not a
-             * render-time one, and the country can change after this page is
-             * built. A business-only country therefore emits the element and
-             * never shows it.
+             * They live inside the popover the shared panel builds around the
+             * company-name field, which is the whole point of the ticket. A row
+             * here was a sibling the dropdown drew over, so the buyer was offered
+             * the other capture modes only while the control that offers them was
+             * shut. Do not re-add one: `company-search-panel.js` renders
+             * `.two-company-mode-chips` as the last child of the panel, after the
+             * results, because DOM order is what makes the tab order correct.
              *
-             * First child of the fieldset: it decides WHAT KIND of identity the
-             * fields below capture, so it has to precede them.
-             *
-             * Every binding is a bare property name. This checkout's CSP-friendly
-             * Alpine looks a bound expression up as a key rather than evaluating
-             * it, so the class lists are getters returning strings and the
-             * conditions are getters returning booleans.
+             * The progress row below is what the chip row's in-field spinner
+             * became. It cannot go into the panel — the panel builds only the
+             * search spinner, driven by the search API — and the wait it covers
+             * is real: the token mint and the buyer read both happen before the
+             * hosted signup popup can open.
              */
             ?>
             <div
-                class="two-mode-chips"
+                class="two-order-intent-box two-soletrader-checking"
                 x-cloak
-                x-show="soleTraderTabVisible"
-                role="group"
-                aria-label="<?= $escaper->escapeHtmlAttr(__('Company type')) ?>"
+                role="status"
+                data-name="soletrader_checking"
+                x-show="soleTraderSpinnerVisible"
             >
-                <button type="button"
-                        data-name="mode_registered"
-                        :class="registeredChipClasses"
-                        @click="registeredOrganisationMode">
-                    <?= $escaper->escapeHtml(__('Registered company')) ?>
-                </button>
-                <button type="button"
-                        data-name="mode_soletrader"
-                        :class="soleTraderChipClasses"
-                        @click="soleTraderMode">
-                    <?= $escaper->escapeHtml(__('Sole trader')) ?>
-                </button>
-                <?php
-                /*
-                 * In-field-style spinner for the token mint and the buyer read
-                 * behind the Sole trader chip. Local to the tile, never a page
-                 * overlay — the same standing rule as the order-intent row
-                 * below and the company-search spinner.
-                 */
-                ?>
-                <span class="two-company-search__spinner"
-                      aria-hidden="true"
-                      x-cloak
-                      x-show="soleTraderSpinnerVisible"></span>
+                <span><?= $escaper->escapeHtml(__('Opening sole trader sign-up')) ?></span>
+                <span class="two-company-search__spinner" aria-hidden="true"></span>
             </div>
             <?php
             /*

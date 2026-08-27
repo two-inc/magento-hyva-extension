@@ -103,14 +103,21 @@ describe("one company-search control (bug 6)", () => {
 
   test("neither mount point renders a control of its own alongside it", () => {
     [tile, address].forEach(function (relPath) {
-      const doc = render(relPath);
+      expect(render(relPath).querySelectorAll(".two-company-search").length).toBe(1);
+    });
+  });
 
-      expect(doc.querySelectorAll(".two-company-search").length).toBe(1);
-      expect(doc.querySelectorAll(".two-company-search__panel").length).toBe(1);
-      expect(doc.querySelectorAll(".two-company-query").length).toBe(1);
-      expect(doc.querySelectorAll(".two-company-search__results").length).toBe(1);
-      // The tile's old results container and its own item rows.
-      expect(doc.querySelectorAll(".company-results").length).toBe(0);
+  test.each([
+    [".two-company-search__panel", "the popover shell"],
+    [".two-company-query", "the query field"],
+    [".two-company-search__results", "the results list"],
+    [".company-results", "the tile's own results container"],
+    [".two-mode-chips", "the chip row that sat outside the popover"],
+  ])("%s is not server-rendered here (%s)", (selector) => {
+    // TWO-25503: the popover is the base plugin's, built at runtime. Markup for
+    // it in this repo is a second implementation, which is what drifted.
+    [tile, address].forEach(function (relPath) {
+      expect(render(relPath).querySelectorAll(selector).length).toBe(0);
     });
   });
 
@@ -150,18 +157,73 @@ describe("one company-search control (bug 6)", () => {
   });
 });
 
-describe("the manual-entry affordance lives only in the dropdown (bug 2)", () => {
-  test("there is exactly one manual-entry control, and it is inside the panel", () => {
-    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, H.COMPANY_NAME_MARKUP_TEMPLATE].forEach(
-      function (relPath) {
-        const doc = render(relPath);
-        const rows = doc.querySelectorAll(".two-company-manual-entry-row");
+describe("the manual-entry affordance lives only in the popover (bug 2)", () => {
+  let env;
+  let fetchStub;
+  let component;
 
-        expect(rows.length).toBe(1);
-        const panel = doc.querySelector(".two-company-search__panel");
-        expect(panel.contains(rows[0])).toBe(true);
+  beforeEach(() => {
+    document.body.innerHTML = [
+      '<div class="two-company-search" id="control-root">',
+      '  <input type="text" id="company-field" value="" />',
+      "</div>",
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+
+    H.loadSharedHelpers();
+    H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
+    env.fireAlpineInit();
+
+    component = H.mountComponent(
+      env.alpineComponents.twoGatewayHyvaCompanySearchField,
+      {
+        el: document.getElementById("company-field"),
+        root: document.getElementById("control-root"),
       },
     );
+    component.init();
+  });
+
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    document.body.innerHTML = "";
+  });
+
+  test("there is exactly one manual-entry affordance, and the panel owns it", () => {
+    const chips = component.companyPopoverChips();
+    const manual = chips.filter((chip) => chip.mode === "manual");
+
+    expect(manual).toHaveLength(1);
+    // Reaching the panel through its options is the whole assertion: chips it
+    // is handed render inside it, which is what the deleted row was not.
+    expect(env.companyPanels).toHaveLength(1);
+    expect(env.companyPanels[0].options.getChips().map((chip) => chip.mode))
+      .toEqual(chips.map((chip) => chip.mode));
+  });
+
+  test("no mount point renders a manual-entry affordance of its own", () => {
+    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, H.COMPANY_NAME_MARKUP_TEMPLATE].forEach(
+      function (relPath) {
+        expect(
+          render(relPath).querySelectorAll(".two-company-manual-entry-row").length,
+        ).toBe(0);
+      },
+    );
+  });
+
+  test("the affordance is on offer before anything is typed", () => {
+    // The old below-field link was justified by the in-panel row being
+    // unreachable below the minimum query length. Nothing the adapter offers
+    // has a length term, so the chip is on offer from zero characters.
+    expect(component.search).toBeFalsy();
+
+    expect(component.companyPopoverModeOffered("manual")).toBe(true);
+    expect(
+      component.companyPopoverChips().map((chip) => chip.mode),
+    ).toContain("manual");
   });
 
   test("the below-the-field copy and its gate are gone", () => {
@@ -183,42 +245,6 @@ describe("the manual-entry affordance lives only in the dropdown (bug 2)", () =>
     );
   });
 
-  test("the panel is still reachable, and the row with it, before anything is typed", () => {
-    // The old below-field link was justified by the in-panel row being
-    // unreachable below the minimum query length. That justification is stale:
-    // the panel's gate has no length term at all — it opens on click or
-    // keypress — so the row is on offer from zero characters. Asserted here
-    // because deleting the link is only safe while this holds.
-    const env = H.installHyvaEnvironment();
-    try {
-      document.body.innerHTML = [
-        '<div class="two-company-search" id="control-root">',
-        '  <input type="text" id="company-field" value="" />',
-        '  <input type="text" class="two-company-query" value="" />',
-        "</div>",
-      ].join("\n");
-      H.loadSharedHelpers();
-      H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
-      env.fireAlpineInit();
-
-      const component = H.mountComponent(
-        env.alpineComponents.twoGatewayHyvaCompanySearchField,
-        {
-          el: document.getElementById("company-field"),
-          root: document.getElementById("control-root"),
-        },
-      );
-      component.init();
-
-      expect(component.showDropdown()).toBe(false);
-      component.onCompanyNameClick();
-      expect(component.query).toBe("");
-      expect(component.showDropdown()).toBe(true);
-    } finally {
-      env.restore();
-      document.body.innerHTML = "";
-    }
-  });
 });
 
 describe("the control is not an input-group (bug 3)", () => {

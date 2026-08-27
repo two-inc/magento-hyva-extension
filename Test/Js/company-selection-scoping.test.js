@@ -475,26 +475,19 @@ describe("company-selection storage scoping", () => {
     // company id — the sole-trader flow mints a synthetic one — and placement
     // credit-checks whatever id is submitted, so manual company entry is only
     // meaningful on a checkout NOT using this payment method. Restoring the flag
-    // gave the tile a live-looking search box whose every keystroke returned
-    // early at the `manualMode` guard: no request, no spinner, no dropdown, and
-    // no way back, because the tile has no binding for enableSearch().
+    // gave the tile a company field the panel had released into manual entry,
+    // with no route back: the tile offers no manual chip to toggle out of.
     let fetchStub;
 
     beforeEach(() => {
       // Shaped after the shipped tile (TWO-25326, 2026-08-05): the payment form
       // is the Alpine component, and the company-search control is a SUBTREE of
-      // it carrying `.two-company-search`. That class is how the shared control's
-      // `controlRoot()` finds itself on a surface whose `$root` is the whole
-      // form, and `.two-company-query` inside it is the panel's own search box —
-      // which is what `getItems()` reads the term from in search mode. Without
-      // both, every search below resolves an empty query and declines, which is
-      // exactly the failure this test exists to distinguish from.
+      // it carrying `.two-company-search` — how `controlRoot()` finds itself on
+      // a surface whose `$root` is the whole form.
       document.body.innerHTML = [
         '<div id="tile-root">',
         '  <div class="two-company-search">',
         '    <input type="text" id="company_name" value="" />',
-        '    <input type="text" class="two-company-query" id="company-query"',
-        '           value="" />',
         "  </div>",
         '  <input type="text" id="company_id" value="" disabled />',
         "</div>",
@@ -529,18 +522,14 @@ describe("company-selection storage scoping", () => {
 
       expect(component.manualMode).toBe(false);
 
-      // The term goes into the PANEL's query field, not the company-name field:
-      // since TWO-25326 §1 the two are separate inputs and `getItems()` reads the
-      // query one in search mode. Writing it into the name field would search for
-      // the empty string and this test would pass for the wrong reason.
-      document.getElementById("company-query").value = "Exa";
-      component.getItems();
+      // Driven through the popover's search API, which is the only thing that
+      // reaches the engine on this surface — the panel owns the query box.
+      component.companyPopoverSearchApi().searchCompanies({ term: "Exa" });
       await H.flushPromises();
 
-      // A request actually on the wire is the whole assertion. With the flag
-      // restored, getItems() returned at the guard and NOTHING happened — no
-      // error, no state change, nothing else that could tell "search works"
-      // apart from "search silently declines".
+      // A request actually on the wire is the whole assertion: with the flag
+      // restored the panel releases the field into manual entry and no search
+      // is reachable at all.
       expect(fetchStub.calls.length).toBe(1);
       expect(component.isSearching).toBe(true);
     });

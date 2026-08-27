@@ -621,6 +621,13 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyDetail",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The popover's translated copy, and the per-mount field counter beside it.
+  // Same `window.X = window.X || …` shape as the cache below, so without these
+  // the FIRST test in a file wins the panel's strings for every later one and
+  // any assertion on them is silently order-dependent.
+  "twoGatewayPanelStrings",
+  "twoGatewayCompanyFieldSeq",
+  "twoGatewayCompanyPanels",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
   // correct in production (the publisher can render once per payment method and
@@ -709,6 +716,103 @@ function loadSharedHelpers(extraRules) {
  *
  * @returns {Object} handles for asserting on what the code under test did
  */
+/**
+ * Stand in for the base plugin's `company-search-panel.js`.
+ *
+ * That file is the popover, and it is NOT in this repo — it ships in
+ * two-inc/magento2 and the checkout loads it from `Two_Gateway::`. There is no
+ * copy here to load and no vendor tree in CI, so what this repo can test is its
+ * own half of the contract: the options the adapter hands the panel, and the
+ * six-member search API it builds over the engine. The panel's own behaviour —
+ * the DOM it builds, its open/close, its keyboard handling — is covered by
+ * magento-plugin's suite, against the real file.
+ *
+ * Recording, not inert: a test asserts what the adapter passed, so a stub that
+ * silently swallowed its options would make every such assertion vacuous.
+ *
+ * @returns {Object} `{ instances }`, newest last
+ */
+function installCompanyPanelStub() {
+  const instances = [];
+
+  function CompanySearchPanelStub(options) {
+    this.options = options || {};
+    this.fieldSelector = this.options.fieldSelector;
+    this.calls = [];
+    this.opened = false;
+    instances.push(this);
+  }
+
+  ["releaseField", "reclaimField", "setDisplayText", "destroy"].forEach(
+    function (name) {
+      CompanySearchPanelStub.prototype[name] = function () {
+        this.calls.push(name);
+      };
+    },
+  );
+  CompanySearchPanelStub.prototype.isBound = function () {
+    return true;
+  };
+  /*
+   * Resolves ONCE, at bind, and remembers — exactly as the real panel does
+   * (`_attach` stores the node, `getField()` returns `this._field`). Resolving
+   * fresh on every call would answer for whatever currently matches the
+   * selector, which is not the node this panel is attached to, and would report
+   * an orphan as reaped where production would not.
+   *
+   * One divergence remains, deliberately: the real `bind()` only overwrites
+   * `_field` when the selector matches something, where this assigns
+   * unconditionally — so a bind matching nothing nulls the stub's field while
+   * production keeps the previous node. That yields a false RED in the reaper,
+   * never a false GREEN. Do not "fix" it by resolving lazily; that is the
+   * direction that hides a leak.
+   */
+  CompanySearchPanelStub.prototype.bind = function () {
+    this.calls.push("bind");
+    this._field = document.querySelector(this.fieldSelector);
+  };
+  CompanySearchPanelStub.prototype.getField = function () {
+    return this._field ? [this._field] : [];
+  };
+  /*
+   * Records the STATE the chips were repainted for, not just that they were.
+   *
+   * A bare call name cannot tell a sync that ran before a mode change from one
+   * that ran after it, and that ordering is the defect. The mode alone is not
+   * enough either: a country withdrawing sole trader changes which chips are
+   * OFFERED without changing which is selected, so visibility is recorded too.
+   */
+  CompanySearchPanelStub.prototype.syncChips = function () {
+    this.calls.push(
+      "syncChips:" +
+        this.options.getSelectedMode() +
+        ":" +
+        (this.options.isChipVisible("soletrader") ? "st" : "-"),
+    );
+  };
+  // Open/close move a flag rather than only recording, because callers ASK:
+  // the order-intent box refuses to paint a verdict under an open panel, and a
+  // stub that always answered shut would let that rule pass untested.
+  CompanySearchPanelStub.prototype.open = function () {
+    this.calls.push("open");
+    this.opened = true;
+  };
+  CompanySearchPanelStub.prototype.close = function () {
+    this.calls.push("close");
+    this.opened = false;
+  };
+  CompanySearchPanelStub.prototype.isOpen = function () {
+    return this.opened;
+  };
+  CompanySearchPanelStub.prototype.abortActiveRequest = function () {
+    this.calls.push("abortActiveRequest");
+    return false;
+  };
+
+  window.TwoCompanySearchPanel = CompanySearchPanelStub;
+  return { instances: instances };
+}
+
 function installHyvaEnvironment() {
   const storage = {};
   const browserStorage = {
@@ -777,6 +881,11 @@ function installHyvaEnvironment() {
   window.Alpine = Alpine;
   window.dispatchMessages = dispatchMessages;
 
+  // The checkout loads this from the base plugin; every component that mounts
+  // the company control reaches for it in init(), so it has to be here or that
+  // path degrades to its console.error branch in every test.
+  const companyPanel = installCompanyPanelStub();
+
   return {
     hyva: hyva,
     storage: storage,
@@ -786,6 +895,8 @@ function installHyvaEnvironment() {
     alpineStores: alpineStores,
     messages: messages,
     loaderEvents: loaderEvents,
+    /** Panels the code under test built, newest last. */
+    companyPanels: companyPanel.instances,
     /** Fire the event Alpine fires once it is ready. */
     fireAlpineInit: function () {
       document.dispatchEvent(new Event("alpine:init"));
@@ -806,6 +917,7 @@ function installHyvaEnvironment() {
       delete global.Alpine;
       delete window.hyva;
       delete window.Alpine;
+      delete window.TwoCompanySearchPanel;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];
@@ -992,6 +1104,7 @@ module.exports = {
   loadTemplate: loadTemplate,
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
+  installCompanyPanelStub: installCompanyPanelStub,
   mountComponent: mountComponent,
   stubFetch: stubFetch,
   flushPromises: flushPromises,
