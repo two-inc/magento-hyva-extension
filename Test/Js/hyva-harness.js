@@ -1002,6 +1002,7 @@ function installHyvaEnvironment() {
       // behind it would tell every later file's first mount that the hook was
       // already in place, with the previous file's Magewire holding it.
       delete window.twoGatewayCompanyMorphHooked;
+      delete window.twoGatewayCompanyMorphDeferred;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];

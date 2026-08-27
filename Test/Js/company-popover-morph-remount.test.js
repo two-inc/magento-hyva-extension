@@ -164,6 +164,26 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(panel().calls.filter((call) => call === "bind").length).toBe(before);
   });
 
+  test("a mount that ran before Magewire published itself still gets watched", () => {
+    // Nothing guarantees this component initialises after Magewire boots, and a
+    // hook that was never registered fails silently — as a dead control.
+    const magewire = window.Magewire;
+    delete window.Magewire;
+    delete window.twoGatewayCompanyMorphHooked;
+    const late = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: field,
+      root: root,
+    });
+    late.init();
+
+    window.Magewire = magewire;
+    window.dispatchEvent(new Event("load"));
+    morphServerMarkupOverControl();
+    env.fireMagewireHook("element.updated");
+
+    expect(document.querySelectorAll(WRAP)).toHaveLength(1);
+  });
+
   test("a control the re-render removed outright is dropped, not rebuilt", () => {
     root.remove();
 

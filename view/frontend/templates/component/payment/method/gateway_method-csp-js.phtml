@@ -2067,7 +2067,14 @@ $quoteDetails = json_encode(
      */
     function twoGatewayWatchCompanyMorphs() {
         if (window.twoGatewayCompanyMorphHooked) return;
-        if (!window.Magewire || typeof window.Magewire.hook !== 'function') return;
+        if (!window.Magewire || typeof window.Magewire.hook !== 'function') {
+            // A mount can run before Magewire has published itself, and the
+            // next re-render would then reap the popover with nothing watching.
+            if (window.twoGatewayCompanyMorphDeferred) return;
+            window.twoGatewayCompanyMorphDeferred = true;
+            window.addEventListener('load', twoGatewayWatchCompanyMorphs);
+            return;
+        }
         window.twoGatewayCompanyMorphHooked = true;
         window.Magewire.hook('element.updated', twoGatewayRemountCompanyPopovers);
     }
