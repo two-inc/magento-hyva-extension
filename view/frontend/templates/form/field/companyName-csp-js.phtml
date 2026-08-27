@@ -225,6 +225,14 @@ function <?= $gwBase ?>CompanySearchField() {
              * and nothing else can contradict it. There is nothing left to
              * reconcile against.
              */
+
+            /*
+             * Build the shared popover LAST, so the mode it opens in reflects
+             * the state restored above rather than the component's defaults.
+             * Magewire re-runs init() on every rebuild, and mountCompanyPopover()
+             * re-points the existing panel instead of building a second one.
+             */
+            this.mountCompanyPopover();
         },
 
         /**

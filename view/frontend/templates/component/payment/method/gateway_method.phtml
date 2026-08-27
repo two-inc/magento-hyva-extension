@@ -239,59 +239,22 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 ></span>
             </div>
             <?php endif ?>
-            <?php
+﻿            <?php
             /*
-             * TWO-25503: the Registered company / Sole trader toggle.
+             * TWO-25503: the capture-mode chips are NOT here.
              *
-             * Rendered in BOTH company-search-location modes, unconditionally in
-             * markup and shown by `soleTraderTabVisible` — whether the buyer's
-             * billing country's registry recognises sole traders at all is a
-             * runtime answer from `rest/V1/two/supported-company-types`, not a
-             * render-time one, and the country can change after this page is
-             * built. A business-only country therefore emits the element and
-             * never shows it.
+             * They live inside the popover the shared panel builds around the
+             * company-name field, which is the whole point of the ticket. A row
+             * here was a sibling the dropdown drew over, so the buyer was offered
+             * the other capture modes only while the control that offers them was
+             * shut. Do not re-add one: `company-search-panel.js` renders
+             * `.two-company-mode-chips` as the last child of the panel, after the
+             * results, because DOM order is what makes the tab order correct.
              *
-             * First child of the fieldset: it decides WHAT KIND of identity the
-             * fields below capture, so it has to precede them.
-             *
-             * Every binding is a bare property name. This checkout's CSP-friendly
-             * Alpine looks a bound expression up as a key rather than evaluating
-             * it, so the class lists are getters returning strings and the
-             * conditions are getters returning booleans.
+             * The in-field spinner for the sole-trader token mint went with it —
+             * the chip it annotated is now inside the panel.
              */
             ?>
-            <div
-                class="two-mode-chips"
-                x-cloak
-                x-show="soleTraderTabVisible"
-                role="group"
-                aria-label="<?= $escaper->escapeHtmlAttr(__('Company type')) ?>"
-            >
-                <button type="button"
-                        data-name="mode_registered"
-                        :class="registeredChipClasses"
-                        @click="registeredOrganisationMode">
-                    <?= $escaper->escapeHtml(__('Registered company')) ?>
-                </button>
-                <button type="button"
-                        data-name="mode_soletrader"
-                        :class="soleTraderChipClasses"
-                        @click="soleTraderMode">
-                    <?= $escaper->escapeHtml(__('Sole trader')) ?>
-                </button>
-                <?php
-                /*
-                 * In-field-style spinner for the token mint and the buyer read
-                 * behind the Sole trader chip. Local to the tile, never a page
-                 * overlay — the same standing rule as the order-intent row
-                 * below and the company-search spinner.
-                 */
-                ?>
-                <span class="two-company-search__spinner"
-                      aria-hidden="true"
-                      x-cloak
-                      x-show="soleTraderSpinnerVisible"></span>
-            </div>
             <?php
             /*
              * The blocked-popup fallback. The signup popup opens after an await
