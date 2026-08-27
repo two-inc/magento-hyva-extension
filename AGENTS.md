@@ -474,6 +474,12 @@ that ran cleanly and proved nothing:
   `company-search-focus-scope` and `company-search-spinner` all strip at the
   point the file is read, which is the place to do it: stripping per-assertion
   leaves the next one in the same file exposed.
+  For a TEMPLATE the mitigation is different — its comments are the same
+  language as its code, and stripping PHP/HTML/JS comment forms is a bigger job
+  than `/* … */`. Anchor on syntax prose cannot reproduce instead: a call form
+  (`__('Checking availability')`, not the bare sentence, which the tile's own
+  comments do contain) or a whole statement. Those assertions are safe by anchor
+  tightness, not by stripping, and a loosened anchor is all it takes.
 - **A mutant is verified by WHAT IT REMOVED, never by the diff being
   non-empty.** A non-empty diff only proves something changed. It does not
   prove the anchor hit the rule you meant (`String.replace` takes the FIRST
