@@ -216,20 +216,48 @@ be up alongside nothing. All four are one box style in one place. The rules that
 - Use `x-data`, `x-show`, `x-on:click` etc. in templates
 - Alpine components can communicate via `$dispatch` and `@event-name.window`
 
-### Company search: ONE control, three mount points
+### Company search: ONE popover, and it is not in this repo
 
-There is **exactly one** company-search control implementation and it is reused
-wherever it is mounted. Never add a second one, and never patch a surface by
-copying part of it — that duplication is what produced a batch of "three
-independent cosmetic bugs" on the payment tile that turned out to be one bug.
+There is **exactly one** company-capture popover across Magento's checkouts, it
+ships in the BASE plugin, and this module mounts it. Never add a second one, and
+never patch a surface by copying part of it — that duplication is what produced
+a batch of "three independent cosmetic bugs" on the payment tile that turned out
+to be one bug, and later what left this checkout's mode chips outside the panel
+while Luma's were inside it.
 
 Three layers, innermost first:
 
 | Layer | Where | Owns |
 |---|---|---|
-| Engine — `twoGatewayCompanySearchEngine()` | `component/payment/method/gateway_method-csp-js.phtml` | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula |
-| Control — `twoGatewayCompanySearchControl()` | same file, layered over the engine | everything the buyer sees and touches: the query/name split, the dropdown panel, keyboard and focus management, the manual-entry route, the min-chars / no-matches / unavailable verdicts |
-| Markup — `form/field/company-search-control.phtml` | included by each mount point | the control's DOM. The behaviour layer's selectors are this file's classes; the two are one unit |
+| Popover — `CompanySearchPanel` | **two-inc/magento2**, `view/frontend/web/js/model/company-search-panel.js`, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel` | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
+| Engine — `twoGatewayCompanySearchEngine()` | `component/payment/method/gateway_method-csp-js.phtml` | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage |
+| Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy |
+
+**The popover is framework-free with a UMD tail**, which is why this checkout can
+load it with no RequireJS, no jQuery and no Knockout. It takes three injected
+options — `search`, `translate`, `observe` — and Magento's own renderer injects
+the same three. Do not reach into it; if it needs to do something new, change it
+in the base plugin so both checkouts get it.
+
+**Its markup is not testable here.** The file is not in this repo and there is no
+vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
+`window.TwoCompanySearchPanel` (`installHyvaEnvironment()` returns
+`companyPanels`, with `.options` and `.calls`). What this repo tests is its own
+half of the contract — the options the adapter passes and the search API it
+builds over the engine. The panel's own behaviour is covered against the real
+file in magento-plugin's suite.
+
+**The popover's STYLING is still carried twice**, in
+`view/frontend/web/css/custom.css`. The base stylesheet cannot simply be loaded
+here because it also restyles the term chips, which are a working surface. The
+fix is to split the popover rules out into their own stylesheet in the base
+plugin and have both load it.
+
+`form/field/company-search-control.phtml` is now only the company-name input and
+the organisation-number display. **Do not put a dropdown, a query box, a hint
+line or a chip row back into it** — the panel renders all of those, in an order
+that is the design: input → query → results → chips, which is what makes tab
+order correct with no key handling at all.
 
 Mount points, each a thin **adapter** supplying only what is genuinely
 per-surface (which storage record, which quote, whether address lookup is
@@ -239,7 +267,8 @@ offered, what happens on capture):
 - the payment tile — `component/payment/method/gateway_method.phtml` + its
   `-csp-js` component. It mounts the control with **no `x-data` of its own**, so
   the control's state lives on the payment form's component alongside the tile
-  label and the order-intent dispatch.
+  label and the order-intent dispatch. It renders no chip row of its own; the
+  chips are inside the popover.
 - the address-book modal — `component/payment/method/shipping_company.phtml`,
   which composes the ENGINE directly under the Alpine name `searchInput`
   (Hyvä Checkout's own closed-source modal requires that literal name and
@@ -250,7 +279,19 @@ Which of the first two renders is decided by the core module's
 `enable_company_search` setting — never both, never neither. See
 `CheckoutConfig::getIsCompanySearchInPaymentTile()`.
 
-Two things that bite:
+Each mount builds its panel from its own `init()`/`initialize()`, which Magewire
+re-runs on every rebuild — `mountCompanyPopover()` re-points the existing panel
+rather than building a second one. It stamps its own `data-two-company-panel`
+attribute on the field and selects on that, because the address-step field
+renderer is registered globally and mounts on the delivery form AND the invoice
+form, so a document-wide selector would give both mounts the first field.
+
+**The panel instance lives in a closure, never in Alpine state.** Alpine wraps
+component data in reactive proxies and the panel compares DOM nodes by identity;
+a proxied node makes those comparisons false and the popover silently stops
+responding to its own field.
+
+Things that bite:
 
 - **The markup is included with `include $block->getTemplateFile(…)`**, not as a
   layout child. The address-step mount point is a Hyvä entity-form field
