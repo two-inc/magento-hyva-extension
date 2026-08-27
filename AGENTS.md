@@ -460,6 +460,27 @@ Or combined (wait 15s for sync then clear):
 sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
+### Tests that read a file as TEXT, and mutants that check them
+
+Two rules, both learned the same way — six times on TWO-25503, every one a check
+that ran cleanly and proved nothing:
+
+- **Any assertion that reads a stylesheet or a template as text matches against
+  a COMMENT-STRIPPED copy.** Prose explaining a declaration contains the same
+  tokens as the declaration, so a regex written to find the code matches the
+  explanation instead. Worse, comments here quote selectors — braces and all —
+  so a `[^}]*\}` pattern terminates at a comment's brace and silently stops
+  covering everything below it. `order-intent-spinner`,
+  `company-search-focus-scope` and `company-search-spinner` all strip at the
+  point the file is read, which is the place to do it: stripping per-assertion
+  leaves the next one in the same file exposed.
+- **A mutant is verified by WHAT IT REMOVED, never by the diff being
+  non-empty.** A non-empty diff only proves something changed. It does not
+  prove the anchor hit the rule you meant (`String.replace` takes the FIRST
+  match, and identical declarations are common), nor that what it replaced was
+  a statement rather than a comment beside one. Read the mutated region back,
+  or anchor through enough surrounding text to be unique.
+
 ### Common Issues
 
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface

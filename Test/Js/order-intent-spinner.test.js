@@ -383,10 +383,28 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       path.join(H.REPO_ROOT, H.GATEWAY_METHOD_MARKUP_TEMPLATE),
       "utf8",
     );
-    const CSS_SOURCE = fs.readFileSync(
-      path.join(H.REPO_ROOT, "view/frontend/web/css/custom.css"),
-      "utf8",
-    );
+    /*
+     * COMMENTS STRIPPED, and every assertion below reads this rather than the
+     * raw file.
+     *
+     * Two ways prose defeats a regex written to find code, and this file hit
+     * both. It contains the same tokens as the declaration it explains, so
+     * `[^}]*margin:` matched the explanation instead of the rule. And it
+     * contains BRACES — this stylesheet quotes selectors like
+     * `.two-order-intent-message { margin: 0 0 1.5em }` inside rule bodies as a
+     * matter of style — so `[^}]*\}` terminates at a comment's brace and the
+     * match truncates before the declarations that follow it. That silently
+     * un-covered the "geometry is declared once" assertion, whose whole purpose
+     * is catching a state that re-declares geometry.
+     *
+     * `company-search-focus-scope` and `company-search-spinner` already do this.
+     */
+    const CSS_SOURCE = fs
+      .readFileSync(
+        path.join(H.REPO_ROOT, "view/frontend/web/css/custom.css"),
+        "utf8",
+      )
+      .replace(/\/\*[\s\S]*?\*\//g, "");
 
     /** The four states, by the `data-name` each element is found under. */
     const STATES = [
@@ -549,13 +567,8 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
        * boxes carry and the two in-progress boxes do not. Leaving margin unset
        * here lets that rule apply to some states and not others, which is
        * exactly the drift declaring geometry once is supposed to prevent.
-       *
-       * Matched against the stylesheet with COMMENTS STRIPPED: prose explaining
-       * a declaration contains the same words as the declaration, and a regex
-       * that reads them passes whether or not the rule is there.
        */
-      const declarations = CSS_SOURCE.replace(/\/\*[\s\S]*?\*\//g, "");
-      expect(declarations).toMatch(
+      expect(CSS_SOURCE).toMatch(
         /\.two-order-intent-box \{[^}]*margin:[^}]*\}/,
       );
       STATES.forEach(([, stateClass]) => {
