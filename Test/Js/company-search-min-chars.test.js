@@ -237,11 +237,13 @@ describe("company-search threshold provenance", () => {
     // One PHP variable per template that guards, and it is the same name in all
     // of them — the marker that they are reading one source rather than three
     // agreeing copies.
+    // The MARKUP templates are not in this list any more, and must not be put
+    // back: neither renders the hint now, so a threshold reference in one would
+    // be a value nothing reads.
     [
       H.COMPANY_NAME_TEMPLATE,
       H.SHIPPING_COMPANY_TEMPLATE,
       H.GATEWAY_METHOD_TEMPLATE,
-      H.GATEWAY_METHOD_MARKUP_TEMPLATE,
     ].forEach((relPath) => {
       expect(templateSource(relPath)).toContain(PHP_THRESHOLD_VAR);
     });

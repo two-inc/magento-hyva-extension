@@ -26,7 +26,6 @@ $gwBase = $fnPrefix . 'GatewayHyva';
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
-$companySearchMinChars = $configModel->getCompanySearchMinChars();
 // TWO-25326 §7.1 (2026-08-03 ruling, corrected 2026-08-04): the ONE
 // company-search control renders either here (in this tile) or on the
 // address step — never both, never neither. Decided by the CORE module's
