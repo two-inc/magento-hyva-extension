@@ -1448,6 +1448,13 @@ $quoteDetails = json_encode(
              * the address step's historical note on why both have to move as
              * one (the payment step derives its own editability from
              * `company_id` in the same blob).
+             *
+             * A CALLER MUST WRITE `this.search` FIRST. This compares it against
+             * `companyName`, and `search` also carries what the popover repaints
+             * the field from — so a caller that has not just set it can be
+             * comparing against a DOM-seeded or stale value and drop a
+             * registry-vouched identifier. `commitManualCompany()` is the only
+             * caller today and does set it immediately before.
              */
             forgetStaleCompanyId() {
                 if (!this.companyId) return;
@@ -2443,6 +2450,10 @@ $quoteDetails = json_encode(
                         });
                     }
                 });
+                // BEFORE bind, and the order is load-bearing: destroying the
+                // abandoned panel removes its `.two-company-dropdown` from the
+                // wrapper, which is what makes this one build fresh instead of
+                // adopting DOM whose handlers belong to a dead instance.
                 twoGatewayRegisterCompanyPanel(panel, field);
                 panel.bind();
                 if (this.manualMode) panel.releaseField();

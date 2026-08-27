@@ -753,11 +753,20 @@ function installCompanyPanelStub() {
   CompanySearchPanelStub.prototype.isBound = function () {
     return true;
   };
-  // Resolves ONCE, at bind, and remembers — exactly as the real panel does
-  // (`_attach` stores the node; `getField()` returns `this._field`). Resolving
-  // fresh on every call would answer for whatever currently matches the
-  // selector, which is not the node this panel is attached to, and would report
-  // an orphan as reaped where production would not.
+  /*
+   * Resolves ONCE, at bind, and remembers — exactly as the real panel does
+   * (`_attach` stores the node, `getField()` returns `this._field`). Resolving
+   * fresh on every call would answer for whatever currently matches the
+   * selector, which is not the node this panel is attached to, and would report
+   * an orphan as reaped where production would not.
+   *
+   * One divergence remains, deliberately: the real `bind()` only overwrites
+   * `_field` when the selector matches something, where this assigns
+   * unconditionally — so a bind matching nothing nulls the stub's field while
+   * production keeps the previous node. That yields a false RED in the reaper,
+   * never a false GREEN. Do not "fix" it by resolving lazily; that is the
+   * direction that hides a leak.
+   */
   CompanySearchPanelStub.prototype.bind = function () {
     this.calls.push("bind");
     this._field = document.querySelector(this.fieldSelector);
@@ -765,12 +774,21 @@ function installCompanyPanelStub() {
   CompanySearchPanelStub.prototype.getField = function () {
     return this._field ? [this._field] : [];
   };
-  // The MODE is recorded with the call, because what callers need from
-  // syncChips is that the chips were repainted for the state the component is
-  // NOW in — a bare call name cannot tell a sync before a mode change from one
-  // after it, and that ordering is the whole defect.
+  /*
+   * Records the STATE the chips were repainted for, not just that they were.
+   *
+   * A bare call name cannot tell a sync that ran before a mode change from one
+   * that ran after it, and that ordering is the defect. The mode alone is not
+   * enough either: a country withdrawing sole trader changes which chips are
+   * OFFERED without changing which is selected, so visibility is recorded too.
+   */
   CompanySearchPanelStub.prototype.syncChips = function () {
-    this.calls.push("syncChips:" + this.options.getSelectedMode());
+    this.calls.push(
+      "syncChips:" +
+        this.options.getSelectedMode() +
+        ":" +
+        (this.options.isChipVisible("soletrader") ? "st" : "-"),
+    );
   };
   // Open/close move a flag rather than only recording, because callers ASK:
   // the order-intent box refuses to paint a verdict under an open panel, and a

@@ -542,6 +542,22 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       expect(CSS_SOURCE).toMatch(
         /\.two-order-intent-box \{[^}]*border-radius:[^}]*\}/,
       );
+      /*
+       * MARGIN too, and stated rather than inherited. The base plugin's
+       * stylesheet, which this checkout also loads, carries a bare
+       * `.two-order-intent-message { margin: … }` — a class the three VERDICT
+       * boxes carry and the two in-progress boxes do not. Leaving margin unset
+       * here lets that rule apply to some states and not others, which is
+       * exactly the drift declaring geometry once is supposed to prevent.
+       *
+       * Matched against the stylesheet with COMMENTS STRIPPED: prose explaining
+       * a declaration contains the same words as the declaration, and a regex
+       * that reads them passes whether or not the rule is there.
+       */
+      const declarations = CSS_SOURCE.replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(declarations).toMatch(
+        /\.two-order-intent-box \{[^}]*margin:[^}]*\}/,
+      );
       STATES.forEach(([, stateClass]) => {
         if (stateClass === "two-order-intent-checking") return;
         const rule = CSS_SOURCE.match(

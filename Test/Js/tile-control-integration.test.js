@@ -170,7 +170,7 @@ describe("the payment tile's mounted control (integration)", () => {
     );
     // The chips are repainted, so the mode the pick put the control in reads
     // as selected.
-    expect(panel.calls).toContain("syncChips:registered");
+    expect(panel.calls.some((call) => call.startsWith("syncChips:registered"))).toBe(true);
     // And the intent check has visibly started.
     expect(component.orderIntentChecking).toBe(true);
   });

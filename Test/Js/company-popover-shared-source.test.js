@@ -79,7 +79,8 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         ['.two-company-field-wrap', 'the positioning context the panel anchors against'],
         ['.two-company-dropdown', 'the panel and every part of it'],
         ['.two-company-mode-chip', 'the chips, and the row they sit in'],
-        ['.two-company-search-back', 'the route back out of manual entry']
+        ['.two-company-search-back', 'the route back out of manual entry'],
+        ['.two-hidden', 'the panel\'s own hiding class, which no theme defines']
     ])('%s has no rule of its own here (%s)', (selector) => {
         const ownRule = new RegExp(
             '^\\s*' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^,{]*\\{',

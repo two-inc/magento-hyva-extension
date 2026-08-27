@@ -805,6 +805,9 @@ describe("the wires between markup and component", () => {
     host.innerHTML = '<input type="text" value="" />';
     document.body.appendChild(host);
     tile.component.$root = host;
+    // A chip the buyer can click is one the country's registry offers; without
+    // this the fixture clicks a chip the panel would not have rendered.
+    tile.component.showModeTab = true;
     tile.component.mountCompanyPopover();
 
     const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
@@ -819,7 +822,7 @@ describe("the wires between markup and component", () => {
     // The MODE, not just the call: a sync that ran BEFORE the mode changed
     // repaints the old state and is exactly the defect this covers, and a bare
     // call name cannot tell the two apart.
-    expect(built.calls).toContain("syncChips:soletrader");
+    expect(built.calls).toContain("syncChips:soletrader:st");
   });
 
   test("a company the buyer discarded for sole trader is not resurrected", () => {
@@ -857,6 +860,9 @@ describe("the wires between markup and component", () => {
     host.innerHTML = '<input type="text" value="" />';
     document.body.appendChild(host);
     tile.component.$root = host;
+    // OFFERED to begin with, or the withdrawal changes nothing and a sync that
+    // ran before it records the same thing as one that ran after.
+    tile.component.showModeTab = true;
     tile.component.mountCompanyPopover();
     const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
     built.calls.length = 0;
@@ -867,7 +873,11 @@ describe("the wires between markup and component", () => {
     await pending;
 
     expect(tile.component.showModeTab).toBe(false);
-    expect(built.calls).toContain("syncChips:registered");
+    // The VISIBILITY, not the mode: nothing about the selected chip changes
+    // here — the buyer was never in sole-trader mode — so an assertion on the
+    // mode alone passes just as happily on a sync that ran before the
+    // withdrawal, repainting the stale state, which is the defect.
+    expect(built.calls).toContain("syncChips:registered:-");
   });
 
   test("the sole-trader chip is offered in BOTH company-search-location modes", () => {

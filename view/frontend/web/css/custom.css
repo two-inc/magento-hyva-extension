@@ -84,8 +84,7 @@ summary::marker {
  * unselected. Brand overlays that ship a different palette override
  * these rules from their own custom.css which loads after this one.
  */
-.two-term-chip,
-.two-mode-chip {
+.two-term-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -104,12 +103,10 @@ summary::marker {
   position: relative;
 }
 
-.two-term-chip:hover,
-.two-mode-chip:hover {
+.two-term-chip:hover {
   border-color: #3043d1;
 }
-.two-term-chip:focus,
-.two-mode-chip:focus {
+.two-term-chip:focus {
   outline: none;
 }
 .two-term-chip[disabled] {
@@ -120,32 +117,10 @@ summary::marker {
 .two-term-chip--selected,
 .two-term-chip--selected:hover,
 .two-term-chip--selected:focus,
-.two-term-chip--selected:active,
-.two-mode-chip--selected,
-.two-mode-chip--selected:hover,
-.two-mode-chip--selected:focus,
-.two-mode-chip--selected:active {
+.two-term-chip--selected:active {
   border-color: #3043d1;
   background: #3043d1;
   color: #fff;
-}
-
-/* The Registered company / Sole trader toggle (TWO-25503). Shares the term
-   chips' palette above because it is the same control in the same tile; its own
-   container rule because the mode chips sit on one row of text rather than
-   stacking a label over a fee. */
-.two-mode-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-bottom: 0.5em;
-}
-
-.two-mode-chip {
-  flex-direction: row;
-  font-size: 14px;
-  font-weight: 500;
 }
 
 .two-soletrader-link {
@@ -447,6 +422,14 @@ summary::marker {
   padding: 0.5rem;
   font-size: 0.875rem;
   line-height: 1.4;
+  /*
+   * Stated, not inherited. The base stylesheet this checkout now loads carries
+   * a bare `.two-order-intent-message { margin: 0 0 1.5em }`, which the three
+   * VERDICT boxes match and the two in-progress boxes do not — so leaving
+   * margin unset drifts the states of one box apart on an axis that is
+   * supposed to be declared once.
+   */
+  margin: 0;
 }
 
 /*
