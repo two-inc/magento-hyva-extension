@@ -122,21 +122,39 @@ describe("the Hyvä adapter over the shared popover", () => {
       expect(document.querySelectorAll(panel().options.fieldSelector)).toHaveLength(1);
     });
 
-    test("a rebuild's abandoned panel is torn down, not left listening", () => {
+    test("a rebuild that KEEPS the input tears the abandoned panel down", () => {
       /*
-       * The closure guard is not enough on its own. A Magewire re-render
-       * re-invokes the Alpine factory, so the rebuilt component gets a FRESH
-       * closure whose panel is null and builds a second one — and the base
-       * panel ADOPTS the existing DOM rather than duplicating it, which hides
-       * the problem: two instances then hold live listeners on the same field
-       * and the same document, and one keystroke searches twice.
+       * The case connectedness cannot see, and the one Magewire actually takes
+       * most of the time: it morphs the DOM and leaves the input in place. A
+       * re-render re-invokes the Alpine factory, so the rebuilt component gets
+       * a FRESH closure whose panel is null and builds a second one — and the
+       * base panel ADOPTS the existing panel DOM rather than duplicating it,
+       * which hides the problem. Two instances then hold listeners on the same
+       * input, `_unbind` is per-instance, and one keystroke searches twice.
        */
+      const abandoned = panel();
+      expect(abandoned.getField()[0]).toBe(field);
+      expect(field.isConnected).toBe(true);
+
+      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: field,
+        root: document.getElementById("root"),
+      });
+      rebuilt.init();
+
+      expect(abandoned.calls).toContain("destroy");
+    });
+
+    test("a rebuild that REPLACED the input tears it down too", () => {
       const abandoned = panel();
       document.body.innerHTML = [
         '<div id="root3" class="two-company-search">',
         '  <input type="text" id="field3" value="" />',
         "</div>",
       ].join("\n");
+      // The panel still holds the node it attached to; that node is now
+      // detached, which is the other half of "abandoned".
+      expect(abandoned.getField()[0].isConnected).toBe(false);
 
       const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
         el: document.getElementById("field3"),
@@ -147,9 +165,10 @@ describe("the Hyvä adapter over the shared popover", () => {
       expect(abandoned.calls).toContain("destroy");
     });
 
-    test("a panel whose field is still on the page is left alone", () => {
+    test("a panel on a DIFFERENT field is left alone", () => {
       // Two mounts on one page are legitimate — the address field renderer
-      // mounts on the delivery form AND the invoice form.
+      // mounts on the delivery form AND the invoice form — so what makes a
+      // panel abandoned is another taking ITS field, not there being two.
       const first = panel();
       const second = document.createElement("div");
       second.className = "two-company-search";
@@ -163,7 +182,9 @@ describe("the Hyvä adapter over the shared popover", () => {
       other.init();
 
       expect(first.calls).not.toContain("destroy");
-      expect(env.companyPanels).toHaveLength(2);
+      expect(first.getField()[0]).toBe(field);
+      expect(env.companyPanels[env.companyPanels.length - 1].getField()[0])
+        .toBe(document.getElementById("field4"));
     });
 
     test("a company already in the field survives the mount", () => {
@@ -187,10 +208,15 @@ describe("the Hyvä adapter over the shared popover", () => {
     });
 
     test("a captured company still wins over what the field held", () => {
+      // Both terms populated and DIFFERENT, or the precedence this names is
+      // untested — with an empty field value either ordering returns the same
+      // thing.
+      component.search = "Typed Ltd";
       component.companyName = "Picked Ltd";
 
       expect(panel().options.getDisplayText()).toBe("Picked Ltd");
     });
+
 
     test("no popover is built at all where the lookup is switched off", () => {
       // The control still renders — the checkout needs a company field either
@@ -344,6 +370,17 @@ describe("the Hyvä adapter over the shared popover", () => {
       expect(panel().calls.indexOf("bind")).toBeGreaterThan(
         panel().calls.indexOf("reclaimField"),
       );
+    });
+
+    test("the name typed in manual entry survives the way back out", () => {
+      // `commitManualCompany()` writes `search` and deliberately never
+      // `companyName`, so a display text reading only the latter lets
+      // reclaimField()'s repaint overwrite what the buyer typed.
+      component.enterManually();
+      field.value = "My Shop Ltd";
+      component.onNameFieldInput();
+
+      expect(panel().options.getDisplayText()).toBe("My Shop Ltd");
     });
 
     test("a search is not attempted while the lookup is switched off", async () => {

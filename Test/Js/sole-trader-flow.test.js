@@ -816,7 +816,58 @@ describe("the wires between markup and component", () => {
       .find((entry) => entry.mode === "soletrader")
       .onActivate();
 
-    expect(built.calls).toContain("syncChips");
+    // The MODE, not just the call: a sync that ran BEFORE the mode changed
+    // repaints the old state and is exactly the defect this covers, and a bare
+    // call name cannot tell the two apart.
+    expect(built.calls).toContain("syncChips:soletrader");
+  });
+
+  test("a company the buyer discarded for sole trader is not resurrected", () => {
+    /*
+     * The popover repaints the field from the adapter's display text whenever
+     * it re-attaches, and the very next chip click causes one. The field's
+     * adopted value therefore lives in `search` — live state every discard
+     * path clears — rather than in a remembered constant, which nothing could
+     * invalidate and which would put a deliberately abandoned company back.
+     */
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="Saved Co Ltd" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    tile.component.mountCompanyPopover();
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    expect(built.options.getDisplayText()).toBe("Saved Co Ltd");
+
+    tile.component.showSoleTrader = true;
+    tile.component.registeredOrganisationMode();
+
+    expect(built.options.getDisplayText()).toBe("");
+  });
+
+  test("a country that withdraws sole trader repaints the chips too", async () => {
+    // The chip's visibility follows `showModeTab`, so the panel has to hear
+    // about the withdrawal even when the buyer was not standing in the mode
+    // that disappeared — otherwise it keeps offering a mode the registry
+    // cannot serve.
+    tile = mountTile();
+    const host = document.createElement("div");
+    host.className = "two-company-search";
+    host.innerHTML = '<input type="text" value="" />';
+    document.body.appendChild(host);
+    tile.component.$root = host;
+    tile.component.mountCompanyPopover();
+    const built = tile.env.companyPanels[tile.env.companyPanels.length - 1];
+    built.calls.length = 0;
+
+    const pending = tile.component.refreshSoleTraderAvailability();
+    await H.flushPromises();
+    tile.fetchStub.last().respond([]);
+    await pending;
+
+    expect(tile.component.showModeTab).toBe(false);
+    expect(built.calls).toContain("syncChips:registered");
   });
 
   test("the sole-trader chip is offered in BOTH company-search-location modes", () => {

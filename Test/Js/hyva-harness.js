@@ -627,6 +627,7 @@ const SHARED_HELPER_GLOBALS = [
   // any assertion on them is silently order-dependent.
   "twoGatewayPanelStrings",
   "twoGatewayCompanyFieldSeq",
+  "twoGatewayCompanyPanels",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
   // correct in production (the publisher can render once per payment method and
@@ -742,21 +743,34 @@ function installCompanyPanelStub() {
     instances.push(this);
   }
 
-  ["bind", "syncChips", "releaseField", "reclaimField", "setDisplayText",
-    "destroy"].forEach(function (name) {
-    CompanySearchPanelStub.prototype[name] = function () {
-      this.calls.push(name);
-    };
-  });
+  ["releaseField", "reclaimField", "setDisplayText", "destroy"].forEach(
+    function (name) {
+      CompanySearchPanelStub.prototype[name] = function () {
+        this.calls.push(name);
+      };
+    },
+  );
   CompanySearchPanelStub.prototype.isBound = function () {
     return true;
   };
-  // Array-shaped like the real panel's, and RESOLVED rather than remembered:
-  // the orphan reaper asks whether a panel's field is still connected, so a
-  // stub holding the node it was built with could never answer no.
+  // Resolves ONCE, at bind, and remembers — exactly as the real panel does
+  // (`_attach` stores the node; `getField()` returns `this._field`). Resolving
+  // fresh on every call would answer for whatever currently matches the
+  // selector, which is not the node this panel is attached to, and would report
+  // an orphan as reaped where production would not.
+  CompanySearchPanelStub.prototype.bind = function () {
+    this.calls.push("bind");
+    this._field = document.querySelector(this.fieldSelector);
+  };
   CompanySearchPanelStub.prototype.getField = function () {
-    const node = document.querySelector(this.fieldSelector);
-    return node ? [node] : [];
+    return this._field ? [this._field] : [];
+  };
+  // The MODE is recorded with the call, because what callers need from
+  // syncChips is that the chips were repainted for the state the component is
+  // NOW in — a bare call name cannot tell a sync before a mode change from one
+  // after it, and that ordering is the whole defect.
+  CompanySearchPanelStub.prototype.syncChips = function () {
+    this.calls.push("syncChips:" + this.options.getSelectedMode());
   };
   // Open/close move a flag rather than only recording, because callers ASK:
   // the order-intent box refuses to paint a verdict under an open panel, and a

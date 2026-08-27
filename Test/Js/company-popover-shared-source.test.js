@@ -45,54 +45,47 @@ describe('the popover implementation is loaded from the base plugin', () => {
         expect(layout.indexOf('company-search-panel.js'))
             .toBeLessThan(layout.indexOf('Two_GatewayHyva::css/custom.css'));
     });
+
+    test('the popover\'s STYLING comes from the base plugin too', () => {
+        expect(read(CHECKOUT_LAYOUT)).toContain(
+            '<css src="Two_Gateway::css/style.css"/>'
+        );
+    });
+
+    test('the base stylesheet loads first, so this module keeps the last word', () => {
+        // Any class that genuinely needs to mesh with Hyvä's styling gets a
+        // selective override in custom.css; an override that loaded first would
+        // be the one overridden.
+        const layout = read(CHECKOUT_LAYOUT);
+
+        expect(layout.indexOf('Two_Gateway::css/style.css'))
+            .toBeLessThan(layout.indexOf('Two_GatewayHyva::css/custom.css'));
+    });
 });
 
-describe('the popover has styling on a store that never rebuilt Tailwind', () => {
+describe('no copy of the popover\'s styling creeps back in here', () => {
     /*
-     * The Tailwind rebuild is the MERCHANT'S, so a utility only this module asks
-     * for may never be generated — and that failure is silent, rendering as an
-     * unstyled box that still claims whatever it says. Every class the shared
-     * panel builds its DOM from therefore needs a rule in this file.
+     * The guard against the obvious wrong turn. Copying these rules works, and
+     * it duplicates precisely the thing this ticket exists to de-duplicate —
+     * so the popover's appearance has ONE source, the base stylesheet, and
+     * whatever genuinely needs to mesh with Hyvä's styling is a selective
+     * override written after someone has looked at the result.
+     *
+     * Matched at the START of a selector: this file legitimately MENTIONS
+     * `.two-company-dropdown__query`, in the `:not()` that keeps its own
+     * company-field rules off the popover's query box.
      */
     test.each([
         ['.two-company-field-wrap', 'the positioning context the panel anchors against'],
-        ['.two-company-dropdown', 'the panel itself'],
-        ['.two-company-dropdown[hidden]', 'closed, so nothing inside it is a tab stop'],
-        ['.two-company-dropdown__search', 'the query row'],
-        ['.two-company-dropdown__query', 'the query field'],
-        ['.two-company-dropdown__spinner', 'the in-field searching indicator'],
-        ['.two-company-dropdown__spinner--active', 'that indicator while a search is on the wire'],
-        ['.two-company-dropdown__results', 'the results host'],
-        ['.two-company-dropdown__row', 'a result row'],
-        ['.two-company-dropdown__row--active', 'the arrow-key highlighted row'],
-        ['.two-company-dropdown__message', 'the too-short and no-matches lines'],
-        ['.two-company-dropdown__message--unavailable', 'the search being down, which must not read as no matches'],
-        ['.two-company-mode-chips', 'the chip row INSIDE the panel'],
-        ['.two-company-mode-chip', 'a mode chip'],
-        ['.two-company-mode-chip--selected', 'the selected mode'],
-        ['.two-company-mode-chip.two-hidden', 'a mode the country cannot serve'],
-        ['.two-company-search-back', 'the only route back out of manual entry']
-    ])('%s is styled here (%s)', (selector) => {
-        expect(read(CUSTOM_CSS)).toContain(selector + ' {');
-    });
-
-    test('the popover spinner points at an image this module actually ships', () => {
-        // Scoped to the popover's OWN rule. This file already carries a second
-        // spinner (`.two-company-search__spinner`) naming the same asset, so an
-        // unscoped search for the URL passes on that one's strength and proves
-        // nothing about this one.
-        const block = read(CUSTOM_CSS).match(
-            /\.two-company-dropdown__spinner \{[^}]*\}/
+        ['.two-company-dropdown', 'the panel and every part of it'],
+        ['.two-company-mode-chip', 'the chips, and the row they sit in'],
+        ['.two-company-search-back', 'the route back out of manual entry']
+    ])('%s has no rule of its own here (%s)', (selector) => {
+        const ownRule = new RegExp(
+            '^\\s*' + selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^,{]*\\{',
+            'm'
         );
 
-        expect(block).not.toBeNull();
-        const url = block[0].match(/url\("([^"]+)"\)/);
-        expect(url).not.toBeNull();
-
-        // The rule is copied from the base plugin, whose own loader.gif sits at
-        // the same relative offset — so a correct-looking URL can still 404.
-        expect(fs.existsSync(
-            path.join(ROOT, 'view/frontend/web/css', url[1])
-        )).toBe(true);
+        expect(read(CUSTOM_CSS)).not.toMatch(ownRule);
     });
 });

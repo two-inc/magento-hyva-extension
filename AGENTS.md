@@ -250,11 +250,19 @@ half of the contract — the options the adapter passes and the search API it
 builds over the engine. The panel's own behaviour is covered against the real
 file in magento-plugin's suite.
 
-**The popover's STYLING is still carried twice**, in
-`view/frontend/web/css/custom.css`. The base stylesheet cannot simply be loaded
-here because it also restyles the term chips, which are a working surface. The
-fix is to split the popover rules out into their own stylesheet in the base
-plugin and have both load it.
+**The popover's STYLING comes from the base plugin too** —
+`<css src="Two_Gateway::css/style.css"/>`, loaded BEFORE `custom.css` so this
+module keeps the last word. Do not copy popover rules into `custom.css`; a test
+guards against it. That stylesheet also restyles `.two-term-chip` and its
+siblings, which this checkout already paints: any class that genuinely needs to
+mesh with Hyvä's styling gets a **selective override**, written after someone
+has looked at the result rather than pre-emptively.
+
+**Known base-plugin defect, not fixed here:** the panel's
+`removeBackToSearchLink()` sweeps `document.querySelectorAll` for its return
+link, so with two panels on one page — the delivery form and the invoice form —
+one entering or leaving manual entry deletes the other's only route out of it.
+Fix belongs in magento-plugin, scoped to the panel's own wrapper.
 
 `form/field/company-search-control.phtml` is now only the company-name input and
 the organisation-number display. **Do not put a dropdown, a query box, a hint

@@ -310,7 +310,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(component.companyIdDisplayVisible).toBe(true);
       // The chips are repainted, so the mode the pick put the control in reads
       // as selected.
-      expect(panel.calls).toContain("syncChips");
+      expect(panel.calls).toContain("syncChips:registered");
     });
 
     test.each([

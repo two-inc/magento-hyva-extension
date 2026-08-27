@@ -324,7 +324,6 @@ $quoteDetails = json_encode(
      * codebase also hides with the `hidden` class, `offsetParent` answers null
      * for a `position: fixed` element that IS visible, and it is unimplemented
      * in jsdom — so a test written against it would pass while proving nothing.
-     * `disabled` is tested on every ANCESTOR too, not only the field.
      *
      * `disabled` is tested on every ANCESTOR too, not only the field: a
      * `<fieldset disabled>` disables everything inside it without setting the
@@ -1987,20 +1986,29 @@ $quoteDetails = json_encode(
      * problem: two instances then hold live listeners on the same query field
      * and the same document, so one keystroke searches twice.
      *
-     * Reaped by connectedness rather than by count, because a page legitimately
-     * holds two panels at once — the address field renderer mounts on the
-     * delivery form AND the invoice form.
+     * Reaped by OWNERSHIP, never by count: a page legitimately holds two panels
+     * at once — the address field renderer mounts on the delivery form AND the
+     * invoice form — so what makes one abandoned is that another panel has
+     * taken its field, not that there is more than one.
+     *
+     * Connectedness alone is not the test. It catches only the case where the
+     * re-render replaced the subtree; when Magewire morphs and KEEPS the input
+     * in place, the abandoned panel's field is still in the document and still
+     * the one the new panel is binding to — two instances on one input, and
+     * `_unbind` is per-instance, so every keystroke searches twice.
      */
     window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels || [];
 
     /**
      * @param {Object} panel the newly built popover
+     * @param {HTMLElement|null} field the field it is taking over
      */
-    function twoGatewayRegisterCompanyPanel(panel) {
+    function twoGatewayRegisterCompanyPanel(panel, field) {
         window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels
             .filter(function (existing) {
-                const field = existing.getField()[0];
-                if (field && field.isConnected) return true;
+                const held = existing.getField()[0];
+                const abandoned = !held || !held.isConnected || held === field;
+                if (!abandoned) return true;
                 existing.destroy();
                 return false;
             });
@@ -2392,17 +2400,22 @@ $quoteDetails = json_encode(
                 }
 
                 /*
-                 * What the field already held when this panel took it over.
+                 * Adopt what the field already holds as the search text.
                  *
                  * A returning customer's saved company arrives in the input's
                  * server-rendered `value`, and nothing on the Two side has read
-                 * it — `companyName` is seeded only from our own selection
-                 * record. The panel repaints the field from `getDisplayText()`
-                 * as it attaches, so without this the mount silently wipes that
+                 * it. The panel repaints the field from `getDisplayText()` as it
+                 * attaches, so without this the mount silently wipes that
                  * company and the `change` it fires carries the wipe into the
                  * quote.
+                 *
+                 * Into `search` — LIVE state that already means "the text in the
+                 * name field" — rather than a closure constant, so every path
+                 * that deliberately discards a company discards this with it.
+                 * A remembered value cannot be invalidated, and would resurrect
+                 * a company the buyer had explicitly abandoned.
                  */
-                const mountedValue = field ? field.value : '';
+                if (field && field.value && !this.search) this.search = field.value;
 
                 panel = new Panel({
                     fieldSelector: selector,
@@ -2413,7 +2426,14 @@ $quoteDetails = json_encode(
                     getChips() { return self.companyPopoverChips(); },
                     isChipVisible(mode) { return self.companyPopoverModeOffered(mode); },
                     getSelectedMode() { return self.companyPopoverSelectedMode(); },
-                    getDisplayText() { return self.companyName || mountedValue; },
+                    /*
+                     * `search` is the second term, not a fallback of last
+                     * resort: a manual-entry commit writes it and deliberately
+                     * never writes `companyName`, so without it the way back
+                     * out of manual entry repaints the field over the name the
+                     * buyer typed.
+                     */
+                    getDisplayText() { return self.companyName || self.search || ''; },
                     onExitManualEntry() { self.enableSearch(); },
                     onSelect(item) {
                         self.selectItem({
@@ -2423,7 +2443,7 @@ $quoteDetails = json_encode(
                         });
                     }
                 });
-                twoGatewayRegisterCompanyPanel(panel);
+                twoGatewayRegisterCompanyPanel(panel, field);
                 panel.bind();
                 if (this.manualMode) panel.releaseField();
             },
@@ -3707,6 +3727,19 @@ $quoteDetails = json_encode(
                 if (!this.showModeTab && this.showSoleTrader) {
                     this.registeredOrganisationMode();
                 }
+                /*
+                 * Whether or not the mode was withdrawn: the chip's visibility
+                 * follows `showModeTab`, so the panel has to be repainted even
+                 * when the buyer was not standing in the mode that just
+                 * disappeared — otherwise it keeps offering a mode this
+                 * country's registry cannot serve.
+                 *
+                 * Through the accessor, not the `panel` closure: this method
+                 * lives in the tile's own object, which is composed OVER the
+                 * control and has no sight of its locals.
+                 */
+                const popover = this.companyPopover();
+                if (popover) popover.syncChips();
             },
 
             /*
@@ -3757,6 +3790,11 @@ $quoteDetails = json_encode(
              */
             clearSoleTraderCompany() {
                 this.companyName = '';
+                // The search text too: it holds the same abandoned company, and
+                // it is what the popover repaints the field from when nothing
+                // is captured — so leaving it would put the discarded name back
+                // on the next re-attach.
+                this.search = '';
                 this.companyId = '';
                 this.companyIdSource = '';
                 this.companyIdEntryRequired = true;
