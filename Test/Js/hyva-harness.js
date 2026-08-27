@@ -709,6 +709,53 @@ function loadSharedHelpers(extraRules) {
  *
  * @returns {Object} handles for asserting on what the code under test did
  */
+/**
+ * Stand in for the base plugin's `company-search-panel.js`.
+ *
+ * That file is the popover, and it is NOT in this repo — it ships in
+ * two-inc/magento2 and the checkout loads it from `Two_Gateway::`. There is no
+ * copy here to load and no vendor tree in CI, so what this repo can test is its
+ * own half of the contract: the options the adapter hands the panel, and the
+ * six-member search API it builds over the engine. The panel's own behaviour —
+ * the DOM it builds, its open/close, its keyboard handling — is covered by
+ * magento-plugin's suite, against the real file.
+ *
+ * Recording, not inert: a test asserts what the adapter passed, so a stub that
+ * silently swallowed its options would make every such assertion vacuous.
+ *
+ * @returns {Object} `{ instances }`, newest last
+ */
+function installCompanyPanelStub() {
+  const instances = [];
+
+  function CompanySearchPanelStub(options) {
+    this.options = options || {};
+    this.fieldSelector = this.options.fieldSelector;
+    this.calls = [];
+    instances.push(this);
+  }
+
+  ["bind", "syncChips", "close", "open", "releaseField", "reclaimField",
+    "setDisplayText", "destroy"].forEach(function (name) {
+    CompanySearchPanelStub.prototype[name] = function () {
+      this.calls.push(name);
+    };
+  });
+  CompanySearchPanelStub.prototype.isBound = function () {
+    return true;
+  };
+  CompanySearchPanelStub.prototype.isOpen = function () {
+    return false;
+  };
+  CompanySearchPanelStub.prototype.abortActiveRequest = function () {
+    this.calls.push("abortActiveRequest");
+    return false;
+  };
+
+  window.TwoCompanySearchPanel = CompanySearchPanelStub;
+  return { instances: instances };
+}
+
 function installHyvaEnvironment() {
   const storage = {};
   const browserStorage = {
@@ -777,6 +824,11 @@ function installHyvaEnvironment() {
   window.Alpine = Alpine;
   window.dispatchMessages = dispatchMessages;
 
+  // The checkout loads this from the base plugin; every component that mounts
+  // the company control reaches for it in init(), so it has to be here or that
+  // path degrades to its console.error branch in every test.
+  const companyPanel = installCompanyPanelStub();
+
   return {
     hyva: hyva,
     storage: storage,
@@ -786,6 +838,8 @@ function installHyvaEnvironment() {
     alpineStores: alpineStores,
     messages: messages,
     loaderEvents: loaderEvents,
+    /** Panels the code under test built, newest last. */
+    companyPanels: companyPanel.instances,
     /** Fire the event Alpine fires once it is ready. */
     fireAlpineInit: function () {
       document.dispatchEvent(new Event("alpine:init"));
@@ -806,6 +860,7 @@ function installHyvaEnvironment() {
       delete global.Alpine;
       delete window.hyva;
       delete window.Alpine;
+      delete window.TwoCompanySearchPanel;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];
@@ -992,6 +1047,7 @@ module.exports = {
   loadTemplate: loadTemplate,
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
+  installCompanyPanelStub: installCompanyPanelStub,
   mountComponent: mountComponent,
   stubFetch: stubFetch,
   flushPromises: flushPromises,

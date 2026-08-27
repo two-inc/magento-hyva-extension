@@ -2259,7 +2259,10 @@ $quoteDetails = json_encode(
              */
             companyPopoverModeOffered(mode) {
                 if (mode === 'soletrader') return Boolean(this.showModeTab);
-                if (mode === 'manual') return Boolean(this.isCompanySearchEnabled);
+                // `manualEntryVisible`, not the flag it derives from: the tile
+                // overrides it to a constant false, and reading the flag here
+                // would re-derive an answer that surface has already given.
+                if (mode === 'manual') return Boolean(this.manualEntryVisible);
                 return true;
             },
 
@@ -2276,11 +2279,15 @@ $quoteDetails = json_encode(
             companyFieldSelector() {
                 const field = this.companyNameField();
                 if (!field) return '';
-                if (!field.id) {
+                // Our own attribute rather than the field's `id`: the id comes
+                // from Hyvä's entity-field config and can hold anything a
+                // selector would have to escape, and `CSS.escape` is not
+                // universally available. This one is ours and is always safe.
+                if (!field.dataset.twoCompanyPanel) {
                     window.twoGatewayCompanyFieldSeq += 1;
-                    field.id = 'two-company-name-' + window.twoGatewayCompanyFieldSeq;
+                    field.dataset.twoCompanyPanel = String(window.twoGatewayCompanyFieldSeq);
                 }
-                return '#' + window.CSS.escape(field.id);
+                return '[data-two-company-panel="' + field.dataset.twoCompanyPanel + '"]';
             },
 
             /**
@@ -2340,6 +2347,20 @@ $quoteDetails = json_encode(
             },
 
             /**
+             * Whether the popover is showing.
+             *
+             * The order-intent box asks: "checking availability" and a verdict
+             * may never be on screen together, and neither may a verdict and an
+             * open results list. Answers false before the panel is built, which
+             * is the correct answer — nothing is covering anything yet.
+             *
+             * @returns {boolean}
+             */
+            companyPopoverIsOpen() {
+                return Boolean(panel && panel.isOpen());
+            },
+
+            /**
              * The manual-entry commit path. The shared panel releases the field
              * in manual mode, so this is the only thing recording what the buyer
              * types there.
@@ -2359,6 +2380,20 @@ $quoteDetails = json_encode(
              */
             get manualModeActive() {
                 return Boolean(this.isCompanySearchEnabled) && this.manualMode;
+            },
+
+            /**
+             * Whether the "Enter manually" chip is offered at all.
+             *
+             * Manual entry captures no organisation number, so it needs a later
+             * lookup to supply one; the payment tile overrides this to a
+             * constant false because it hosts the control only when the
+             * address-step search — that lookup — is off.
+             *
+             * @returns {boolean}
+             */
+            get manualEntryVisible() {
+                return Boolean(this.isCompanySearchEnabled);
             },
 
             get searchModeActive() {
@@ -3368,7 +3403,7 @@ $quoteDetails = json_encode(
                 // the disagreement was reachable — this tile's company-number
                 // field is editable, so typing a decided company's number back in
                 // while the panel is open repainted through here (round 5).
-                if (this.showDropdown()) return;
+                if (this.companyPopoverIsOpen()) return;
 
                 // A failed check is a verdict too, and the same reasoning that
                 // brings a decline back brings this back: the check is still
