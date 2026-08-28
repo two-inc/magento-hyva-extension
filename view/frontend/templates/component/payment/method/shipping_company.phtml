@@ -21,282 +21,225 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
-$companySearchLimit = $configModel->getCompanySearchLimit();
-$isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
-$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
-$checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $clientName = $configModel->getClientName();
 $clientVersion = $configModel->getClientVersion();
 $merchantShortName = $configModel->getMerchantShortName();
+$companySearchLimit = $configModel->getCompanySearchLimit();
+$isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
+$isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
+$companySearchMinChars = $configModel->getCompanySearchMinChars();
+$checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
-$quoteDetailsJson = json_encode($quoteDetails, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+// Same flag set as gateway_method-csp-js.phtml, for the same reason: this
+// lands in an inline script and carries buyer-supplied values (email,
+// telephone, name, product names and descriptions). JSON_HEX_TAG is the
+// load-bearing one — without it a product named with a script end tag closes
+// the block early, which is both script injection and a second way to move
+// where HyvaCsp thinks this element starts and ends. JSON_UNESCAPED_SLASHES
+// is deliberately absent: it strips the incidental protection plain
+// json_encode() gives by escaping the slash in an end tag.
+// JSON_INVALID_UTF8_SUBSTITUTE and the `?: '{}'` are not belt-and-braces. A
+// single malformed byte in a product name makes json_encode() return false, and
+// this value is interpolated bare, so the template would emit `quote : ,` — a
+// syntax error that kills every Alpine.data() registration in the block. That is
+// this very outage arriving through data. Substitute the bad byte, and if the
+// encode still fails fall back to an empty object: the country lookup then falls
+// through to reading the DOM, which degrades instead of dying.
+$quoteDetailsJson = json_encode(
+    $quoteDetails,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+    | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+) ?: '{}';
 ?>
 <input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
 <input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
 <script>
 document.addEventListener('alpine:init', () => {
 
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoShippingReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoShippingWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
+
     /**
-     * Initialize shipping company selection storage for new checkout sessions.
-     * We detect a new session by checking if the current quote ID differs from the stored one.
-     * This ensures stale company data from previous orders is cleared.
+     * Drop the previous ORDER's company from this store view's selection.
+     *
+     * Only the quote is compared. A store-view change needs no comparison at
+     * all any more: the storage key carries the store view, so each one keeps
+     * its own selection and a language toggle is invisible here.
+     *
+     * `String()` on both sides because the two clearers read this value through
+     * different pipes — this one out of json_encode(), where an int-ish
+     * Quote::getId() stays a JSON number, and the payment step out of an
+     * escapeJs()'d PHP string. GetQuoteDetails casts it too; this is the belt
+     * for blobs written before that cast existed.
+     *
+     * Both terms require the CURRENT id to be non-empty: getQuoteDetails()
+     * returns [] on a LocalizedException, and comparing against '' would wipe a
+     * live selection on every page load of a checkout that is merely failing to
+     * describe itself.
      */
     const initShippingCompanyStorage = () => {
         const quoteData = <?= $quoteDetailsJson ?>;
-        const currentQuoteId = quoteData.quote_id || '';
-        const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-        const storedQuoteId = storedData.quote_id || '';
+        const currentQuoteId = String(quoteData.quote_id || '');
+        const storedData = twoShippingReadSelection();
+        const storedQuoteId = String(storedData.quote_id || '');
 
-        // Clear storage if quote ID changed (new order) or if storage is empty
-        if (!storedQuoteId || storedQuoteId !== currentQuoteId) {
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+        if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
+            twoShippingWriteSelection({
                 quote_id: currentQuoteId,
                 company_name: '',
                 company_id: '',
                 manual_mode: false
-            }));
+            });
+            return;
+        }
+
+        // Stamp the quote id on a selection that has none — a blob written
+        // before this existed, or by an older tab. Without it the comparison
+        // above stays disarmed for the rest of the quote.
+        if (!storedQuoteId && currentQuoteId) {
+            twoShippingWriteSelection({ quote_id: currentQuoteId });
         }
     };
     initShippingCompanyStorage();
 
-    Alpine.data('searchInput', window['searchInput'] = () => ({
-        isOpen: false,
-        search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
-        items: [],
-        companyName: '',
-        companyId: '',
-        lookupId: '',
-        checkoutApiUrl: '<?= $checkoutApiUrl ?>',
-        companySearchLimit: '<?= $companySearchLimit ?>',
-        client: '<?= $clientName ?>',
-        clientV: '<?= $clientVersion ?>',
-        merchant: '<?= $merchantShortName ?>',
-        countryCode : "",
-        isAddressSearchEnabled : '<?= $isAddressSearchEnabled ?>',
-        isCompanySearchEnabled : '<?= $isCompanySearchEnabled ?>',
-        quote : '<?= $quoteDetailsJson ?>',
-        countrySelectionMessage : "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
-        countrySelectionShown: false,
-        searchTimeout: '',
-        selectedIndex: -1,
-        async getItems() {
-            // Guard: Don't run if element is disconnected (being destroyed during DOM morph)
-            if (!this.$el || !this.$el.isConnected) return;
+    /*
+     * TWO-25326 rebuild. `searchInput` is the ONE Alpine component name this
+     * surface may use — see the doc comment on shipping-company-loader.test.js
+     * for why: it is consumed by Hyvä Checkout's own (closed-source)
+     * address-book "add address" modal by this literal name, both via
+     * Alpine's registry AND `window.searchInput` directly, so it cannot be
+     * renamed. What it returns is a thin wrapper around the ONE shared
+     * search/dropdown/keyboard-nav/address-lookup engine
+     * (twoGatewayCompanySearchEngine, gateway_method-csp-js.phtml) — this
+     * surface has never offered a manual-entry toggle (there is no markup of
+     * its own to hang one on: its visible input is rendered by that same
+     * closed-source modal), so `manualModeSupported` stays `false`, matching
+     * the surface exactly as it always behaved.
+     */
+    // Both cross-file globals guarded: gateway_method-csp-js.phtml's inline
+    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // failure there must degrade this surface, not throw a ReferenceError
+    // out of it.
+    const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
+        || function(target) { return target; };
+    const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
+        || function() { return {}; };
+    Alpine.data('searchInput', window['searchInput'] = () => twoGatewayComposeLiveFn(
+        twoGatewayCompanySearchEngineFn({
+            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+            merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
+            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            minSearchChars: <?= (int) $companySearchMinChars ?>,
+            isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
+            isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
+            manualModeSupported: false,
+            editableCompanyId: false,
+            dropdownSelector: '.max-h-select',
+            itemSelector: 'div.cursor-pointer',
+            countrySelectionMessage: "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
+            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again, or enter details manually.')) ?>",
+            // This picker renders no inline "unavailable" notice or
+            // min-characters hint of its own (its markup lives in Hyvä
+            // Checkout's own address-book modal, outside this module) — a
+            // toast is the ONLY signal a buyer gets, so unlike the address
+            // step and the payment tile it dispatches one.
+            dispatchSearchUnavailableToast: true,
+            selectEventName: 'shipping-company-selected',
+            getQuote: function () { return this.quote; },
+            readSelection: function () { return twoShippingReadSelection(); },
+            writeSelection: function (patch) { return twoShippingWriteSelection(patch); },
+            resolveNameField: function () { return document.getElementById('shipping-company'); },
+            // The hidden `#shipping-company_id` mirror selectItem() used to
+            // write directly; the engine's own selectItem only resolves ONE
+            // name field, so the id pair's second element is synced here.
+            onCompanyCommitted: function (companyName, companyId) {
+                const idEl = document.getElementById('shipping-company_id');
+                if (idEl) idEl.value = companyId;
+            },
+            onLoaderStart: function () { window.dispatchEvent(new Event('magewire:loader:start')); },
+            onLoaderDone: function () { window.dispatchEvent(new Event('magewire:loader:done')); },
+            resolveAddressContainer: function () { return this.$el ? this.$el.closest('form') : null; },
+            /*
+             * `$el`, not `$root`, for the same reason resolveAddressContainer and
+             * searchStillValid above use it: on THIS surface the `x-data` is
+             * Hyvä's own closed-source markup, so `$root` is an element this
+             * module does not own and cannot bound — if it sits above both
+             * address forms the country scope would span the checkout. `$el` is
+             * the input this picker is bound to, which is inside the address form
+             * the buyer is editing, and it is this file's established anchor.
+             */
+            resolveCountryContext: function () { return this.$el || null; },
+            addressContainerWarning: 'Could not find shipping form container',
+            // Magewire may destroy and rebuild this instance mid-search
+            // (a DOM morph) — the historical `isConnected` guard, moved here.
+            searchStillValid: function () { return Boolean(this.$el) && this.$el.isConnected; },
+        }),
+        {
+            search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
+            // Bare object literal, not a quoted JSON string. It is parsed below, and
+            // JSON_HEX_QUOT only survives as far as the JS string layer — it
+            // un-escapes back to a bare double quote, so a product named `24" Monitor`
+            // made JSON.parse() throw and killed company search on the shipping step.
+            quote: <?= $quoteDetailsJson ?>,
 
-            this.search = this.$el.value;
-            this.selectedIndex = -1;
-            if (!this.isCompanySearchEnabled) return;
-
-            // Get country code using centralized helper (defined in gateway_method-csp-js.phtml)
-            const quoteData = JSON.parse(this.quote);
-            this.countryCode = window.twoGatewayGetCountryCode(quoteData);
-
-            if (this.countryCode) {
-                this.countrySelectionShown = false; // Reset flag when country becomes available
-            }
-
-            if (this.countryCode) {
-                clearTimeout(this.searchTimeout);
-                if (this.search.length < 3) {
-                    this.items = [];
+            /**
+             * Guard against a DOM morph tearing this instance down mid-search
+             * (the historical `!this.$el || !this.$el.isConnected` check at
+             * the top of getItems()) — retained here so it also cancels a
+             * fetch that was already in flight, not only future ones.
+             */
+            async getItems() {
+                if (!this.$el || !this.$el.isConnected) {
+                    this.abortCompanySearch();
                     return;
                 }
-
-                const self = this;
-                this.searchTimeout = setTimeout(async () => {
-                    // Guard: Don't run if element is disconnected (component destroyed)
-                    if (!self.$el || !self.$el.isConnected) return;
-
-                    window.dispatchEvent(new Event('magewire:loader:start'));
-                    try {
-                        // Build query parameters
-                        const queryParams = new URLSearchParams({
-                            country: self.countryCode ? self.countryCode.toUpperCase() : '',
-                            limit: self.companySearchLimit,
-                            offset: 0,
-                            q: unescape(self.search),
-                            client: self.client,
-                            client_v: self.clientV,
-                            merchant: self.merchant,
-                        });
-
-                        // Fetch company data
-                        const response = await fetch(self.checkoutApiUrl+'/companies/v2/company?' + queryParams);
-                        if (!response.ok) throw new Error("Network response was not ok");
-
-                        const data = await response.json();
-
-                        // Map API response to required format
-                        self.items = data.items.map(item => ({
-                            companyName: item.name,
-                            companyDisplayName: `${item.highlight} (${item.national_identifier.id})`,
-                            companyId: item.national_identifier.id,
-                            lookupId: item.lookup_id,
-                        }));
-
-                    } catch (error) {
-                        console.error("Error fetching companies:", error);
-                        self.items = [];
-                    }
-                    window.dispatchEvent(new Event('magewire:loader:done'));
-                    const filterItems = self.items.filter((item) => {
-                        return item.companyName.startsWith(self.search.toLowerCase());
-                    })
-                    if(self.items.length > 0) {
-                        self.isOpen = true;
-                        return filterItems;
-                    }
-                }, 200);
-            } else {
-                // Only show the message once per interaction to avoid spamming
-                if (!this.countrySelectionShown && this.search.length >= 3) {
-                    this.countrySelectionShown = true;
-                    window.dispatchMessages([{
-                        type: 'warning',
-                        text: this.countrySelectionMessage,
-                    }], 5000);
+                this.search = this.$el.value;
+                this.selectedIndex = -1;
+                if (!this.isCompanySearchEnabled) {
+                    this.abortCompanySearch();
+                    return;
                 }
-            }
+                await this.runCompanySearch(this.search);
+                if (this.items.length > 0) this.isOpen = true;
+            },
         },
-
-        selectItem(item) {
-            this.isOpen = false;
-            this.items = [];
-            this.selectedIndex = -1;
-            this.search = item.companyName;
-
-            // Update shipping company hidden fields only
-            const shippingCompanyInput = document.getElementById('shipping-company');
-            const shippingCompanyIdInput = document.getElementById('shipping-company_id');
-
-            if (shippingCompanyInput) {
-                shippingCompanyInput.value = item.companyName;
-            }
-
-            if (shippingCompanyIdInput) {
-                shippingCompanyIdInput.value = item.companyId;
-            }
-
-            // Store shipping company selection data (preserve quote_id for session detection)
-            const existingData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const shippingCompanySelectionData = {
-                quote_id: existingData.quote_id || '',
-                company_name: item.companyName,
-                company_id: item.companyId,
-                manual_mode: false
-            };
-
-            hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(shippingCompanySelectionData));
-
-            // Dispatch event to notify other components (payment fields will handle their own sync)
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: shippingCompanySelectionData
-            }));
-
-            const inputField = document.querySelector("#shipping-company");
-
-            if (inputField) {
-                // Dispatch a non-bubbling input event to prevent modal closure
-                inputField.dispatchEvent(new Event("input", { bubbles: false }));
-            }
-
-            if (this.isAddressSearchEnabled) {
-                this.addressLookup(item.lookupId);
-            }
-
-        },
-        nextItem() {
-            if (this.selectedIndex < this.items.length - 1) {
-                this.selectedIndex++;
-                this.adjustScroll();
-            }
-        },
-        prevItem() {
-            if (this.selectedIndex > 0) {
-                this.selectedIndex--;
-                this.adjustScroll();
-            }
-        },
-        adjustScroll() {
-            this.$nextTick(() => {
-                let dropdown = document.querySelector(".max-h-select");
-                let selectedItem = document.querySelectorAll("div.cursor-pointer")[this.selectedIndex];
-
-                if (dropdown && selectedItem) {
-                    let dropdownRect = dropdown.getBoundingClientRect();
-                    let itemRect = selectedItem.getBoundingClientRect();
-
-                    if (itemRect.bottom > dropdownRect.bottom) {
-                        dropdown.scrollTop += itemRect.bottom - dropdownRect.bottom;
-                    } else if (itemRect.top < dropdownRect.top) {
-                        dropdown.scrollTop -= dropdownRect.top - itemRect.top;
-                    }
-                }
-            });
-        },
-        selectHighlightedItem() {
-            if (this.selectedIndex >= 0 && this.items.length > 0) {
-                this.selectItem(this.items[this.selectedIndex]);
-            }
-        },
-        closeCompanyList(event) {
-            if (event.key === 'Tab') {
-                this.isOpen = false;
-                this.items = [];
-            }
-        },
-        async addressLookup(lookupId) {
-            try {
-                const queryParams = new URLSearchParams({
-                    client: this.client,
-                    client_v: this.clientV,
-                    merchant: this.merchant,
-                });
-                const response = await fetch(`${this.checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`);
-                const data = await response.json();
-
-                if (data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0]);
-                }
-            } catch (error) {
-                console.error("Error fetching address:", error);
-            }
-        },
-        setAddressData(address) {
-            // Find the shipping address form by traversing up from the company search field
-            // This ensures we only update shipping address fields, not billing
-            const shippingForm = this.$el.closest('form');
-
-            if (!shippingForm) {
-                console.warn('Could not find shipping form container');
-                return;
-            }
-
-            const cityInput = shippingForm.querySelector('input[name="city"]');
-            const postcodeInput = shippingForm.querySelector('input[name="postcode"]');
-            const streetInput = shippingForm.querySelector('input[name="street[0]"]');
-
-            if (cityInput) {
-                cityInput.value = address.city || "";
-            }
-
-            if (postcodeInput) {
-                postcodeInput.value = address.postal_code || "";
-            }
-
-            if (streetInput) {
-                streetInput.value = address.street_address || "";
-            }
-
-            // Trigger 'input' event manually with controlled bubbling
-            // Only trigger on fields we actually found and updated
-            [cityInput, postcodeInput, streetInput].forEach(input => {
-                if (input) {
-                    input.dispatchEvent(new Event('input', { bubbles: false }));
-                }
-            });
-        },
-    }));
+    ));
 
 
 });

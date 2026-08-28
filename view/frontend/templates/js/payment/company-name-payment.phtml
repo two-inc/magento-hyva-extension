@@ -8,17 +8,64 @@
 declare(strict_types=1);
 
 use Hyva\Theme\ViewModel\HyvaCsp;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 
 /** @var HyvaCsp $hyvaCsp */
 /** @var ViewModelRegistry $viewModels */
 
+/**
+ * The brand's own payment method code. Supplied as a layout argument — see
+ * hyva_checkout_index_index.xml, in this same commit, because without it
+ * getData() returns null and the first getMethodCode() call fatals.
+ *
+ * @var BrandedHyvaViewModelInterface $brandedViewModel
+ */
+$brandedViewModel = $block->getData('branded_view_model');
+
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 $currentQuoteId = $quoteDetails['quote_id'] ?? '';
+$methodCode = $brandedViewModel->getMethodCode();
 ?>
 <script>
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers and start the
+     * payment-form observer: a bare call on a page without the publisher would
+     * throw BEFORE those registrations and leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
+     */
+    const twoPaymentReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoPaymentWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
+
     /**
      * Track initialization state to prevent duplicate order intents
      */
@@ -27,13 +74,47 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     /**
      * Current quote ID from PHP - used to detect new checkout sessions
      */
-    const currentQuoteId = '<?= $currentQuoteId ?>';
+    const currentQuoteId = '<?= $escaper->escapeJs((string) $currentQuoteId) ?>';
 
     /**
      * Check if billing address is set to be the same as shipping address.
      * This respects Hyva Checkout's billingAsShipping checkbox state.
      */
+    /*
+     * Delegates to the shared window helper (TWO-25326 review round 3), which
+     * the payment tile also consults when deciding whether it may fall back to
+     * the shipping company. Two surfaces answering this question differently is
+     * how the tile ends up adopting a company the buyer has said does not apply.
+     *
+     * Resolved at CALL time with a local fallback, never bound at eval time:
+     * this template goes into `head.additional` and so runs BEFORE
+     * gateway_method-csp-js.phtml publishes the helper. Binding early would
+     * freeze the fallback permanently — the same trap the selection accessors
+     * at the top of this file already document.
+     */
+    /**
+     * Has the buyer made the billing address their own? (TWO-25461 §2.3)
+     *
+     * Gates the paths that PROPAGATE the shipping company onto the billing
+     * role, and only those. It deliberately does NOT live inside
+     * updatePaymentFields(), which is also how a company resolved FOR the
+     * billing role — including one read back out of the billing record — is
+     * written into the tile; a pin there would have blocked the buyer's own
+     * billing company from being restored, which is the opposite of protecting
+     * it.
+     *
+     * Resolved at CALL time with a permissive fallback, for the same reason as
+     * the accessors at the top of this file: this template runs before
+     * gateway_method-csp-js.phtml publishes the helper, and a missing helper
+     * must degrade to today's sync rather than silently stop every one.
+     */
+    const isBillingAddressPinned = () => Boolean(window.twoGatewayIsBillingAddressPinned)
+        && window.twoGatewayIsBillingAddressPinned();
+
     const isBillingAsShipping = () => {
+        if (window.twoGatewayIsBillingAsShipping) {
+            return window.twoGatewayIsBillingAsShipping();
+        }
         const checkbox = document.querySelector('#billing-as-shipping');
         return checkbox ? checkbox.checked : true; // Default to true if checkbox not found
     };
@@ -51,12 +132,24 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
         const companyIdInput = document.querySelector('[data-name="company_id"]');
 
         if (companyNameInput && companyIdInput) {
-            // Update DOM elements
+            /*
+             * Values only — this function does NOT touch `disabled` or the
+             * background colour any more.
+             *
+             * It used to write `disabled = false; value = …; disabled = true`
+             * plus a grey background, and never reverse it. That made every
+             * shipping sync lock the field unconditionally, so once any
+             * identifier-BEARING company had synced here, picking an
+             * identifier-LESS one left `company_id` empty AND disabled: a
+             * required field the buyer had no way to fill. The lock is now
+             * derived state in the Alpine component
+             * (`companyIdDisabled`, bound as `:disabled`), which the
+             * `update-company-data` event below recomputes from what actually
+             * arrived, and the grey comes from `input.company_id:disabled` in
+             * custom.css.
+             */
             companyNameInput.value = companyName;
-            companyIdInput.disabled = false;
             companyIdInput.value = companyId;
-            companyIdInput.disabled = true;
-            companyIdInput.style.backgroundColor = "#D3D3D3";
 
             // Sync with Alpine.js component using event dispatch
             const alpineComponent = companyNameInput.closest('[x-data]');
@@ -69,13 +162,6 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                 }));
             }
 
-            // Update saved company details
-            const updatedCompanyDetails = {
-                company_name: companyName,
-                company_id: companyId
-            };
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
-
             // Trigger order intent if requested
             if (triggerOrderIntent) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
@@ -86,40 +172,82 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     document.addEventListener("DOMContentLoaded", () => {
 
         /**
-         * Clear stale company data when a new checkout session is detected.
-         * This prevents the "Please select a country" error when ordering again in the same browser session.
+         * Drop the previous ORDER's company from this store view's selection.
+         *
+         * Quote only. The storage key carries the store view, so a store change
+         * needs no comparison — each view keeps its own selection.
+         *
+         * Byte-identical in shape to the sibling in shipping_company.phtml, and
+         * deliberately so: that template is behind the company-search config
+         * flag, so on a store with the flag OFF this is the only clearer there
+         * is and it has to behave the same.
          */
         const clearStaleCompanyDataIfNeeded = () => {
-            const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const storedQuoteId = storedData.quote_id || '';
+            const storedData = twoPaymentReadSelection();
+            const storedQuoteId = String(storedData.quote_id || '');
 
-            // If quote ID changed (new order started), clear company data
             if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                twoPaymentWriteSelection({
                     quote_id: currentQuoteId,
                     company_name: '',
                     company_id: '',
                     manual_mode: false
-                }));
-                hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+                });
+                return;
+            }
+
+            if (!storedQuoteId && currentQuoteId) {
+                twoPaymentWriteSelection({ quote_id: currentQuoteId });
             }
         };
         clearStaleCompanyDataIfNeeded();
 
-        /**
-         * Initialize previously saved company details only if it doesn't exist.
-         * This preserves company information across page reloads while allowing clean state for new sessions.
+        /*
+         * The same new-order clear for the BILLING company record
+         * (TWO-25326 review round 3).
+         *
+         * Not optional housekeeping: the billing record is a second storage key
+         * with the same lifetime problem as the first, and without this a
+         * company named on one order's payment step would be restored, as a
+         * captured read-only label, onto the NEXT order — for a buyer who never
+         * chose it and cannot see where it came from.
+         *
+         * Removed rather than blanked, because the tile's fallback-to-shipping
+         * rule keys on the record being absent; a blank record would suppress
+         * the fallback for the whole of the new checkout.
+         *
+         * Guarded on the helpers existing: this template runs before
+         * gateway_method-csp-js.phtml publishes them, so the call happens on
+         * DOMContentLoaded, by which point it has.
          */
-        if (!hyva.getBrowserStorage().getItem('already_saved_company_details')) {
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
-        }
+        const clearStaleBillingCompanyIfNeeded = () => {
+            if (!window.twoGatewayReadBillingCompany
+                || !window.twoGatewayWriteBillingCompany
+                || !window.twoGatewayClearBillingCompany) {
+                return;
+            }
+            const billingData = window.twoGatewayReadBillingCompany();
+            if (Object.keys(billingData).length === 0) return;
+
+            const billingQuoteId = String(billingData.quote_id || '');
+            if (currentQuoteId && billingQuoteId && billingQuoteId !== currentQuoteId) {
+                window.twoGatewayClearBillingCompany();
+                return;
+            }
+            if (!billingQuoteId && currentQuoteId) {
+                window.twoGatewayWriteBillingCompany({ quote_id: currentQuoteId });
+            }
+        };
+        clearStaleBillingCompanyIfNeeded();
 
         /**
          * Initialize payment fields with persisted shipping company data on page load.
          * This ensures payment section reflects the current shipping selection after page refresh.
          */
         const initializePaymentFieldsFromShipping = () => {
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+            // A propagation of the SHIPPING company, so it respects the pin.
+            if (isBillingAddressPinned()) return;
+            const shippingCompanySelectionData = twoPaymentReadSelection();
             const shippingCompany = shippingCompanySelectionData.company_name || "";
             const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
@@ -139,11 +267,18 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                 const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
 
                 if (persistedShippingIdValue) {
-                    const restoredData = {
+                    // A merging write. This used to substitute a two-key object
+                    // for the whole blob, which silently dropped `quote_id` —
+                    // and the clearer above needs both quote ids non-empty, so
+                    // one page load through here disarmed the new-order clear
+                    // for the rest of the quote. `manual_mode` has to survive
+                    // too, or a reload throws a buyer who is mid-manual-entry on
+                    // the ADDRESS form back into search mode.
+                    twoPaymentWriteSelection({
+                        quote_id: shippingCompanySelectionData.quote_id || currentQuoteId,
                         company_name: persistedShippingValue,
                         company_id: persistedShippingIdValue
-                    };
-                    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(restoredData));
+                    });
                     updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
                     paymentFieldsInitialized = true;
                 }
@@ -162,10 +297,11 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                 initializePaymentFieldsFromShipping();
                 paymentFieldsInitialized = true;
 
-                // Check if two_payment is already selected on page load and trigger order intent if needed
+                // Check if this brand's Two method is already selected on page
+                // load and trigger order intent if needed
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
-                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
+                    const shippingCompanySelectionData = twoPaymentReadSelection();
                     if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                         window.dispatchEvent(new Event("dispatch-order-intent"));
                     }
@@ -184,10 +320,10 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                             initializePaymentFieldsFromShipping();
                             paymentFieldsInitialized = true;
 
-                            // Check if two_payment is already selected and trigger order intent
+                            // Check if this brand's Two method is already selected and trigger order intent
                             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
-                                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                            if (activePaymentMethod && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>') {
+                                const shippingCompanySelectionData = twoPaymentReadSelection();
                                 if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
                                     window.dispatchEvent(new Event("dispatch-order-intent"));
                                 }
@@ -214,34 +350,93 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is "two_payment" */
-        if (paymentMethod === "two_payment") {
+        /** Check if the selected payment method is this brand's Two method */
+        if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
             /** Initialize payment method but don't overwrite existing company data */
             /** The company data should only be updated by shipping section selections */
 
-            /** Retrieve previously saved company details to check if order intent should be dispatched */
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
+            /*
+             * TWO-25326 tile bugfix batch, bug 3. Prefer the BILLING record —
+             * the payment tile's own — before falling back to the SHIPPING
+             * one, mirroring the identical billing-first fallback the tile's
+             * own initialize() already uses (gateway_method-csp-js.phtml).
+             *
+             * Without this, a company picked IN THE TILE before the buyer had
+             * selected Two as the active payment method never got its order
+             * intent fired at all: fillCompanyData() dispatches
+             * "dispatch-order-intent" on every pick, but the template's global
+             * listener drops it while a different method is active — by
+             * design, since order intent is only ever for the ACTIVE method.
+             * THIS handler is the deferred retry for exactly that case, fired
+             * once Two does become active — but it read only the SHIPPING
+             * key, which the tile never writes to (TWO-25326 review round 3
+             * split the two so a tile pick and an address-step pick cannot
+             * clobber each other). So the retry always found nothing for a
+             * tile-mode pick, and the buyer's selection silently never
+             * reached order intent.
+             *
+             * Guarded on the billing helper existing for the same reason the
+             * accessors at the top of this file are: this template can run
+             * before gateway_method-csp-js.phtml has published it.
+             *
+             * WHICH RECORD WINS IS THE PIN'S DECISION (TWO-25461 §2.3), and it
+             * is deliberately the SAME expression the tile's own initialize()
+             * evaluates. Two surfaces answering "may the shipping company be
+             * adopted as the billing one" differently is how the tile came to
+             * adopt a company the buyer had said does not apply, and a review
+             * round already fixed one such divergence here.
+             *
+             * It used to ask whether the billing record NAMED a company, which
+             * was a proxy for the old record-existence sync model — a non-empty
+             * record that names nothing (`{manual_mode}`, the `{quote_id}` stamp
+             * clearStaleBillingCompanyIfNeeded leaves, the blanked pair
+             * forgetStaleCompanyId writes) had to be excluded by hand so it
+             * could not shadow a good shipping fallback. The pin needs no such
+             * exclusion: it reads the address the buyer can see rather than
+             * guessing from what is in storage, so a stamp-only record no longer
+             * looks like an edit. When the address IS pinned and its record
+             * names no company, nothing is adopted and no intent fires — which
+             * is the correct fail-closed answer, not a lost fallback.
+             *
+             * The billing-as-shipping term is unchanged and still load-bearing:
+             * once the buyer has unticked the box, adopting the shipping company
+             * is wrong and firing order intent for it is worse.
+             *
+             * Both helpers are resolved at CALL time with a fallback, for the
+             * same reason as the accessors at the top of this file.
+             */
+            const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
+                || function () { return {}; })();
+            const shippingCompanySelectionData = twoPaymentReadSelection();
+            /*
+             * The third term is not part of the pin: it is "never replace a
+             * company with nothing". With company search mounted in the payment
+             * TILE the shipping key is never written at all, so a nameless
+             * shipping record is the normal state there and adopting it would
+             * discard the only company the buyer ever named.
+             */
+            const capturedCompanySelectionData = (!isBillingAddressPinned()
+                && isBillingAsShipping()
+                && shippingCompanySelectionData.company_name)
+                ? shippingCompanySelectionData
+                : billingCompanySelectionData;
+            const capturedCompany = capturedCompanySelectionData.company_name || "";
+            const capturedCompanyId = capturedCompanySelectionData.company_id || "";
 
-            const shippingCompany = shippingCompanySelectionData.company_name || "";
-            const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-            const savedShippingCompany = alreadySavedCompanyDetails.company_name || "";
-            const savedShippingCompanyId = alreadySavedCompanyDetails.company_id || "";
-
-            /** If we have shipping company data but payment fields are empty, populate them */
-            if (shippingCompany && shippingCompanyId) {
+            /** If we have captured company data but payment fields are empty, populate them */
+            if (capturedCompany && capturedCompanyId) {
                 const companyNameInput = document.querySelector('[data-name="company_name"]');
                 const companyIdInput = document.querySelector('[data-name="company_id"]');
 
                 if (companyNameInput && companyIdInput && !companyNameInput.value) {
                     // Use the centralized update function for consistency and Alpine.js sync
-                    updatePaymentFields(shippingCompany, shippingCompanyId);
+                    updatePaymentFields(capturedCompany, capturedCompanyId);
                     paymentFieldsInitialized = true; // Mark as initialized to prevent duplicates
                 }
             }
 
             // Trigger order intent if we have company data
-            if (shippingCompany && shippingCompanyId) {
+            if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
             }
         }
@@ -254,21 +449,44 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
         if (!isBillingAsShipping()) {
             return;
         }
+        // And never over an address the buyer has made their own (§2.3).
+        if (isBillingAddressPinned()) {
+            return;
+        }
 
         /** Retrieve the latest shipping company selection data */
-        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+        const shippingCompanySelectionData = twoPaymentReadSelection();
         const shippingCompany = shippingCompanySelectionData.company_name || "";
         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-        if (shippingCompany !== "" && shippingCompanyId !== "") {
+        /*
+         * Gated on the NAME alone. The identifier may legitimately be empty —
+         * the search response is allowed to omit `national_identifier` — and
+         * requiring it here skipped the sync entirely for such a pick, so the
+         * payment tile kept the PREVIOUS company's name AND identifier and
+         * place-order submitted company A while the buyer had selected company
+         * B. Nothing prompts a re-entry, so the buyer never sees it. Writing
+         * the empty identifier THROUGH is what keeps the two fields describing
+         * the same company — the same reasoning as fillCompanyData() no longer
+         * bailing on an empty id.
+         */
+        if (shippingCompany !== "") {
             /** Update payment method fields with shipping selection */
             const companyNameInput = document.querySelector('[data-name="company_name"]');
             const companyIdInput = document.querySelector('[data-name="company_id"]');
 
             if (companyNameInput && companyIdInput) {
-                // Check if two_payment method is active for order intent
+                // Check if this brand's Two method is active for order intent
+                // The identifier is part of the intent request, so an empty one
+                // dispatches nothing — matching fillCompanyData()'s
+                // `companyId &&` term. Without this, relaxing the gate above
+                // would have started firing intents for companies with no
+                // identifier: requests the listener discards, which still read
+                // as real submissions in the event log.
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
+                const shouldTriggerOrderIntent = Boolean(activePaymentMethod)
+                    && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>'
+                    && shippingCompanyId !== "";
 
                 // Use the centralized update function for consistency and Alpine.js sync
                 updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
@@ -289,12 +507,37 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
                     const billingAsShipping = data?.billingAsShipping;
 
                     if (billingAsShipping) {
+                        /*
+                         * The buyer's own billing company record is DROPPED
+                         * first (TWO-25461 §2.4). They have just said the
+                         * billing address is the shipping address, so a
+                         * separate billing company describes nothing — and
+                         * while it survives, the sync pin reads it as an
+                         * unreconciled edit of the billing role and refuses
+                         * every mirrored write, including the one immediately
+                         * below. This is the whole resumption path: no resume
+                         * control, just the state that justified the pin
+                         * ceasing to exist.
+                         *
+                         * Removed rather than blanked, because the tile's
+                         * fallback-to-shipping rule keys on the record being
+                         * ABSENT — see twoGatewayClearBillingCompany.
+                         */
+                        if (window.twoGatewayClearBillingCompany) {
+                            window.twoGatewayClearBillingCompany();
+                        }
                         // Billing is now same as shipping - sync company data from shipping
-                        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
+                        const shippingCompanySelectionData = twoPaymentReadSelection();
                         const shippingCompany = shippingCompanySelectionData.company_name || "";
                         const shippingCompanyId = shippingCompanySelectionData.company_id || "";
 
-                        if (shippingCompany && shippingCompanyId) {
+                        // Name alone, for the same reason as the
+                        // shipping-company-selected handler above: an
+                        // identifier-less shipping company must still overwrite
+                        // whatever the payment tile is currently holding, or
+                        // toggling billing back to "same as shipping" leaves
+                        // the previous company's details in place.
+                        if (shippingCompany) {
                             updatePaymentFields(shippingCompany, shippingCompanyId, false, true);
                         }
                     }

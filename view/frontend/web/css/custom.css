@@ -81,9 +81,8 @@ summary::marker {
  * Chip colour palette mirrors `.mode_item` on the Luma checkout
  * (Registered Organisation / Sole Trader toggle): solid Two-brand blue
  * (#3043d1) for the selected state, white fill with blue text for
- * unselected. Brand overlays that ship a different palette (e.g. ABN's
- * teal/white pairing) override these rules from their own custom.css
- * which loads after this one.
+ * unselected. Brand overlays that ship a different palette override
+ * these rules from their own custom.css which loads after this one.
  */
 .two-term-chip {
   display: flex;
@@ -95,15 +94,25 @@ summary::marker {
   background: #fff;
   color: #3043d1;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
   min-width: 80px;
   font-family: inherit;
   position: relative;
 }
 
-.two-term-chip:hover { border-color: #3043d1; }
-.two-term-chip:focus { outline: none; }
-.two-term-chip[disabled] { cursor: wait; opacity: 0.7; }
+.two-term-chip:hover {
+  border-color: #3043d1;
+}
+.two-term-chip:focus {
+  outline: none;
+}
+.two-term-chip[disabled] {
+  cursor: wait;
+  opacity: 0.7;
+}
 
 .two-term-chip--selected,
 .two-term-chip--selected:hover,
@@ -114,9 +123,21 @@ summary::marker {
   color: #fff;
 }
 
+.two-soletrader-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #3043d1;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
 /* Sole-available-term chip: informational, not interactive. Filled blue
    like the selected chip but no checkmark; days stack above the surcharge
-   like the multi-term chips (ABN-449) — matches Luma's
+   like the multi-term chips — matches Luma's
    two-term-chip--single. */
 .two-term-chip--single,
 .two-term-chip--single:hover {
@@ -144,7 +165,7 @@ summary::marker {
 }
 
 .two-term-chip--selected .two-term-chip__days::before {
-  content: '\2713';
+  content: "\2713";
   color: #fff;
   font-size: 14px;
   font-weight: 700;
@@ -156,6 +177,16 @@ summary::marker {
   opacity: 0.75;
 }
 
+/*
+ * The payment-term chips' three-dot loader. This is also the shared loading
+ * hook the company-search spinner further down has always carried alongside its
+ * own class. Every declaration here does reach the spinner through the cascade;
+ * they are simply inert on it — the spinner is a childless element with a fixed
+ * box and a background image, so the text-level declarations have nothing to
+ * affect, and `display` is redeclared by the spinner's own rule. The `> span`
+ * dot rules below apply only to the chips, which are the only markup with dot
+ * children.
+ */
 .two-term-chip__loading {
   display: inline-block;
   letter-spacing: 2px;
@@ -170,20 +201,32 @@ summary::marker {
   animation: two-term-chip-dot 1.4s infinite ease-in-out both;
 }
 
-.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
-.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+.two-term-chip__loading > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.two-term-chip__loading > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes two-term-chip-dot {
-  0%, 80%, 100% { opacity: 0.2; }
-  40%          { opacity: 1; }
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
 }
 
 /* QA polish: more breathing room between the "Selected payment terms"
    caption and the chip strip. Tailwind utility `mb-1` on the label is
    too tight visually. */
-.two-term-chips > label.label { margin-bottom: 20px; }
+.two-term-chips > label.label {
+  margin-bottom: 20px;
+}
 
-/* All links inside the Two/ABN payment-method block render blue +
+/* All links inside the payment-method block render blue +
    underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
    Hyva's Tailwind base resets <a> to inherit colour / no underline, so
    these rendered as plain text. Scope to the payment block container
@@ -191,6 +234,268 @@ summary::marker {
    beats Tailwind's element-only `a` reset, so no !important needed. A
    bare `a` would tie Tailwind's specificity and lose on load order. */
 .payment-method-custom-form a {
-    color: #0066cc;
-    text-decoration: underline;
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+/*
+ * Company-search chrome (TWO-25233, spinner reworked under TWO-25288).
+ *
+ * This is the ONLY stylesheet the Hyva checkout loads for this module, so
+ * everything the company-search spinner needs — geometry, positioning and the
+ * reference to its image asset — is here. An earlier version of this comment
+ * said the dots and their animation came from the base module and only
+ * positioning lived here; that was never true on this surface. Positioning is
+ * CSS rather than Tailwind
+ * utilities so the module does not depend on the merchant's Tailwind build
+ * having generated a specific set of inset classes.
+ */
+.two-company-search {
+  position: relative;
+}
+
+/*
+ * Bug 4.1 (2026-07-28): the focus ring must stay scoped to whichever field
+ * actually has DOM focus, not bleed across this wrapper onto the sibling
+ * Company Number field it also contains.
+ *
+ * `.two-company-search` wraps the search input AND, nested further in, the
+ * `.two-company-id` field — so a `:focus-within` ring painted on THIS
+ * element (the behaviour the shared field/input-group styling this module
+ * inherits applies to a container by default, so an input+addon pair reads
+ * as one control) frames both fields together the moment the search input
+ * gets focus, even though they are two independently labelled inputs, not
+ * one addon pair. Suppressed here rather than upstream: this selector only
+ * matches the company-search wrapper, so no other Hyvä field on the
+ * checkout is affected.
+ *
+ * The ring itself is NOT lost — it moves onto the search input directly
+ * below, the same way gateway_method.phtml's equivalent input already
+ * carries its own explicit `focus:ring focus:ring-indigo-300`. This rule
+ * cannot use that utility class directly — the input sits inside an
+ * Alpine/CSP-nonce component and the `:focus-within` suppression above
+ * needs a scoped `>`-combinator rule of its own regardless — so the colour
+ * is restated as its literal RGB. `rgb(165, 180, 252)` is Tailwind's actual
+ * `indigo-300` (`#A5B4FC`); a prior revision of this rule used
+ * `rgba(129, 140, 248, 0.5)`, which is `indigo-400`, not `indigo-300` —
+ * a one-shade drift from the token this rule is supposed to mirror.
+ */
+.two-company-search:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+
+/*
+ * TWO-25326 §7 / tile bugfix batch bug 3 — the reported frame around the
+ * company-name field and the Company Number label together.
+ *
+ * Two revisions of this rule chased the wrong mechanism. Hyvä's shared field
+ * styling treats `.input-group` as ONE control and rings it on `:focus-within`,
+ * so focusing either descendant framed the whole group; that ring is a Tailwind
+ * `box-shadow` (on the real element `border-width` computes to `0px` in both
+ * states, so the theme's border-colour change paints nothing) and suppressing it
+ * here did work. What it did NOT fix is the FAINT, PERMANENT frame the same
+ * class paints when it is not focused at all — which is what the bug report is
+ * about. The company-search control is a name input, a results panel and a
+ * number display: three separately labelled things, not one input-plus-addon
+ * pair, so it is not an input-group in the first place and no longer carries the
+ * class (form/field/company-search-control.phtml).
+ *
+ * The suppression is kept, re-scoped to the hook this module puts on that
+ * element itself, for merchant themes and branded overlays whose own field
+ * styling rings a container on `:focus-within` without needing `.input-group` to
+ * do it. The class is doubled into the selector for the same specificity reason
+ * as before — (0,2,0) rather than (0,1,0) — so a theme rule matching two classes
+ * cannot win on load order, which this module does not control.
+ */
+.two-company-search-group.two-company-search-group:focus-within {
+  outline: none;
+  box-shadow: none;
+}
+
+/*
+ * NOT a direct-child selector. The popover wraps the company-name input in
+ * `span.two-company-field-wrap` as it attaches, so `> input` stops matching the
+ * moment the control is live — which is every moment that matters.
+ *
+ * The popover's own query box is excluded: it has its own rules, and the inset
+ * below would double up on the one it already reserves for its spinner.
+ */
+.two-company-search input:not(.two-company-dropdown__query):focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.5);
+}
+
+/*
+ * Reserve room for the spinner unconditionally rather than only while
+ * searching — toggling padding would shift the caret mid-typing, and
+ * without it the spinner sits on top of a long company name.
+ *
+ * Kept on the company-NAME field even though the popover's query box is what
+ * carries a spinner, so the two inputs line their text up rather than one
+ * sitting 34px wider than the other.
+ */
+.two-company-search input:not(.two-company-dropdown__query) {
+  padding-right: 34px;
+}
+
+/*
+ * The company-search spinner: the same animated loading GIF the PrestaShop
+ * plugin already ships, drawn as a `background-image` on one childless element.
+ *
+ * A `background-image` rather than an `<img>` because a URL in this stylesheet
+ * resolves relative to the stylesheet's own published location, so the asset
+ * needs no Magento asset-helper plumbing in the templates. Static-content deploy
+ * publishes `css/` and `images/` under the same module directory, which is what
+ * makes `../images/` correct.
+ *
+ * Fixed 16px rather than `1em`: the GIF is natively 16x16 and scaling it up
+ * blurs it.
+ *
+ * The element carries both `two-company-search__spinner` (this rule) and
+ * `two-term-chip__loading` (the shared loading hook this markup has always
+ * carried, kept as a legacy/overlay hook and inert here). This rule comes later
+ * in the file and matches on a single class apiece, so it wins `display`, the
+ * one property both rules declare.
+ */
+.two-company-search__spinner {
+  position: absolute;
+  top: calc(50% - 8px);
+  right: 12px;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  background-image: url("../images/loader.gif");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 16px 16px;
+}
+
+/*
+ * The order-intent box (2026-08-05, cross-platform order-intent UI
+ * unification).
+ *
+ * ONE box in ONE place in the tile, in four states: the in-progress row and the
+ * three verdicts an intent check can reach. Between the STATES only the colours
+ * differ, so only the colours are stated per state — geometry is declared once
+ * here rather than four times in four class lists, which is how the states
+ * drifted apart in the first place. (The 3px radius matches the popover's own
+ * `.two-company-dropdown__message--unavailable`, so the tile's boxes and the
+ * popover's agree.) There is deliberately no title element in any of them: the box
+ * holds the message and nothing else, matching the other three platforms'
+ * treatment.
+ *
+ * CSS rather than Tailwind utilities, for the reason
+ * `input.company_id:disabled` gives at the bottom of this file: the module must
+ * not depend on the merchant's Tailwind build having generated a colour only
+ * this module asks for. That dependency fails SILENTLY — an uncompiled
+ * `bg-red-50` renders a borderless, colourless box that still says the check
+ * failed, which is worse than the loud failure a missing stylesheet would be.
+ *
+ * `position: relative` is load-bearing on the in-progress row: it is the
+ * positioned ancestor `.two-company-search__spinner` resolves its absolute
+ * placement against, and the row reserves space on the right for it.
+ */
+/*
+ * Until Alpine boots, nothing that `x-show` will hide may be visible.
+ *
+ * The error box is the only one of the four emitted unconditionally, and moving
+ * its border and background from (possibly uncompiled) Tailwind utilities into
+ * this file made the pre-Alpine flash CERTAIN rather than merely possible: an
+ * empty bordered red strip on every page load. Nothing else in this module used
+ * `x-cloak`, so the rule it depends on has to be declared here (round 6).
+ */
+/*
+ * Scoped to this module's own boxes, not page-wide: Hyvä's base stylesheet
+ * already declares the unscoped rule on the checkout, and a module has no
+ * business shipping a global `!important` for an attribute it uses on four
+ * elements (round 8).
+ */
+.two-order-intent-box[x-cloak] {
+  display: none !important;
+}
+
+.two-order-intent-box {
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  /*
+   * Stated, not inherited. The base stylesheet this checkout now loads carries
+   * a bare `.two-order-intent-message { margin: 0 0 1.5em }`, which the three
+   * VERDICT boxes match and the two in-progress boxes do not — so leaving
+   * margin unset drifts the states of one box apart on an axis that is
+   * supposed to be declared once.
+   */
+  margin: 0;
+}
+
+/*
+ * Two classes, so the gutter the spinner sits in does not depend on this rule
+ * appearing after `.two-order-intent-box` in the file (round 9). Reordering the
+ * stylesheet would otherwise silently shrink it back to the shared padding.
+ */
+.two-order-intent-box.two-order-intent-checking {
+  position: relative;
+  padding-right: 2rem;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+/*
+ * The sole-trader token mint and buyer read wear the same in-progress
+ * treatment, and carry a class of their own rather than joining the rule
+ * above: the order-intent box is ONE box in FOUR states, and a fifth element
+ * answering to a state's class means a query for that state can find something
+ * that is not it.
+ */
+.two-order-intent-box.two-soletrader-checking {
+  position: relative;
+  padding-right: 2rem;
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #1f2937;
+}
+
+.two-order-intent-message.approved {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+/*
+ * "Not available" is not an error — the check completed and the answer was no.
+ * Same amber the search control's own unavailable notice uses, so the two
+ * "we cannot offer this right now" surfaces in this tile read as one thing.
+ */
+.two-order-intent-message.unavailable {
+  border-color: #f5deb0;
+  background: #fdf0d5;
+  color: #6f4900;
+}
+
+.two-order-intent-message.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+/*
+ * Company-number field, locked state (TWO-25253).
+ *
+ * The field is greyed out exactly when it is disabled, by construction —
+ * `:disabled` is the single piece of state gateway_method.phtml binds, and the
+ * look derives from it here rather than from a second Alpine `:style` binding
+ * carrying the same fact. A string `:style` binding would also fight the
+ * element's `x-show`, which writes `display: none` into the same attribute.
+ *
+ * CSS rather than a Tailwind utility for the reason the positioning rules
+ * above give: the module must not depend on the merchant's Tailwind build
+ * having generated a class only this module uses.
+ */
+input.company_id:disabled {
+  background-color: #d3d3d3;
 }

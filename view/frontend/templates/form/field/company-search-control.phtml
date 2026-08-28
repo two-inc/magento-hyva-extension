@@ -1,0 +1,134 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+use Magento\Framework\Escaper;
+
+/**
+ * THE company-capture control — markup half.
+ *
+ * TWO-25503: this file renders the company-name input and the captured
+ * organisation number, and NOTHING ELSE. The popover — its query box, results,
+ * verdict lines, mode chips and the route in and out of manual entry — is built
+ * at runtime by the base plugin's `company-search-panel.js`, inside a wrapper it
+ * puts around the input below.
+ *
+ * There is no dropdown markup here on purpose. This checkout used to carry its
+ * own, and it drifted from the base plugin's on the thing that mattered: the
+ * mode chips sat in a separate row outside the panel, so the dropdown covered
+ * them and the buyer was offered the other capture modes only while the control
+ * that offers them was shut. DOM ORDER IS THE DESIGN, and the panel owns it —
+ * input, query field, results, chips — which is also what makes tab order
+ * correct with no key handling at all.
+ *
+ * Mounted from:
+ *  - form/field/companyName.phtml — the address step, when the admin setting
+ *    `Enable Company Search In Address Entry` puts the control there;
+ *  - component/payment/method/gateway_method.phtml — the payment tile, when the
+ *    same setting puts the control there instead.
+ *
+ * The behaviour half is `twoGatewayCompanySearchControl()` in
+ * component/payment/method/gateway_method-csp-js.phtml — an adapter over the
+ * shared panel, likewise one implementation, adapted per surface by the options
+ * each mount point passes.
+ *
+ * Included with `include $block->getTemplateFile(...)` rather than declared as a
+ * layout child. The address-step mount point is a Hyvä entity-form FIELD
+ * RENDERER block, created by Hyvä's own form renderer at runtime, so there is no
+ * layout node to hang a child block off; `include` is what both mount points can
+ * do identically, and it shares the caller's scope directly.
+ *
+ * Contract — the caller sets these before including:
+ *
+ * @var Escaper $escaper
+ * @var string $gwBase             branded Alpine function-name prefix
+ * @var string $twoControlAlpineData raw `x-data="…"` attribute, or '' to inherit
+ *                                   the enclosing component's Alpine scope (the
+ *                                   tile, whose search state lives on the
+ *                                   payment form's own component)
+ * @var string $twoControlInputClass  raw `class` attribute value for the
+ *                                    company-NAME input
+ * @var string $twoControlInputAttributes raw extra attributes for that input —
+ *                                    id/name/value/validation. Emitted AFTER the
+ *                                    placeholder pair on purpose: duplicate
+ *                                    attributes resolve first-occurrence-wins,
+ *                                    and the placeholder hint below must beat one
+ *                                    Hyvä's field renderer may emit from the
+ *                                    customer attribute's frontend config.
+ *
+ * The company-NUMBER display at the bottom is gated on `companyIdDisplayVisible`,
+ * which the payment tile overrides to a constant false: that surface renders the
+ * captured number inside its own single `<name> (<number>)` tile label instead,
+ * so showing it here too would print the number twice. No PHP branch — the gate
+ * is component state, so both surfaces render byte-identical markup.
+ */
+?>
+<div class="two-company-search-group w-full min-w-0">
+    <?php
+    /*
+     * Deliberately NOT `input-group`. That is Hyvä's shared styling for an input
+     * grouped with a real addon, and it paints both a container border and a
+     * `:focus-within` ring around everything inside — which read as a faint box
+     * drawn around the company name field and the Company Number label together.
+     * `w-full min-w-0` is what keeps the control inside its column: without
+     * `min-w-0` a flex/grid child is sized to its content's intrinsic minimum.
+     */
+    ?>
+    <div
+        <?= /* @noEscape */ $twoControlAlpineData ?>
+        class="two-company-search relative w-full"
+    >
+        <?php
+        /*
+         * The company-NAME field, and the panel's anchor: the panel wraps this
+         * input in `span.two-company-field-wrap` and appends itself there, so
+         * everything it renders is a sibling of this input rather than of the
+         * form.
+         *
+         * It is deliberately NOT `readonly`. The panel binds `mousedown`,
+         * `focus`, `keydown` and `input` on it natively and moves whatever
+         * arrives — typed, pasted or composed through an IME — into its own
+         * query box, restoring the captured name here. Seeding off `input`
+         * rather than `keydown` is what makes paste and IME work at all, since
+         * neither reports a printable key.
+         *
+         * `@input.debounce.300ms` survives for MANUAL entry only, where the panel
+         * has released the field and this input is the capture control. It is
+         * harmless in search mode, where onNameFieldInput() returns early.
+         *
+         * The static `placeholder` AND the `:placeholder` binding are both
+         * needed: the static one is in the server-rendered HTML before Alpine
+         * boots, the binding is what blanks it in manual entry.
+         */
+        ?>
+        <input
+            type="text"
+            class="<?= /* @noEscape */ $twoControlInputClass ?>"
+            placeholder="<?= $escaper->escapeHtmlAttr(__('Enter company name to search')) ?>"
+            :placeholder="<?= $gwBase ?>GetCompanyNamePlaceholder"
+            <?= /* @noEscape */ $twoControlInputAttributes ?>
+            autocomplete="off"
+            @input.debounce.300ms="onNameFieldInput"
+        />
+        <?php
+        /*
+         * The captured company number, as plain text right-aligned to the name
+         * field's edge — never an editable input on this control (a
+         * registry-supplied organisation number must not be typeable over).
+         *
+         * `companyIdDisplayText` rather than `companyId`: an internal
+         * placeholder identifier (`TWO:` prefix) is never shown to a buyer, and
+         * the ONE helper that decides that is twoGatewayDisplayCompanyNumber().
+         */
+        ?>
+        <div
+            x-show="companyIdDisplayVisible"
+            class="two-company-id-display mt-1 text-right text-sm text-gray-700"
+            x-text="companyIdDisplayText"
+            aria-label="<?= $escaper->escapeHtmlAttr(__('Company Number')) ?>"
+        ></div>
+    </div>
+</div>
