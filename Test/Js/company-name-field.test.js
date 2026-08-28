@@ -731,6 +731,43 @@ describe("company-name field picker", () => {
       expect(names.filter((n) => n.startsWith("@click"))).toEqual([]);
     });
 
+    /**
+     * Every Alpine binding the control renders, as `[label, attribute name]`.
+     *
+     * CSP-friendly Alpine looks the WHOLE attribute string up as a KEY, so a
+     * binding naming something the component does not define paints nothing and
+     * says nothing. The payment tile's own enumeration cannot reach these: the
+     * harness substitutes one `x-data` value for both mount points, so the
+     * control's subtree reads as a foreign scope there.
+     *
+     * @returns {Array<Array<string>>}
+     */
+    function controlBindings() {
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const found = [];
+      Array.from(doc.querySelectorAll("*")).forEach((element) => {
+        Array.from(element.attributes).forEach((attr) => {
+          const bound =
+            attr.name.startsWith("x-show") ||
+            attr.name.startsWith("x-text") ||
+            attr.name.startsWith("@") ||
+            attr.name.startsWith(":");
+          if (!bound || attr.value === "") return;
+          found.push([attr.name + '="' + attr.value + '"', attr.value]);
+        });
+      });
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    }
+
+    test.each(controlBindings())(
+      "%s names a key the component defines",
+      (_label, expression) => {
+        expect(component[expression]).toBeDefined();
+      },
+    );
+
     test("keeps the debounced input binding manual entry commits through", () => {
       // Under Hyvä's CSP-friendly Alpine the attribute is a key lookup, so a
       // name the component does not define is a silently inert control.

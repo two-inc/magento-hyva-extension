@@ -2018,8 +2018,13 @@ $quoteDetails = json_encode(
             // instead, which Magewire re-runs on every rebuild.
             observe: null,
 
-            addressFieldSelector: '[data-two-capture-host="address"] input[data-two-capture-field]',
-            tileFieldSelector: '[data-two-capture-host="tile"] input[data-two-capture-field]',
+            // `data-two-capture-active`, not `data-two-capture-field`: the
+            // address-step field renderer is registered globally and mounts on
+            // the delivery form AND the invoice form, so a page can hold two
+            // address hosts while the controller owns exactly one popover.
+            // claimCaptureField() decides which one carries the attribute.
+            addressFieldSelector: '[data-two-capture-host="address"] input[data-two-capture-active]',
+            tileFieldSelector: '[data-two-capture-host="tile"] input[data-two-capture-active]',
             fieldExists(selector) {
                 return !!document.querySelector(selector);
             },
@@ -2340,6 +2345,7 @@ $quoteDetails = json_encode(
             },
             captureFieldCleared() {
                 this.search = '';
+                this.captureFieldReleased();
             },
 
             /** @returns {Object} the quote this surface reads, plain and detached */
@@ -2369,6 +2375,15 @@ $quoteDetails = json_encode(
                 // query box whose searches can never run, and the way out is shut
                 // too because the manual chip is withheld for the same reason.
                 if (!this.isCompanySearchEnabled) return;
+                /*
+                 * The tile renders no capture field in the configuration that
+                 * puts the one control on the address step, and its own
+                 * `isCompanySearchEnabled` is a constant — so the CLAIM, which
+                 * refuses a surface with no field, is what stops it pointing
+                 * every host function at itself and racing the address step over
+                 * which storage record the buyer's company lands in.
+                 */
+                if (!this.claimCaptureField()) return;
                 window.twoGatewayCaptureSurfaceCurrent = this;
                 const capture = window.twoGatewayCompanyCapture({
                     restBaseUrl: opts.restBaseUrl,
@@ -2386,6 +2401,36 @@ $quoteDetails = json_encode(
                 capture.refreshMount();
                 capture.refreshSoleTraderAvailability();
                 this.watchCompanyPopoverForMorphs();
+            },
+
+            /**
+             * Take ownership of the one popover for this surface's field.
+             *
+             * Two address hosts can render at once — the delivery form and the
+             * invoice form — and the buyer is billed as the company on the
+             * INVOICE one, which is the same form the tile already resolves its
+             * country and address write-back against (TWO-25461 §1(a.3)). A
+             * surface that is not it defers, unless nothing else has claimed and
+             * no invoice-role form can be resolved at all.
+             *
+             * @returns {boolean} whether this surface owns the popover
+             */
+            claimCaptureField() {
+                const field = this.companyNameField();
+                if (!field) return false;
+                if (field.hasAttribute('data-two-capture-active')) return true;
+
+                const claimed = document.querySelector('input[data-two-capture-active]');
+                if (claimed && claimed.isConnected) {
+                    const invoiceForm = window.twoGatewayInvoiceRoleAddressForm();
+                    // The standing claim is the invoice-role one, or there is no
+                    // invoice-role form to prefer: leave it alone.
+                    if (!invoiceForm || !invoiceForm.contains(field)) return false;
+                    if (invoiceForm.contains(claimed)) return false;
+                    claimed.removeAttribute('data-two-capture-active');
+                }
+                field.setAttribute('data-two-capture-active', '');
+                return true;
             },
 
             /**
@@ -2434,6 +2479,7 @@ $quoteDetails = json_encode(
                     window.twoGatewayCaptureIdentityWatcher.dispose();
                 }
                 const self = this;
+                let restoring = false;
                 const apply = function () {
                     // The MODE counts as a change: it is persisted alongside the
                     // pair, and a return to search that wrote nothing left
@@ -2473,10 +2519,22 @@ $quoteDetails = json_encode(
                             detail: selectionData
                         }));
                     }
-                    surfaceCommitted.call(self, self.companyName, self.companyId, self.companyIdSource);
+                    surfaceCommitted.call(
+                        self,
+                        self.companyName,
+                        self.companyId,
+                        self.companyIdSource,
+                        restoring
+                    );
                 };
                 window.twoGatewayCaptureIdentityWatcher = identity.subscribe(apply);
+                // The priming pass restores what a rebuild destroyed. It looks
+                // like a fresh pick to every `!==` above, so a surface acting on
+                // one — the tile dispatches an order intent — is told this pass
+                // is a restore.
+                restoring = true;
                 apply();
+                restoring = false;
             },
 
             /** Blank both name inputs: the control's own, and the one that submits. */
@@ -2532,6 +2590,16 @@ $quoteDetails = json_encode(
                 if (!this.manualMode && Boolean(this.isCompanySearchEnabled)) return;
                 const capture = window.twoGatewayCompanyCaptureInstance;
                 if (capture) capture.commitManualCompany(this.search);
+            },
+
+            /**
+             * Manual entry ends the search interaction the engine still holds:
+             * a stale "unavailable" verdict and a populated result list would
+             * otherwise sit behind the released field, and the tile's own
+             * dropdown-clear hook is what puts its order-intent box back.
+             */
+            captureFieldReleased() {
+                this.closeDropdown();
             },
 
             // --- sole trader, as this checkout paints it ---
@@ -2899,8 +2967,8 @@ $quoteDetails = json_encode(
             onDropdownClear: function () {
                 this.refreshOrderIntentVerdict();
             },
-            onCompanyCommitted: function (companyName, companyId) {
-                this.fillCompanyData(companyId, companyName);
+            onCompanyCommitted: function (companyName, companyId, companyIdSource, restoring) {
+                this.fillCompanyData(companyId, companyName, !restoring);
             },
         }), {
             // State genuinely specific to this tile.

@@ -34,9 +34,9 @@ const SEARCH_API_CONTRACT = [
 
 /** The two mount points, as the controller is told to address them. */
 const ADDRESS_SELECTOR =
-  '[data-two-capture-host="address"] input[data-two-capture-field]';
+  '[data-two-capture-host="address"] input[data-two-capture-active]';
 const TILE_SELECTOR =
-  '[data-two-capture-host="tile"] input[data-two-capture-field]';
+  '[data-two-capture-host="tile"] input[data-two-capture-active]';
 
 /** A search response shaped the way the API returns one. */
 function hit(name, identifier, lookupId) {
@@ -184,9 +184,63 @@ describe("the Hyvä adapter over the shared capture controller", () => {
         controlMarkup("root") +
         '<div class="two-company-search" data-two-capture-host="tile">' +
         '<input type="text" id="tile-field" data-two-capture-field /></div>';
+      // The selectors match the CLAIM, which is what keeps one popover on a
+      // page holding two address hosts.
+      document
+        .getElementById("root-field")
+        .setAttribute("data-two-capture-active", "");
+      document
+        .getElementById("tile-field")
+        .setAttribute("data-two-capture-active", "");
 
       expect(document.querySelectorAll(ADDRESS_SELECTOR)).toHaveLength(1);
       expect(document.querySelectorAll(TILE_SELECTOR)).toHaveLength(1);
+    });
+
+    describe("which of two address hosts owns the one popover", () => {
+      /**
+       * Two address hosts, the second wrapped in a form the invoice-role
+       * resolver answers with.
+       *
+       * @param {boolean} invoiceRoleResolvable
+       * @returns {{first: HTMLInputElement, second: HTMLInputElement}}
+       */
+      function twoAddressHosts(invoiceRoleResolvable) {
+        document.body.innerHTML =
+          controlMarkup("root") +
+          '<div id="invoice-form">' +
+          controlMarkup("other") +
+          "</div>";
+        const invoiceForm = document.getElementById("invoice-form");
+        window.twoGatewayInvoiceRoleAddressForm = function () {
+          return invoiceRoleResolvable ? invoiceForm : null;
+        };
+        return {
+          first: document.getElementById("root-field"),
+          second: document.getElementById("other-field"),
+        };
+      }
+
+      test.each([
+        [true, false, true, "the invoice-role field takes it off the first"],
+        [false, true, false, "no invoice-role form leaves the first claim standing"],
+      ])(
+        "invoiceRoleResolvable=%s -> first=%s second=%s: %s",
+        (resolvable, firstKeeps, secondTakes) => {
+          const fields = twoAddressHosts(resolvable);
+
+          remount("root");
+          remount("other");
+
+          expect(fields.first.hasAttribute("data-two-capture-active")).toBe(
+            firstKeeps,
+          );
+          expect(fields.second.hasAttribute("data-two-capture-active")).toBe(
+            secondTakes,
+          );
+          expect(document.querySelectorAll(ADDRESS_SELECTOR)).toHaveLength(1);
+        },
+      );
     });
 
     test.each(H.CAPTURE_HOST_CONTRACT.map((member) => [member]))(
@@ -370,6 +424,28 @@ describe("the Hyvä adapter over the shared capture controller", () => {
 
       expect(panel().calls).toContain("releaseField");
     });
+
+    test.each([
+      ["items", [], "a result list behind the released field"],
+      ["isSearchUnavailable", false, "a stale unavailable verdict"],
+      ["searchCompletedFor", null, "the term the last search settled for"],
+      ["isOpen", false, "the panel's own open state"],
+    ])(
+      "it takes the engine's %s down with it, leaving %j: no %s",
+      (key, expected) => {
+        // The engine's own manual toggle is inert here — the controller owns
+        // the modes — so nothing else ends the search interaction, and the
+        // tile's dropdown-clear hook is what puts its verdict box back.
+        component.items = [{ companyName: "Alpha Ltd" }];
+        component.isSearchUnavailable = true;
+        component.searchCompletedFor = "alpha";
+        component.isOpen = true;
+
+        chip("manual").onActivate();
+
+        expect(component[key]).toEqual(expected);
+      },
+    );
 
     test("leaving it takes the field back and opens the search", () => {
       chip("manual").onActivate();

@@ -38,6 +38,134 @@ const H = require("./hyva-harness");
 
 const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
 
+describe("a rebuild restoring a captured company", () => {
+  /*
+   * Magewire destroys and rebuilds the tile on every totals, address and term
+   * change. The mirror's priming pass looks like a fresh pick to every
+   * comparison it makes, so without the restore flag each rebuild would clear
+   * the verdict box, raise the spinner and put another order intent on the wire
+   * — the per-company dedup record is component-local and empty by then.
+   */
+  let env;
+  let fetchStub;
+
+  /** @returns {{intents: number, component: object}} */
+  function rebuildWithStoredCompany() {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input id="shipping-country_id" value="GB" />',
+      '<form id="tile-form">',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" data-two-capture-field />',
+      "  </div>",
+      '  <input id="company_id" />',
+      "</form>",
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+
+    window.twoGatewayWriteBillingCompany({
+      company_name: "Acme Ltd",
+      company_id: "123456789",
+      company_id_source: "registry",
+    });
+
+    let intents = 0;
+    window.addEventListener("dispatch-order-intent", () => {
+      intents += 1;
+    });
+
+    const component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: document.getElementById("company_name"),
+      root: document.getElementById("tile-form"),
+    });
+    // The harness deliberately withholds `$watch`; the tile installs its own.
+    component.$watch = function () {};
+    component.initialize({ quote_id: "1", billing_country_id: "GB" });
+    return { intents: () => intents, component: component };
+  }
+
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    jest.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  test("puts no order intent on the wire", () => {
+    const rebuilt = rebuildWithStoredCompany();
+
+    expect(rebuilt.intents()).toBe(0);
+  });
+
+  test("still restores the company into the field that submits", () => {
+    rebuildWithStoredCompany();
+
+    expect(document.getElementById("company_name").value).toBe("Acme Ltd");
+  });
+});
+
+describe("a payment tile that renders no capture field", () => {
+  /*
+   * The one control lives on the address step in this configuration, so the
+   * tile renders no company field at all — but its `isCompanySearchEnabled` is
+   * a hardcoded constant, so nothing in its own state says so. Without the
+   * field check its init() would still claim the page-level controller, point
+   * every host function at a surface with no field, and race the address step
+   * over which storage record the buyer's company lands in.
+   */
+  let env;
+  let component;
+
+  beforeEach(() => {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input id="shipping-country_id" value="GB" />',
+      // The address step owns the control here.
+      '<div class="two-company-search" data-two-capture-host="address">',
+      '  <input type="text" id="address-field" data-two-capture-field />',
+      "</div>",
+      // The tile, with no capture field of its own.
+      '<form id="tile-form"><div id="tile-root"></div></form>',
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+
+    component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: document.getElementById("tile-root"),
+      root: document.getElementById("tile-form"),
+    });
+  });
+
+  afterEach(() => {
+    env.restore();
+    jest.restoreAllMocks();
+  });
+
+  test("does not claim the page-level controller", () => {
+    component.mountCompanyPopover();
+
+    expect(window.twoGatewayCaptureSurfaceCurrent).toBe(null);
+    expect(env.captureControllers).toHaveLength(0);
+  });
+
+  test("does not stamp a claim on any field", () => {
+    component.mountCompanyPopover();
+
+    expect(document.querySelectorAll("input[data-two-capture-active]")).toHaveLength(0);
+  });
+});
+
 describe("the payment tile's mounted control (integration)", () => {
   let env;
   let fetchStub;

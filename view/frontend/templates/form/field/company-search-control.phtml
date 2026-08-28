@@ -132,6 +132,25 @@ use Magento\Framework\Escaper;
          * the ONE helper that decides that is twoGatewayDisplayCompanyNumber().
          */
         ?>
+        <?php
+        /*
+         * The blocked-popup fallback, on the CONTROL rather than the payment
+         * tile: sole trader is offered wherever this control is mounted, so a
+         * link that lived on the tile left the address step's buyer with no way
+         * through when a browser refused the popup.
+         *
+         * A <button>, not an <a href="#">: it takes no navigation and needs no
+         * `.prevent` modifier to be safe under CSP Alpine.
+         */
+        ?>
+        <p x-cloak x-show="soleTraderPopupMessageVisible">
+            <button type="button"
+                    class="two-soletrader-link"
+                    data-name="soletrader_signup_link"
+                    @click="openSoleTraderSignupFromLink">
+                <?= $escaper->escapeHtml(__('Click here to log in or sign up as a Sole Trader.')) ?>
+            </button>
+        </p>
         <div
             x-show="companyIdDisplayVisible"
             class="two-company-id-display mt-1 text-right text-sm text-gray-700"

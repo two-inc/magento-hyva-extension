@@ -148,7 +148,7 @@ describe("a Magewire re-render that morphs the popover away", () => {
     env.fireMagewireHook("element.updated");
 
     expect(panel().fieldSelector).toBe(
-      '[data-two-capture-host="address"] input[data-two-capture-field]',
+      '[data-two-capture-host="address"] input[data-two-capture-active]',
     );
     expect(document.querySelectorAll(panel().fieldSelector)).toHaveLength(1);
     expect(panel().getField()[0]).toBe(field);

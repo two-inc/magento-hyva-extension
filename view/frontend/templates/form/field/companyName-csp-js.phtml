@@ -201,7 +201,12 @@ function <?= $gwBase ?>CompanySearchField() {
             const data = twoAddressReadSelection();
             const identity = window.TwoCompanyIdentity;
             if (identity) {
-                identity.captureMode(data.manual_mode ? 'manual' : 'registered');
+                // A sole-trader signup is live across rebuilds and its handshake
+                // bails unless the mode is still `soletrader`, so the stored
+                // mode — which that flow never writes — must not overwrite it.
+                if (!identity.isSoleTrader()) {
+                    identity.captureMode(data.manual_mode ? 'manual' : 'registered');
+                }
                 identity.write(
                     {
                         companyName: data.company_name || '',

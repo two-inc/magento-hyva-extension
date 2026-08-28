@@ -268,24 +268,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             </div>
             <?php
             /*
-             * The blocked-popup fallback: the buyer's way through when a
-             * browser refuses the signup popup. Raised by the shared flow, which
-             * offers it only once the tokens it would open with exist.
-             *
-             * A <button>, not an <a href="#">: it takes no navigation and needs
-             * no `.prevent` modifier to be safe under CSP Alpine.
-             */
-            ?>
-            <p x-cloak x-show="soleTraderPopupMessageVisible">
-                <button type="button"
-                        class="two-soletrader-link"
-                        data-name="soletrader_signup_link"
-                        @click="openSoleTraderSignupFromLink">
-                    <?= $escaper->escapeHtml(__('Click here to log in or sign up as a Sole Trader.')) ?>
-                </button>
-            </p>
-            <?php
-            /*
              * Only meaningful once an identity has been adopted, so its own
              * getter rather than the tab's: it reopens the hosted flow with
              * `autoselect=false` so the buyer is not handed straight back the
