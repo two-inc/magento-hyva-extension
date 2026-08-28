@@ -1867,11 +1867,17 @@ $quoteDetails = json_encode(
 
     /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */
     function twoGatewayRemountCompanyPopovers() {
+        // Over a SNAPSHOT: a remount can register a new mount, and an entry
+        // appended to the array being filtered is never visited and so is
+        // dropped by the assignment.
+        const live = window.twoGatewayCompanyMounts.filter(function (mount) {
+            if (!mount.root.isConnected) return false;
+            mount.remount();
+            return true;
+        });
         window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts
             .filter(function (mount) {
-                if (!mount.root.isConnected) return false;
-                mount.remount();
-                return true;
+                return live.indexOf(mount) !== -1 || mount.root.isConnected;
             });
     }
 
@@ -3199,7 +3205,10 @@ $quoteDetails = json_encode(
                  * out because the exit is bound on the address form.
                  */
                 const identity = window.TwoCompanyIdentity;
-                if (identity) {
+                // Not while a signup is live: that flow never writes the blob, so
+                // the stored pair is the registered company that preceded it and
+                // restoring it puts that company under sole-trader mode.
+                if (identity && !identity.isSoleTrader()) {
                     identity.write(
                         {
                             companyName: shippingCompanySelectionData.company_name || '',
@@ -3278,14 +3287,36 @@ $quoteDetails = json_encode(
                      */
                     const nameField = this.companyNameField();
                     if (nameField) nameField.value = event.detail.companyName || '';
+                    // And this tile's own state. Where the ADDRESS step owns the
+                    // control this tile claims nothing, so it carries no identity
+                    // mirror — and its order-intent verdict, its label and its
+                    // supersede guard all read `companyId`.
+                    this.search = event.detail.companyName || '';
+                    this.companyName = event.detail.companyName || '';
+                    this.companyId = event.detail.companyId || '';
+                    this.companyIdEntryRequired = Boolean(event.detail.companyName)
+                        && !event.detail.companyId;
+                    this.applyCompanyIdEditability();
                 });
 
                 this.$nextTick(() => {
-                    // A checkout that server-rendered a company nobody has
-                    // captured yet: adopt what is in the field so the popover
-                    // does not repaint over it on attach.
-                    if (this.companyName) return;
-                    this.search = document.getElementById('company_name')?.value ?? '';
+                    const restored = shippingCompanySelectionData.company_name || '';
+                    if (!restored) {
+                        // A checkout that server-rendered a company nobody has
+                        // captured yet: adopt what is in the field so the popover
+                        // does not repaint over it on attach.
+                        this.search = document.getElementById('company_name')?.value ?? '';
+                        return;
+                    }
+                    this.search = restored;
+                    // `false`: a restore is not a company the buyer just chose,
+                    // and the per-company dedup record is emptied by the same
+                    // rebuild that caused it.
+                    this.fillCompanyData(
+                        shippingCompanySelectionData.company_id || '',
+                        restored,
+                        false
+                    );
                 });
 
                 /*

@@ -49,8 +49,11 @@ describe("a rebuild restoring a captured company", () => {
   let env;
   let fetchStub;
 
-  /** @returns {{intents: number, component: object}} */
-  function rebuildWithStoredCompany() {
+  /**
+   * @param {{soleTraderInFlight: boolean}} [options]
+   * @returns {{intents: function, component: object, identity: object}}
+   */
+  function rebuildWithStoredCompany(options) {
     document.body.innerHTML = [
       '<input type="radio" name="payment-method-option" value="two_payment" checked />',
       '<input id="shipping-country_id" value="GB" />',
@@ -75,6 +78,11 @@ describe("a rebuild restoring a captured company", () => {
       company_id_source: "registry",
     });
 
+    if (options && options.soleTraderInFlight) {
+      env.identity.captureMode("soletrader");
+      env.identity.clear();
+    }
+
     let intents = 0;
     window.addEventListener("dispatch-order-intent", () => {
       intents += 1;
@@ -87,7 +95,7 @@ describe("a rebuild restoring a captured company", () => {
     // The harness deliberately withholds `$watch`; the tile installs its own.
     component.$watch = function () {};
     component.initialize({ quote_id: "1", billing_country_id: "GB" });
-    return { intents: () => intents, component: component };
+    return { intents: () => intents, component: component, identity: env.identity };
   }
 
   afterEach(() => {
@@ -107,6 +115,25 @@ describe("a rebuild restoring a captured company", () => {
     rebuildWithStoredCompany();
 
     expect(document.getElementById("company_name").value).toBe("Acme Ltd");
+  });
+
+  describe("during a live sole-trader signup", () => {
+    /*
+     * The signup outlives the component and never writes the selection blob, so
+     * the stored pair is the registered company that preceded it. Restoring it
+     * puts that company's name and number on screen under sole-trader mode, and
+     * offers "select a different sole trader" against an identity nobody
+     * adopted.
+     */
+    test.each([
+      ["captureMode", "soletrader"],
+      ["companyName", ""],
+      ["companyId", ""],
+    ])("leaves the shared identity's %s as %j", (member, expected) => {
+      const rebuilt = rebuildWithStoredCompany({ soleTraderInFlight: true });
+
+      expect(rebuilt.identity[member]()).toBe(expected);
+    });
   });
 });
 
@@ -163,6 +190,50 @@ describe("a payment tile that renders no capture field", () => {
     component.mountCompanyPopover();
 
     expect(document.querySelectorAll("input[data-two-capture-active]")).toHaveLength(0);
+  });
+
+  describe("but still tracks the company, because it renders the verdict", () => {
+    /*
+     * Claiming nothing means no identity mirror, and in this configuration the
+     * order-intent notice is the tile's only Two content. Every part of it —
+     * `refreshOrderIntentVerdict()`, the label, the supersede guard on an error
+     * reply — reads `companyId`, so a tile left at '' shows the buyer nothing at
+     * all, forever.
+     */
+    test.each([
+      ["companyName", "Acme Ltd"],
+      ["companyId", "12345678"],
+      ["search", "Acme Ltd"],
+    ])("a restore reaches %s", (member, expected) => {
+      window.twoGatewayWriteBillingCompany({
+        company_name: "Acme Ltd",
+        company_id: "12345678",
+        company_id_source: "registry",
+      });
+      component.$watch = function () {};
+
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      expect(component[member]).toBe(expected);
+    });
+
+    test.each([
+      ["companyName", "Acme Ltd"],
+      ["companyId", "12345678"],
+      ["search", "Acme Ltd"],
+    ])("a cross-step sync reaches %s", (member, expected) => {
+      // The harness withholds `$watch`; the tile installs its own.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      document.getElementById("tile-root").dispatchEvent(
+        new CustomEvent("update-company-data", {
+          detail: { companyName: "Acme Ltd", companyId: "12345678" },
+        }),
+      );
+
+      expect(component[member]).toBe(expected);
+    });
   });
 });
 
