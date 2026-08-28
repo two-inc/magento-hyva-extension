@@ -696,4 +696,16 @@ describe("the payment tile's mounted control (integration)", () => {
     // the control's display would print it twice.
     expect(component.companyIdDisplayVisible).toBe(false);
   });
+
+  test("the search text is discarded with the company, not remembered", async () => {
+    // `search` is re-read as the manual-entry name and gates the no-op return
+    // on commit, so a value surviving a discard resurrects a company the buyer
+    // abandoned.
+    select((await search("example", "123456789")).items[0]);
+    expect(component.search).toBe("Example Trading Ltd");
+
+    env.identity.clear();
+
+    expect(component.search).toBe("");
+  });
 });

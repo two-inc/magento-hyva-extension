@@ -3137,15 +3137,8 @@ $quoteDetails = json_encode(
                 return !this.manualMode;
             },
 
-            /*
-             * The mode routes are the shared CONTROLLER's and the search box,
-             * results, min-characters hint and key handling are the shared
-             * POPOVER's, so this file has members for none of them — nor for the
-             * branded `OnSearchModeClick` / `OnManualEntryClick` /
-             * `OnCompanyItemClick` aliases and the eight `GetCompanyNameId`-style
-             * getters that resolved which of two copies of each field was
-             * canonical. There is one copy of each field now.
-             */
+            // The mode routes belong to the shared controller and the search UI
+            // to the shared popover, so this file has members for neither.
 
             // The captured number is shown by the tile label below, never by
             // the control's own number display — otherwise the tile prints it

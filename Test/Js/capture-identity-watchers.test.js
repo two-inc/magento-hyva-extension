@@ -139,6 +139,81 @@ describe("two address surfaces on one page", () => {
     });
   });
 
+  describe("a surface re-mounted on the root it already held", () => {
+    test("replaces its subscription rather than adding a second", () => {
+      // The Magewire case: the morph keeps the node carrying the `x-data`, so a
+      // re-mount arrives on the SAME root. The departed-root sweep cannot reach
+      // this one — it is still connected — so only the same-key dispose retires
+      // the old subscription, and two live subscriptions on the claim-holder
+      // persist the blob and announce the pick twice per notification.
+      mountAddressControl("shipping");
+      mountAddressControl("billing");
+      const remounted = mountAddressControl("shipping");
+
+      env.identity.write(
+        { companyName: "Example Trading Ltd", companyId: "12345678" },
+        { authoritative: true },
+      );
+
+      expect(announced).toHaveLength(1);
+      expect(remounted.companyName).toBe("Example Trading Ltd");
+    });
+  });
+
+  describe("the surface that holds no claim", () => {
+    /** @param {Object} record the persisted shipping selection to plant */
+    function storeSelection(record) {
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify(record),
+      );
+    }
+
+    test("may not displace a capture the claim-holder made", () => {
+      // Both surfaces read the one shipping record, and the invoice form's copy
+      // of it is routinely the company that preceded the live capture.
+      mountAddressControl("shipping");
+      env.identity.write(
+        {
+          companyName: "Delivery Form Ltd",
+          companyId: "88888888",
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
+      storeSelection({
+        company_name: "Stored Record Ltd",
+        company_id: "77777777",
+        company_id_source: "registry",
+      });
+
+      mountAddressControl("billing");
+
+      expect(env.identity.companyName()).toBe("Delivery Form Ltd");
+      expect(env.identity.companyId()).toBe("88888888");
+    });
+
+    test("seeds an uncaptured identity non-authoritatively", () => {
+      // An authoritative write replaces both halves, empty ones included, so
+      // seeding with one is how a half nobody stored blanks a live one.
+      mountAddressControl("shipping");
+      storeSelection({ company_name: "Stored Record Ltd", company_id: "" });
+      const options = [];
+      const write = env.identity.write;
+      env.identity.write = function (written, given) {
+        options.push(given);
+        return write.call(env.identity, written, given);
+      };
+
+      mountAddressControl("billing");
+
+      expect(options).not.toHaveLength(0);
+      expect(options.every((given) => !(given && given.authoritative))).toBe(
+        true,
+      );
+    });
+  });
+
   describe("a surface whose root has left the document", () => {
     test("stops being written to once another mount has swept", () => {
       const departed = mountAddressControl("shipping");
