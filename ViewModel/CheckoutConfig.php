@@ -31,11 +31,11 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
      * into. Deliberately a local constant rather than a reference to the
-     * parent module's Two\Gateway\Model\Ui\ConfigProvider: the token never
-     * crosses the module boundary at runtime (this view model produces it and
-     * this module's own JS consumes it), and referencing the parent's
-     * constant would fatal on a parent release that predates it, defeating
-     * the method_exists() degradation in getOrderIntentApprovedNotice().
+     * parent module's config provider: the token never crosses the module
+     * boundary at runtime (this view model produces it and this module's own
+     * JS consumes it), and referencing the parent's constant would fatal on
+     * a parent release that predates it, defeating the method_exists()
+     * degradation in getOrderIntentApprovedNotice().
      */
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
@@ -420,8 +420,8 @@ class CheckoutConfig implements ArgumentInterface
      *       empty or whitespace-only) means the platform default copy. An
      *       empty override is inert; it no longer switches the notice off.
      *
-     * Mirrors Two\Gateway\Model\Ui\ConfigProvider on the Luma side; the
-     * brand.xml contract lives on Two\Gateway\Model\Brand\Descriptor.
+     * Mirrors the Luma checkout's config provider; the brand.xml contract
+     * lives on the base module's brand descriptor.
      *
      * TWO-25326 §7.3 (2026-08-03 ruling): the default copy now embeds BOTH
      * the company name and number directly in the sentence — this is what

@@ -19,15 +19,14 @@ use Two\Gateway\Service\Api\Adapter;
  * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix,
  * PR #445).
  *
- * Built directly on Adapter rather than the base module's
- * Two\Gateway\Service\Merchant\RecordProvider — see the note above the
- * constructor for why. Mirrors this repo's own AGENTS.md precedent for
- * Model\Provenance: a base-module class not yet in a release gets a small
- * local equivalent, not a dependency on it, until a release exists. As with
- * Provenance, once a `two-inc/magento2` release carries RecordProvider (or an
- * equivalent categorized/cached status service) and this module's composer
- * constraint has a floor at that release, delete this class and inject the
- * base one instead.
+ * Built directly on Adapter rather than the base module's merchant-record
+ * service — see the note above the constructor for why. Mirrors this repo's
+ * own AGENTS.md precedent for Model\Provenance: a base-module class not yet
+ * in a release gets a small local equivalent, not a dependency on it, until
+ * a release exists. As with Provenance, once a `two-inc/magento2` release
+ * carries an equivalent categorized/cached status service and this module's
+ * composer constraint has a floor at that release, delete this class and
+ * inject the base one instead.
  */
 class ApiKeyVerificationStatus
 {
@@ -37,7 +36,7 @@ class ApiKeyVerificationStatus
      * Seconds. Matches WC_Twoinc::API_KEY_VERIFICATION_TTL in the
      * woocommerce-plugin port of this fix (TWO-25326) — deliberately short,
      * and deliberately applied to a FAILED verification the same as a
-     * successful one (unlike RecordProvider's own cache, which only caches
+     * successful one (unlike the base module's own cache, which only caches
      * success): this is a binary availability gate, not a config-value
      * cache with a safe "not configured" fallback, so both a key that just
      * broke and a key that just got fixed need to surface within minutes,
@@ -116,8 +115,7 @@ class ApiKeyVerificationStatus
         // and/or `error_code` key to the decoded body — either one present
         // (translatorFailure() sets both at once) signals failure; a real
         // 2xx success payload never carries either, matching the same
-        // contract magento-plugin's own RecordProvider relies on for the
-        // same endpoint.
+        // contract the base module relies on for the same endpoint.
         $verified = is_array($result) && !isset($result['error_code']) && !isset($result['http_status']);
         $this->cache->save($verified ? '1' : '0', $cacheKey, [], self::CACHE_LIFETIME);
 
