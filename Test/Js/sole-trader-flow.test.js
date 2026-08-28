@@ -35,7 +35,7 @@ const COMPONENT = "twoGatewayHyvaPaymentMethodBase";
 /** The base URL the harness emits for `$restBaseUrl`. */
 const REST_BASE = "https://shop.test.invalid";
 /** The base URL the harness emits for `$checkoutApiUrl`. */
-const CHECKOUT_API = "https://checkout-api.test.invalid";
+const API_BASE = "https://api.test.invalid";
 /** `$checkoutPageUrl` resolves through the harness's escapeUrl rule. */
 const CHECKOUT_PAGE = "/checkout";
 
@@ -308,7 +308,7 @@ describe("token minting", () => {
     await H.flushPromises();
 
     const read = tile.fetchStub.last();
-    expect(read.url).toBe(CHECKOUT_API + "/autofill/v1/buyer/current");
+    expect(read.url).toBe(API_BASE + "/autofill/v1/buyer/current");
     expect(read.init.headers["two-delegated-authority-token"]).toBe("at-1");
     expect(read.init.credentials).toBe("include");
 

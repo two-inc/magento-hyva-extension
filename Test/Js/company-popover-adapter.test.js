@@ -386,7 +386,7 @@ describe("the Hyvä adapter over the shared popover", () => {
     test("a search is not attempted while the lookup is switched off", async () => {
       // The gate the deleted control held: this surface still mounts so the
       // buyer has a company field, but an unverified merchant must not have
-      // checkout-api requests put on the wire for them.
+      // API requests put on the wire for them.
       component.isCompanySearchEnabled = "";
 
       const result = await component
