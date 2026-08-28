@@ -120,7 +120,7 @@ describe("shipping to payment company sync", () => {
     expect(companyNameInput().value).toBe("Example Trading Ltd");
     expect(companyIdInput().value).toBe("");
     expect(syncedEvents).toEqual([
-      { companyName: "Example Trading Ltd", companyId: "" },
+      { companyName: "Example Trading Ltd", companyId: "", companyIdSource: "" },
     ]);
   });
 
@@ -137,6 +137,7 @@ describe("shipping to payment company sync", () => {
     expect(syncedEvents[syncedEvents.length - 1]).toEqual({
       companyName: "Other Example Ltd",
       companyId: "",
+      companyIdSource: "",
     });
   });
 
@@ -339,7 +340,7 @@ describe("shipping to payment company sync", () => {
       expect(companyNameInput().value).toBe("Other Example Ltd");
       expect(companyIdInput().value).toBe("");
       expect(syncedEvents).toEqual([
-        { companyName: "Other Example Ltd", companyId: "" },
+        { companyName: "Other Example Ltd", companyId: "", companyIdSource: "" },
       ]);
     });
 
@@ -482,7 +483,7 @@ describe("shipping to payment company sync", () => {
       expect(companyNameInput().value).toBe("Example Trading Ltd");
       expect(companyIdInput().value).toBe("12345678");
       expect(syncedEvents).toEqual([
-        { companyName: "Example Trading Ltd", companyId: "12345678" },
+        { companyName: "Example Trading Ltd", companyId: "12345678", companyIdSource: "" },
       ]);
     });
   });

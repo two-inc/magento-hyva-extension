@@ -1125,7 +1125,7 @@ $quoteDetails = json_encode(
      *   markup of its own to hang a toggle link on — its visible input is
      *   rendered by Hyvä Checkout's own address-book form).
      * @param {boolean} [options.querySplit=false] set by
-     *   `twoGatewayCompanySearchControl()`, so both surfaces that mount the
+     *   `twoGatewayCaptureSurfaceMixin()`, so both surfaces that mount the
      *   control get it (TWO-25326 §1): the visible name field and the panel's
      *   own query box are different state, so a keystroke in the panel never
      *   overwrites the captured name until a result is picked. Only the
@@ -2163,6 +2163,7 @@ $quoteDetails = json_encode(
             manualMode: false,
             showSoleTrader: false,
             showPopupMessage: false,
+            soleTraderBusy: false,
 
             /**
              * NOT `$root` unconditionally: on the address step the control IS
@@ -2349,7 +2350,13 @@ $quoteDetails = json_encode(
                 // The tile's `isCompanySearchEnabled` is a constant, so where
                 // the address step owns the control the CLAIM is the only thing
                 // stopping the tile pointing every host function at itself.
-                if (!this.claimCaptureField()) return;
+                const owns = this.claimCaptureField();
+                // Mirrored either way. Where the ADDRESS step owns the control
+                // this tile still paints from the identity — the sole-trader
+                // progress row, the "select a different sole trader" link and the
+                // order-intent verdict all read state only the mirror writes.
+                this.followCapturedIdentity(owns);
+                if (!owns) return;
                 window.twoGatewayCaptureSurfaceCurrent = this;
                 const capture = window.twoGatewayCompanyCapture({
                     restBaseUrl: opts.restBaseUrl,
@@ -2361,7 +2368,6 @@ $quoteDetails = json_encode(
                     manualEntryOffered: !!opts.manualEntryOffered
                 });
                 if (!capture) return;
-                this.followCapturedIdentity();
                 capture.start();
                 capture.onCountryChanged();
                 capture.refreshMount();
@@ -2431,14 +2437,21 @@ $quoteDetails = json_encode(
              * Everything this checkout does with a captured company hangs off
              * that one notification.
              */
-            followCapturedIdentity() {
+            followCapturedIdentity(owns) {
                 const identity = window.TwoCompanyIdentity;
-                // Held on `window`, not on the component: Magewire brings a NEW
-                // component object on every rebuild, so a subscription kept here
-                // would never be reachable to dispose and every dead copy would
-                // go on writing the selection blob on one notification.
-                if (window.twoGatewayCaptureIdentityWatcher) {
-                    window.twoGatewayCaptureIdentityWatcher.dispose();
+                // A CSP or deploy failure on the base module degrades this field
+                // to a plain input; the mirror must not be what throws.
+                if (!identity) return;
+                // Held on `window` and keyed per mount point, not on the
+                // component: Magewire brings a NEW component object on every
+                // rebuild, so a subscription kept here would never be reachable
+                // to dispose and every dead copy would go on writing the
+                // selection blob on one notification.
+                const slot = opts.captureHost || 'address';
+                window.twoGatewayCaptureIdentityWatchers =
+                    window.twoGatewayCaptureIdentityWatchers || {};
+                if (window.twoGatewayCaptureIdentityWatchers[slot]) {
+                    window.twoGatewayCaptureIdentityWatchers[slot].dispose();
                 }
                 const self = this;
                 let restoring = false;
@@ -2457,6 +2470,10 @@ $quoteDetails = json_encode(
                     self.companyIdSource = identity.companyIdSource();
                     self.manualMode = identity.captureMode() === 'manual';
                     self.showSoleTrader = identity.isSoleTrader();
+                    // Mirrored onto reactive state: `x-show` tracks component
+                    // properties, and the identity is a plain object no Alpine
+                    // effect can depend on.
+                    self.soleTraderBusy = identity.soleTraderBusy();
                     // The search text IS the captured name, so every path that
                     // discards a company discards this with it — a remembered
                     // value cannot be invalidated and would resurrect a company
@@ -2470,7 +2487,7 @@ $quoteDetails = json_encode(
                     // empty one, so nothing else blanks what a discarded sole
                     // trader left in `payment[company_name]`.
                     if (!self.companyName) self.clearCapturedNameFields();
-                    if (!changed) return;
+                    if (!changed || !owns) return;
                     const selectionData = self.writeCapturedSelection();
                     // The cross-step announcement is about the COMPANY, so a
                     // mode flip persists without making the other step re-read a
@@ -2492,7 +2509,7 @@ $quoteDetails = json_encode(
                         restoring
                     );
                 };
-                window.twoGatewayCaptureIdentityWatcher = identity.subscribe(apply);
+                window.twoGatewayCaptureIdentityWatchers[slot] = identity.subscribe(apply);
                 // The priming pass looks like a fresh pick to every `!==` above,
                 // so a surface acting on one — the tile dispatches an order
                 // intent — is told it is a restore.
@@ -2571,7 +2588,7 @@ $quoteDetails = json_encode(
             // The token mint runs before the hosted signup can open, so the wait
             // is real and needs saying.
             get soleTraderSpinnerVisible() {
-                return Boolean(window.TwoCompanyIdentity && window.TwoCompanyIdentity.soleTraderBusy());
+                return this.soleTraderBusy;
             },
             // Offered only once an identity has been adopted: the hosted flow
             // needs something to replace.
@@ -3274,7 +3291,8 @@ $quoteDetails = json_encode(
                             {
                                 companyName: event.detail.companyName || '',
                                 companyId: event.detail.companyId || '',
-                                companyIdSource: event.detail.companyId ? 'registry' : ''
+                                companyIdSource: event.detail.companyIdSource
+                                    || (event.detail.companyId ? 'registry' : '')
                             },
                             { authoritative: true }
                         );

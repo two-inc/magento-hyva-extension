@@ -123,7 +123,7 @@ $methodCode = $brandedViewModel->getMethodCode();
      * Update payment fields with company data and handle event synchronization.
      * Only updates if billing is same as shipping OR if forceUpdate is true.
      */
-    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false) => {
+    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false, companyIdSource = '') => {
         // Only sync if billing is same as shipping, unless force update is requested
         if (!forceUpdate && !isBillingAsShipping()) {
             return;
@@ -157,7 +157,11 @@ $methodCode = $brandedViewModel->getMethodCode();
                 alpineComponent.dispatchEvent(new CustomEvent('update-company-data', {
                     detail: {
                         companyName,
-                        companyId
+                        companyId,
+                        // Carried, not re-derived: a hand-typed number that came
+                        // back as 'registry' would re-lock the field over the
+                        // buyer's own value.
+                        companyIdSource
                     }
                 }));
             }
@@ -492,7 +496,13 @@ $methodCode = $brandedViewModel->getMethodCode();
                     && !(event.detail || {}).restored;
 
                 // Use the centralized update function for consistency and Alpine.js sync
-                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
+                updatePaymentFields(
+                    shippingCompany,
+                    shippingCompanyId,
+                    shouldTriggerOrderIntent,
+                    true,
+                    (event.detail || {}).company_id_source || ''
+                );
             }
         }
     });

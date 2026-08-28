@@ -200,6 +200,52 @@ describe("a payment tile that renders no capture field", () => {
      * reply — reads `companyId`, so a tile left at '' shows the buyer nothing at
      * all, forever.
      */
+    test("the sole-trader progress row follows the shared flow", () => {
+      // `x-show` tracks COMPONENT properties. The identity is a plain object no
+      // Alpine effect can depend on, so a getter reading it directly never
+      // repaints and the buyer watches an empty tile through the token mint.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      expect(component.soleTraderSpinnerVisible).toBe(false);
+
+      env.identity.beginFlight();
+
+      expect(component.soleTraderSpinnerVisible).toBe(true);
+      expect(component.soleTraderBusy).toBe(true);
+
+      // And it is the COMPONENT property the row reads, not the identity: only
+      // a component property is something an Alpine effect can depend on.
+      component.soleTraderBusy = false;
+      expect(component.soleTraderSpinnerVisible).toBe(false);
+    });
+
+    test("does not persist or announce what it does not own", () => {
+      // The tile reads the BILLING record and the address step owns the
+      // SHIPPING one. A tile that persisted from a mirror of the address step's
+      // identity would copy one into the other on every notification.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+      const announced = [];
+      const listener = (event) => announced.push(event.detail);
+      window.addEventListener("shipping-company-selected", listener);
+      const before = env.storage[H.BILLING_COMPANY_KEY];
+
+      try {
+        env.identity.write(
+          { companyName: "Mirrored Ltd", companyId: "999" },
+          { authoritative: true },
+        );
+      } finally {
+        window.removeEventListener("shipping-company-selected", listener);
+      }
+
+      expect(announced).toEqual([]);
+      expect(env.storage[H.BILLING_COMPANY_KEY]).toBe(before);
+      // …but the mirror still ran.
+      expect(component.companyName).toBe("Mirrored Ltd");
+    });
+
     test.each([
       ["companyName", "Acme Ltd"],
       ["companyId", "12345678"],
@@ -215,6 +261,26 @@ describe("a payment tile that renders no capture field", () => {
       component.initialize({ quote_id: "1", billing_country_id: "GB" });
 
       expect(component[member]).toBe(expected);
+    });
+
+    test("a hand-typed number keeps its provenance across the sync", () => {
+      // Re-deriving it as 'registry' makes hasVouchedNumber() true, which
+      // re-locks the number field over a value the buyer typed.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      document.getElementById("tile-root").dispatchEvent(
+        new CustomEvent("update-company-data", {
+          detail: {
+            companyName: "Acme Ltd",
+            companyId: "12345678",
+            companyIdSource: "manual",
+          },
+        }),
+      );
+
+      expect(env.identity.companyIdSource()).toBe("manual");
+      expect(env.identity.hasVouchedNumber()).toBe(false);
     });
 
     test.each([
