@@ -45,6 +45,7 @@ $generalErrorMessage = $configModel->getGeneralErrorMessage();
 $orderIntentConfig = $configModel->getOrderIntentConfig();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $soleTraderErrorMessage = (string) $configModel->getSoleTraderErrorMessage();
+$companyRequiredMessage = (string) $configModel->getCompanyRequiredMessage();
 // Emitted as a JS boolean literal, so resolved to one here rather than in a
 // ternary inside the script — the neighbouring flags are quoted strings and a
 // gate that reads `'0'` as truthy is the bug that pattern keeps producing.
@@ -2767,11 +2768,9 @@ $quoteDetails = json_encode(
                     // failures (a rejected navigation task would abort with
                     // Hyva's generic "Something went wrong" alert), so without
                     // this validator order.place() proceeds with
-                    // setPaymentData skipped and the backend rejects the order
-                    // with a raw "Invalid organization number: ''" banner. A
-                    // false return aborts placement silently, leaving
-                    // hyva.formValidation's field-level messages (e.g.
-                    // terms-not-accepted) as the feedback.
+                    // setPaymentData skipped. A false return aborts placement
+                    // silently, leaving hyva.formValidation's field-level
+                    // messages (e.g. terms-not-accepted) as the feedback.
                     hyvaCheckout.validation.register(
                         '<?= str_replace('checkout.payment.method.', '', $brandedViewModel->getMagewireBlockName()) ?>_form',
                         async () => {
@@ -2781,12 +2780,35 @@ $quoteDetails = json_encode(
                                 return true;
                             }
 
+                            let isFormValid = true;
                             try {
                                 await this.validate();
-                                return true;
                             } catch (error) {
+                                isFormValid = false;
+                            }
+
+                            // Not left to the field's own `required`: in the
+                            // default markup mode the company pair is hidden
+                            // inputs, which carry no validation at all.
+                            const companyIdField = form.querySelector('[name="payment[company_id]"]');
+                            const capturedCompanyId = companyIdField ? String(companyIdField.value || '') : '';
+
+                            if (capturedCompanyId.trim() === '') {
+                                if (typeof window.dispatchMessages === 'function') {
+                                    window.dispatchMessages([{
+                                        type: 'error',
+                                        text: '<?= $escaper->escapeJs($companyRequiredMessage) ?>',
+                                    }], 5000);
+                                } else {
+                                    // Refusing with nothing on screen is worse
+                                    // than the error this replaces, so leave a
+                                    // trace rather than failing silently.
+                                    console.error('Two: no message channel for the company-required refusal.');
+                                }
                                 return false;
                             }
+
+                            return isFormValid;
                         },
                         form
                     );

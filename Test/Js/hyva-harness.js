@@ -79,6 +79,8 @@ const PHP_VALUE_RULES = [
   // the join.
   [/^\$restBaseUrl$/, "https://shop.test.invalid"],
   [/^\$soleTraderErrorMessage$/, ESCAPED_STRING],
+  // Its own copy, not ESCAPED_STRING: its suite has to tell it apart.
+  [/^\$companyRequiredMessage$/, "Select a company first"],
   // Emitted BARE as a JS boolean literal, not quoted like the neighbouring
   // config flags. `false` is the production default for a store that has not
   // turned address autopopulation on; the phone-autofill suite overrides it via

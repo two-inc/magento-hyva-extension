@@ -547,6 +547,14 @@ class CheckoutConfig implements ArgumentInterface
         return $generalErrorMessage;
     }
 
+    public function getCompanyRequiredMessage()
+    {
+        return __(
+            "Please select your company before paying with %1.",
+            $this->brandRegistry->getProductName(),
+        );
+    }
+
     public function getInvalidEmailListMessage()
     {
         $invalidEmailListMessage = __(
