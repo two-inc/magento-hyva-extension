@@ -22,6 +22,9 @@ Magewire/             # Magewire components (if applicable)
 
 ## Git Workflow
 
+- **PRs target `main`** (prod). `staging` is the GitHub default and deploy
+  branch; `merge-back.yml` syncs `main → staging` after merges. Branch off
+  `origin/main`. Ignore the lingering legacy branches — `main` is prod.
 - Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
 - Do NOT skip commit-msg hook on feature branches
 - Never use `--no-verify` flag
@@ -97,6 +100,16 @@ published `two-inc/magento2` release, so depending on it would break DI on
 every base version a merchant can install. Once a base release carries it and
 this repo's constraint has a floor at that release, delete the local copy and
 inject the base one; the public surface is identical for exactly that reason.
+
+## Hyvä config registration
+
+The module registers itself for Hyvä's config merge via
+`etc/events.xml` (`hyva_config_generate_before`). On any install where
+this module arrives _after_ `app/etc/hyva-themes.json` was generated
+(e.g. baked images, runtime installs), run
+`bin/magento hyva:config:generate` before the theme's Tailwind build —
+otherwise the module's Tailwind classes are purged and its frontend
+renders broken (e.g. dropdowns behind form fields).
 
 ## Development Tips
 
