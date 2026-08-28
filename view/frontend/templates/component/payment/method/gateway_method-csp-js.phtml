@@ -2780,9 +2780,18 @@ $quoteDetails = json_encode(
                                 return true;
                             }
 
+                            let isFormValid = true;
+                            try {
+                                await this.validate();
+                            } catch (error) {
+                                isFormValid = false;
+                            }
+
                             // Not left to the field's own `required`: in the
                             // default markup mode the company pair is hidden
-                            // inputs, which carry no validation at all.
+                            // inputs, which carry no validation at all. Runs
+                            // even on an invalid form so a buyer missing both
+                            // this and a field-level answer sees both at once.
                             const companyIdField = form.querySelector('[name="payment[company_id]"]');
                             const capturedCompanyId = companyIdField ? String(companyIdField.value || '') : '';
 
@@ -2796,12 +2805,7 @@ $quoteDetails = json_encode(
                                 return false;
                             }
 
-                            try {
-                                await this.validate();
-                                return true;
-                            } catch (error) {
-                                return false;
-                            }
+                            return isFormValid;
                         },
                         form
                     );

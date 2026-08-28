@@ -2,14 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326: the buyer is TOLD to select a company, rather than meeting a
- * bare required-field error or nothing at all.
- *
- * Neither markup mode gets there on `required` alone. In the default mode the
- * company pair is hidden inputs, which carry no validation; in tile mode the
- * field is required but a native error names the field, not the fix. The
- * refusal itself lives server-side either way — this is the message that keeps
- * the buyer from ever reaching it.
+ * TWO-25326. The gate reads the company NUMBER, never the name, and never
+ * the field's own `required` — the default markup mode's company pair is
+ * hidden inputs, which carry no validation at all.
  */
 
 "use strict";
@@ -30,8 +25,9 @@ describe("the no-company-number message", () => {
   /**
    * @param {string|null} companyId the field's value, or null for no field
    * @param {string} selectedMethod the checked payment-method radio's value
+   * @param {string} [companyName] the name the buyer captured
    */
-  function render(companyId, selectedMethod) {
+  function render(companyId, selectedMethod, companyName) {
     const companyField =
       companyId === null
         ? ""
@@ -45,10 +41,23 @@ describe("the no-company-number message", () => {
         selectedMethod +
         '" checked />',
       '<form id="two_payment_form">',
-      '  <input type="text" id="company_name" value="" />',
+      '  <input type="text" id="company_name" name="payment[company_name]" value="' +
+        (companyName || "") +
+        '" />',
       "  " + companyField,
       "</form>",
     ].join("\n");
+  }
+
+  /** Make hyva.formValidation report the rest of the form invalid. */
+  function failFieldValidation() {
+    global.hyva.formValidation = function () {
+      return {
+        validate: function () {
+          return Promise.reject(new Error("field-level failure"));
+        },
+      };
+    };
   }
 
   beforeEach(() => {
@@ -99,16 +108,33 @@ describe("the no-company-number message", () => {
   }
 
   test.each([
-    ["", METHOD_CODE, false, true, "no company at all"],
-    ["   ", METHOD_CODE, false, true, "whitespace only"],
-    [null, METHOD_CODE, false, true, "no company field in the markup"],
-    ["123456789", METHOD_CODE, true, false, "a registered company number"],
-    ["TWO:ST:abc123", METHOD_CODE, true, false, "an internal identifier"],
-    ["", "other_method", true, false, "another method is selected"],
+    ["", "", METHOD_CODE, false, true, "no company at all"],
+    ["   ", "", METHOD_CODE, false, true, "whitespace only"],
+    [null, "", METHOD_CODE, false, true, "no company field in the markup"],
+    // The search response is allowed to omit the national identifier, so a
+    // named company with no number is a real state and is NOT a number.
+    [
+      "",
+      "Example Trading Ltd",
+      METHOD_CODE,
+      false,
+      true,
+      "a name but no number",
+    ],
+    ["123456789", "", METHOD_CODE, true, false, "a registered company number"],
+    ["TWO:ST:abc123", "", METHOD_CODE, true, false, "an internal identifier"],
+    ["", "", "other_method", true, false, "another method is selected"],
   ])(
-    "%s / %s: placement allowed=%s, message=%s (%s)",
-    async (companyId, selectedMethod, allowed, messaged, description) => {
-      render(companyId, selectedMethod);
+    "%s / %s / %s: placement allowed=%s, message=%s (%s)",
+    async (
+      companyId,
+      companyName,
+      selectedMethod,
+      allowed,
+      messaged,
+      description,
+    ) => {
+      render(companyId, selectedMethod, companyName);
 
       const result = await placeOrder();
 
@@ -124,11 +150,34 @@ describe("the no-company-number message", () => {
   );
 
   test("the message the buyer sees is the one the template carries", () => {
-    // The refusal is only useful if it names the fix, so pin the string that
-    // reaches dispatchMessages rather than merely that something was shown.
     const script = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
 
     expect(script.indexOf(COMPANY_REQUIRED_MESSAGE)).toBeGreaterThan(-1);
+  });
+
+  test("a field-level failure still blocks placement on its own", async () => {
+    // Given no company gate to trip, when the rest of the form is invalid,
+    // then placement is refused and no company message is invented.
+    failFieldValidation();
+    render("123456789", METHOD_CODE, "Example Trading Ltd");
+
+    expect(await placeOrder()).toBe(false);
+    expect(env.messages).toEqual([]);
+  });
+
+  test("both failures are reported in one submit", async () => {
+    // The company check runs even on an invalid form, so a buyer missing both
+    // does not have to submit twice to learn about the second one.
+    failFieldValidation();
+    render("", METHOD_CODE);
+
+    expect(await placeOrder()).toBe(false);
+
+    const texts = env.messages
+      .reduce((all, payload) => all.concat(payload), [])
+      .map((message) => message.text);
+
+    expect(texts).toEqual([COMPANY_REQUIRED_MESSAGE]);
   });
 
   test("the message is dispatched as an error, not a notice", async () => {
