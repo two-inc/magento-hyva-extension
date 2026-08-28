@@ -10,9 +10,10 @@ use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 /**
  * TWO-25326 (WooCommerce-plugin port, PR #445). Built directly on Adapter
- * (see the class doc on ApiKeyVerificationStatus for why RecordProvider
- * isn't usable here) — these tests assert (a) the empty/whitespace-only
- * key short-circuit never reaches Adapter at all, (b) success/failure
+ * (see the class doc on ApiKeyVerificationStatus for why the base module's
+ * merchant-record service isn't usable here) — these tests assert (a) the
+ * empty/whitespace-only key short-circuit never reaches Adapter at all,
+ * (b) success/failure
  * detection off Adapter::execute()'s error_code/http_status contract, (c)
  * the short cache this class adds so a persistent failure does not re-run
  * the live call on every call — the exact latency risk the WooCommerce

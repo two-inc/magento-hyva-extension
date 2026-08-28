@@ -10,8 +10,8 @@ npm run test:js         # equivalent, if node_modules is already installed
 CI gates this as the `Jest (Node 20)` job in `.github/workflows/ci.yml`. It is a real
 gate, not `continue-on-error`.
 
-The layout mirrors `magento-plugin`'s `Test/Js/` and `prestashop-plugin`'s `tests/js/`: a
-jest config sitting next to the tests with `rootDir` pointed back at the repo root, so a
+The layout follows the same convention as the other plugin repos: a jest config
+sitting next to the tests with `rootDir` pointed back at the repo root, so a
 test reads the shipped templates by their real repo-relative paths, and
 `testEnvironment: 'jsdom'`. Jest devDependencies were added to the **existing** root
 `package.json` (previously prettier-only) rather than to a second manifest.
@@ -132,8 +132,8 @@ resolved instead of rejecting would make either look fine.
   legitimate hit. A throw there lands inside the dropdown's own query pipeline, so it took
   the WHOLE result list down and left the field on "Searching…". Such a hit is now rendered
   with the company name alone and an empty `companyId`, the other hits in the same response
-  survive it, and a numeric `id` is coerced to a string. TWO-25253; the same defect was
-  fixed in `magento-plugin` (#286) and `woocommerce-plugin` (#393).
+  survive it, and a numeric `id` is coerced to a string. TWO-25253; the same defect is
+  fixed on the other platforms.
 - `twoGatewayGetCountryCode`'s six-step fallback order, each step pinned, ending at `''`
   rather than `undefined`.
 

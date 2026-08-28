@@ -22,7 +22,7 @@
  * TWO-25503 moved the popover into the base plugin, so the walk goes through the
  * options the tile hands the panel rather than through markup this repo renders.
  * That is the wiring claim now: the panel's own DOM, its open/close and its
- * keyboard handling are covered against the real file in magento-plugin's suite.
+ * keyboard handling are covered where that file lives, not here.
  *
  * The one thing it cannot render faithfully is `$twoControlAlpineData`: the
  * harness substitutes a single value for both mount points, so the address

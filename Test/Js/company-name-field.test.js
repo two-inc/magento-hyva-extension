@@ -14,9 +14,8 @@
  * TWO-25503 deleted this checkout's own popover. The dropdown, its query box,
  * the mode chips and the route in and out of manual entry are the base
  * plugin's shared panel (`window.TwoCompanySearchPanel`), which is not loadable
- * here — its behaviour is covered against the real file in magento-plugin's
- * suite, and the options this checkout hands it in
- * `company-popover-adapter.test.js`.
+ * here — its behaviour is covered where that file lives, and the options this
+ * checkout hands it in `company-popover-adapter.test.js`.
  *
  * What is left for this suite is the ENGINE beneath the panel and the address
  * step's own wiring over it. Searches are driven two ways:

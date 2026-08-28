@@ -96,8 +96,8 @@ so it never dirties the working tree. `.two-deployed-commit` is gitignored and
 must never be committed: a committed stamp would be frozen at commit time and
 would shadow the two fresher signals.
 
-`Provenance` is deliberately a near-copy of `Two\Gateway\Model\Provenance` in
-the base plugin rather than an injection of it — that class ships in no
+`Provenance` is deliberately a near-copy of the base module's equivalent
+provenance model rather than an injection of it — that class ships in no
 published `two-inc/magento2` release, so depending on it would break DI on
 every base version a merchant can install. Once a base release carries it and
 this repo's constraint has a floor at that release, delete the local copy and
@@ -245,7 +245,7 @@ Three layers, innermost first:
 
 | Layer                                        | Where                                                                                                                                                                                                                  | Owns                                                                                                                                                                              |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Popover — `CompanySearchPanel`               | **two-inc/magento2**, `view/frontend/web/js/model/company-search-panel.js`, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel` | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
+| Popover — `CompanySearchPanel`               | **two-inc/magento2**, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel`                                                        | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
 | Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
 | Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
 
@@ -263,11 +263,11 @@ vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
 `window.TwoCompanySearchPanel` (`installHyvaEnvironment()` returns
 `companyPanels`, with `.options` and `.calls`). What this repo tests is its own
 half of the contract — the options the adapter passes and the search API it
-builds over the engine. The panel's own behaviour is covered against the real
-file in magento-plugin's suite. The stub does build the wrapper and panel node
-the real one builds, and answers `isBound()` from them: that is the minimum DOM
-that makes a re-render's morph observable here, and a constant `true` is the
-answer that hides it.
+builds over the engine. The panel's own behaviour is covered where that file
+lives, not here. The stub does build the wrapper and panel node the real one
+builds, and answers `isBound()` from them: that is the minimum DOM that makes a
+re-render's morph observable here, and a constant `true` is the answer that
+hides it.
 
 **The popover's STYLING comes from the base plugin too** —
 `<css src="Two_Gateway::css/style.css"/>`, loaded BEFORE `custom.css` so this
@@ -277,11 +277,11 @@ siblings, which this checkout already paints: any class that genuinely needs to
 mesh with Hyvä's styling gets a **selective override**, written after someone
 has looked at the result rather than pre-emptively.
 
-**Known base-plugin defect, not fixed here:** the panel's
-`removeBackToSearchLink()` sweeps `document.querySelectorAll` for its return
-link, so with two panels on one page — the delivery form and the invoice form —
-one entering or leaving manual entry deletes the other's only route out of it.
-Fix belongs in magento-plugin, scoped to the panel's own wrapper.
+**Known base-plugin defect, not fixed here:** the panel clears its return link
+across the whole document instead of its own wrapper, so with two panels on one
+page — the delivery form and the invoice form — one leaving manual entry
+deletes the other's only route out of it. Fix belongs in the base module,
+scoped to the panel's own wrapper.
 
 `form/field/company-search-control.phtml` is now only the company-name input and
 the organisation-number display. **Do not put a dropdown, a query box, a hint
