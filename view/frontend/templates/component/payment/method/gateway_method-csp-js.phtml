@@ -2410,12 +2410,10 @@ $quoteDetails = json_encode(
                 if (watched) return;
                 window.twoGatewayCompanyMounts.push({
                     root: root,
-                    // Through mountCompanyPopover(), not the controller's own
+                    // Through the surface's mount, not the controller's
                     // refreshMount(): a morph reinstates the server markup, which
-                    // carries no `data-two-capture-active`, so the mount selector
-                    // matches nothing until this surface has claimed its field
-                    // again. Idempotent — the controller re-points rather than
-                    // rebuilding when nothing moved.
+                    // carries no `data-two-capture-active`, so the selector
+                    // matches nothing until this surface has claimed again.
                     remount: function () {
                         self.mountCompanyPopover();
                     }
@@ -2473,11 +2471,9 @@ $quoteDetails = json_encode(
                     // pair that has not moved.
                     if (!pairChanged) return;
                     if (opts.selectEventName) {
-                        // `restored` travels with it: the other step still has to
-                        // SYNC — it may be reading a different storage record —
-                        // but a restore is not a company the buyer just chose, and
-                        // answering one with an order intent puts a fresh request
-                        // on the wire for every re-render.
+                        // `restored` travels with it: the other step still syncs
+                        // (it may read a different storage record) but must not
+                        // answer a restore with an order intent.
                         window.dispatchEvent(new CustomEvent(opts.selectEventName, {
                             detail: Object.assign({ restored: restoring }, selectionData)
                         }));

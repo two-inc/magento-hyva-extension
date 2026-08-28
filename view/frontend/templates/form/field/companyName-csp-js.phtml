@@ -246,9 +246,8 @@ function <?= $gwBase ?>CompanySearchField() {
                 company_id_source: 'manual'
             });
 
-            // `restored: false` explicitly, so both routes onto this event carry
-            // the key and the payment step never has to read an absent one as
-            // "the buyer chose this".
+            // Explicit, so both routes onto this event carry the key and an
+            // absent one is never read as "the buyer chose this".
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
                 detail: Object.assign({ restored: false }, companyData)
             }));
