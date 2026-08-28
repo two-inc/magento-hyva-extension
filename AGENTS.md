@@ -22,9 +22,6 @@ Magewire/             # Magewire components (if applicable)
 
 ## Git Workflow
 
-- **PRs target `main`** (prod). `staging` is the GitHub default and deploy
-  branch; `merge-back.yml` syncs `main → staging` after merges. Branch off
-  `origin/main`. Ignore the lingering legacy branches — `main` is prod.
 - Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
 - Do NOT skip commit-msg hook on feature branches
 - Never use `--no-verify` flag
@@ -100,16 +97,6 @@ published `two-inc/magento2` release, so depending on it would break DI on
 every base version a merchant can install. Once a base release carries it and
 this repo's constraint has a floor at that release, delete the local copy and
 inject the base one; the public surface is identical for exactly that reason.
-
-## Hyvä config registration
-
-The module registers itself for Hyvä's config merge via
-`etc/events.xml` (`hyva_config_generate_before`). On any install where
-this module arrives _after_ `app/etc/hyva-themes.json` was generated
-(e.g. baked images, runtime installs), run
-`bin/magento hyva:config:generate` before the theme's Tailwind build —
-otherwise the module's Tailwind classes are purged and its frontend
-renders broken (e.g. dropdowns behind form fields).
 
 ## Development Tips
 
@@ -251,9 +238,9 @@ load it with no RequireJS, no jQuery and no Knockout. It takes three injected
 options — `search`, `translate` and `observe`. This checkout injects the first
 two and deliberately withholds `observe`: `$.async` has no equivalent here, and
 a MutationObserver per mount is what froze the checkout on this ticket, so the
-re-render's own `element.updated` hook drives the re-bind instead. Do not reach
-into the panel; if it needs to do something new, change it in the base plugin so
-both checkouts get it.
+re-render's own `element.updated` hook drives the re-bind instead. Do not reach into the panel; if
+it needs to do something new, change it in the base plugin so both checkouts
+get it.
 
 **Its markup is not testable here.** The file is not in this repo and there is no
 vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
