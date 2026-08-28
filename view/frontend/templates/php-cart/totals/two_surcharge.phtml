@@ -11,11 +11,11 @@ declare(strict_types=1);
  * Rendered inside the x-for segment loop in Hyvä's
  * Magento_Checkout::php-cart/totals.phtml. Each totals child template
  * gates itself on the loop's `segment.code`, so this row only appears
- * when the `two_surcharge` segment is present. The server-side Total
- * Collector (Two\Gateway\Model\Total\Surcharge) only emits that segment
- * when the Two payment method and a term are active on the quote, so its
- * presence is itself the signal that the surcharge applies — the cart
- * page has no payment-method selector to gate on.
+ * when the `two_surcharge` segment is present. The base module's surcharge
+ * total collector only emits that segment when the Two payment method and
+ * a term are active on the quote, so its presence is itself the signal
+ * that the surcharge applies — the cart page has no payment-method
+ * selector to gate on.
  *
  * Mirrors the sibling core totals (discount.phtml / shipping.phtml):
  * `segment.title` carries the surcharge description (or "Payment terms

@@ -47,7 +47,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  * bare version string and the admin panel still renders.
  *
  * ---------------------------------------------------------------------------
- * WHY THIS IS DUPLICATED FROM Two\Gateway\Model\Provenance (TWO-25205)
+ * WHY THIS IS DUPLICATED (TWO-25205)
  * ---------------------------------------------------------------------------
  * The base plugin two-inc/magento2 owns the canonical implementation and this
  * class mirrors its contract deliberately — same order, same regexes, same
@@ -55,20 +55,18 @@ use Magento\Framework\Component\ComponentRegistrar;
  *
  * Reuse would be the obvious call (this extension already sequences after
  * Two_Gateway and constructor-injects base classes elsewhere, so there is no
- * circularity), but `Two\Gateway\Model\Provenance` ships in NO published base
- * release: it landed on the base plugin's `staging` branch after the 2.1.2 tag
- * and no tag contains it. This extension's composer constraint on the base is
- * `~2.0.0`, which resolves 2.0.x only, and even the relaxation in flight
- * (`^2.0`) tops out at 2.1.2 — every base version a merchant can actually
- * install today lacks the class. Injecting it would make THIS block
- * un-instantiable on every real install, i.e. a hard DI failure and a broken
- * admin config page, which is a wildly disproportionate cost for a diagnostic
- * string. Beyond that, the zip-drop shape above has no vendor/ tree at all, so
- * base-class autoloadability is not something this artifact can assume.
+ * circularity), but no published base release carries the equivalent model:
+ * every base version a merchant can actually install today lacks it, under
+ * this extension's current constraint or the relaxation in flight. Injecting
+ * it would make THIS block un-instantiable on every real install, i.e. a hard
+ * DI failure and a broken admin config page, which is a wildly
+ * disproportionate cost for a diagnostic string. Beyond that, the zip-drop
+ * shape above has no vendor/ tree at all, so base-class autoloadability is not
+ * something this artifact can assume.
  *
- * When a base release ships Provenance AND this extension's constraint has a
- * floor at that release, delete this class and inject the base one — the
- * public surface is identical on purpose so that swap is a rename.
+ * When a base release ships it AND this extension's constraint has a floor at
+ * that release, delete this class and inject the base one — the public surface
+ * is identical on purpose so that swap is a rename.
  */
 class Provenance
 {

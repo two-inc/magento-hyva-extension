@@ -4,11 +4,10 @@
  *
  * Jest config for the module's browser JS.
  *
- * Mirrors magento-plugin's Test/Js/jest.config.js and prestashop-plugin's
- * tests/js/jest.config.js: the config sits next to the tests, `rootDir` points
- * back at the repo root so a test can read the shipped template files by their
- * real repo-relative paths, and jsdom supplies the document the Alpine
- * components need.
+ * Mirrors the other plugin repos: the config sits next to the tests,
+ * `rootDir` points back at the repo root so a test can read the shipped
+ * template files by their real repo-relative paths, and jsdom supplies the
+ * document the Alpine components need.
  */
 
 module.exports = {

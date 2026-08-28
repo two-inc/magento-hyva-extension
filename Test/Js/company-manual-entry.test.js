@@ -15,7 +15,7 @@
  * this repo neither ships nor can load — so what is testable here is the
  * adapter's half: which chips it offers, what each one runs, and what it tells
  * the panel to do. The chip's rendering, its keyboard behaviour and the return
- * link are covered against the real file in magento-plugin's suite.
+ * link are covered where that file lives, not here.
  *
  * Two traps this suite has to stay out of, both proven in this repo:
  *

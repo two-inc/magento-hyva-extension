@@ -752,8 +752,8 @@ function wrapField(field) {
  * copy here to load and no vendor tree in CI, so what this repo can test is its
  * own half of the contract: the options the adapter hands the panel, and the
  * six-member search API it builds over the engine. The panel's own behaviour —
- * the DOM it builds, its open/close, its keyboard handling — is covered by
- * magento-plugin's suite, against the real file.
+ * the DOM it builds, its open/close, its keyboard handling — is covered where
+ * that file lives, not here.
  *
  * Recording, not inert: a test asserts what the adapter passed, so a stub that
  * silently swallowed its options would make every such assertion vacuous.
