@@ -105,18 +105,12 @@ use Magento\Framework\Escaper;
          * `@input.debounce.300ms` survives for MANUAL entry only, where the panel
          * has released the field and this input is the capture control. It is
          * harmless in search mode, where onNameFieldInput() returns early.
-         *
-         * The static `placeholder` AND the `:placeholder` binding are both
-         * needed: the static one is in the server-rendered HTML before Alpine
-         * boots, the binding is what blanks it in manual entry.
          */
         ?>
         <input
             type="text"
             data-two-capture-field
             class="<?= /* @noEscape */ $twoControlInputClass ?>"
-            placeholder="<?= $escaper->escapeHtmlAttr(__('Enter company name to search')) ?>"
-            :placeholder="<?= $gwBase ?>GetCompanyNamePlaceholder"
             <?= /* @noEscape */ $twoControlInputAttributes ?>
             autocomplete="off"
             @input.debounce.300ms="onNameFieldInput"

@@ -157,7 +157,6 @@ function <?= $gwBase ?>CompanySearchField() {
         editableCompanyIdExtraUnlock: function () { return !this.isCompanySearchEnabled; },
         countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
         selectEventName: 'shipping-company-selected',
-        companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
         getQuote: function () { return this.quoteData; },
         readSelection: function () { return twoAddressReadSelection(); },
         writeSelection: function (patch) { return twoAddressWriteSelection(patch); },

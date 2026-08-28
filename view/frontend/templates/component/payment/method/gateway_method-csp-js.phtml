@@ -1840,7 +1840,6 @@ $quoteDetails = json_encode(
      * mismatch is silent, degrading to the untranslated English.
      */
     window.twoGatewayPanelStrings = window.twoGatewayPanelStrings || {
-        'Enter company name to search': '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
         'Search for company': '<?= $escaper->escapeJs(__('Search for company')) ?>',
         'Enter %1 or more characters': '<?= $escaper->escapeJs(__('Enter %1 or more characters')) ?>',
         'No matches found': '<?= $escaper->escapeJs(__('No matches found')) ?>',
@@ -2155,9 +2154,6 @@ $quoteDetails = json_encode(
         });
 
         return twoGatewayComposeLive(window.twoGatewayCompanySearchEngine(engineOptions), {
-            companyNamePlaceholder: typeof opts.companyNamePlaceholder === 'string'
-                ? opts.companyNamePlaceholder
-                : '',
             // Mirrors of the shared identity, so the templates bind reactive
             // Alpine state rather than reaching into the controller.
             manualMode: false,
@@ -2665,16 +2661,6 @@ $quoteDetails = json_encode(
             ['!companyIdDisplayVisible']() {
                 return !this.companyIdDisplayVisible;
             },
-
-            /**
-             * Bound as `:placeholder`. The markup also carries a static
-             * `placeholder` with the same string, so the hint is in the
-             * server-rendered HTML before Alpine boots; this is what lets manual
-             * mode clear it afterwards.
-             */
-            <?= $gwBase ?>GetCompanyNamePlaceholder() {
-                return this.manualMode ? '' : this.companyNamePlaceholder;
-            },
         });
     };
 
@@ -2912,7 +2898,6 @@ $quoteDetails = json_encode(
             isAddressSearchEnabled: false,
             editableCompanyId: true,
             countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
-            companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose

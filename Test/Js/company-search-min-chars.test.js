@@ -41,7 +41,7 @@ const path = require("path");
 const H = require("./hyva-harness");
 
 /** The exact English source strings. A byte off and the dictionaries miss. */
-const PLACEHOLDER_MSGID = "Enter company name to search";
+const REMOVED_WATERMARK_MSGID = "Enter company name to search";
 const MIN_CHARS_MSGID = "Enter %1 or more characters";
 
 /** The PHP variable every surface reads the threshold out of. */
@@ -68,8 +68,8 @@ const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
 const PAYMENT_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
 const SHIPPING_COMPONENT = "searchInput";
 
-/** The address field's own input, by selector. */
-const ADDRESS_INPUT = "input[type=text]";
+/** The shared control's capture input, by selector. */
+const CAPTURE_FIELD = "input[data-two-capture-field]";
 
 /**
  * The min-characters hint, with a body this repo can see the count land in.
@@ -100,23 +100,6 @@ const THRESHOLD_TEMPLATES = [
   H.SHIPPING_COMPANY_TEMPLATE,
   H.GATEWAY_METHOD_TEMPLATE,
   H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-];
-
-/**
- * `$twoControlInputAttributes` as the ADDRESS STEP supplies it.
- *
- * The harness's default rule resolves this parameter to the payment tile's
- * value, because that surface is the one whose selectors need the exact
- * `company_name` id/name. The address step builds it from the Hyvä entity
- * field's own config instead — `renderAttributes()`, which the harness maps to
- * `name="company"` — and that marker is what the attribute-ORDER assertion below
- * measures its position against.
- */
-const ADDRESS_CONTROL_ATTRS_RULE = [
-  [
-    /^\$twoControlInputAttributes$/,
-    'name="company" required data-validate=\'{"required":true}\'',
-  ],
 ];
 
 /**
@@ -264,37 +247,22 @@ describe("company-search threshold provenance", () => {
     expect(viewModel).toContain("return self::COMPANY_SEARCH_MIN_CHARS;");
   });
 
-  test("ONE hint string, emitted from ONE file, in the exact English source text", () => {
-    // REWRITTEN 2026-08-05 (TWO-25326). This used to assert BOTH hint strings,
-    // because each surface emitted its own copy of the control markup and so its
-    // own copy of the copy. There is one control now
-    // (form/field/company-search-control.phtml, included by both mount points),
-    // so "both strings agree" is no longer a thing that can be true or false —
-    // there is one string, and this pins where it lives.
-    //
-    // Character for character, either way: these resolve against dictionaries
-    // maintained in the base Two Magento module, and a reworded key silently
-    // falls back to English in every other locale.
+  test.each([
+    [CONTROL_MARKUP_TEMPLATE, "the shared control"],
+    [H.COMPANY_NAME_TEMPLATE, "the address surface's component"],
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, "the address mount point"],
+    [H.GATEWAY_METHOD_TEMPLATE, "the payment component"],
+    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, "the payment mount point"],
+    [H.SHIPPING_COMPANY_TEMPLATE, "the address-book modal"],
+  ])("%s keeps no trace of the removed watermark (%s)", (relPath) => {
+    expect(templateSource(relPath)).not.toContain(REMOVED_WATERMARK_MSGID);
+  });
+
+  test("ONE min-characters hint string, in the exact English source text", () => {
+    // Character for character: it resolves against dictionaries maintained in
+    // the base Two Magento module, and a reworded key silently falls back to
+    // English in every other locale.
     const control = templateSource(CONTROL_MARKUP_TEMPLATE);
-
-    expect(control).toContain("__('" + PLACEHOLDER_MSGID + "')");
-    // The JS side keeps its own copy of the placeholder msgid deliberately: it is
-    // the value `:placeholder` restores when the buyer leaves manual entry, so it
-    // has to reach the component as data. Same source text, or the hint changes
-    // when Alpine boots.
-    expect(templateSource(H.COMPANY_NAME_TEMPLATE)).toContain(
-      "__('" + PLACEHOLDER_MSGID + "')",
-    );
-
-    // And the string is emitted from the control ALONE. A second copy in a mount
-    // point's own markup is how the two surfaces drifted apart in the first place.
-    [H.COMPANY_NAME_MARKUP_TEMPLATE, H.GATEWAY_METHOD_MARKUP_TEMPLATE].forEach(
-      (relPath) => {
-        expect(templateSource(relPath)).not.toContain(
-          "__('" + PLACEHOLDER_MSGID + "')",
-        );
-      },
-    );
 
     // The min-characters key moved to the panel's string map (TWO-25503): the
     // shared popover renders the hint, so the count is substituted in JS from
@@ -331,7 +299,7 @@ describe("company-search threshold provenance", () => {
     dictionaries.forEach((name) => {
       const csv = fs.readFileSync(path.join(i18nDir, name), "utf8");
 
-      expect(csv).not.toContain(PLACEHOLDER_MSGID);
+      expect(csv).not.toContain(REMOVED_WATERMARK_MSGID);
       expect(csv).not.toContain(MIN_CHARS_MSGID);
       // And never the count spelled into the key, in any locale: that needs one
       // row per threshold value and silently misses the day the threshold moves.
@@ -421,88 +389,18 @@ describe.each([
   });
 });
 
-describe("address field — empty-field hint (element 3)", () => {
-  test("the input carries a server-rendered placeholder", () => {
-    const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+describe("the capture field carries no watermark", () => {
+  test.each([
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, "the address mount point"],
+    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, "the payment mount point"],
+  ])("%s renders the capture field placeholder-less (%s)", (relPath) => {
+    const markup = H.renderTemplateMarkup(relPath);
     const doc = new DOMParser().parseFromString(markup, "text/html");
-    const input = doc.querySelector(ADDRESS_INPUT);
+    const input = doc.querySelector(CAPTURE_FIELD);
 
     expect(input).not.toBeNull();
-    // The harness resolves every `__()` to one placeholder string, so this
-    // asserts the attribute is PRESENT and routed through the translator and
-    // escaper — the msgid itself is pinned at source level above.
-    expect(input.getAttribute("placeholder")).toBe(H.ESCAPED_STRING);
-  });
-
-  test("the placeholder wins over one the field renderer may emit", () => {
-    // Duplicate attributes resolve first-occurrence-wins, and Hyvä's renderer
-    // is free to emit a `placeholder` from the customer attribute's frontend
-    // config. Ours has to be emitted first or the hint is silently absent
-    // wherever it does. `renderAttributes()` resolves to a `name="company"`
-    // fixture, which is what marks its position in the tag.
-    //
-    // `ADDRESS_CONTROL_ATTRS_RULE` is what puts that marker in the tag at all
-    // (TWO-25326, 2026-08-05): the entity-field attributes are now passed INTO the
-    // shared control as `$twoControlInputAttributes`, and the harness's default
-    // rule for that parameter carries the payment tile's id/name instead. This is
-    // the address step's own value, so the ordering measured here is the ordering
-    // this surface actually ships.
-    const markup = H.renderTemplateMarkup(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      ADDRESS_CONTROL_ATTRS_RULE,
-    );
-    const openTag = /<input\b[^>]*>/.exec(markup);
-
-    expect(openTag).not.toBeNull();
-    const placeholderAt = openTag[0].indexOf("placeholder=");
-    const renderedAttrsAt = openTag[0].indexOf('name="company"');
-
-    expect(placeholderAt).toBeGreaterThan(-1);
-    expect(renderedAttrsAt).toBeGreaterThan(-1);
-    expect(placeholderAt).toBeLessThan(renderedAttrsAt);
-  });
-
-  test("the Alpine binding names a getter the component defines", () => {
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      ADDRESS_INPUT,
-      ":placeholder",
-    );
-
-    const mounted = mountWithInjectedThreshold(
-      H.COMPANY_NAME_TEMPLATE,
-      ADDRESS_COMPONENT,
-    );
-    try {
-      // Under CSP Alpine this is a key lookup; an undefined value here is a
-      // binding that blanks the placeholder instead of setting it.
-      expect(typeof mounted.component[bound]).toBe("function");
-      expect(mounted.component[bound]()).toBe(H.ESCAPED_STRING);
-    } finally {
-      mounted.restore();
-    }
-  });
-
-  test("manual entry clears the placeholder", () => {
-    const bound = H.readAlpineBinding(
-      H.COMPANY_NAME_MARKUP_TEMPLATE,
-      ADDRESS_INPUT,
-      ":placeholder",
-    );
-    const mounted = mountWithInjectedThreshold(
-      H.COMPANY_NAME_TEMPLATE,
-      ADDRESS_COMPONENT,
-    );
-    try {
-      mounted.component.manualMode = true;
-
-      // "Enter company name to search" over a field being filled in by hand is
-      // wrong, and is the reason the binding exists at all alongside the static
-      // attribute.
-      expect(mounted.component[bound]()).toBe("");
-    } finally {
-      mounted.restore();
-    }
+    expect(input.getAttribute("placeholder")).toBeNull();
+    expect(input.getAttribute(":placeholder")).toBeNull();
   });
 });
 
