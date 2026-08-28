@@ -2457,9 +2457,8 @@ $quoteDetails = json_encode(
                 // rebuild, so a subscription kept here would never be reachable
                 // to dispose and every dead copy would go on writing the
                 // selection blob on one notification.
-                // Keyed on the surface's own ROOT NODE. `captureHost` names the
-                // KIND of host, and the address field renderer mounts on the
-                // delivery form AND the invoice form — two surfaces, one key.
+                // Keyed on the ROOT NODE: `captureHost` names only the kind of
+                // host, and the address renderer mounts on two forms.
                 const registry = window.twoGatewayCaptureIdentityWatchers instanceof Map
                     ? window.twoGatewayCaptureIdentityWatchers
                     : (window.twoGatewayCaptureIdentityWatchers = new Map());
@@ -2469,7 +2468,10 @@ $quoteDetails = json_encode(
                     watcher.dispose();
                     registry.delete(node);
                 });
-                const slot = this.$root || opts.captureHost || 'address';
+                // Fails closed: with no root there is no per-surface key to hold
+                // the subscription under, and a shared one is no key at all.
+                const slot = this.$root;
+                if (!slot) return;
                 if (registry.has(slot)) registry.get(slot).dispose();
                 const self = this;
                 let restoring = false;
@@ -3244,18 +3246,20 @@ $quoteDetails = json_encode(
                 // the stored pair is the registered company that preceded it and
                 // restoring it puts that company under sole-trader mode.
                 //
-                // AUTHORITATIVE ONLY FROM THE SURFACE THAT HOSTS THE CONTROL:
-                // an authoritative write replaces both halves empty ones
-                // included, and a non-hosting tile's stored pair is routinely
-                // empty, so it would blank what the address step captured.
-                if (identity && !identity.isSoleTrader()) {
+                // A surface that hosts no control may SEED an identity nobody has
+                // captured into, never displace one: an authoritative write
+                // replaces both halves, and such a tile's stored pair is
+                // routinely empty or a quote older than the live capture.
+                const hostsControl = this.ownsCaptureField();
+                if (identity && !identity.isSoleTrader()
+                    && (hostsControl || !identity.companyName())) {
                     identity.write(
                         {
                             companyName: shippingCompanySelectionData.company_name || '',
                             companyId: shippingCompanySelectionData.company_id || '',
                             companyIdSource: shippingCompanySelectionData.company_id_source || ''
                         },
-                        { authoritative: this.ownsCaptureField() }
+                        { authoritative: hostsControl }
                     );
                 }
 
@@ -3311,8 +3315,7 @@ $quoteDetails = json_encode(
                     const detail = event.detail || {};
                     const companyName = detail.companyName || '';
                     const companyId = detail.companyId || '';
-                    // Resolved once, for both the shared write and this tile's
-                    // own state. A number with no provenance came from a lookup.
+                    // A number with no provenance came from a lookup.
                     const companyIdSource = companyId
                         ? (detail.companyIdSource || 'registry')
                         : '';

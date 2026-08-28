@@ -206,14 +206,20 @@ function <?= $gwBase ?>CompanySearchField() {
                 // mode — which that flow never writes — must not overwrite it.
                 if (!identity.isSoleTrader()) {
                     identity.captureMode(data.manual_mode ? 'manual' : 'registered');
-                    identity.write(
-                        {
-                            companyName: data.company_name || '',
-                            companyId: data.company_id || '',
-                            companyIdSource: data.company_id_source || ''
-                        },
-                        { authoritative: true }
-                    );
+                    // Seed, never displace: this factory mounts on the delivery
+                    // form AND the invoice form, so only the surface holding the
+                    // claim may replace a capture the other one made.
+                    const hostsControl = this.ownsCaptureField();
+                    if (hostsControl || !identity.companyName()) {
+                        identity.write(
+                            {
+                                companyName: data.company_name || '',
+                                companyId: data.company_id || '',
+                                companyIdSource: data.company_id_source || ''
+                            },
+                            { authoritative: hostsControl }
+                        );
+                    }
                 }
             }
 

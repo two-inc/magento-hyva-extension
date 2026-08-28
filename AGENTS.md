@@ -410,6 +410,11 @@ what stops that propagation is a **pure content match**, not a flag:
   line 2, region. Not two. A buyer typing into address line 2 is exactly as
   strong a signal of independent editing as one retyping the company, and the
   earlier two-field set could not see it.
+- **Per-surface state is keyed on the surface's own root node, never on the kind
+  of host.** One renderer mounts the company field on both address forms, so a
+  key like `'address'` is one key shared between two live surfaces — whichever
+  mounts second tears down the first's subscription. The same reason a surface
+  that holds no capture claim may seed the shared identity but never replace it.
 
 `twoGatewayIsBillingAddressPinned()` is the one answer to this question and
 every surface asks it — the tile's `initialize()` and the bridge's
