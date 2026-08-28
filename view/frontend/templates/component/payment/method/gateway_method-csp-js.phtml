@@ -1898,25 +1898,13 @@ $quoteDetails = json_encode(
     }
 
     /**
-     * THE HYVÄ HALF of the shared company-capture controller.
+     * THE HYVÄ HALF of the shared company-capture controller (TWO-25503).
      *
-     * TWO-25503. The controller is not here and must never be again. It is
+     * The controller is not here and must never be again: it is
      * `Two_Gateway/js/model/company-capture-component.js`, loaded by
-     * `hyva_checkout_index_index.xml` alongside the identity, the sole-trader
-     * flow and the popover it drives, and reached as
-     * `window.TwoCompanyCaptureComponent`. This checkout used to carry a second
-     * implementation of all four, and they drifted exactly where it mattered:
-     * the sole-trader chip read a flag that only ever existed on the payment
-     * tile, so the mode was dead on the address step in every country.
-     *
-     * What is left here is what is genuinely Hyvä's, and every item is one
-     * function the shared controller asks for by name:
-     *  - resolving the company-name input inside an Alpine/Magewire subtree that
-     *    is destroyed and rebuilt under the buyer;
-     *  - the search API the popover asks for, expressed over
-     *    `twoGatewayCompanySearchEngine()`, which owns the request, the address
-     *    write-back and the store-view-keyed selection blob;
-     *  - reading the quote and the invoice-role address form.
+     * `hyva_checkout_index_index.xml` with the identity, the sole-trader flow
+     * and the popover it drives. What follows is the Alpine-shaped half those
+     * four ask for by name.
      *
      * One controller per PAGE, held on `window` rather than in an Alpine
      * component: Magewire rebuilds the surface on every totals, address and term
@@ -1924,20 +1912,14 @@ $quoteDetails = json_encode(
      * company, their minted tokens and their open signup popup down with it.
      */
 
-    /**
-     * The surface the one controller is currently mounted on.
-     *
-     * Every host function below resolves through this rather than closing over a
-     * component, because the component is replaced on every re-render while the
-     * controller is not.
-     */
+    /** The live surface. Every host function reads it fresh: the component is
+     * replaced on every re-render while the controller is not. */
     window.twoGatewayCaptureSurfaceCurrent = window.twoGatewayCaptureSurfaceCurrent || null;
 
     function twoGatewayCaptureSurface() {
         return window.twoGatewayCaptureSurfaceCurrent;
     }
 
-    /** Call `member` on the live surface, or answer `fallback` when there is none. */
     function twoGatewayOnSurface(member, args, fallback) {
         const surface = twoGatewayCaptureSurface();
         if (!surface || typeof surface[member] !== 'function') return fallback;
@@ -2177,13 +2159,9 @@ $quoteDetails = json_encode(
             showPopupMessage: false,
 
             /**
-             * This surface's own root element.
-             *
-             * NOT `$root` unconditionally. On the address step the control IS
-             * the Alpine component, so `$root` is `.two-company-search`. In the
-             * payment tile the control has no `x-data` of its own — its state
-             * lives on the payment form's component, whose `$root` is the whole
-             * `<form>`.
+             * NOT `$root` unconditionally: on the address step the control IS
+             * the Alpine component, while in the payment tile it is a subtree of
+             * the payment form's, whose `$root` is the whole `<form>`.
              *
              * @returns {HTMLElement|null}
              */
@@ -2199,12 +2177,9 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * The company-name input this surface owns.
-             *
-             * `$el` FIRST, then a lookup under the control root. The two are not
-             * interchangeable: Alpine resolves `$el` per expression, so it is
-             * the input when a method is reached from the field's own `@input`
-             * binding and something else entirely otherwise.
+             * `$el` FIRST, then a lookup under the control root: Alpine resolves
+             * `$el` per expression, so it is the input only when a method is
+             * reached from the field's own `@input` binding.
              *
              * @returns {HTMLInputElement|null}
              */
@@ -2219,9 +2194,7 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Translate one of the shared popover's literals.
-             *
-             * @param {string} text
+             * @param {string} text one of the shared popover's English literals
              * @returns {string}
              */
             translatePanelString(text) {
@@ -2229,8 +2202,6 @@ $quoteDetails = json_encode(
                     ? strings[text]
                     : text;
             },
-
-            // --- the popover's search API, over this surface's engine ---
 
             capturePanelMinChars() {
                 return this.minSearchChars;
@@ -2284,8 +2255,6 @@ $quoteDetails = json_encode(
                 this.abortCompanySearch();
                 return wasInFlight;
             },
-
-            // --- the rest of the host contract ---
 
             captureCountryCode() {
                 return this.resolveCountryCode(this.getCaptureQuote());
@@ -2359,14 +2328,10 @@ $quoteDetails = json_encode(
                     : null;
             },
 
-            // --- mount ---
-
             /**
-             * Point the one page-level controller at this surface.
-             *
-             * Called from each surface's init(), which Magewire re-runs on every
-             * rebuild — so this re-registers and re-points rather than building a
-             * second controller.
+             * Point the one page-level controller at this surface. Called from
+             * each surface's init(), which Magewire re-runs on every rebuild, so
+             * this re-points rather than building a second controller.
              */
             mountCompanyPopover() {
                 // NO POPOVER AT ALL where the lookup is switched off. The field
@@ -2375,14 +2340,9 @@ $quoteDetails = json_encode(
                 // query box whose searches can never run, and the way out is shut
                 // too because the manual chip is withheld for the same reason.
                 if (!this.isCompanySearchEnabled) return;
-                /*
-                 * The tile renders no capture field in the configuration that
-                 * puts the one control on the address step, and its own
-                 * `isCompanySearchEnabled` is a constant — so the CLAIM, which
-                 * refuses a surface with no field, is what stops it pointing
-                 * every host function at itself and racing the address step over
-                 * which storage record the buyer's company lands in.
-                 */
+                // The tile's `isCompanySearchEnabled` is a constant, so where
+                // the address step owns the control the CLAIM is the only thing
+                // stopping the tile pointing every host function at itself.
                 if (!this.claimCaptureField()) return;
                 window.twoGatewayCaptureSurfaceCurrent = this;
                 const capture = window.twoGatewayCompanyCapture({
@@ -2404,14 +2364,12 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Take ownership of the one popover for this surface's field.
+             * Take ownership of the one popover.
              *
              * Two address hosts can render at once — the delivery form and the
              * invoice form — and the buyer is billed as the company on the
-             * INVOICE one, which is the same form the tile already resolves its
-             * country and address write-back against (TWO-25461 §1(a.3)). A
-             * surface that is not it defers, unless nothing else has claimed and
-             * no invoice-role form can be resolved at all.
+             * INVOICE one (TWO-25461 §1(a.3)). Any other surface defers, unless
+             * no invoice-role form resolves at all.
              *
              * @returns {boolean} whether this surface owns the popover
              */
@@ -2463,11 +2421,8 @@ $quoteDetails = json_encode(
 
             /**
              * Mirror the shared identity onto this surface, and persist it.
-             *
-             * The controller writes the identity; everything this checkout does
-             * with a captured company — the store-view-keyed blob, the
-             * cross-step event, the tile's order intent — hangs off that one
-             * notification.
+             * Everything this checkout does with a captured company hangs off
+             * that one notification.
              */
             followCapturedIdentity() {
                 const identity = window.TwoCompanyIdentity;
@@ -2528,10 +2483,9 @@ $quoteDetails = json_encode(
                     );
                 };
                 window.twoGatewayCaptureIdentityWatcher = identity.subscribe(apply);
-                // The priming pass restores what a rebuild destroyed. It looks
-                // like a fresh pick to every `!==` above, so a surface acting on
-                // one — the tile dispatches an order intent — is told this pass
-                // is a restore.
+                // The priming pass looks like a fresh pick to every `!==` above,
+                // so a surface acting on one — the tile dispatches an order
+                // intent — is told it is a restore.
                 restoring = true;
                 apply();
                 restoring = false;
@@ -2593,16 +2547,13 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Manual entry ends the search interaction the engine still holds:
-             * a stale "unavailable" verdict and a populated result list would
-             * otherwise sit behind the released field, and the tile's own
-             * dropdown-clear hook is what puts its order-intent box back.
+             * The engine's own manual toggle is inert here, so this is what ends
+             * the search interaction: otherwise a stale "unavailable" verdict and
+             * a populated result list sit behind the released field.
              */
             captureFieldReleased() {
                 this.closeDropdown();
             },
-
-            // --- sole trader, as this checkout paints it ---
 
             get soleTraderPopupMessageVisible() {
                 return this.showPopupMessage;
