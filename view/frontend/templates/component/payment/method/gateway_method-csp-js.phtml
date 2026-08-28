@@ -2789,9 +2789,7 @@ $quoteDetails = json_encode(
 
                             // Not left to the field's own `required`: in the
                             // default markup mode the company pair is hidden
-                            // inputs, which carry no validation at all. Runs
-                            // even on an invalid form so a buyer missing both
-                            // this and a field-level answer sees both at once.
+                            // inputs, which carry no validation at all.
                             const companyIdField = form.querySelector('[name="payment[company_id]"]');
                             const capturedCompanyId = companyIdField ? String(companyIdField.value || '') : '';
 

@@ -2,9 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326. The gate reads the company NUMBER, never the name, and never
- * the field's own `required` — the default markup mode's company pair is
- * hidden inputs, which carry no validation at all.
+ * TWO-25326. The gate reads the company NUMBER, never the name.
  */
 
 "use strict";
@@ -21,6 +19,7 @@ describe("the no-company-number message", () => {
   let form;
   let root;
   let validators;
+  let fieldValidations;
 
   /**
    * @param {string|null} companyId the field's value, or null for no field
@@ -49,11 +48,17 @@ describe("the no-company-number message", () => {
     ].join("\n");
   }
 
-  /** Make hyva.formValidation report the rest of the form invalid. */
+  /**
+   * Make hyva.formValidation report the rest of the form invalid, and count
+   * the calls. The count is what tells the round-1 ordering apart from the
+   * one it replaced: dispatching the company message before `validate()`
+   * leaves every assertion on the result and the message text unchanged.
+   */
   function failFieldValidation() {
     global.hyva.formValidation = function () {
       return {
         validate: function () {
+          fieldValidations += 1;
           return Promise.reject(new Error("field-level failure"));
         },
       };
@@ -67,6 +72,7 @@ describe("the no-company-number message", () => {
     jest.spyOn(console, "error").mockImplementation(() => {});
 
     validators = [];
+    fieldValidations = 0;
     window.hyvaCheckout = {
       navigation: { addTask: function () {} },
       validation: {
@@ -111,8 +117,7 @@ describe("the no-company-number message", () => {
     ["", "", METHOD_CODE, false, true, "no company at all"],
     ["   ", "", METHOD_CODE, false, true, "whitespace only"],
     [null, "", METHOD_CODE, false, true, "no company field in the markup"],
-    // The search response is allowed to omit the national identifier, so a
-    // named company with no number is a real state and is NOT a number.
+    // The search response is allowed to omit the national identifier.
     [
       "",
       "Example Trading Ltd",
@@ -166,18 +171,43 @@ describe("the no-company-number message", () => {
   });
 
   test("both failures are reported in one submit", async () => {
-    // The company check runs even on an invalid form, so a buyer missing both
-    // does not have to submit twice to learn about the second one.
+    // A buyer missing both must not submit twice to learn about the second,
+    // so the field validation has to have RUN — its own messages paint from
+    // inside hyva.formValidation and never reach dispatchMessages.
     failFieldValidation();
     render("", METHOD_CODE);
 
     expect(await placeOrder()).toBe(false);
+    expect(fieldValidations).toBe(1);
 
     const texts = env.messages
       .reduce((all, payload) => all.concat(payload), [])
       .map((message) => message.text);
 
     expect(texts).toEqual([COMPANY_REQUIRED_MESSAGE]);
+  });
+
+  test("the field the gate reads is the one both markup modes emit", () => {
+    // The fixture below builds that input by hand, so renaming it in the
+    // shipped template would otherwise leave this suite green and the gate
+    // permanently open.
+    const modes = [
+      [[[/^\$isCompanySearchInPaymentTile$/, "1"]], "the payment tile"],
+      [[[/^\$isCompanySearchInPaymentTile$/, ""]], "the address area"],
+    ];
+
+    modes.forEach(([rules, where]) => {
+      const markup = H.renderTemplateMarkup(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        rules,
+      );
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      expect([
+        where,
+        doc.querySelector('[name="payment[company_id]"]') !== null,
+      ]).toEqual([where, true]);
+    });
   });
 
   test("the message is dispatched as an error, not a notice", async () => {

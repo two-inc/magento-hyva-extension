@@ -10,9 +10,8 @@ namespace Two\GatewayHyva\Test\Unit\I18n;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The buyer meets the "select a company" refusal in a language, not in
- * English. An untranslated msgid renders the English source with no error,
- * no warning and no log line, so nothing but a check like this notices.
+ * An untranslated msgid renders the English source with no error, no warning
+ * and no log line, so nothing but a check like this notices.
  */
 class CompanyRequiredMessageTranslationTest extends TestCase
 {
