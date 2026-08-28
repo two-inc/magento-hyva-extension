@@ -22,25 +22,27 @@ Magewire/             # Magewire components (if applicable)
 
 ## Git Workflow
 
-- **PRs target `main`** (prod). `staging` is the GitHub default and deploy
-  branch; `merge-back.yml` syncs `main → staging` after merges. Branch off
-  `origin/main`. Ignore the lingering legacy branches — `main` is prod.
-- Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
-- Do NOT skip commit-msg hook on feature branches
+- **Day-to-day PRs target `staging`** (the GitHub default and deploy
+  branch); branch off `origin/staging` — `version-bump.yml` decides the
+  release version on PRs landing there. Promote to `main` (prod) with a
+  staging → main PR when releasing; `merge-back.yml` syncs `main → staging`
+  after merges. Ignore the lingering legacy branches.
+- Do NOT skip the commit-msg hook — nobody commits directly on `main`;
+  changes reach it via the staging → main promotion
 - Never use `--no-verify` flag
 
 ## Version Management
 
-Version bumps are automatic — CI does them, on the pull request rather than
-after the merge. `.github/workflows/release.yml` now fires on `main` only and
+Version bumps are automatic — CI computes them on the pull request into
+`staging`. `.github/workflows/release.yml` fires on `main` only and
 computes nothing: it reads the version out of `bumpver.toml`, tags it and cuts
 the Release.
 
-| Change | What happens |
-|---|---|
-| PR into `staging` | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
-| merge into `staging` | nothing — the merge brings in the version its PR computed |
-| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release |
+| Change                | What happens                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| PR into `staging`     | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
+| merge into `staging`  | nothing — the merge brings in the version its PR computed                                                                    |
+| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release                                 |
 
 With `M` the version on `origin/main` and `C` the version on the PR head, the PR's own commits (`origin/staging..HEAD`, `--no-merges`) decide the candidate: a `!` type or a `BREAKING CHANGE:` footer gives `(M.major + 1).0.0`, a `feat:` gives `M.major.(M.minor + 1).0`, and anything else — `fix` and `chore`/`docs`/`ci`/`test`/`refactor` alike — gives `M.major.M.minor.(M.patch + 1)`. The result is clamped with `max(C, candidate)`, which makes it idempotent (a re-run, the `synchronize` the bump commit itself fires, or a second fix commit on the same PR all write nothing) and means the version can never regress while `main` is behind `staging`.
 
@@ -50,10 +52,10 @@ independent signals, the higher wins:
 - **Declared** — a root `.next-major` file whose first whitespace-delimited
   token is the target major, plus a short reason on the same line
   (`3  # overlay migration, 3.0.0 release`). Reviewable in the PR that decides
-  it, so a *planned* major with no single breaking commit still lands as a
+  it, so a _planned_ major with no single breaking commit still lands as a
   major. CI never clears the file; it disarms itself once the current major
-  reaches the declared one, and a declaration that has fallen *below the major
-  on `main`* is a hard CI failure.
+  reaches the declared one, and a declaration that has fallen _below the major
+  on `main`_ is a hard CI failure.
 - **Discovered** — a `!` on a conventional-commit type (`feat!:`,
   `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer, in **this PR's own
   commits** only — never the cumulative `main..staging` range.
@@ -157,14 +159,15 @@ be up alongside nothing. All four are one box style in one place. The rules that
 - **A CHECK IN PROGRESS OUTRANKS EVERY RECORDED VERDICT.** `refresh` paints
   nothing while `orderIntentChecking` is true, and nothing under an open results
   panel. "Checking availability" and a conclusion may never be on screen together.
-  The corollary is the part that bites: because a verdict can be *suppressed*,
+  The corollary is the part that bites: because a verdict can be _suppressed_,
   something must repaint it when the check stops — so `setOrderIntentChecking()`
   is the ONLY way the row goes down, and it re-derives the box. Lowering the flag
   by hand reintroduces a blank box that nothing can refill. Rounds 4-7 each found
   one more route to a verdict beside a progress row, because each fix guarded a
   route instead of stating the rule.
-- **Records are PER COMPANY, keyed by id.** `orderIntentDecisions[id] =
-  { name, approved }` and `orderIntentFailures[id] = { name }`. A single slot
+- **Records are PER COMPANY, keyed by id.**
+  `orderIntentDecisions[id] = { name, approved }` and
+  `orderIntentFailures[id] = { name }`. A single slot
   cannot represent approve A, check B, come back to A — B overwrites it and A's
   verdict is gone. The name is stored beside the decision, not used as the key: the
   notice text embeds it, so a company renamed by hand must fail closed rather than
@@ -240,11 +243,11 @@ while Luma's were inside it.
 
 Three layers, innermost first:
 
-| Layer | Where | Owns |
-|---|---|---|
-| Popover — `CompanySearchPanel` | **two-inc/magento2**, `view/frontend/web/js/model/company-search-panel.js`, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel` | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
-| Engine — `twoGatewayCompanySearchEngine()` | `component/payment/method/gateway_method-csp-js.phtml` | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage |
-| Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy |
+| Layer                                        | Where                                                                                                                                                                                                                  | Owns                                                                                                                                                                              |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Popover — `CompanySearchPanel`               | **two-inc/magento2**, `view/frontend/web/js/model/company-search-panel.js`, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel` | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
+| Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
+| Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
 
 **The popover is framework-free with a UMD tail**, which is why this checkout can
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
@@ -332,7 +335,7 @@ Things that bite:
 
 - **The markup is included with `include $block->getTemplateFile(…)`**, not as a
   layout child. The address-step mount point is a Hyvä entity-form field
-  *renderer* block created at runtime, so there is no layout node to hang a child
+  _renderer_ block created at runtime, so there is no layout node to hang a child
   off. `Test/Js/hyva-harness.js` inlines that include (`TEMPLATE_INCLUDE_PATTERN`)
   so the Jest suites render what the page renders.
 - **Address AUTOFILL needs BOTH settings**, and the conjunction lives in ONE
@@ -418,7 +421,7 @@ Three things that bite:
 
 - **The pin gates PROPAGATION, never a RESTORE.** It is checked at the call
   sites that push the shipping company across, and deliberately not inside
-  `updatePaymentFields()` — which is also how a company resolved *for* the
+  `updatePaymentFields()` — which is also how a company resolved _for_ the
   billing role, including one read back out of the billing record, reaches the
   tile. A pin there blocks the buyer's own billing company from being restored,
   which is the exact opposite of protecting it.
@@ -442,10 +445,10 @@ once rather than re-derived per surface.
 registered-company search result, an autofill — because special-casing the
 source is how the two drift apart:
 
-| payload | line 1 | line 2 |
-|---|---|---|
-| `building`/`apartment` present | the premises (both, joined) | `street` |
-| neither present | `street` | **left untouched** |
+| payload                        | line 1                      | line 2             |
+| ------------------------------ | --------------------------- | ------------------ |
+| `building`/`apartment` present | the premises (both, joined) | `street`           |
+| neither present                | `street`                    | **left untouched** |
 
 No dedup between the lines even when the text is identical: some real addresses
 legitimately repeat, and silently swallowing one is invisible to the buyer.
