@@ -218,6 +218,61 @@ describe("shipping to payment company sync", () => {
     }
   });
 
+  describe("a restored announcement", () => {
+    /**
+     * Fire the shipping event the way the address step's identity mirror does
+     * after a Magewire rebuild: same pair, marked as a restore.
+     *
+     * @param {boolean} restored
+     * @returns {Array<string>} what `dispatch-order-intent` fired
+     */
+    function announce(restored) {
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          manual_mode: false,
+        }),
+      );
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+      try {
+        window.dispatchEvent(
+          new CustomEvent("shipping-company-selected", {
+            detail: { restored: restored },
+          }),
+        );
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
+      return dispatched;
+    }
+
+    test.each([
+      [true, [], "a rebuild re-announcing what the tile already holds"],
+      [false, ["intent"], "a company the buyer just chose"],
+    ])("restored=%s dispatches %j: %s", (restored, expected) => {
+      // The tile's per-company dedup record is emptied by the same rebuild that
+      // causes the re-announcement, so an unmarked restore puts a fresh request
+      // on the wire every time.
+      activateTwoPayment();
+
+      expect(announce(restored)).toEqual(expected);
+    });
+
+    test("still syncs the fields, restore or not", () => {
+      activateTwoPayment();
+
+      announce(true);
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("12345678");
+    });
+  });
+
   describe("the billing-as-shipping Magewire handler", () => {
     // Registered inside a `DOMContentLoaded` callback, behind a poll for the
     // `Magewire` global. jsdom has already fired DOMContentLoaded by the time

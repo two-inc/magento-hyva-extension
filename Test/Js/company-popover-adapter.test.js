@@ -270,6 +270,36 @@ describe("the Hyvä adapter over the shared capture controller", () => {
       expect(panel().options.getDisplayText()).toBe("Existing Trading Ltd");
     });
 
+    describe("a rebuild during a live sole-trader signup", () => {
+      /*
+       * The signup popup outlives the component. Its handshake bails unless the
+       * mode is still `soletrader` (`sole-trader.js`), and the flow never writes
+       * the selection blob — so the stored pair is whatever registered company
+       * preceded it, and restoring it would put that company's name and number
+       * on screen under sole-trader mode, offering "select a different sole
+       * trader" for an identity nobody adopted.
+       */
+      beforeEach(() => {
+        env.storage[H.COMPANY_SELECTION_KEY] = JSON.stringify({
+          company_name: "Previous Ltd",
+          company_id: "99999999",
+          company_id_source: "registry",
+        });
+        env.identity.captureMode("soletrader");
+        env.identity.clear();
+      });
+
+      test.each([
+        ["captureMode", "soletrader", "the handshake still recognises the flow"],
+        ["companyName", "", "no registered company appears under it"],
+        ["companyId", "", "and no registered number with it"],
+      ])("leaves %s as %j, so %s", (member, expected) => {
+        remount("root");
+
+        expect(env.identity[member]()).toBe(expected);
+      });
+    });
+
     test("a captured company still wins over what was typed", () => {
       // Both populated and DIFFERENT, or the precedence this names is untested.
       component.search = "Typed Ltd";
