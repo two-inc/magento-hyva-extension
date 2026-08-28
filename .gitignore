@@ -26,3 +26,5 @@ CLAUDE.local.md
 .agent-notes/
 .serena/
 .claude/
+.review/
+.worktrees/
