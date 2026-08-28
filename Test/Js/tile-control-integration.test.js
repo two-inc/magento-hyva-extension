@@ -263,26 +263,40 @@ describe("a payment tile that renders no capture field", () => {
       expect(component[member]).toBe(expected);
     });
 
-    test.each([
-      ["companyName", "Address Step Ltd"],
-      ["companyId", "88888888"],
-    ])("the address step's %s survives this tile's init", (member, expected) => {
-      // Given a capture on the address step and nothing in this tile's records;
-      // when the tile initialises. An authoritative write replaces both halves,
-      // empty ones included, so it would blank the capture.
-      env.identity.write(
+    describe.each([
+      ["nothing in this tile's records", null],
+      [
+        "a different company in this tile's record",
         {
-          companyName: "Address Step Ltd",
-          companyId: "88888888",
-          companyIdSource: "registry",
+          company_name: "Tile Record Ltd",
+          company_id: "77777777",
+          company_id_source: "registry",
         },
-        { authoritative: true },
-      );
-      component.$watch = function () {};
+      ],
+    ])("with %s", (label, record) => {
+      test.each([
+        ["companyName", "Address Step Ltd"],
+        ["companyId", "88888888"],
+      ])("the address step's %s survives this tile's init", (member, expected) => {
+        // Given a capture on the address step; when the tile initialises. This
+        // tile holds no claim, so neither an empty record — an authoritative
+        // write replaces both halves, empty ones included — nor a record naming
+        // some other company may reach the identity.
+        if (record) window.twoGatewayWriteBillingCompany(record);
+        env.identity.write(
+          {
+            companyName: "Address Step Ltd",
+            companyId: "88888888",
+            companyIdSource: "registry",
+          },
+          { authoritative: true },
+        );
+        component.$watch = function () {};
 
-      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+        component.initialize({ quote_id: "1", billing_country_id: "GB" });
 
-      expect(env.identity[member]()).toBe(expected);
+        expect(env.identity[member]()).toBe(expected);
+      });
     });
 
     test("a hand-typed number keeps its provenance across the sync", () => {

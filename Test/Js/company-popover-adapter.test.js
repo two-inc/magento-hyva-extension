@@ -501,8 +501,8 @@ describe("the Hyvä adapter over the shared capture controller", () => {
     });
 
     test("a search is not attempted while the lookup is switched off", async () => {
-      // An unverified merchant must not have checkout-api requests put on the
-      // wire for them, though the surface still mounts so the buyer has a field.
+      // This surface still mounts so the buyer has a company field, but an
+      // unverified merchant must not have API requests put on the wire for them.
       component.isCompanySearchEnabled = "";
 
       const result = await component.capturePanelSearch({ term: "alpha" });

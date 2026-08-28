@@ -132,7 +132,7 @@ describe("address-step manual entry", () => {
 
         const capture = window.twoGatewayCompanyCapture({
           restBaseUrl: "",
-          checkoutApiUrl: "https://checkout-api.test.invalid",
+          checkoutApiUrl: "https://api.test.invalid",
           checkoutPageUrl: "/checkout",
           manualEntryOffered: offered,
         });
