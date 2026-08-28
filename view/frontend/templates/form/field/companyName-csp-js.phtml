@@ -206,15 +206,15 @@ function <?= $gwBase ?>CompanySearchField() {
                 // mode — which that flow never writes — must not overwrite it.
                 if (!identity.isSoleTrader()) {
                     identity.captureMode(data.manual_mode ? 'manual' : 'registered');
+                    identity.write(
+                        {
+                            companyName: data.company_name || '',
+                            companyId: data.company_id || '',
+                            companyIdSource: data.company_id_source || ''
+                        },
+                        { authoritative: true }
+                    );
                 }
-                identity.write(
-                    {
-                        companyName: data.company_name || '',
-                        companyId: data.company_id || '',
-                        companyIdSource: data.company_id_source || ''
-                    },
-                    { authoritative: true }
-                );
             }
 
             this.mountCompanyPopover();
@@ -246,8 +246,11 @@ function <?= $gwBase ?>CompanySearchField() {
                 company_id_source: 'manual'
             });
 
+            // `restored: false` explicitly, so both routes onto this event carry
+            // the key and the payment step never has to read an absent one as
+            // "the buyer chose this".
             window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: companyData
+                detail: Object.assign({ restored: false }, companyData)
             }));
         },
     });

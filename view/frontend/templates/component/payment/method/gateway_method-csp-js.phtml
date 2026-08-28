@@ -2400,6 +2400,7 @@ $quoteDetails = json_encode(
              * leaves the document.
              */
             watchCompanyPopoverForMorphs() {
+                const self = this;
                 const root = this.controlRoot();
                 if (!root) return;
                 twoGatewayWatchCompanyMorphs();
@@ -2409,12 +2410,14 @@ $quoteDetails = json_encode(
                 if (watched) return;
                 window.twoGatewayCompanyMounts.push({
                     root: root,
+                    // Through mountCompanyPopover(), not the controller's own
+                    // refreshMount(): a morph reinstates the server markup, which
+                    // carries no `data-two-capture-active`, so the mount selector
+                    // matches nothing until this surface has claimed its field
+                    // again. Idempotent — the controller re-points rather than
+                    // rebuilding when nothing moved.
                     remount: function () {
-                        const capture = window.twoGatewayCompanyCaptureInstance;
-                        if (!capture) return;
-                        const panel = capture.panel();
-                        if (panel && panel.isBound()) return;
-                        capture.refreshMount();
+                        self.mountCompanyPopover();
                     }
                 });
             },
@@ -2470,8 +2473,13 @@ $quoteDetails = json_encode(
                     // pair that has not moved.
                     if (!pairChanged) return;
                     if (opts.selectEventName) {
+                        // `restored` travels with it: the other step still has to
+                        // SYNC — it may be reading a different storage record —
+                        // but a restore is not a company the buyer just chose, and
+                        // answering one with an order intent puts a fresh request
+                        // on the wire for every re-render.
                         window.dispatchEvent(new CustomEvent(opts.selectEventName, {
-                            detail: selectionData
+                            detail: Object.assign({ restored: restoring }, selectionData)
                         }));
                     }
                     surfaceCommitted.call(
@@ -3326,18 +3334,10 @@ $quoteDetails = json_encode(
             // unlike the address step, which unlocks whenever search itself
             // is switched off (see that surface's own options).
 
-            // Additive (TWO-25288): whether there is an actual registry id to
-            // show. Deliberately NOT just `companyIdDisabled` — on
-            // initialize() with a restored selection, `companyIdEntryRequired`
-            // (and so `companyIdDisabled`) is derived synchronously from
-            // storage, while `this.companyId` itself is only populated by the
-            // `$nextTick(() => fillCompanyData(...))` below, one tick later.
-            // Gating on `companyIdDisabled` alone would paint the hint/hide
-            // the input for that first tick with no number behind it yet —
-            // the same flash-of-wrong-state class `initialize()`'s own doc
-            // comment above already guards the `:disabled` binding against.
-            // Requiring `companyId` too makes both derived getters below wait
-            // for the real value, same tick it arrives.
+            // TWO-25288: whether there is an actual registry id to show.
+            // Deliberately NOT just `companyIdDisabled`, which the identity
+            // mirror can set a tick before the number itself lands — gating on
+            // it alone paints the hint with no number behind it.
             get companyIdHintVisible() {
                 return this.companyIdDisabled && Boolean(this.companyId);
             },

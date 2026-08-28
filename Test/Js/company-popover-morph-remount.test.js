@@ -90,12 +90,15 @@ describe("a Magewire re-render that morphs the popover away", () => {
 
   /**
    * What a morph does to this control: the wrapper is not in the server markup
-   * so it goes, and the field is put back where the server rendered it.
+   * so it goes, the field is put back where the server rendered it, and every
+   * attribute the server did not render goes with it — `data-two-capture-active`
+   * above all, which is the runtime claim the mount selector matches.
    */
   function morphServerMarkupOverControl() {
     const wrap = field.parentElement;
     root.insertBefore(field, wrap);
     wrap.remove();
+    field.removeAttribute("data-two-capture-active");
   }
 
   test.each([
@@ -139,10 +142,11 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(env.companyPanels).toHaveLength(1);
   });
 
-  test("the field is still addressable, because the morph restores what addresses it", () => {
-    // The panel's selector is the two server-rendered attributes, so a morph
-    // reinstates it rather than deleting it — a runtime stamp on the field would
-    // go with the wrapper and leave the rebuilt panel addressing nothing.
+  test("the field is addressable again, because the sweep re-claims it", () => {
+    // The mount selector matches a RUNTIME claim, which the morph strips along
+    // with everything else the server did not render. The sweep therefore has to
+    // go back through the surface's own mount, which re-claims — going straight
+    // to the controller's refreshMount() would leave it addressing nothing.
     morphServerMarkupOverControl();
 
     env.fireMagewireHook("element.updated");

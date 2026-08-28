@@ -709,6 +709,36 @@ describe("address-step company number", () => {
       });
     });
 
+    test("and marks it a restore, so the tile syncs without re-checking", () => {
+      // The tile answers an unmarked announcement with an order intent, and its
+      // per-company dedup record is emptied by the same rebuild — so an unmarked
+      // restore puts a fresh request on the wire for every re-render.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Acme Ltd",
+          company_id: "111",
+          company_id_source: "registry",
+        }),
+      );
+
+      H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: nameField,
+        root: root,
+      }).init();
+
+      expect(selectedEvents[0].restored).toBe(true);
+    });
+
+    test("a company the buyer typed is not marked a restore", () => {
+      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
+
+      typeNumber("12345678");
+
+      expect(selectedEvents[0].restored).toBe(false);
+    });
+
     test("re-firing with an unchanged value announces nothing", () => {
       component = mount({ quote_id: "test-quote-1", company_id: "12345678" });
 

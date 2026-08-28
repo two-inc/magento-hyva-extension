@@ -484,9 +484,14 @@ $methodCode = $brandedViewModel->getMethodCode();
                 // identifier: requests the listener discards, which still read
                 // as real submissions in the event log.
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                // `restored` means the address step is re-announcing what a
+                // Magewire rebuild destroyed, not a company the buyer chose. The
+                // fields still sync; an intent for it would go on the wire again
+                // on every re-render.
                 const shouldTriggerOrderIntent = Boolean(activePaymentMethod)
                     && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>'
-                    && shippingCompanyId !== "";
+                    && shippingCompanyId !== ""
+                    && !(event.detail || {}).restored;
 
                 // Use the centralized update function for consistency and Alpine.js sync
                 updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
