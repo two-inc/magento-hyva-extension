@@ -2799,6 +2799,11 @@ $quoteDetails = json_encode(
                                         type: 'error',
                                         text: '<?= $escaper->escapeJs($companyRequiredMessage) ?>',
                                     }], 5000);
+                                } else {
+                                    // Refusing with nothing on screen is worse
+                                    // than the error this replaces, so leave a
+                                    // trace rather than failing silently.
+                                    console.error('Two: no message channel for the company-required refusal.');
                                 }
                                 return false;
                             }

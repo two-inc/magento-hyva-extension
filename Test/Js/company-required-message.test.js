@@ -50,9 +50,9 @@ describe("the no-company-number message", () => {
 
   /**
    * Make hyva.formValidation report the rest of the form invalid, and count
-   * the calls. The count is what tells the round-1 ordering apart from the
-   * one it replaced: dispatching the company message before `validate()`
-   * leaves every assertion on the result and the message text unchanged.
+   * the calls. The count is the only evidence the field validation RAN: its
+   * messages paint from inside hyva.formValidation, so a gate that refused
+   * before calling it looks identical in the result and in dispatchMessages.
    */
   function failFieldValidation() {
     global.hyva.formValidation = function () {
@@ -187,10 +187,10 @@ describe("the no-company-number message", () => {
     expect(texts).toEqual([COMPANY_REQUIRED_MESSAGE]);
   });
 
-  test("the field the gate reads is the one both markup modes emit", () => {
-    // The fixture below builds that input by hand, so renaming it in the
-    // shipped template would otherwise leave this suite green and the gate
-    // permanently open.
+  test("the field the gate reads is inside the form, in both markup modes", () => {
+    // render() builds that input by hand, so the shipped template is the one
+    // thing no other test here reads. Scoped to the form because the gate is
+    // `form.querySelector` — an input moved outside it refuses every buyer.
     const modes = [
       [[[/^\$isCompanySearchInPaymentTile$/, "1"]], "the payment tile"],
       [[[/^\$isCompanySearchInPaymentTile$/, ""]], "the address area"],
@@ -202,10 +202,12 @@ describe("the no-company-number message", () => {
         rules,
       );
       const doc = new DOMParser().parseFromString(markup, "text/html");
+      const shippedForm = doc.querySelector("form[x-data]");
 
+      expect([where, shippedForm !== null]).toEqual([where, true]);
       expect([
         where,
-        doc.querySelector('[name="payment[company_id]"]') !== null,
+        shippedForm.querySelector('[name="payment[company_id]"]') !== null,
       ]).toEqual([where, true]);
     });
   });
