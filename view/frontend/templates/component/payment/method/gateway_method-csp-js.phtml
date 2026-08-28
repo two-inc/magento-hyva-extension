@@ -2026,24 +2026,13 @@ $quoteDetails = json_encode(
      * Every live company control on the page, so a Magewire re-render can put
      * its popover back.
      *
-     * A re-render MORPHS the server markup over the live DOM. The popover's
-     * `span.two-company-field-wrap` is not in that markup — the panel builds it
-     * around the field at runtime — so the morph deletes it, taking the panel,
-     * the chips and the attributes the panel wrote on the field with it, and
-     * leaving a bare input that answers to nothing until the page is reloaded.
-     *
-     * Nothing rebuilds it on its own. The morph KEEPS the element carrying this
-     * component's `x-data`, so Alpine keeps the component and never re-runs
-     * `init()` — the one thing that calls mountCompanyPopover(). That is why a
-     * shipping-method change survives (its re-render never reaches this form)
-     * while a country change, a payment-method pick and the return out of
-     * manual entry all destroy the control.
-     *
-     * The base plugin's Luma host has no equivalent, because it hands the panel
-     * Magento_Ui's `$.async` and the panel re-anchors itself. There is no
-     * `$.async` here and a MutationObserver per mount is how this checkout froze
-     * earlier on this ticket (TWO-25503), so the re-render's own hook is the
-     * signal.
+     * TWO-25503. A re-render MORPHS the server markup over the live DOM, and
+     * the popover's `span.two-company-field-wrap` is built at runtime and is in
+     * no server markup, so the morph deletes it — while KEEPING the element
+     * carrying this component's `x-data`, so Alpine never re-runs `init()` and
+     * nothing rebuilds it. This host withholds the panel's own observer (a
+     * MutationObserver per mount is how this checkout froze earlier on this
+     * ticket), so the re-render's own hook is the signal.
      */
     window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts || [];
 

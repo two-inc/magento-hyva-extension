@@ -251,9 +251,9 @@ load it with no RequireJS, no jQuery and no Knockout. It takes three injected
 options — `search`, `translate` and `observe`. This checkout injects the first
 two and deliberately withholds `observe`: `$.async` has no equivalent here, and
 a MutationObserver per mount is what froze the checkout on this ticket, so the
-re-render's own `element.updated` hook drives the re-bind instead. Do not reach into the panel; if
-it needs to do something new, change it in the base plugin so both checkouts
-get it.
+re-render's own `element.updated` hook drives the re-bind instead. Do not reach
+into the panel; if it needs to do something new, change it in the base plugin so
+both checkouts get it.
 
 **Its markup is not testable here.** The file is not in this repo and there is no
 vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at

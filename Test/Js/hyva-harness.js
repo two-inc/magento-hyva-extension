@@ -708,6 +708,31 @@ function loadSharedHelpers(extraRules) {
 }
 
 /**
+ * The two nodes the real panel puts around a field it has taken: a wrapper it
+ * builds, and the panel inside it. Class names are the base plugin's, because a
+ * morph is recognised by what it DELETES.
+ *
+ * @param {HTMLElement} field
+ * @returns {HTMLElement} the panel node
+ */
+function wrapField(field) {
+  let wrap = field.parentElement;
+  if (!wrap || !wrap.classList.contains("two-company-field-wrap")) {
+    wrap = document.createElement("span");
+    wrap.className = "two-company-field-wrap";
+    field.parentNode.insertBefore(wrap, field);
+    wrap.appendChild(field);
+  }
+  let panel = wrap.querySelector(".two-company-dropdown");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.className = "two-company-dropdown";
+    wrap.appendChild(panel);
+  }
+  return panel;
+}
+
+/**
  * Install the globals Hyvä, Alpine and Magewire supply at runtime.
  *
  * Deliberately small: these are third-party globals with no npm distribution
@@ -733,31 +758,6 @@ function loadSharedHelpers(extraRules) {
  *
  * @returns {Object} `{ instances }`, newest last
  */
-/**
- * The two nodes the real panel puts around a field it has taken: a wrapper it
- * builds, and the panel inside it. Class names are the base plugin's, because a
- * morph is recognised by what it DELETES.
- *
- * @param {HTMLElement} field
- * @returns {HTMLElement} the panel node
- */
-function wrapField(field) {
-  let wrap = field.parentElement;
-  if (!wrap || !wrap.classList.contains("two-company-field-wrap")) {
-    wrap = document.createElement("span");
-    wrap.className = "two-company-field-wrap";
-    field.parentNode.insertBefore(wrap, field);
-    wrap.appendChild(field);
-  }
-  let panel = wrap.querySelector(".two-company-dropdown");
-  if (!panel) {
-    panel = document.createElement("div");
-    panel.className = "two-company-dropdown";
-    wrap.appendChild(panel);
-  }
-  return panel;
-}
-
 function installCompanyPanelStub() {
   const instances = [];
 
@@ -785,15 +785,9 @@ function installCompanyPanelStub() {
   };
 
   /*
-   * The real panel's own predicate, not a constant.
-   *
-   * `true` unconditionally is the answer that AGREES WITH THE ADAPTER in
-   * exactly the direction that hides the bug this stub exists to expose: a
-   * checkout re-render morphs its server markup over the live DOM and deletes
-   * the wrapper the panel built, and a stub that keeps saying "bound" makes
-   * every recovery path untestable here. So the wrapper below is built at bind
-   * and read back here, exactly as `company-search-panel.js` does — the minimum
-   * DOM that makes a morph OBSERVABLE, not a second popover.
+   * The real panel's predicate, not a constant: a stub that always says "bound"
+   * agrees with the adapter in exactly the direction that hides a morph having
+   * deleted the wrapper (TWO-25503).
    */
   CompanySearchPanelStub.prototype.isBound = function () {
     return Boolean(
