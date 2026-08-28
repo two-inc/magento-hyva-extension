@@ -201,8 +201,8 @@ describe("the host adapter the shared flow is given", () => {
       "the registry relay",
     ],
   ])("%s builds the store's own REST URL (%s)", (member, args, expected) => {
-    // The plugin's server-side relay, never checkout-api direct: the merchant
-    // API key must not reach the browser.
+    // The plugin's server-side relay, never the API direct: the merchant API
+    // key must not reach the browser.
     expect(tile.host[member].apply(null, args)).toBe(expected);
   });
 

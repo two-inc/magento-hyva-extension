@@ -44,7 +44,7 @@ describe("shared company-search helpers", () => {
   function searchOptions(overrides) {
     return Object.assign(
       {
-        checkoutApiUrl: "https://checkout-api.test.invalid",
+        checkoutApiUrl: "https://api.test.invalid",
         countryCode: "gb",
         query: "acme",
         limit: 10,
@@ -468,12 +468,12 @@ describe("shared company-search helpers", () => {
   describe("twoGatewayCompanyDetail", () => {
     test("the record is returned on success", async () => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://checkout-api.test.invalid",
+        "https://api.test.invalid",
         "lookup-111",
       );
 
       expect(fetchStub.last().url).toBe(
-        "https://checkout-api.test.invalid/companies/v2/company/lookup-111?client=&client_v=&merchant=",
+        "https://api.test.invalid/companies/v2/company/lookup-111?client=&client_v=&merchant=",
       );
       fetchStub.last().respond({ addresses: [{ city: "Oslo" }] });
 
@@ -482,7 +482,7 @@ describe("shared company-search helpers", () => {
 
     test("a non-2xx returns null instead of parsing the error body as an address", async () => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://checkout-api.test.invalid",
+        "https://api.test.invalid",
         "x",
       );
       fetchStub.last().respondWithStatus(500);
@@ -494,7 +494,7 @@ describe("shared company-search helpers", () => {
 
     test("a network error returns null", async () => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://checkout-api.test.invalid",
+        "https://api.test.invalid",
         "x",
       );
       fetchStub.last().networkError();
@@ -505,7 +505,7 @@ describe("shared company-search helpers", () => {
     test("it carries the same 30s ceiling, and clears the timer", async () => {
       jest.useFakeTimers();
       const promise = window.twoGatewayCompanyDetail(
-        "https://checkout-api.test.invalid",
+        "https://api.test.invalid",
         "x",
       );
 

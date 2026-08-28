@@ -316,7 +316,7 @@ describe("form-scoped country resolution", () => {
       const component = H.mountComponent(
         () =>
           window.twoGatewayCompanySearchEngine({
-            checkoutApiUrl: "https://checkout-api.test.invalid",
+            checkoutApiUrl: "https://api.test.invalid",
             getQuote: function () {
               return {};
             },

@@ -131,7 +131,7 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     const engine = window.twoGatewayCompanySearchEngine(
       Object.assign(
         {
-          checkoutApiUrl: "https://checkout-api.test.invalid",
+          checkoutApiUrl: "https://api.test.invalid",
           minSearchChars: 3,
           companySearchLimit: 10,
           isCompanySearchEnabled: true,
