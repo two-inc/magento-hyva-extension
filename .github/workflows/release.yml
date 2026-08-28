@@ -79,10 +79,6 @@ jobs:
           # prefixed tags used by the white-label fork's own branch, so a
           # stale fork tag pointing at HEAD doesn't suppress a legitimate
           # release.
-          #
-          # This is also what makes the merge-back safe: when a `main`
-          # release fast-forwards into `staging`, staging's new tip already
-          # carries that release's tag, so this correctly bumps nothing.
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."

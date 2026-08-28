@@ -25,8 +25,7 @@ Magewire/             # Magewire components (if applicable)
 - **Day-to-day PRs target `staging`** (the GitHub default and deploy
   branch); branch off `origin/staging` — `version-bump.yml` decides the
   release version on PRs landing there. Promote to `main` (prod) with a
-  staging → main PR when releasing; `merge-back.yml` syncs `main → staging`
-  after merges. Ignore the lingering legacy branches.
+  staging → main PR when releasing. Ignore the lingering legacy branches.
 - Do NOT skip the commit-msg hook — nobody commits directly on `main`;
   changes reach it via the staging → main promotion
 - Never use `--no-verify` flag
