@@ -250,10 +250,10 @@ Three layers, innermost first:
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
 options — `search`, `translate` and `observe`. This checkout injects the first
 two and deliberately withholds `observe`: `$.async` has no equivalent here, and
-a MutationObserver per mount is what froze the checkout on this ticket, so each
-surface re-binds from its own `init()` instead. Do not reach into the panel; if
-it needs to do something new, change it in the base plugin so both checkouts
-get it.
+a MutationObserver per mount is what froze the checkout on this ticket, so the
+re-render's own `element.updated` hook drives the re-bind instead. Do not reach
+into the panel; if it needs to do something new, change it in the base plugin so
+both checkouts get it.
 
 **Its markup is not testable here.** The file is not in this repo and there is no
 vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
@@ -261,7 +261,10 @@ vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
 `companyPanels`, with `.options` and `.calls`). What this repo tests is its own
 half of the contract — the options the adapter passes and the search API it
 builds over the engine. The panel's own behaviour is covered against the real
-file in magento-plugin's suite.
+file in magento-plugin's suite. The stub does build the wrapper and panel node
+the real one builds, and answers `isBound()` from them: that is the minimum DOM
+that makes a re-render's morph observable here, and a constant `true` is the
+answer that hides it.
 
 **The popover's STYLING comes from the base plugin too** —
 `<css src="Two_Gateway::css/style.css"/>`, loaded BEFORE `custom.css` so this
@@ -303,12 +306,22 @@ Which of the first two renders is decided by the core module's
 `enable_company_search` setting — never both, never neither. See
 `CheckoutConfig::getIsCompanySearchInPaymentTile()`.
 
-Each mount builds its panel from its own `init()`/`initialize()`, which Magewire
-re-runs on every rebuild — `mountCompanyPopover()` re-points the existing panel
-rather than building a second one. It stamps its own `data-two-company-panel`
-attribute on the field and selects on that, because the address-step field
-renderer is registered globally and mounts on the delivery form AND the invoice
-form, so a document-wide selector would give both mounts the first field.
+Each mount builds its panel from its own `init()`/`initialize()`, and
+`mountCompanyPopover()` re-points an existing panel rather than building a second
+one. It stamps its own `data-two-company-panel` attribute on the field and
+selects on that, because the address-step field renderer is registered globally
+and mounts on the delivery form AND the invoice form, so a document-wide selector
+would give both mounts the first field.
+
+**A Magewire re-render does NOT re-run `init()`.** It MORPHS the server markup
+over the live DOM: the popover's `span.two-company-field-wrap` is built at
+runtime and is in no server markup, so the morph deletes it — panel, chips and
+the mount attribute with it — while KEEPING the element carrying the component's
+`x-data`, so Alpine keeps the component and never re-initialises it. Every mount
+therefore registers itself in `window.twoGatewayCompanyMounts`, and one
+page-level `element.updated` hook remounts any control whose panel reports
+`isBound()` false. That is also the answer to "why does a shipping-method change
+survive": its re-render never touches this form.
 
 **The panel instance lives in a closure, never in Alpine state.** Alpine wraps
 component data in reactive proxies and the panel compares DOM nodes by identity;

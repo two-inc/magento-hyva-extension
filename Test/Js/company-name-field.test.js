@@ -592,7 +592,9 @@ describe("company-name field picker", () => {
       number.className =
         "company_id block w-full form-input grow renderer-text";
       number.value = "999999999";
-      root.insertBefore(number, field);
+      // First in the root's own order, not before the field: the popover has
+      // wrapped the field by now, so the field is no longer a child of root.
+      root.insertBefore(number, root.firstChild);
       field.value = "Epsilon Foods";
 
       component.$el = null;
