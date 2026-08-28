@@ -128,10 +128,8 @@ use Magento\Framework\Escaper;
         ?>
         <?php
         /*
-         * The blocked-popup fallback, on the CONTROL rather than the payment
-         * tile: sole trader is offered wherever this control is mounted, so a
-         * link that lived on the tile left the address step's buyer with no way
-         * through when a browser refused the popup.
+         * The blocked-popup fallback belongs on the CONTROL, not the payment
+         * tile: sole trader is offered wherever this control is mounted.
          *
          * A <button>, not an <a href="#">: it takes no navigation and needs no
          * `.prevent` modifier to be safe under CSP Alpine.

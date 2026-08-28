@@ -566,6 +566,33 @@ describe("shipping to payment company sync", () => {
     });
   });
 
+  describe("a company recovered from the shipping form's own fields", () => {
+    test("is not passed off as registry-vouched", () => {
+      // This route reads the pair out of the DOM, where no provenance is
+      // recorded. Sent on with none, the tile re-derives it as 'registry' and
+      // locks the number field over a value the buyer typed by hand.
+      const shippingFields = document.createElement("div");
+      shippingFields.innerHTML =
+        '<input id="shipping-company" value="Example Trading Ltd" />' +
+        '<input id="shipping-company_id" value="12345678" />';
+      document.body.appendChild(shippingFields);
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+      // And the record it restores says the same, so the next reader agrees.
+      expect(
+        JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY))
+          .company_id_source,
+      ).toBe("manual");
+    });
+  });
+
   test("does not sync when billing is not the same as shipping", () => {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";

@@ -1864,8 +1864,31 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts || [];
 
+    /**
+     * Dispose the identity subscription of every surface no longer in the
+     * document.
+     *
+     * The registry is keyed on the surface's root node, so a departed root can
+     * never be reached to dispose again and its subscription would go on
+     * writing storage and dispatching cross-step events on every notification.
+     * Driven by the re-render hook below, which is the event that actually
+     * removes a surface — not by the next surface's mount.
+     */
+    function twoGatewayReapCaptureIdentityWatchers() {
+        const registry = window.twoGatewayCaptureIdentityWatchers;
+        if (!(registry instanceof Map)) return;
+        registry.forEach(function (watcher, node) {
+            if (!node || node.isConnected !== false) return;
+            watcher.dispose();
+            registry.delete(node);
+        });
+    }
+
+    window.twoGatewayReapCaptureIdentityWatchers = twoGatewayReapCaptureIdentityWatchers;
+
     /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */
     function twoGatewayRemountCompanyPopovers() {
+        twoGatewayReapCaptureIdentityWatchers();
         // Over a SNAPSHOT: a remount can register a new mount, and an entry
         // appended to the array being filtered is never visited and so is
         // dropped by the assignment.
@@ -2039,7 +2062,13 @@ $quoteDetails = json_encode(
                 // freely and a listener bound to one would not survive.
                 document.addEventListener('change', function (event) {
                     const target = event.target;
-                    if (!target || !target.id || !/country_id$/.test(target.id)) return;
+                    // NAME as well as id, for the reason twoGatewayResolveCountry()
+                    // gives: an address form rendered under any other namespace —
+                    // a modal, an address-book form, a brand's own component —
+                    // carries the same field under a different id.
+                    if (!target) return;
+                    const key = target.id || target.name || '';
+                    if (!/country_id$/.test(key)) return;
                     onChange(String(target.value || '').toLowerCase());
                 }, true);
             },
@@ -2112,9 +2141,8 @@ $quoteDetails = json_encode(
     /**
      * The Alpine mixin every capture surface composes over its engine.
      *
-     * @param {Object} options the surface's engine options, plus `captureHost`
-     *        ('address' | 'tile'), `restBaseUrl`, `checkoutPageUrl`,
-     *        `manualEntryOffered` and `translations`.
+     * @param {Object} options the surface's engine options, plus `restBaseUrl`,
+     *        `checkoutPageUrl`, `manualEntryOffered` and `translations`.
      * @returns {Object} compose a surface's own members OVER it with
      *          `twoGatewayComposeLive`.
      */
@@ -2351,7 +2379,9 @@ $quoteDetails = json_encode(
                 // this tile still paints from the identity — the sole-trader
                 // progress row, the "select a different sole trader" link and the
                 // order-intent verdict all read state only the mirror writes.
-                this.followCapturedIdentity(owns);
+                // After the claim, never before: the mirror re-reads ownership on
+                // every notification and the claim is what answers it.
+                this.followCapturedIdentity();
                 if (!owns) return;
                 window.twoGatewayCaptureSurfaceCurrent = this;
                 const capture = window.twoGatewayCompanyCapture({
@@ -2386,6 +2416,13 @@ $quoteDetails = json_encode(
                 const field = this.companyNameField();
                 if (!field) return false;
                 if (field.hasAttribute('data-two-capture-active')) return true;
+                // The ATTRIBUTE is the claim, so a surface not carrying it does
+                // not own the control. Answering the question could otherwise
+                // grant ownership by itself whenever no claim was standing —
+                // which is every morph, because a morph reinstates server markup
+                // that carries no claim, and that is the window in which "seed,
+                // never displace" has to hold.
+                if (!claim) return false;
 
                 const claimed = document.querySelector('input[data-two-capture-active]');
                 if (claimed && claimed.isConnected) {
@@ -2404,7 +2441,7 @@ $quoteDetails = json_encode(
                 return this.resolveCaptureOwnership(true);
             },
 
-            /** The same question, without taking the claim. */
+            /** Whether this surface already holds the claim. Takes nothing. */
             ownsCaptureField() {
                 return this.resolveCaptureOwnership(false);
             },
@@ -2443,7 +2480,7 @@ $quoteDetails = json_encode(
              * Everything this checkout does with a captured company hangs off
              * that one notification.
              */
-            followCapturedIdentity(owns) {
+            followCapturedIdentity() {
                 const identity = window.TwoCompanyIdentity;
                 // A CSP or deploy failure on the base module degrades this field
                 // to a plain input; the mirror must not be what throws.
@@ -2453,17 +2490,13 @@ $quoteDetails = json_encode(
                 // rebuild, so a subscription kept here would never be reachable
                 // to dispose and every dead copy would go on writing the
                 // selection blob on one notification.
-                // Keyed on the ROOT NODE: `captureHost` names only the kind of
-                // host, and the address renderer mounts on two forms.
+                // Keyed on the ROOT NODE, never on the kind of host: the
+                // address renderer mounts on two forms at once, so one key per
+                // kind is one key shared between two live surfaces.
                 const registry = window.twoGatewayCaptureIdentityWatchers instanceof Map
                     ? window.twoGatewayCaptureIdentityWatchers
                     : (window.twoGatewayCaptureIdentityWatchers = new Map());
-                // A departed root can never be reached to dispose again.
-                registry.forEach(function (watcher, node) {
-                    if (!node || node.isConnected !== false) return;
-                    watcher.dispose();
-                    registry.delete(node);
-                });
+                twoGatewayReapCaptureIdentityWatchers();
                 // Fails closed: with no root there is no per-surface key to hold
                 // the subscription under, and a shared one is no key at all.
                 const slot = this.$root;
@@ -2498,12 +2531,20 @@ $quoteDetails = json_encode(
                     self.isCompanySelected = Boolean(self.companyId);
                     self.companyIdEntryRequired = !identity.hasVouchedNumber();
                     self.applyCompanyIdEditability();
+                    // Read FRESH, never captured at subscribe time: the claim
+                    // transfers at runtime — an invoice-role form mounting after
+                    // the delivery one displaces it — and an ex-owner holding a
+                    // stale `true` announced, persisted and raised an order
+                    // intent alongside the real owner.
+                    if (!changed || !self.ownsCaptureField()) return;
                     // A discarded company has to leave the FIELD too. The commit
                     // hook writes the name it is given and returns early on an
                     // empty one, so nothing else blanks what a discarded sole
-                    // trader left in `payment[company_name]`.
+                    // trader left in `payment[company_name]`. Behind the
+                    // ownership gate: `#company_name`/`#company_id` are the
+                    // tile's submit fields, and a non-hosting surface blanking
+                    // them wipes a company the tile still holds.
                     if (!self.companyName) self.clearCapturedNameFields();
-                    if (!changed || !owns) return;
                     const selectionData = self.writeCapturedSelection();
                     // The cross-step announcement is about the COMPANY, so a
                     // mode flip persists without making the other step re-read a
@@ -2525,11 +2566,13 @@ $quoteDetails = json_encode(
                         restoring
                     );
                 };
-                registry.set(slot, identity.subscribe(apply));
                 // The priming pass looks like a fresh pick to every `!==` above,
                 // so a surface acting on one — the tile dispatches an order
-                // intent — is told it is a restore.
+                // intent — is told it is a restore. Raised BEFORE subscribing:
+                // an implementation that primes the subscriber itself would
+                // otherwise deliver that first pass as a live pick.
                 restoring = true;
+                registry.set(slot, identity.subscribe(apply));
                 apply();
                 restoring = false;
             },
@@ -2880,9 +2923,8 @@ $quoteDetails = json_encode(
          * storage split, and the optional payment fields.
          */
         return twoGatewayComposeLive(window.twoGatewayCaptureSurfaceMixin({
-            captureHost: 'tile',
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+            checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
             soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
             // Manual entry captures no organisation number, so it needs a later
             // lookup to supply one — and this tile hosts the control only when
@@ -3089,7 +3131,7 @@ $quoteDetails = json_encode(
                 $orderIntentConfig["extensionDBVersion"],
             ) ?>',
             quote: '<?= $quoteDetails ?>',
-            checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+            checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
 
             // Gates the sole-trader PHONE write only; the registered address it
             // arrives with is written regardless (TWO-25461 §5).
@@ -3298,10 +3340,16 @@ $quoteDetails = json_encode(
                         ? (detail.companyIdSource || 'registry')
                         : '';
                     const shared = window.TwoCompanyIdentity;
-                    if (shared) {
+                    // Seed, never displace — the same rule as initialize(). This
+                    // sync reaches the tile whether or not it hosts the control,
+                    // and an authoritative write from a tile hosting nothing
+                    // replaces both halves of whatever the address step has just
+                    // captured with this event's older pair.
+                    const hostsControl = this.ownsCaptureField();
+                    if (shared && (hostsControl || !shared.companyName())) {
                         shared.write(
                             { companyName, companyId, companyIdSource },
-                            { authoritative: true }
+                            { authoritative: hostsControl }
                         );
                     }
                     /*

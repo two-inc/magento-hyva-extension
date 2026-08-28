@@ -1011,8 +1011,8 @@ function installCompanyIdentityStub() {
  * Stand in for the base plugin's `sole-trader.js`.
  *
  * A RECORDER, unlike the identity and capture stubs: the popup, the token mint
- * and the postMessage handshake are the shared file's own behaviour, covered by
- * magento-plugin's suite. What is this repo's is the host adapter the flow
+ * and the postMessage handshake are the shared file's own behaviour and are
+ * covered where that file lives. What is this repo's is the host adapter the flow
  * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
  * `applyBuyerAddress`, `applyTelephone`, `showError`, `renderSignupPrompt` — so
  * a stub reimplementing the flow would let a test assert the stub instead.

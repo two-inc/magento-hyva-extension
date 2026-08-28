@@ -133,9 +133,8 @@ function <?= $gwBase ?>CompanySearchField() {
     const twoGatewayCaptureSurfaceMixinFn = window.twoGatewayCaptureSurfaceMixin
         || function() { return {}; };
     return twoGatewayComposeLiveFn(twoGatewayCaptureSurfaceMixinFn({
-        captureHost: 'address',
         restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-        checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+        checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
         soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
         isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
         // The address step is where a manually typed name can still be given a
@@ -204,12 +203,16 @@ function <?= $gwBase ?>CompanySearchField() {
                 // bails unless the mode is still `soletrader`, so the stored
                 // mode — which that flow never writes — must not overwrite it.
                 if (!identity.isSoleTrader()) {
-                    identity.captureMode(data.manual_mode ? 'manual' : 'registered');
                     // Seed, never displace: this factory mounts on the delivery
                     // form AND the invoice form, so only the surface holding the
                     // claim may replace a capture the other one made.
                     const hostsControl = this.ownsCaptureField();
+                    // The MODE is under the same gate as the pair. A tile adopting
+                    // another surface's mode opened on a live-looking search box
+                    // whose every keystroke returned early at the manual-mode
+                    // guard, with no way out.
                     if (hostsControl || !identity.companyName()) {
+                        identity.captureMode(data.manual_mode ? 'manual' : 'registered');
                         identity.write(
                             {
                                 companyName: data.company_name || '',

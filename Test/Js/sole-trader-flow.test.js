@@ -7,8 +7,8 @@
  * The flow itself is the base plugin's `sole-trader.js`: the token mint, the
  * hosted-signup popup, the postMessage handshake and the buyer read all live
  * there, one implementation for both checkouts, and are covered against the real
- * file in magento-plugin's suite. Neither that file nor the capture controller
- * that drives it is in this repo.
+ * file where that file lives. Neither it nor the capture controller that drives
+ * it is in this repo.
  *
  * What IS this repo's, and what this suite pins, is the host adapter the flow
  * calls back into — the URLs it is given, where each value comes from, what it

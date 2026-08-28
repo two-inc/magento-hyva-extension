@@ -664,6 +664,32 @@ describe("payment component company selection", () => {
       syncCompanyTileLabel(component);
     }
 
+    test("cannot displace a capture the tile hosts no control for", () => {
+      // Where the ADDRESS step owns the control this tile claims nothing, and
+      // this sync still reaches it. An authoritative write from here replaces
+      // both halves of the live capture with this event's pair — which on this
+      // route is routinely the company that preceded it.
+      const claimHolder = document.createElement("input");
+      claimHolder.setAttribute("data-two-capture-active", "");
+      document.body.appendChild(claimHolder);
+      document
+        .getElementById("company_name")
+        .removeAttribute("data-two-capture-active");
+      env.identity.write(
+        {
+          companyName: "Address Step Ltd",
+          companyId: "88888888",
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
+
+      syncFromShipping("Older Ltd", "11111111", "registry");
+
+      expect(env.identity.companyName()).toBe("Address Step Ltd");
+      expect(env.identity.companyId()).toBe("88888888");
+    });
+
     test("an identifier-less shipping company unlocks the field", () => {
       // The shipping step can now hand over an empty identifier for the same
       // reason selectItem() can. Without recomputing the editability from what

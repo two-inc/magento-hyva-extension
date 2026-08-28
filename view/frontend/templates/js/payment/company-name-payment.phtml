@@ -277,6 +277,12 @@ $methodCode = $brandedViewModel->getMethodCode();
                 const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
 
                 if (persistedShippingIdValue) {
+                    // Recovered from the DOM, where no provenance is recorded, so
+                    // it is only registry-vouched if the stored record says so.
+                    // Absent provenance defaults to 'registry' downstream, which
+                    // re-locks the number field over a hand-typed value.
+                    const recoveredIdSource =
+                        shippingCompanySelectionData.company_id_source || 'manual';
                     // A merging write. This used to substitute a two-key object
                     // for the whole blob, which silently dropped `quote_id` —
                     // and the clearer above needs both quote ids non-empty, so
@@ -287,9 +293,16 @@ $methodCode = $brandedViewModel->getMethodCode();
                     twoPaymentWriteSelection({
                         quote_id: shippingCompanySelectionData.quote_id || currentQuoteId,
                         company_name: persistedShippingValue,
-                        company_id: persistedShippingIdValue
+                        company_id: persistedShippingIdValue,
+                        company_id_source: recoveredIdSource
                     });
-                    updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
+                    updatePaymentFields(
+                        persistedShippingValue,
+                        persistedShippingIdValue,
+                        false,
+                        false,
+                        recoveredIdSource
+                    );
                     paymentFieldsInitialized = true;
                 }
             }
