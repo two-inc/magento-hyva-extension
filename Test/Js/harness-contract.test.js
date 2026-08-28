@@ -56,7 +56,7 @@ describe("template renderer contract", () => {
 
     test("a wrapped config value keeps its own test value", () => {
       expect(rendered()).toContain(
-        "const apiUrl = 'https://checkout-api.test.invalid';",
+        "const apiUrl = 'https://api.test.invalid';",
       );
     });
 

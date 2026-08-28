@@ -73,7 +73,7 @@ const PHP_VALUE_RULES = [
     /^\$brandedViewModel->getMagewireBlockName\(\)$/,
     "checkout.payment.method.two_payment",
   ],
-  [/^\$checkoutApiUrl$/, "https://checkout-api.test.invalid"],
+  [/^\$checkoutApiUrl$/, "https://api.test.invalid"],
   // The Magento link base URL `rest/V1/two/...` hangs off, with no trailing
   // slash — the template strips it, and a suite asserting on a built URL sees
   // the join.
