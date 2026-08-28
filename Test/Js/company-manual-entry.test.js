@@ -50,7 +50,7 @@ const INJECT_RULE = [
  */
 function expectBootstrapped(component) {
   expect(component).toBeDefined();
-  expect(typeof component.enterManually).toBe("function");
+  expect(typeof component.mountCompanyPopover).toBe("function");
   return component;
 }
 
@@ -66,8 +66,8 @@ describe("address-step manual entry", () => {
     // `controlRoot()` resolves the component's own root by that class, and a
     // fixture without it makes every lookup below answer null.
     document.body.innerHTML = [
-      '<div id="root" class="two-company-search">',
-      '  <input type="text" id="field" value="" />',
+      '<div id="root" class="two-company-search" data-two-capture-host="address">',
+      '  <input type="text" id="field" data-two-capture-field value="" />',
       "</div>",
     ].join("\n");
     field = document.getElementById("field");
@@ -100,8 +100,8 @@ describe("address-step manual entry", () => {
    * @returns {Object|undefined} the chip definition for `mode`
    */
   function chip(mode) {
-    return component
-      .companyPopoverChips()
+    return panel()
+      .options.getChips()
       .find((candidate) => candidate.mode === mode);
   }
 
@@ -116,16 +116,45 @@ describe("address-step manual entry", () => {
       ["registered", true, "the registry lookup is always available"],
       ["manual", true, "the address step still has a lookup to supply a number later"],
     ])("the %s chip is offered: %p (%s)", (mode, offered) => {
-      expect(component.companyPopoverModeOffered(mode)).toBe(offered);
+      expect(panel().options.isChipVisible(mode)).toBe(offered);
     });
 
-    test("withheld once company search is off, where a typed name is a dead end", () => {
-      // Manual entry captures no organisation number, and Two's payment method
-      // requires one. With no lookup left on the checkout there is nothing to
-      // supply it, so offering the mode strands the buyer.
-      component.isCompanySearchEnabled = "";
+    test.each([
+      [true, true, "the address step has a lookup to supply a number later"],
+      [false, false, "the tile has none, so a typed name is a dead end"],
+    ])(
+      "manualEntryOffered %p reaches the controller as %p (%s)",
+      (offered, expected) => {
+        // The one value this checkout hands the shared controller to decide the
+        // chip. Rebuilt rather than read off the mounted one: the controller is
+        // cached per page, so the second case needs the cache cleared.
+        delete window.twoGatewayCompanyCaptureInstance;
 
-      expect(component.companyPopoverModeOffered("manual")).toBe(false);
+        const capture = window.twoGatewayCompanyCapture({
+          restBaseUrl: "",
+          checkoutApiUrl: "https://checkout-api.test.invalid",
+          checkoutPageUrl: "/checkout",
+          manualEntryOffered: offered,
+        });
+
+        expect(capture.config().isCompanySearchEnabled).toBe(expected);
+      },
+    );
+
+    test("no popover at all where the lookup is switched off", () => {
+      // With no lookup the popover would move every keystroke into a query box
+      // whose searches can never run, and the manual chip is withheld for the
+      // same reason — so the buyer could not type a company name at all.
+      const before = env.companyPanels.length;
+      const disabled = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: field,
+        root: root,
+      });
+      disabled.isCompanySearchEnabled = "";
+
+      disabled.init();
+
+      expect(env.companyPanels).toHaveLength(before);
     });
 
     test("the chips are the panel's, not this checkout's markup", () => {
@@ -152,7 +181,7 @@ describe("address-step manual entry", () => {
     test("it is the selected mode afterwards", () => {
       chip("manual").onActivate();
 
-      expect(component.companyPopoverSelectedMode()).toBe("manual");
+      expect(panel().options.getSelectedMode()).toBe("manual");
     });
 
     test("a name typed there is published with no identifier vouched for it", () => {
@@ -195,7 +224,7 @@ describe("address-step manual entry", () => {
       panel().options.onExitManualEntry();
 
       expect(component.manualMode).toBe(false);
-      expect(component.companyPopoverSelectedMode()).toBe("registered");
+      expect(panel().options.getSelectedMode()).toBe("registered");
     });
 
     test("the registered chip is the same route", () => {

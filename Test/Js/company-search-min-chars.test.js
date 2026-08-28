@@ -526,8 +526,8 @@ describe("address field — minimum-characters hint (element 4)", () => {
       // Without a country the engine refuses to search at all, and every row of
       // the sweep below would read as "too short".
       '<input id="shipping-country_id" value="GB" />',
-      '<div id="root" class="two-company-search">',
-      '  <input type="text" id="field" value="" />',
+      '<div id="root" class="two-company-search" data-two-capture-host="address">',
+      '  <input type="text" id="field" data-two-capture-field value="" />',
       "</div>",
     ].join("\n");
 
@@ -582,14 +582,14 @@ describe("address field — minimum-characters hint (element 4)", () => {
 
   test("the threshold it states is the threshold enforced", async () => {
     for (let n = 0; n <= INJECTED_MIN; n += 1) {
-      const before = mounted.fetchStub.calls.length;
+      const before = mounted.fetchStub.searchCalls().length;
       const pending = searchApi.searchCompanies({ term: "x".repeat(n) });
       await H.flushPromises();
 
-      const searched = mounted.fetchStub.calls.length > before;
+      const searched = mounted.fetchStub.searchCalls().length > before;
       expect(searched).toBe(n >= INJECTED_MIN);
 
-      if (searched) mounted.fetchStub.last().respond({ items: [] });
+      if (searched) mounted.fetchStub.lastSearch().respond({ items: [] });
       await pending;
     }
   });

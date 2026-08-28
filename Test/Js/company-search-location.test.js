@@ -215,63 +215,90 @@ describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
    * requires one, so the affordance is offered only where the address-step
    * lookup is — which is exactly where the control is NOT in the tile.
    *
-   * The gate is component state, not a PHP branch: the shared popover renders
-   * the chip and asks `companyPopoverModeOffered('manual')` whether to. That
-   * makes the getter and what the panel is handed two halves of one claim — a
-   * getter nothing consults is silently inert.
+   * The gate is the `manualEntryOffered` each surface hands the one shared
+   * controller, and the chip the popover renders from it. Both halves are
+   * asserted: a value nothing consults is silently inert, and a chip fed from
+   * somewhere else drifts.
    */
   describe("manual entry follows the company-search setting", () => {
-    const ADDRESS_COMPONENT = "twoGatewayHyvaCompanySearchField";
-    const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
-
-    let env;
-
-    beforeEach(() => {
-      document.body.innerHTML = [
-        '<div id="root" class="two-company-search">',
-        '  <input type="text" id="field" value="" />',
-        "</div>",
-      ].join("\n");
-
-      env = H.installHyvaEnvironment();
-      H.loadSharedHelpers();
-      H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
-      env.fireAlpineInit();
-    });
-
-    afterEach(() => {
-      env.restore();
-    });
-
     /**
-     * @param {string} componentName
-     * @returns {Object} the mounted component
+     * Each surface, with the mount point it renders the control at and the
+     * entry point Magewire re-runs.
      */
-    function mount(componentName) {
-      const factory = env.alpineComponents[componentName];
-      expect(typeof factory).toBe("function");
+    const SURFACES = [
+      {
+        host: "address",
+        component: "twoGatewayHyvaCompanySearchField",
+        template: H.COMPANY_NAME_TEMPLATE,
+        rules: undefined,
+        fixture: [
+          '<div id="control-root" class="two-company-search" data-two-capture-host="address">',
+          '  <input type="text" id="field" data-two-capture-field value="" />',
+          "</div>",
+        ].join("\n"),
+        rootId: "control-root",
+        start: (component) => component.init(),
+        offered: true,
+        description: "offered on the address step",
+      },
+      {
+        host: "tile",
+        component: "twoGatewayHyvaPaymentMethodBase",
+        template: H.GATEWAY_METHOD_TEMPLATE,
+        rules: [[/^\$twoControlCaptureHost$/, "tile"]],
+        fixture: [
+          '<form id="two_payment_form">',
+          '  <div class="two-company-search" data-two-capture-host="tile">',
+          '    <input type="text" id="field" data-two-capture-field value="" />',
+          "  </div>",
+          "</form>",
+        ].join("\n"),
+        rootId: "two_payment_form",
+        start: (component) => {
+          component.$watch = () => {};
+          component.initialize(JSON.parse(H.QUOTE_JSON));
+        },
+        offered: false,
+        description: "withheld in the payment tile",
+      },
+    ];
 
-      return H.mountComponent(factory, {
-        el: document.getElementById("field"),
-        root: document.getElementById("root"),
+    describe.each(SURFACES)("$description", (surface) => {
+      let env;
+      let fetchStub;
+
+      beforeEach(() => {
+        document.body.innerHTML = surface.fixture;
+
+        env = H.installHyvaEnvironment();
+        fetchStub = H.stubFetch();
+        H.loadSharedHelpers(surface.rules);
+        H.loadTemplate(surface.template, surface.rules);
+        env.fireAlpineInit();
+
+        const factory = env.alpineComponents[surface.component];
+        expect(typeof factory).toBe("function");
+        const root = document.getElementById(surface.rootId);
+        surface.start(
+          H.mountComponent(factory, { el: root, root: root }),
+        );
       });
-    }
 
-    [
-      [ADDRESS_COMPONENT, true, "offered on the address step"],
-      [TILE_COMPONENT, false, "withheld in the payment tile"],
-    ].forEach(function (row) {
-      const componentName = row[0];
-      const expected = row[1];
-      const description = row[2];
-
-      test("manual entry is " + description, () => {
-        expect(mount(componentName).manualEntryVisible).toBe(expected);
+      afterEach(() => {
+        fetchStub.restore();
+        env.restore();
       });
 
-      test("the panel is told the manual chip is " + description, () => {
-        expect(mount(componentName).companyPopoverModeOffered("manual")).toBe(
-          expected,
+      test("this surface tells the controller so", () => {
+        expect(
+          env.captureControllers[0].config().isCompanySearchEnabled,
+        ).toBe(surface.offered);
+      });
+
+      test("and the panel is told the same", () => {
+        expect(env.companyPanels).toHaveLength(1);
+        expect(env.companyPanels[0].options.isChipVisible("manual")).toBe(
+          surface.offered,
         );
       });
     });

@@ -58,6 +58,7 @@ function deferred() {
 
 describe("order-intent sequencing (bug 4)", () => {
   let env;
+  let fetchStub;
   let component;
   let form;
 
@@ -77,6 +78,9 @@ describe("order-intent sequencing (bug 4)", () => {
     ].join("\n");
 
     env = H.installHyvaEnvironment();
+    // The capture controller asks the registry for the billing country's
+    // company types the moment the tile mounts.
+    fetchStub = H.stubFetch();
     jest.spyOn(console, "error").mockImplementation(() => {});
 
     H.loadSharedHelpers();
@@ -96,6 +100,7 @@ describe("order-intent sequencing (bug 4)", () => {
   });
 
   afterEach(() => {
+    fetchStub.restore();
     env.restore();
     jest.useRealTimers();
     document.body.innerHTML = "";

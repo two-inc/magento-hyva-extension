@@ -415,10 +415,24 @@ function renderTemplate(relPath, extraRules) {
   // leaving a suite that asserts on markup nothing emitted. Recursive through
   // renderTemplate(), so the partial gets the same fail-loud substitution as its
   // caller, and it is the real shipped file rather than a hand-copied excerpt.
+  //
+  // `$twoControlCaptureHost` is resolved from WHICH file is doing the including,
+  // because it is the one parameter whose two values must differ: the shared
+  // controller tells the two mount points apart by this attribute alone
+  // (TWO-25503), so one shared value would make both selectors answer for the
+  // same node. `extraRules` still wins, being tried first.
+  const includeRules = (extraRules || []).concat([
+    [
+      /^\$twoControlCaptureHost$/,
+      relPath.indexOf("form/field/companyName.phtml") === -1
+        ? "tile"
+        : "address",
+    ],
+  ]);
   source = source.replace(
     TEMPLATE_INCLUDE_PATTERN,
     function (_match, included) {
-      return renderTemplate("view/frontend/templates/" + included, extraRules);
+      return renderTemplate("view/frontend/templates/" + included, includeRules);
     },
   );
 
@@ -623,13 +637,11 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyDetail",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
-  // The popover's translated copy, and the per-mount field counter beside it.
-  // Same `window.X = window.X || …` shape as the cache below, so without these
-  // the FIRST test in a file wins the panel's strings for every later one and
-  // any assertion on them is silently order-dependent.
+  // The popover's translated copy, and the register of live mounts a re-render
+  // rebuilds from. Same `window.X = window.X || …` shape as the cache below, so
+  // without these the FIRST test in a file wins the panel's strings for every
+  // later one and any assertion on them is silently order-dependent.
   "twoGatewayPanelStrings",
-  "twoGatewayCompanyFieldSeq",
-  "twoGatewayCompanyPanels",
   "twoGatewayCompanyMounts",
   // The per-store company-selection accessor. Listed for the same reason as the
   // cache above: these are assigned as `window.X = window.X || …`, which is
@@ -645,11 +657,17 @@ const SHARED_HELPER_GLOBALS = [
   // Alpine component composes with. Listed for the same leak-between-tests
   // reason as its neighbours: `window.X = window.X || …`.
   "twoGatewayCompanySearchEngine",
-  // The control layered over that engine (TWO-25326, 2026-08-05) and the ONE
-  // placeholder-identifier display filter — same `window.X = window.X || …`
-  // idiom, same leak-between-files reason.
-  "twoGatewayCompanySearchControl",
+  // The ONE placeholder-identifier display filter — same `window.X = window.X ||
+  // …` idiom, same leak-between-files reason.
   "twoGatewayDisplayCompanyNumber",
+  // TWO-25503: the page-level capture controller's builder, the mixin each
+  // surface composes over the engine, and the surface that controller is
+  // currently pointed at. Same idiom, same reset reason — and the surface
+  // pointer especially: left behind, one file's torn-down component would
+  // answer every host call in the next.
+  "twoGatewayCompanyCapture",
+  "twoGatewayCaptureSurfaceMixin",
+  "twoGatewayCaptureSurfaceCurrent",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -678,16 +696,6 @@ const SHARED_HELPER_GLOBALS = [
   // company-name-payment.phtml consults the pin through `window`.
   "twoGatewayAddressMirrorFields",
   "twoGatewayIsBillingAddressPinned",
-  // The sole-trader helpers (TWO-25503). Same `window.X = window.X || …` idiom
-  // as everything above, so the same leak-between-files reason to reset them —
-  // and the per-country memo especially: a country answered in one file's
-  // fixture would otherwise decide the next file's mode tab with no request
-  // ever going out.
-  "TWO_GATEWAY_SUPPORTED_COMPANY_TYPES",
-  "twoGatewaySupportedCompanyTypes",
-  "twoGatewaySoleTraderTokens",
-  "twoGatewayAutofillBuyer",
-  "twoGatewaySoleTraderSignupUrl",
   "twoGatewayInvoiceRoleAddressForm",
 ];
 
@@ -861,6 +869,612 @@ function installCompanyPanelStub() {
   return { instances: instances };
 }
 
+/**
+ * Stand in for the base plugin's `company-identity.js` — the page-level
+ * singleton holding the company the buyer is paying as.
+ *
+ * Stubbed for the same reason the panel is: the file ships in two-inc/magento2
+ * and there is no vendor tree here. Faithful rather than inert, because the
+ * surface mixin's every mirror is written from a `subscribe()` notification —
+ * an identity that did not notify would make the mirrors, the stored selection
+ * blob and the cross-step event all untestable at once.
+ *
+ * Built fresh per environment, so a company captured in one test cannot decide
+ * the next one's mode.
+ *
+ * @returns {Object} the identity
+ */
+function installCompanyIdentityStub() {
+  const state = {
+    captureMode: "registered",
+    companyName: "",
+    companyId: "",
+    companyIdSource: "",
+    soleTraderAvailable: false,
+    soleTraderAdopted: false,
+    soleTraderBusy: false,
+  };
+  const subscribers = [];
+  let flightDepth = 0;
+
+  function notify() {
+    subscribers.slice().forEach(function (subscriber) {
+      subscriber(identity);
+    });
+  }
+
+  function accessor(key, coerce) {
+    return function (value) {
+      if (arguments.length === 0) return state[key];
+      const next = coerce(value);
+      if (state[key] === next) return next;
+      state[key] = next;
+      notify();
+      return next;
+    };
+  }
+
+  const asString = function (value) {
+    return value === undefined || value === null ? "" : String(value);
+  };
+  const asBoolean = function (value) {
+    return !!value;
+  };
+
+  const identity = {
+    captureMode: accessor("captureMode", asString),
+    companyName: accessor("companyName", asString),
+    companyId: accessor("companyId", asString),
+    companyIdSource: accessor("companyIdSource", asString),
+    soleTraderAvailable: accessor("soleTraderAvailable", asBoolean),
+    soleTraderAdopted: accessor("soleTraderAdopted", asBoolean),
+    soleTraderBusy: accessor("soleTraderBusy", asBoolean),
+    subscribe: function (subscriber) {
+      subscribers.push(subscriber);
+      return {
+        dispose: function () {
+          const at = subscribers.indexOf(subscriber);
+          if (at !== -1) subscribers.splice(at, 1);
+        },
+      };
+    },
+    isSoleTrader: function () {
+      return state.captureMode === "soletrader";
+    },
+    isCaptured: function () {
+      return !!(state.companyName && state.companyId);
+    },
+    hasVouchedNumber: function () {
+      return !!state.companyId && state.companyIdSource === "registry";
+    },
+    write: function (written, options) {
+      const authoritative = !!(options && options.authoritative);
+      if (written.companyName || authoritative) {
+        state.companyName = asString(written.companyName);
+      }
+      if (written.companyId || authoritative) {
+        state.companyId = asString(written.companyId);
+        state.companyIdSource =
+          written.companyIdSource === undefined
+            ? state.companyId
+              ? "registry"
+              : ""
+            : asString(written.companyIdSource);
+      }
+      notify();
+    },
+    clearNumber: function () {
+      if (!state.companyId && !state.companyIdSource) return;
+      state.companyId = "";
+      state.companyIdSource = "";
+      notify();
+    },
+    clear: function () {
+      if (!state.companyName && !state.companyId && !state.companyIdSource) {
+        return;
+      }
+      state.companyName = "";
+      state.companyId = "";
+      state.companyIdSource = "";
+      notify();
+    },
+    beginFlight: function () {
+      flightDepth += 1;
+      identity.soleTraderBusy(true);
+    },
+    settleFlight: function () {
+      flightDepth = Math.max(0, flightDepth - 1);
+      if (flightDepth === 0) identity.soleTraderBusy(false);
+    },
+    isBusy: function () {
+      return flightDepth > 0;
+    },
+  };
+
+  window.TwoCompanyIdentity = identity;
+  return identity;
+}
+
+/**
+ * Stand in for the base plugin's `sole-trader.js`.
+ *
+ * A RECORDER, unlike the identity and capture stubs: the popup, the token mint
+ * and the postMessage handshake are the shared file's own behaviour, covered by
+ * magento-plugin's suite. What is this repo's is the host adapter the flow
+ * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
+ * `applyBuyerAddress`, `applyTelephone`, `showError`, `renderSignupPrompt` — so
+ * a stub reimplementing the flow would let a test assert the stub instead.
+ *
+ * @returns {{instances: Array}} newest last
+ */
+function installSoleTraderStub() {
+  const instances = [];
+
+  function SoleTraderStub(component) {
+    this.component = component;
+    this.calls = [];
+    /** Whether a signup popup is up, and whether tokens are held — a test sets both. */
+    this.popupOpen = false;
+    this.tokens = false;
+    instances.push(this);
+  }
+
+  SoleTraderStub.prototype.host = function () {
+    return this.component.host();
+  };
+  SoleTraderStub.prototype.identity = function () {
+    return this.component.identity();
+  };
+
+  [
+    "listenForSignupResult",
+    "ensureTokens",
+    "mintTokens",
+    "startTokenRefresh",
+    "stopTokenRefresh",
+    "refreshTokens",
+    "forgetAdoptions",
+    "dispose",
+  ].forEach(function (name) {
+    SoleTraderStub.prototype[name] = function () {
+      this.calls.push(name);
+    };
+  });
+
+  ["launchSignup", "retrySignup", "selectDifferentSoleTrader"].forEach(
+    function (name) {
+      SoleTraderStub.prototype[name] = function (options) {
+        this.calls.push(name);
+        this.lastLaunchOptions = options;
+        return null;
+      };
+    },
+  );
+
+  SoleTraderStub.prototype.hasSignupTokens = function () {
+    return !!this.tokens;
+  };
+  SoleTraderStub.prototype.isPopupOpen = function () {
+    return this.popupOpen;
+  };
+  // Answers, rather than only recording: the capture component BRANCHES on it —
+  // a truthy answer means "raise the popup that is up" instead of opening a
+  // second signup.
+  SoleTraderStub.prototype.focusSignupPopup = function () {
+    this.calls.push("focusSignupPopup");
+    return this.popupOpen;
+  };
+  SoleTraderStub.prototype.showSignupPrompt = function (show) {
+    this.calls.push("showSignupPrompt:" + (show ? "on" : "off"));
+    const self = this;
+    this.host().renderSignupPrompt(!!show, function () {
+      self.retrySignup();
+    });
+  };
+
+  window.TwoSoleTrader = SoleTraderStub;
+  return { instances: instances };
+}
+
+/**
+ * Every member `CompanyCaptureComponent` requires of its host adapter, in the
+ * shared file's own order.
+ *
+ * Spelled out here because the file is not in this repo. The component throws on
+ * a partial adapter, so a member added there and not here surfaces as this stub
+ * accepting an adapter production would reject.
+ */
+const CAPTURE_HOST_CONTRACT = [
+  "fieldExists",
+  "isVirtualCart",
+  "getAdjacentCountry",
+  "getQuoteCountry",
+  "getFallbackCountry",
+  "watchCountryChanges",
+  "supportedCompanyTypesUrl",
+  "applyCompanyAddress",
+  "revertAutofilledAddress",
+  "clearField",
+  "tokensUrl",
+  "quoteId",
+  "apiClientParams",
+  "signupPrefill",
+  "signupCountry",
+  "applyBuyerAddress",
+  "applyTelephone",
+  "showError",
+  "renderSignupPrompt",
+];
+
+/**
+ * Stand in for the base plugin's `company-capture-component.js`.
+ *
+ * Faithful, not a recorder, and for the opposite reason to the sole-trader stub
+ * above: this component is what CALLS this repo's host adapter, so its mode
+ * routes, its mount selection and its country invalidation are the only things
+ * that reach the code under test. A recorder here would leave every host
+ * function unreached.
+ *
+ * @returns {{instances: Array}} newest last
+ */
+function installCompanyCaptureStub() {
+  const instances = [];
+
+  function CaptureStub(options) {
+    options = options || {};
+    CAPTURE_HOST_CONTRACT.forEach(function (member) {
+      if (typeof options[member] !== "function") {
+        throw new Error(
+          'CompanyCaptureComponent: host option "' + member + '" is required.',
+        );
+      }
+    });
+    this._options = options;
+    this._config = options.config || null;
+    this._identity = options.identity;
+    this._panel = null;
+    this._soleTrader = null;
+    this._boundSelector = null;
+    this._supportedCompanyTypes = {};
+    this._lastCountry = "";
+    this._started = false;
+    this.translate =
+      options.translate ||
+      function (text) {
+        return text;
+      };
+    this.observe = options.observe || null;
+    instances.push(this);
+  }
+
+  CaptureStub.prototype.host = function () {
+    return this._options;
+  };
+  CaptureStub.prototype.identity = function () {
+    return this._identity;
+  };
+  CaptureStub.prototype.config = function () {
+    return this._config;
+  };
+  CaptureStub.prototype.soleTrader = function () {
+    return this._soleTrader;
+  };
+  CaptureStub.prototype.panel = function () {
+    return this._panel;
+  };
+
+  CaptureStub.prototype.start = function () {
+    if (this._started) return;
+    if (!this._config) return;
+    this._started = true;
+    this._soleTrader = new this._options.SoleTraderFlow(this);
+    this._soleTrader.listenForSignupResult();
+    this._options.watchCountryChanges(this.onCountryChanged.bind(this));
+    this._lastCountry = this.countryCode();
+    this.refreshMount();
+    this.refreshSoleTraderAvailability();
+  };
+
+  CaptureStub.prototype.countryCode = function () {
+    const adjacent = this.adjacentCountry();
+    if (adjacent !== null) return adjacent;
+    return (
+      this._options.getQuoteCountry() || this._options.getFallbackCountry() || ""
+    );
+  };
+
+  CaptureStub.prototype.adjacentCountry = function () {
+    const mount = this._boundSelector || this.mountSelector();
+    if (!mount) return null;
+    const answer = this._options.getAdjacentCountry(mount);
+    return typeof answer === "string" ? answer.toLowerCase() : null;
+  };
+
+  CaptureStub.prototype.onCountryChanged = function (observedCountry) {
+    if (!this._config || !this._started) return;
+    const adjacent = this.adjacentCountry();
+    const country =
+      adjacent !== null
+        ? adjacent
+        : String(observedCountry || this.countryCode() || "").toLowerCase();
+    if (!country || country === this._lastCountry) return;
+    const hadCountry = !!this._lastCountry;
+    this._lastCountry = country;
+    if (hadCountry) {
+      if (this._panel) this._panel.abortActiveRequest();
+      this._identity.clear();
+      this._options.revertAutofilledAddress();
+      this._soleTrader.forgetAdoptions();
+      if (this._identity.isSoleTrader()) this.registeredMode();
+    }
+    this.refreshSoleTraderAvailability(country);
+  };
+
+  CaptureStub.prototype.refreshSoleTraderAvailability = function (
+    observedCountry,
+  ) {
+    const self = this;
+    const country = String(
+      observedCountry || this.countryCode() || "",
+    ).toLowerCase();
+    if (!country) {
+      this._identity.soleTraderAvailable(false);
+      return Promise.resolve(false);
+    }
+    return this.getSupportedCompanyTypes(country).then(function (types) {
+      if ((self._lastCountry || self.countryCode()) !== country) {
+        return self._identity.soleTraderAvailable();
+      }
+      const available = types.indexOf("SOLE_TRADER") !== -1;
+      self._identity.soleTraderAvailable(available);
+      if (!available && self._identity.isSoleTrader()) self.registeredMode();
+      if (available) self._soleTrader.ensureTokens();
+      self.syncChips();
+      return available;
+    });
+  };
+
+  CaptureStub.prototype.getSupportedCompanyTypes = function (countryCode) {
+    const self = this;
+    const key = String(countryCode).toLowerCase();
+    const seeded = (this._config && this._config.supportedCompanyTypes) || {};
+    if (Object.prototype.hasOwnProperty.call(this._supportedCompanyTypes, key)) {
+      return Promise.resolve(this._supportedCompanyTypes[key]);
+    }
+    if (Object.prototype.hasOwnProperty.call(seeded, key)) {
+      this._supportedCompanyTypes[key] = seeded[key];
+      return Promise.resolve(seeded[key]);
+    }
+    const url = this._options.supportedCompanyTypesUrl(key);
+    return fetch(url, { headers: { Accept: "application/json" } })
+      .then(function (response) {
+        if (!response.ok) throw new Error("Error response from " + url + ".");
+        return response.json();
+      })
+      .then(function (types) {
+        if (!Array.isArray(types)) {
+          throw new Error("Malformed response from " + url + ".");
+        }
+        self._supportedCompanyTypes[key] = types;
+        return types;
+      })
+      .catch(function () {
+        return [];
+      });
+  };
+
+  CaptureStub.prototype.mountSelector = function () {
+    if (!this._config) return "";
+    if (
+      this._config.isCompanySearchEnabled &&
+      !this._options.isVirtualCart() &&
+      this._options.fieldExists(this._options.addressFieldSelector)
+    ) {
+      return this._options.addressFieldSelector;
+    }
+    if (this._options.fieldExists(this._options.tileFieldSelector)) {
+      return this._options.tileFieldSelector;
+    }
+    return "";
+  };
+
+  CaptureStub.prototype.refreshMount = function () {
+    const selector = this.mountSelector();
+    if (!selector) return;
+    if (
+      selector === this._boundSelector &&
+      this._panel &&
+      this._panel.isBound()
+    ) {
+      this.syncChips();
+      return;
+    }
+    this._boundSelector = selector;
+    this.mountPanel(selector);
+    this.syncChips();
+  };
+
+  CaptureStub.prototype.mountPanel = function (selector) {
+    const self = this;
+    if (!this._panel) {
+      this._panel = new this._options.Panel({
+        fieldSelector: selector,
+        config: this._config,
+        search: this._options.search,
+        translate: function (text) {
+          return self.translate(text);
+        },
+        observe: this.observe
+          ? function (fieldSelector, onNode) {
+              self.observe(fieldSelector, onNode);
+            }
+          : null,
+        getCountryCode: function () {
+          return self.countryCode();
+        },
+        getChips: function () {
+          return self.chipDefinitions();
+        },
+        isChipVisible: function (mode) {
+          return self.isModeOffered(mode);
+        },
+        getSelectedMode: function () {
+          return self._identity.captureMode();
+        },
+        getDisplayText: function () {
+          return self._identity.companyName();
+        },
+        onExitManualEntry: function () {
+          self.registeredMode({ openDropdown: true });
+        },
+        onSelect: function (selectedItem) {
+          self.selectCompany(selectedItem);
+        },
+      });
+    } else {
+      this._panel.fieldSelector = selector;
+    }
+    this._panel.bind();
+    if (this._identity.captureMode() === "manual") this._panel.releaseField();
+  };
+
+  CaptureStub.prototype.chipDefinitions = function () {
+    const self = this;
+    return [
+      {
+        mode: "registered",
+        text: this.translate("Registered company"),
+        onActivate: function () {
+          self.registeredMode({ openDropdown: true });
+        },
+      },
+      {
+        mode: "soletrader",
+        text: this.translate("Sole trader"),
+        onActivate: function () {
+          return self.soleTraderMode();
+        },
+      },
+      {
+        mode: "manual",
+        text: this.translate("Enter manually"),
+        onActivate: function () {
+          self.manualEntryMode();
+        },
+      },
+    ];
+  };
+
+  CaptureStub.prototype.isModeOffered = function (mode) {
+    if (mode === "soletrader") return !!this._identity.soleTraderAvailable();
+    if (mode === "manual") return !!this._config.isCompanySearchEnabled;
+    return true;
+  };
+
+  CaptureStub.prototype.syncChips = function () {
+    if (!this._panel) return;
+    this._panel.syncChips();
+  };
+
+  CaptureStub.prototype.registeredMode = function (options) {
+    this.leaveSoleTraderMode();
+    this._identity.captureMode("registered");
+    this.refreshMount();
+    if (this._panel) {
+      this._panel.reclaimField();
+      if (options && options.openDropdown) this._panel.bind({ open: true });
+    }
+    this.syncChips();
+  };
+
+  CaptureStub.prototype.manualEntryMode = function () {
+    this.leaveSoleTraderMode();
+    this._identity.captureMode("manual");
+    if (this._panel) {
+      this._panel.abortActiveRequest();
+      this._panel.releaseField();
+    }
+    this._identity.clearNumber();
+    this._options.clearField(this._boundSelector);
+    this.syncChips();
+  };
+
+  CaptureStub.prototype.commitManualCompany = function (name) {
+    const typed = String(name || "");
+    if (
+      this._identity.hasVouchedNumber() &&
+      typed !== this._identity.companyName()
+    ) {
+      this._identity.clearNumber();
+    }
+    // The accessor, not write(): an emptied field must land as an empty name.
+    this._identity.companyName(typed);
+  };
+
+  CaptureStub.prototype.selectCompany = function (selectedItem) {
+    this._identity.write(
+      {
+        companyName: selectedItem.text,
+        companyId: selectedItem.companyId,
+        companyIdSource: selectedItem.companyId ? "registry" : "",
+      },
+      { authoritative: true },
+    );
+    this._options.applyCompanyAddress(selectedItem);
+    this.syncChips();
+  };
+
+  CaptureStub.prototype.soleTraderMode = function () {
+    if (this._soleTrader.focusSignupPopup()) return null;
+    const wasAdopted =
+      this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
+    if (!wasAdopted) {
+      this._identity.captureMode("soletrader");
+      this._identity.clearNumber();
+      this.syncChips();
+    }
+    return this._soleTrader.launchSignup(
+      wasAdopted ? { autoselect: false } : undefined,
+    );
+  };
+
+  CaptureStub.prototype.leaveSoleTraderMode = function () {
+    if (!this._identity.isSoleTrader()) return false;
+    this._identity.soleTraderAdopted(false);
+    this._identity.clear();
+    this._options.revertAutofilledAddress();
+    this._soleTrader.forgetAdoptions();
+    return true;
+  };
+
+  CaptureStub.prototype.adoptSoleTrader = function (buyer) {
+    this._identity.write(
+      {
+        companyName: buyer.company_name,
+        companyId: buyer.organization_number,
+        companyIdSource: buyer.organization_number ? "registry" : "",
+      },
+      { authoritative: true },
+    );
+    this._identity.soleTraderAdopted(true);
+    if (this._panel) {
+      this._panel.setDisplayText(this._identity.companyName());
+      this._panel.close();
+    }
+    this.syncChips();
+  };
+
+  CaptureStub.prototype.abandonSoleTrader = function () {
+    if (this._identity.soleTraderAdopted()) return;
+    this.registeredMode();
+  };
+
+  CaptureStub.HOST_CONTRACT = CAPTURE_HOST_CONTRACT;
+
+  window.TwoCompanyCaptureComponent = CaptureStub;
+  return { instances: instances };
+}
+
 function installHyvaEnvironment() {
   const storage = {};
   const browserStorage = {
@@ -933,6 +1547,9 @@ function installHyvaEnvironment() {
   // the company control reaches for it in init(), so it has to be here or that
   // path degrades to its console.error branch in every test.
   const companyPanel = installCompanyPanelStub();
+  const identity = installCompanyIdentityStub();
+  const soleTrader = installSoleTraderStub();
+  const capture = installCompanyCaptureStub();
 
   /*
    * Magewire's re-render hooks. Only `hook()` is stubbed, because that is the
@@ -957,6 +1574,12 @@ function installHyvaEnvironment() {
     loaderEvents: loaderEvents,
     /** Panels the code under test built, newest last. */
     companyPanels: companyPanel.instances,
+    /** The page-level company identity every surface mirrors. */
+    identity: identity,
+    /** Sole-trader flows the capture controller built, newest last. */
+    soleTraderFlows: soleTrader.instances,
+    /** Capture controllers built, newest last — one per page in production. */
+    captureControllers: capture.instances,
     /** Fire the event Alpine fires once it is ready. */
     fireAlpineInit: function () {
       document.dispatchEvent(new Event("alpine:init"));
@@ -992,6 +1615,13 @@ function installHyvaEnvironment() {
       delete window.hyva;
       delete window.Alpine;
       delete window.TwoCompanySearchPanel;
+      delete window.TwoCompanyIdentity;
+      delete window.TwoSoleTrader;
+      delete window.TwoCompanyCaptureComponent;
+      // Not in SHARED_HELPER_GLOBALS: the builder caches the controller here on
+      // first use, so a survivor would hand the next file a controller holding
+      // this one's identity, panel and host adapter.
+      delete window.twoGatewayCompanyCaptureInstance;
       delete window.Magewire;
       // Not in SHARED_HELPER_GLOBALS: it exists only once a hook has actually
       // been registered, so the export check there would fail on it — and left
@@ -1145,6 +1775,20 @@ function stubFetch() {
     last: function () {
       return calls[calls.length - 1];
     },
+    /*
+     * Everything EXCEPT the capture controller's sole-trader availability probe,
+     * which the shared controller puts on this same stub on every mount. A suite
+     * asserting "nothing went on the wire" means the company search.
+     */
+    searchCalls: function () {
+      return calls.filter(function (call) {
+        return call.url.indexOf("/supported-company-types/") === -1;
+      });
+    },
+    lastSearch: function () {
+      const searches = this.searchCalls();
+      return searches[searches.length - 1];
+    },
     restore: function () {
       global.fetch = original;
     },
@@ -1186,6 +1830,7 @@ module.exports = {
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
   installCompanyPanelStub: installCompanyPanelStub,
+  CAPTURE_HOST_CONTRACT: CAPTURE_HOST_CONTRACT,
   mountComponent: mountComponent,
   stubFetch: stubFetch,
   flushPromises: flushPromises,

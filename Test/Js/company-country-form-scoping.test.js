@@ -60,8 +60,12 @@ describe("form-scoped country resolution", () => {
         (country ? " selected" : "") +
         ">x</option>",
       "  </select>",
-      '  <div id="' + role + '-company-root" class="two-company-search">',
-      '    <input type="text" id="' + role + '-company-field" value="" />',
+      '  <div id="' +
+        role +
+        '-company-root" class="two-company-search" data-two-capture-host="address">',
+      '    <input type="text" id="' +
+        role +
+        '-company-field" data-two-capture-field value="" />',
       "  </div>",
       "</form>",
     ].join("\n");
@@ -86,8 +90,8 @@ describe("form-scoped country resolution", () => {
           (billingAsShipping ? " checked" : "") +
           " />",
       '  <div id="tile-root">',
-      '    <div class="two-company-search">',
-      '      <input type="text" id="company_name" value="" />',
+      '    <div class="two-company-search" data-two-capture-host="tile">',
+      '      <input type="text" id="company_name" data-two-capture-field value="" />',
       "    </div>",
       '    <input type="text" id="company_id" value="" disabled />',
       "  </div>",
@@ -151,10 +155,13 @@ describe("form-scoped country resolution", () => {
    *   reached the wire at all
    */
   async function searchedCountry(component) {
-    component.companyPopoverSearchApi().searchCompanies({ term: "Exa" });
+    // This surface's OWN search, not the controller's shared one: one
+    // page-level controller answers for whichever surface mounted last, so
+    // asking it could not tell the two forms apart at all.
+    component.capturePanelSearch({ term: "Exa" });
     await H.flushPromises();
 
-    const call = fetchStub.calls[fetchStub.calls.length - 1];
+    const call = fetchStub.lastSearch();
     if (!call) return null;
     const country = new URL(call.url).searchParams.get("country");
     call.respond({ items: [] });

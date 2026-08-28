@@ -391,6 +391,8 @@ describe("company-selection storage scoping", () => {
       return mounted;
     }
 
+    let fetchStub;
+
     beforeEach(() => {
       document.body.innerHTML = [
         '<div id="scope-root">',
@@ -400,7 +402,14 @@ describe("company-selection storage scoping", () => {
         '  <input type="hidden" id="shipping-company_id" value="" />',
         "</div>",
       ].join("\n");
+      // Mounting a capture surface probes the registry for sole-trader
+      // availability, so `fetch` has to exist even where nothing asserts on it.
+      fetchStub = H.stubFetch();
       jest.spyOn(console, "error").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      fetchStub.restore();
     });
 
     test("the payment tile merges rather than rebuilds — into the BILLING key", () => {
@@ -486,8 +495,8 @@ describe("company-selection storage scoping", () => {
       // a surface whose `$root` is the whole form.
       document.body.innerHTML = [
         '<div id="tile-root">',
-        '  <div class="two-company-search">',
-        '    <input type="text" id="company_name" value="" />',
+        '  <div class="two-company-search" data-two-capture-host="tile">',
+        '    <input type="text" id="company_name" data-two-capture-field value="" />',
         "  </div>",
         '  <input type="text" id="company_id" value="" disabled />',
         "</div>",
@@ -524,13 +533,13 @@ describe("company-selection storage scoping", () => {
 
       // Driven through the popover's search API, which is the only thing that
       // reaches the engine on this surface — the panel owns the query box.
-      component.companyPopoverSearchApi().searchCompanies({ term: "Exa" });
+      component.capturePanelSearch({ term: "Exa" });
       await H.flushPromises();
 
       // A request actually on the wire is the whole assertion: with the flag
       // restored the panel releases the field into manual entry and no search
       // is reachable at all.
-      expect(fetchStub.calls.length).toBe(1);
+      expect(fetchStub.searchCalls().length).toBe(1);
       expect(component.isSearching).toBe(true);
     });
   });

@@ -2,17 +2,18 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25503 — this checkout's half of the shared-popover contract.
+ * TWO-25503 — this checkout's half of the shared-capture contract.
  *
- * The popover is the base plugin's `company-search-panel.js`. It is not in this
- * repo and cannot be loaded here, so what is testable is the ADAPTER: the
- * options handed to the panel, and the six-member search API built over the
- * engine. Those are also the only places drift can enter — the panel owns the
- * copy, the class names and the DOM order, so neither checkout can move those
- * without editing the shared file.
+ * The popover, the capture controller, the identity and the sole-trader flow are
+ * all the base plugin's, loaded from `Two_Gateway::`. None of them is in this
+ * repo and none can be loaded here, so what is testable is the ADAPTER: the
+ * nineteen-member host contract this checkout supplies, the six-member search API
+ * built over the engine, and the two mount selectors that tell the surfaces
+ * apart. Those are also the only places drift can enter — the popover owns the
+ * copy, the class names and the DOM order, and the controller owns the modes.
  *
- * The harness stub records rather than swallows (`.options`, `.calls`), because
- * a stub that dropped its options would make every assertion here vacuous.
+ * The harness stubs record rather than swallow (`.options`, `.calls`), because a
+ * stub that dropped its options would make every assertion here vacuous.
  */
 
 "use strict";
@@ -31,6 +32,12 @@ const SEARCH_API_CONTRACT = [
   "abortActiveRequest",
 ];
 
+/** The two mount points, as the controller is told to address them. */
+const ADDRESS_SELECTOR =
+  '[data-two-capture-host="address"] input[data-two-capture-field]';
+const TILE_SELECTOR =
+  '[data-two-capture-host="tile"] input[data-two-capture-field]';
+
 /** A search response shaped the way the API returns one. */
 function hit(name, identifier, lookupId) {
   return {
@@ -41,19 +48,36 @@ function hit(name, identifier, lookupId) {
   };
 }
 
-describe("the Hyvä adapter over the shared popover", () => {
+/**
+ * One address-step mount point.
+ *
+ * `two-company-search` and both `data-two-capture-*` attributes are
+ * load-bearing: `controlRoot()` resolves the component's root by the class, and
+ * the controller resolves its mount by the attribute pair.
+ *
+ * @param {string} id
+ * @param {string} [value]
+ * @returns {string}
+ */
+function controlMarkup(id, value) {
+  return [
+    '<div id="' + id + '" class="two-company-search"',
+    ' data-two-capture-host="address">',
+    '<input type="text" id="' + id + '-field" data-two-capture-field',
+    ' value="' + (value || "") + '" />',
+    "</div>",
+  ].join("");
+}
+
+describe("the Hyvä adapter over the shared capture controller", () => {
   let env;
   let fetchStub;
   let component;
   let field;
 
   beforeEach(() => {
-    document.body.innerHTML = [
-      '<div id="root" class="two-company-search">',
-      '  <input type="text" id="field" value="" />',
-      "</div>",
-    ].join("\n");
-    field = document.getElementById("field");
+    document.body.innerHTML = controlMarkup("root");
+    field = document.getElementById("root-field");
 
     env = H.installHyvaEnvironment();
     fetchStub = H.stubFetch();
@@ -75,166 +99,143 @@ describe("the Hyvä adapter over the shared popover", () => {
     env.restore();
   });
 
-  /** @returns {Object} the panel this component built */
+  /** @returns {Object} the panel the controller built */
   function panel() {
     return env.companyPanels[env.companyPanels.length - 1];
   }
 
-  describe("mounting", () => {
-    test("init() builds exactly one panel", () => {
-      expect(env.companyPanels).toHaveLength(1);
+  /** @returns {Object} the one page-level capture controller */
+  function capture() {
+    return env.captureControllers[env.captureControllers.length - 1];
+  }
+
+  /**
+   * @param {string} mode
+   * @returns {Object} the chip definition for `mode`
+   */
+  function chip(mode) {
+    return panel()
+      .options.getChips()
+      .find((candidate) => candidate.mode === mode);
+  }
+
+  /**
+   * Mount a second component the way a Magewire rebuild does.
+   *
+   * @param {string} id the control root's id
+   * @returns {Object} the rebuilt component
+   */
+  function remount(id) {
+    const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: document.getElementById(id + "-field"),
+      root: document.getElementById(id),
     });
+    rebuilt.init();
+    return rebuilt;
+  }
 
-    test("a Magewire rebuild re-points that panel rather than building a second", () => {
-      // initialize()/init() runs again on every re-render. A second panel would
-      // leave two popovers writing to one identity.
-      component.mountCompanyPopover();
-      component.mountCompanyPopover();
-
+  describe("mounting", () => {
+    test("init() builds exactly one controller and one panel", () => {
+      expect(env.captureControllers).toHaveLength(1);
       expect(env.companyPanels).toHaveLength(1);
-      expect(panel().calls.filter((call) => call === "bind").length).toBeGreaterThan(1);
     });
 
     test.each([
-      ["fieldSelector", "string"],
-      ["search", "object"],
-      ["translate", "function"],
-      ["getCountryCode", "function"],
-      ["getChips", "function"],
-      ["isChipVisible", "function"],
-      ["getSelectedMode", "function"],
-      ["getDisplayText", "function"],
-      ["onSelect", "function"],
-      ["onExitManualEntry", "function"],
-    ])("the panel is given %s (a %s)", (option, type) => {
-      expect(typeof panel().options[option]).toBe(type);
+      ["root", "a rebuild that keeps the input"],
+      ["root2", "a rebuild that replaced it"],
+    ])("%s stays one controller and one panel (%s)", (id) => {
+      // The controller is page-level and cached on `window`, so a re-render
+      // re-points it. A second would leave two popovers writing to one identity,
+      // two listeners on one input, and one keystroke searching twice.
+      if (id !== "root") document.body.innerHTML = controlMarkup(id);
+
+      remount(id);
+
+      expect(env.captureControllers).toHaveLength(1);
+      expect(env.companyPanels).toHaveLength(1);
+      expect(panel().getField()[0]).toBe(document.getElementById(id + "-field"));
     });
 
-    test("the field is addressed by an attribute of ours, not its id", () => {
-      // The address-step renderer mounts on the delivery form AND the invoice
-      // form, and the panel resolves its host with a document-wide
-      // querySelector — so a selector that is not per-mount gives both mounts
-      // the same field. The id comes from Hyvä's entity-field config and can
-      // hold anything a selector would have to escape.
-      expect(panel().options.fieldSelector).toBe(
-        '[data-two-company-panel="' + field.dataset.twoCompanyPanel + '"]',
-      );
-      expect(document.querySelectorAll(panel().options.fieldSelector)).toHaveLength(1);
+    test("a second mount point on the page does not get a panel of its own", () => {
+      // Two mounts are legitimate markup — the address renderer runs on the
+      // delivery form and the invoice form — but there is one control, so the
+      // controller binds one of them and leaves the other alone.
+      document.body.innerHTML = controlMarkup("root") + controlMarkup("other");
+      field = document.getElementById("root-field");
+
+      remount("other");
+
+      expect(env.companyPanels).toHaveLength(1);
     });
 
-    test("a rebuild that KEEPS the input tears the abandoned panel down", () => {
-      /*
-       * The case connectedness cannot see, and the one Magewire actually takes
-       * most of the time: it morphs the DOM and leaves the input in place. A
-       * re-render re-invokes the Alpine factory, so the rebuilt component gets
-       * a FRESH closure whose panel is null and builds a second one — and the
-       * base panel ADOPTS the existing panel DOM rather than duplicating it,
-       * which hides the problem. Two instances then hold listeners on the same
-       * input, `_unbind` is per-instance, and one keystroke searches twice.
-       */
-      const abandoned = panel();
-      expect(abandoned.getField()[0]).toBe(field);
-      expect(field.isConnected).toBe(true);
-
-      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: field,
-        root: document.getElementById("root"),
-      });
-      rebuilt.init();
-
-      expect(abandoned.calls).toContain("destroy");
+    test.each([
+      [ADDRESS_SELECTOR, "addressFieldSelector", "the address step"],
+      [TILE_SELECTOR, "tileFieldSelector", "the payment tile"],
+    ])("%s is how %s addresses %s", (selector, option) => {
+      // Attributes of ours, never the field's id: the id comes from Hyvä's
+      // entity-field config and can hold anything a selector would have to
+      // escape, and the panel resolves its host with a document-wide
+      // querySelector — so the selector has to name the mount point.
+      expect(capture().host()[option]).toBe(selector);
     });
 
-    test("a rebuild that REPLACED the input tears it down too", () => {
-      const abandoned = panel();
-      document.body.innerHTML = [
-        '<div id="root3" class="two-company-search">',
-        '  <input type="text" id="field3" value="" />',
-        "</div>",
-      ].join("\n");
-      // The panel still holds the node it attached to; that node is now
-      // detached, which is the other half of "abandoned".
-      expect(abandoned.getField()[0].isConnected).toBe(false);
+    test("each mount selector matches exactly its own host", () => {
+      document.body.innerHTML =
+        controlMarkup("root") +
+        '<div class="two-company-search" data-two-capture-host="tile">' +
+        '<input type="text" id="tile-field" data-two-capture-field /></div>';
 
-      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: document.getElementById("field3"),
-        root: document.getElementById("root3"),
-      });
-      rebuilt.init();
-
-      expect(abandoned.calls).toContain("destroy");
+      expect(document.querySelectorAll(ADDRESS_SELECTOR)).toHaveLength(1);
+      expect(document.querySelectorAll(TILE_SELECTOR)).toHaveLength(1);
     });
 
-    test("a panel on a DIFFERENT field is left alone", () => {
-      // Two mounts on one page are legitimate — the address field renderer
-      // mounts on the delivery form AND the invoice form — so what makes a
-      // panel abandoned is another taking ITS field, not there being two.
-      const first = panel();
-      const second = document.createElement("div");
-      second.className = "two-company-search";
-      second.innerHTML = '<input type="text" id="field4" value="" />';
-      document.body.appendChild(second);
+    test.each(H.CAPTURE_HOST_CONTRACT.map((member) => [member]))(
+      "the controller is given %s",
+      (member) => {
+        // The controller throws on a partial adapter, deep inside a buyer's
+        // flow — a missing `revertAutofilledAddress` on a country change, a
+        // missing `signupPrefill` on a signup with no buyer in it.
+        expect(typeof capture().host()[member]).toBe("function");
+      },
+    );
 
-      const other = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: document.getElementById("field4"),
-        root: second,
-      });
-      other.init();
-
-      expect(first.calls).not.toContain("destroy");
-      expect(first.getField()[0]).toBe(field);
-      expect(env.companyPanels[env.companyPanels.length - 1].getField()[0])
-        .toBe(document.getElementById("field4"));
-    });
-
-    test("a company already in the field survives the mount", () => {
-      // A returning customer's saved company arrives in the input's
-      // server-rendered value, and nothing on the Two side has read it. The
+    test("a company already captured survives the mount", () => {
+      // A returning buyer's company arrives in the store-view-keyed selection
+      // blob, which is the only thing that survives a Magewire rebuild. The
       // panel repaints the field from getDisplayText() as it attaches, so a
-      // getter that answered '' would wipe the company AND carry the wipe into
-      // the quote on the `change` it fires.
-      document.body.innerHTML = [
-        '<div id="root2" class="two-company-search">',
-        '  <input type="text" id="field2" value="Existing Trading Ltd" />',
-        "</div>",
-      ].join("\n");
-      const rebuilt = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: document.getElementById("field2"),
-        root: document.getElementById("root2"),
+      // getter answering '' would wipe the company AND carry the wipe into the
+      // quote on the `change` it fires.
+      env.storage[H.COMPANY_SELECTION_KEY] = JSON.stringify({
+        company_name: "Existing Trading Ltd",
+        company_id: "12345678",
+        company_id_source: "registry",
       });
-      rebuilt.init();
+
+      remount("root");
 
       expect(panel().options.getDisplayText()).toBe("Existing Trading Ltd");
     });
 
-    test("a captured company still wins over what the field held", () => {
-      // Both terms populated and DIFFERENT, or the precedence this names is
-      // untested — with an empty field value either ordering returns the same
-      // thing.
+    test("a captured company still wins over what was typed", () => {
+      // Both populated and DIFFERENT, or the precedence this names is untested.
       component.search = "Typed Ltd";
-      component.companyName = "Picked Ltd";
+      env.identity.write(
+        { companyName: "Picked Ltd", companyId: "12345678" },
+        { authoritative: true },
+      );
 
       expect(panel().options.getDisplayText()).toBe("Picked Ltd");
     });
 
-
     test("no popover is built at all where the lookup is switched off", () => {
       // The control still renders — the checkout needs a company field either
       // way — but a popover here binds the field's openers and moves every
-      // keystroke into a query box whose searches can never run, with the
-      // manual chip withheld for the same reason. The buyer could not type a
-      // company name at all.
-      // A FRESH component, not the mounted one: re-calling mount on a
-      // component that already built its panel takes the re-point branch and
-      // adds nothing either way, so it cannot tell the gate from its absence.
-      document.body.innerHTML = [
-        '<div id="root5" class="two-company-search">',
-        '  <input type="text" id="field5" value="" />',
-        "</div>",
-      ].join("\n");
+      // keystroke into a query box whose searches can never run, with the manual
+      // chip withheld for the same reason. The buyer could not type at all.
+      document.body.innerHTML = controlMarkup("root5");
       const before = env.companyPanels.length;
       const disabled = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
-        el: document.getElementById("field5"),
+        el: document.getElementById("root5-field"),
         root: document.getElementById("root5"),
       });
       disabled.isCompanySearchEnabled = "";
@@ -244,9 +245,15 @@ describe("the Hyvä adapter over the shared popover", () => {
       expect(env.companyPanels).toHaveLength(before);
     });
 
-    test("a missing panel module degrades to a plain field rather than throwing", () => {
-      // A CSP or deploy failure on the base module must not take init() down.
-      delete window.TwoCompanySearchPanel;
+    test.each([
+      ["TwoCompanySearchPanel", "the popover"],
+      ["TwoCompanyIdentity", "the captured company"],
+      ["TwoSoleTrader", "the signup flow"],
+      ["TwoCompanyCaptureComponent", "the controller"],
+    ])("a missing %s degrades to a plain field (%s)", (global) => {
+      // A CSP or deploy failure on a base module must not take init() down.
+      delete window[global];
+      delete window.twoGatewayCompanyCaptureInstance;
 
       expect(() => component.mountCompanyPopover()).not.toThrow();
     });
@@ -254,25 +261,24 @@ describe("the Hyvä adapter over the shared popover", () => {
 
   describe("the search API", () => {
     test.each(SEARCH_API_CONTRACT.map((member) => [member]))(
-      "carries %s",
+      "the controller's search carries %s",
       (member) => {
-        expect(component.companyPopoverSearchApi()[member]).toBeDefined();
+        expect(capture().host().search[member]).toBeDefined();
       },
     );
 
     test("its threshold is this checkout's, not a literal", () => {
       component.minSearchChars = 7;
 
-      expect(component.companyPopoverSearchApi().MIN_INPUT_LENGTH).toBe(7);
+      expect(capture().host().search.MIN_INPUT_LENGTH).toBe(7);
+      expect(component.capturePanelMinChars()).toBe(7);
     });
 
     test("results are mapped into the shape the panel renders", async () => {
       component.countryCode = "gb";
-      const pending = component
-        .companyPopoverSearchApi()
-        .searchCompanies({ term: "alpha" });
+      const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
-      fetchStub.last().respond({
+      fetchStub.lastSearch().respond({
         items: [hit("Alpha Ltd", "12345678", "lookup-1")],
       });
 
@@ -286,14 +292,14 @@ describe("the Hyvä adapter over the shared popover", () => {
     });
 
     test("a hit with no lookup id keeps none", async () => {
-      // Absent is what disables address autofill for that company; inventing
-      // one would send the buyer's address off to a lookup that cannot answer.
+      // Absent is what disables address autofill for that company; inventing one
+      // would send the buyer's address off to a lookup that cannot answer.
       component.countryCode = "gb";
-      const pending = component
-        .companyPopoverSearchApi()
-        .searchCompanies({ term: "alpha" });
+      const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
-      fetchStub.last().respond({ items: [hit("Alpha Ltd", "12345678", undefined)] });
+      fetchStub
+        .lastSearch()
+        .respond({ items: [hit("Alpha Ltd", "12345678", undefined)] });
 
       const result = await pending;
 
@@ -307,30 +313,37 @@ describe("the Hyvä adapter over the shared popover", () => {
       // "The search is down" and "your company is not here" are different
       // answers to the buyer, and the panel paints them differently.
       component.countryCode = "gb";
-      const pending = component
-        .companyPopoverSearchApi()
-        .searchCompanies({ term: "alpha" });
+      const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
-      fetchStub.last().respond({ items: [] }, status);
+      fetchStub.lastSearch().respond({ items: [] }, status);
 
       expect((await pending).unavailable).toBe(unavailable);
     });
 
     test("abortActiveRequest says whether anything was actually in flight", async () => {
-      const api = component.companyPopoverSearchApi();
-      expect(api.abortActiveRequest()).toBe(false);
+      expect(component.capturePanelAbort()).toBe(false);
 
       component.countryCode = "gb";
-      const pending = api.searchCompanies({ term: "alpha" });
+      const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
 
-      expect(api.abortActiveRequest()).toBe(true);
+      expect(component.capturePanelAbort()).toBe(true);
       await pending;
+    });
+
+    test("the panel's search reaches the live surface, not a captured one", () => {
+      // Magewire replaces the component on every re-render while the controller
+      // stays; a search API closed over one would answer from a dead component.
+      component.minSearchChars = 4;
+      const rebuilt = remount("root");
+      rebuilt.minSearchChars = 9;
+
+      expect(capture().host().search.MIN_INPUT_LENGTH).toBe(9);
     });
   });
 
   describe("selection", () => {
-    test("a pick is handed back to the engine in the engine's own shape", () => {
+    test("a pick is mirrored onto this surface", () => {
       panel().options.onSelect({
         text: "Alpha Ltd",
         html: "<em>Alpha</em> Ltd",
@@ -343,7 +356,7 @@ describe("the Hyvä adapter over the shared popover", () => {
     });
 
     test("the field shows what is captured, not what was typed", () => {
-      component.companyName = "Alpha Ltd";
+      env.identity.write({ companyName: "Alpha Ltd" });
 
       expect(panel().options.getDisplayText()).toBe("Alpha Ltd");
     });
@@ -353,16 +366,16 @@ describe("the Hyvä adapter over the shared popover", () => {
     test("entering manual entry hands the field over to the buyer", () => {
       // The panel binds the field's own openers; without releasing it the
       // popover reopens over the input manual entry exists to be typed into.
-      component.enterManually();
+      chip("manual").onActivate();
 
       expect(panel().calls).toContain("releaseField");
     });
 
     test("leaving it takes the field back and opens the search", () => {
-      component.enterManually();
+      chip("manual").onActivate();
       panel().calls.length = 0;
 
-      component.enableSearch();
+      chip("registered").onActivate();
 
       // Reclaim BEFORE bind: coming back has to make the field a trigger again
       // before the panel is opened on it.
@@ -373,35 +386,30 @@ describe("the Hyvä adapter over the shared popover", () => {
     });
 
     test("the name typed in manual entry survives the way back out", () => {
-      // `commitManualCompany()` writes `search` and deliberately never
-      // `companyName`, so a display text reading only the latter lets
-      // reclaimField()'s repaint overwrite what the buyer typed.
-      component.enterManually();
+      chip("manual").onActivate();
       field.value = "My Shop Ltd";
+
       component.onNameFieldInput();
 
       expect(panel().options.getDisplayText()).toBe("My Shop Ltd");
     });
 
     test("a search is not attempted while the lookup is switched off", async () => {
-      // The gate the deleted control held: this surface still mounts so the
-      // buyer has a company field, but an unverified merchant must not have
-      // checkout-api requests put on the wire for them.
+      // An unverified merchant must not have checkout-api requests put on the
+      // wire for them, though the surface still mounts so the buyer has a field.
       component.isCompanySearchEnabled = "";
 
-      const result = await component
-        .companyPopoverSearchApi()
-        .searchCompanies({ term: "alpha" });
+      const result = await component.capturePanelSearch({ term: "alpha" });
 
       expect(result.aborted).toBe(true);
       expect(result.items).toEqual([]);
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
     });
   });
 
   describe("the chips", () => {
     test("all three are offered, in display order", () => {
-      expect(component.companyPopoverChips().map((chip) => chip.mode)).toEqual([
+      expect(panel().options.getChips().map((entry) => entry.mode)).toEqual([
         "registered",
         "soletrader",
         "manual",
@@ -412,24 +420,30 @@ describe("the Hyvä adapter over the shared popover", () => {
       ["registered", "registered", "nothing else is selected by default"],
       ["manual", "manual", "manual entry selects its own chip"],
     ])("mode %s reads as selected: %s (%s)", (mode, expected) => {
-      if (mode === "manual") component.enterManually();
+      if (mode === "manual") chip("manual").onActivate();
 
-      expect(component.companyPopoverSelectedMode()).toBe(expected);
+      expect(panel().options.getSelectedMode()).toBe(expected);
     });
 
-    test("sole trader is offered only where the registry has them", () => {
-      component.showModeTab = false;
-      expect(component.companyPopoverModeOffered("soletrader")).toBe(false);
+    test.each([
+      [false, false, "the registry has no sole traders here"],
+      [true, true, "it does"],
+    ])(
+      "sole trader available %p is offered %p (%s)",
+      (available, expected) => {
+        env.identity.soleTraderAvailable(available);
 
-      component.showModeTab = true;
-      expect(component.companyPopoverModeOffered("soletrader")).toBe(true);
-    });
+        expect(panel().options.isChipVisible("soletrader")).toBe(expected);
+      },
+    );
 
     test("each chip carries something to run", () => {
-      component.companyPopoverChips().forEach((chip) => {
-        expect(typeof chip.onActivate).toBe("function");
-        expect(typeof chip.text).toBe("string");
-      });
+      panel()
+        .options.getChips()
+        .forEach((entry) => {
+          expect(typeof entry.onActivate).toBe("function");
+          expect(typeof entry.text).toBe("string");
+        });
     });
   });
 });

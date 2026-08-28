@@ -35,6 +35,15 @@ $merchantShortName = $configModel->getMerchantShortName();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
+$checkoutPageUrl = $configModel->getCheckoutPageUrl();
+$soleTraderErrorMessage = (string) $configModel->getSoleTraderErrorMessage();
+$isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnabled()
+    ? "true"
+    : "false";
+// Where `rest/V1/two/...` lives. The link base URL rather than a hand-built
+// host, so a store served under a subdirectory or a store-coded URL reaches its
+// own REST entry point.
+$restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $quoteDetails = $quoteModel->getQuoteDetails();
 // Same flag set as gateway_method-csp-js.phtml, for the same reason: this
 // lands in an inline script and carries buyer-supplied values (email,
@@ -103,10 +112,11 @@ function <?= $gwBase ?>CompanySearchField() {
      * The whole of the company-search control — the query/name split, the
      * dropdown, the keyboard and focus management, the manual-entry route, the
      * min-chars / no-matches / unavailable verdicts — is
-     * `twoGatewayCompanySearchControl()` in gateway_method-csp-js.phtml, layered
-     * over `twoGatewayCompanySearchEngine()`. The payment tile mounts the SAME
-     * factory with the same markup; there is exactly one implementation and this
-     * file is not it.
+     * the SHARED, framework-free `company-capture-component.js` from the base
+     * plugin, reached through `twoGatewayCaptureSurfaceMixin()` in
+     * gateway_method-csp-js.phtml. The payment tile mounts the same controller
+     * through the same mixin with the same markup; there is exactly one
+     * implementation, it is not in this repo, and this file is not it.
      *
      * What follows is only what is genuinely specific to the ADDRESS STEP: which
      * storage record it reads and writes, which container an address lookup
@@ -120,9 +130,17 @@ function <?= $gwBase ?>CompanySearchField() {
     // out of it.
     const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
         || function(target) { return target; };
-    const twoGatewayCompanySearchControlFn = window.twoGatewayCompanySearchControl
+    const twoGatewayCaptureSurfaceMixinFn = window.twoGatewayCaptureSurfaceMixin
         || function() { return {}; };
-    return twoGatewayComposeLiveFn(twoGatewayCompanySearchControlFn({
+    return twoGatewayComposeLiveFn(twoGatewayCaptureSurfaceMixinFn({
+        captureHost: 'address',
+        restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+        checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+        soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
+        isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
+        // The address step is where a manually typed name can still be given a
+        // registry number later, so this is the surface that offers the chip.
+        manualEntryOffered: true,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         client: '<?= $escaper->escapeJs((string) $clientName) ?>',
         clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
@@ -159,79 +177,41 @@ function <?= $gwBase ?>CompanySearchField() {
         quoteData: <?= $quoteDetailsJson ?>,
 
         init() {
-            // Restore manualMode from storage
+            /*
+             * Restore the captured company INTO THE SHARED IDENTITY, before the
+             * mount, so the controller opens in the mode and on the company the
+             * buyer left rather than on its own defaults. Magewire destroys and
+             * rebuilds this component freely and only the selection blob
+             * survives that, so this is the one thing that carries a pick across
+             * a re-render.
+             *
+             * The provenance travels with the pair and the number's lock derives
+             * from it, NOT from "is there a number": both a registry pick and a
+             * hand-typed number land under the same key, so an unqualified test
+             * re-locked the field over the buyer's own value and made a typo
+             * uncorrectable.
+             *
+             * NOT reconciled against the field's own value. `wire:model.defer`
+             * means the server's `address.company` lags the client value, so a
+             * re-render landing before the roundtrip rebuilds the field from a
+             * stale name; a guard comparing the two discards a perfectly good
+             * pick. Nothing can contradict this key either — it holds the
+             * shipping company alone.
+             */
             const data = twoAddressReadSelection();
-            this.manualMode = data.manual_mode || false;
+            const identity = window.TwoCompanyIdentity;
+            if (identity) {
+                identity.captureMode(data.manual_mode ? 'manual' : 'registered');
+                identity.write(
+                    {
+                        companyName: data.company_name || '',
+                        companyId: data.company_id || '',
+                        companyIdSource: data.company_id_source || ''
+                    },
+                    { authoritative: true }
+                );
+            }
 
-            /*
-             * Restore the company pair too, so the number the buyer typed on a
-             * previous page load — or the one a registry pick supplied —
-             * survives the Magewire re-renders that destroy and rebuild this
-             * component. Only selectItem() and onCompanyIdInput() write
-             * storage, so an unrestored component would come back empty and
-             * the checkout would lose the identifier placement needs.
-             *
-             * `companyName` is restored alongside the id deliberately: the
-             * editability rule compares the field text against it, and
-             * restoring one without the other would make a restored pick look
-             * like an edited name and unlock a registry-supplied number.
-             *
-             * The provenance is restored with them and the lock derives from it,
-             * NOT from "is there a number". Both a registry pick and a
-             * hand-typed number land under the same key, so an unqualified
-             * `!this.companyId` re-locked the field over the buyer's own value
-             * on the next re-render and made a typo uncorrectable. An absent or
-             * unrecognised source leaves the field typeable: nothing has vouched
-             * for that number, and the failure that direction is recoverable
-             * while the other one is a dead end.
-             */
-            this.companyName = data.company_name || '';
-            this.companyId = data.company_id || '';
-            this.companyIdSource = data.company_id_source || '';
-            this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-            this.applyCompanyIdEditability();
-            /*
-             * A restored pick with a valid identifier is a completed selection,
-             * exactly like one made this page load via selectItem(). Without
-             * this, `isCompanySelected` stayed at its `false` default across a
-             * reload.
-             *
-             * Keyed off `companyId` alone, not `hasVouchedCompanyId()`: a
-             * restored MANUAL identifier is just as complete a pick as a
-             * registry one, and `hasVouchedCompanyId()` answers a narrower
-             * question — whether the number may still be edited — not whether
-             * a company has been chosen.
-             */
-            this.isCompanySelected = Boolean(this.companyId);
-
-            /*
-             * NOT reconciled against the field's own value, deliberately.
-             *
-             * Review round 2 added a guard here that dropped a restored pair
-             * when the company-name field held a different name — the case
-             * where the payment tile has overwritten the address step's pick in
-             * the ONE shared selection blob. Review round 3 showed the guard
-             * can destroy a GOOD pick instead: `wire:model.defer` means the
-             * server's `address.company` lags the client value, so any Magewire
-             * re-render landing before the roundtrip rebuilds this field from
-             * the stale name and the guard then discards the pick that was
-             * perfectly correct.
-             *
-             * Unguarded is now also CORRECT, not merely the prior behaviour.
-             * Both directions were heuristics over one storage key being asked
-             * to hold what may be two different companies; the key has since
-             * been split (`billing_company_selection:<store>`, written only by
-             * the payment tile), so this key holds the shipping company alone
-             * and nothing else can contradict it. There is nothing left to
-             * reconcile against.
-             */
-
-            /*
-             * Build the shared popover LAST, so the mode it opens in reflects
-             * the state restored above rather than the component's defaults.
-             * Magewire re-runs init() on every rebuild, and mountCompanyPopover()
-             * re-points the existing panel instead of building a second one.
-             */
             this.mountCompanyPopover();
         },
 

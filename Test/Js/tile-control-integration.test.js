@@ -2,10 +2,11 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326, 2026-08-05. The payment tile mounts the ONE company-search control
- * (form/field/company-search-control.phtml + `twoGatewayCompanySearchControl()`)
- * with no `x-data` of its own, so the control's state lands on the payment form's
- * component beside the tile label and the order-intent dispatch.
+ * TWO-25326, 2026-08-05. The payment tile mounts the ONE company-capture control
+ * (form/field/company-search-control.phtml + `twoGatewayCaptureSurfaceMixin()`
+ * over the base plugin's shared controller) with no `x-data` of its own, so the
+ * control's state lands on the payment form's component beside the tile label
+ * and the order-intent dispatch.
  *
  * That is a WIRING claim, and wiring is what the rest of this directory cannot
  * check. The unit suites mount a component against a hand-built fixture, so they
@@ -94,7 +95,7 @@ describe("the payment tile's mounted control (integration)", () => {
   async function search(term, identifier) {
     const pending = panel.options.search.searchCompanies({ term: term });
     await H.flushPromises();
-    fetchStub.last().respond({
+    fetchStub.lastSearch().respond({
       items: [
         {
           name: "Example Trading Ltd",
@@ -117,6 +118,11 @@ describe("the payment tile's mounted control (integration)", () => {
    */
   function select(item) {
     panel.options.onSelect(item);
+  }
+
+  /** @returns {Object} the one page-level capture controller */
+  function capture() {
+    return env.captureControllers[env.captureControllers.length - 1];
   }
 
   test("the shipped markup and the shipped component resolve to each other", () => {
@@ -147,9 +153,9 @@ describe("the payment tile's mounted control (integration)", () => {
   test("searching goes on the wire, and leaves the captured name alone", async () => {
     const result = await search("example", "123456789");
 
-    expect(fetchStub.calls.length).toBe(1);
-    expect(fetchStub.last().url).toContain("country=GB");
-    expect(fetchStub.last().url).toContain("q=example");
+    expect(fetchStub.searchCalls().length).toBe(1);
+    expect(fetchStub.lastSearch().url).toContain("country=GB");
+    expect(fetchStub.lastSearch().url).toContain("q=example");
     expect(result.items).toHaveLength(1);
     // The panel holds the query in its own box; it never leaks into the field
     // that submits.
@@ -189,8 +195,16 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.companyTileLabelText).toBe("Example Trading Ltd");
   });
 
-  test("manual entry is reachable from the panel and hands the field back", () => {
-    component.enterManually();
+  test("the manual chip is withheld on this surface", () => {
+    // Manual entry captures no organisation number, and this tile hosts the
+    // control only when the address-step lookup that could supply one is off —
+    // so the chip would strand the buyer.
+    expect(capture().config().isCompanySearchEnabled).toBe(false);
+    expect(panel.options.isChipVisible("manual")).toBe(false);
+  });
+
+  test("manual entry hands the field back, and search takes it again", () => {
+    capture().manualEntryMode();
 
     expect(component.manualMode).toBe(true);
     expect(component.manualModeActive).toBe(true);
@@ -202,13 +216,13 @@ describe("the payment tile's mounted control (integration)", () => {
     // an identifier for a hand-typed name.
     expect(component.companyIdDisabled).toBe(false);
 
-    component.enableSearch();
+    capture().registeredMode();
     expect(component.searchModeActive).toBe(true);
     expect(panel.calls).toContain("reclaimField");
   });
 
   test("a hand-typed name is committed as the company, with no identifier", () => {
-    component.enterManually();
+    capture().manualEntryMode();
 
     nameField.value = "Unlisted Trading Ltd";
     component.$el = nameField;
@@ -241,7 +255,7 @@ describe("the payment tile's mounted control (integration)", () => {
     await H.flushPromises();
 
     // A request is on the wire and NOTHING has come back yet.
-    expect(fetchStub.calls.length).toBe(1);
+    expect(fetchStub.searchCalls().length).toBe(1);
     expect(component.orderIntentApprovedNotice).toBe("");
     expect(component.orderIntentNotAvailableNotice).toBe("");
     expect(component.orderIntentErrorNotice).toBe("");
@@ -249,23 +263,23 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.twoTileNotAvailableVisible).toBe(false);
     expect(component.twoTileErrorVisible).toBe(false);
 
-    fetchStub.last().respond({ items: [] });
+    fetchStub.lastSearch().respond({ items: [] });
     await pending;
   });
 
-  test("the panel-closed hook fires with the INCOMING company already written", async () => {
-    // Round 9: the outcome-only version of this test below cannot fail on the
-    // ordering it names, because fillCompanyData() clears or re-derives in the
-    // same synchronous call and erases the wrong-company repaint before anything
-    // can observe it. So observe the hook ITSELF: what the company was at the
-    // moment it ran is the whole claim.
+  test("the commit hook fires with the INCOMING company already written", async () => {
+    // The outcome-only version of this test below cannot fail on the ordering it
+    // names, because fillCompanyData() clears or re-derives in the same
+    // synchronous call and erases a wrong-company repaint before anything can
+    // observe it. So observe the hook ITSELF: what the company was at the moment
+    // it ran is the whole claim.
     select((await search("alpha", "111111111")).items[0]);
 
     const seenAtHookTime = [];
-    const real = component.refreshOrderIntentVerdict.bind(component);
-    component.refreshOrderIntentVerdict = function () {
+    const real = component.fillCompanyData.bind(component);
+    component.fillCompanyData = function (companyId, companyName) {
       seenAtHookTime.push({ id: this.companyId, name: this.companyName });
-      return real();
+      return real(companyId, companyName);
     };
 
     select((await search("beta", "222222222")).items[0]);
@@ -345,7 +359,7 @@ describe("the payment tile's mounted control (integration)", () => {
     const pending = panel.options.search.searchCompanies({ term: "example" });
     await H.flushPromises();
     expect(component.orderIntentApprovedNotice).toBe("");
-    fetchStub.last().respond({ items: [] });
+    fetchStub.lastSearch().respond({ items: [] });
     await pending;
 
     // …and abandoning it puts the box back, because the company on screen is
@@ -368,7 +382,7 @@ describe("the payment tile's mounted control (integration)", () => {
     await panel.options.search.searchCompanies({ term: "e" });
     await H.flushPromises();
 
-    expect(fetchStub.calls.length).toBe(0);
+    expect(fetchStub.searchCalls().length).toBe(0);
     expect(component.orderIntentApprovedNotice).toBe(
       "Available for Example Trading Ltd",
     );

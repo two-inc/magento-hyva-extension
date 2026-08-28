@@ -78,13 +78,36 @@ describe("one company-search control (bug 6)", () => {
     expect(fs.existsSync(path.join(H.REPO_ROOT, CONTROL_TEMPLATE))).toBe(true);
   });
 
-  test("the control subtree they render is byte-identical", () => {
-    const fromTile = render(tile).querySelector(".two-company-search-group");
-    const fromAddress = render(address).querySelector(".two-company-search-group");
+  test("the control subtree they render differs only in which host it is", () => {
+    // `data-two-capture-host` is the ONE thing that may differ: the shared
+    // controller tells the two mount points apart by it and by nothing else
+    // (TWO-25503). Everything around it being identical can only be true while
+    // both are rendering the same file.
+    const strip = (relPath) =>
+      normalise(
+        render(relPath)
+          .querySelector(".two-company-search-group")
+          .outerHTML,
+      ).replace(/ data-two-capture-host="[^"]*"/, "");
 
-    expect(fromTile).not.toBeNull();
-    expect(fromAddress).not.toBeNull();
-    expect(normalise(fromTile.outerHTML)).toBe(normalise(fromAddress.outerHTML));
+    expect(render(tile).querySelector(".two-company-search-group")).not.toBeNull();
+    expect(strip(tile)).toBe(strip(address));
+  });
+
+  test.each([
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, "address", "the address step"],
+    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, "tile", "the payment tile"],
+  ])("%s declares itself the %s host (%s)", (relPath, host) => {
+    // Source level, because the harness resolves the tag per including file and
+    // so cannot prove which value the template actually sets.
+    expect(source(relPath)).toContain(
+      "$twoControlCaptureHost = '" + host + "';",
+    );
+    expect(
+      render(relPath)
+        .querySelector(".two-company-search")
+        .getAttribute("data-two-capture-host"),
+    ).toBe(host);
   });
 
   test("each mount point supplies the Alpine scope its surface needs", () => {
@@ -155,6 +178,30 @@ describe("one company-search control (bug 6)", () => {
       expect(raw.indexOf(name + "(")).toBe(-1);
     });
   });
+
+  test.each([
+    ["window.open(", "the signup popup opener"],
+    ["addEventListener('message'", "the hosted signup's result channel"],
+    ["ACCEPTED", "the handshake verdict"],
+    ["buyer/current", "the authenticated-buyer read"],
+    ["delegation_token", "a minted signup token"],
+    ["autofill_token", "its autofill twin"],
+    ["soletrader/signup", "the hosted signup URL"],
+  ])(
+    "no template here carries %s (%s)",
+    (fragment) => {
+      // TWO-25503: the sole-trader flow is the base plugin's `sole-trader.js`.
+      // This checkout supplies host functions for it and nothing more — a second
+      // popup, listener or token mint here is the duplication coming back.
+      [
+        H.GATEWAY_METHOD_TEMPLATE,
+        H.COMPANY_NAME_TEMPLATE,
+        H.PAYMENT_FIELDS_TEMPLATE,
+      ].forEach(function (relPath) {
+        expect(source(relPath)).not.toContain(fragment);
+      });
+    },
+  );
 });
 
 describe("the manual-entry affordance lives only in the popover (bug 2)", () => {
@@ -164,8 +211,8 @@ describe("the manual-entry affordance lives only in the popover (bug 2)", () => 
 
   beforeEach(() => {
     document.body.innerHTML = [
-      '<div class="two-company-search" id="control-root">',
-      '  <input type="text" id="company-field" value="" />',
+      '<div class="two-company-search" id="control-root" data-two-capture-host="address">',
+      '  <input type="text" id="company-field" data-two-capture-field value="" />',
       "</div>",
     ].join("\n");
 
@@ -193,15 +240,17 @@ describe("the manual-entry affordance lives only in the popover (bug 2)", () => 
   });
 
   test("there is exactly one manual-entry affordance, and the panel owns it", () => {
-    const chips = component.companyPopoverChips();
-    const manual = chips.filter((chip) => chip.mode === "manual");
-
-    expect(manual).toHaveLength(1);
-    // Reaching the panel through its options is the whole assertion: chips it
-    // is handed render inside it, which is what the deleted row was not.
+    // Reaching it through the panel's options is the whole assertion: chips the
+    // panel is handed render inside it, which is what the deleted row was not.
     expect(env.companyPanels).toHaveLength(1);
-    expect(env.companyPanels[0].options.getChips().map((chip) => chip.mode))
-      .toEqual(chips.map((chip) => chip.mode));
+    const chips = env.companyPanels[0].options.getChips();
+
+    expect(chips.filter((chip) => chip.mode === "manual")).toHaveLength(1);
+    expect(chips.map((chip) => chip.mode)).toEqual([
+      "registered",
+      "soletrader",
+      "manual",
+    ]);
   });
 
   test("no mount point renders a manual-entry affordance of its own", () => {
@@ -220,10 +269,10 @@ describe("the manual-entry affordance lives only in the popover (bug 2)", () => 
     // has a length term, so the chip is on offer from zero characters.
     expect(component.search).toBeFalsy();
 
-    expect(component.companyPopoverModeOffered("manual")).toBe(true);
-    expect(
-      component.companyPopoverChips().map((chip) => chip.mode),
-    ).toContain("manual");
+    const options = env.companyPanels[0].options;
+
+    expect(options.isChipVisible("manual")).toBe(true);
+    expect(options.getChips().map((chip) => chip.mode)).toContain("manual");
   });
 
   test("the below-the-field copy and its gate are gone", () => {

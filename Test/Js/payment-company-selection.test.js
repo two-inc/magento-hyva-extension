@@ -151,9 +151,14 @@ describe("payment component company selection", () => {
     // The captured-company label (TWO-25326 §7) starts with neither `hidden`
     // (on the input) nor a rendered value, for the same reason `#company_id`
     // starts without `disabled`: locked state is Alpine's to apply.
+    // The two `data-two-capture-*` attributes are how the shared controller
+    // tells the two mount points apart; without them it mounts no popover here
+    // at all.
     document.body.innerHTML = [
       '<div id="payment-root">',
-      '  <input type="text" id="company_name" value="" />',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" data-two-capture-field value="" />',
+      "  </div>",
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
       '  <div data-name="company_tile_label"></div>',
       "</div>",
@@ -277,6 +282,30 @@ describe("payment component company selection", () => {
       lookupId: "lookup-" + name,
       item: {},
     };
+  }
+
+  /** @returns {Object} the one popover the shared controller mounted */
+  function panel() {
+    expect(env.companyPanels).toHaveLength(1);
+    return env.companyPanels[0];
+  }
+
+  /**
+   * A registry pick by the route production takes: the popover hands it to the
+   * shared controller, which writes the page identity this surface mirrors.
+   *
+   * @param {string} name
+   * @param {string} id '' where the response omitted the national identifier
+   * @returns {void}
+   */
+  function pickThroughPopover(name, id) {
+    panel().options.onSelect({
+      text: name,
+      companyId: id,
+      lookupId: "lookup-" + name,
+    });
+    syncCompanyIdField(component);
+    syncCompanyTileLabel(component);
   }
 
   /** @returns {HTMLElement} the TWO-25326 §7 captured-company label */
@@ -555,7 +584,10 @@ describe("payment component company selection", () => {
    * @returns {void}
    */
   function editNameInManualMode(text) {
-    if (!component.manualMode) component.enterManually();
+    // Manual mode is the shared page identity's, mirrored onto this surface.
+    // Set directly rather than through the controller's `manualEntryMode()`,
+    // which clears the number itself — the point here is that the EDIT drops it.
+    env.identity.captureMode("manual");
     const nameInput = document.getElementById("company_name");
     nameInput.value = text;
     const previousEl = component.$el;
@@ -686,31 +718,40 @@ describe("payment component company selection", () => {
       expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
     });
 
-    test("a stored name with an id comes back locked", () => {
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Example Trading Ltd",
-          company_id: "12345678",
-          manual_mode: false,
-        }),
-      );
+    test.each([
+      ["registry", false, true, "hidden", "a registry pick stays untypeable"],
+      ["manual", true, false, "", "a hand-typed number stays the buyer's to correct"],
+    ])(
+      "a stored id sourced %s comes back locked: %p (%s)",
+      (source, entryRequired, disabled, gate) => {
+        // The lock derives from PROVENANCE, not from "is there a number": both
+        // kinds land under the same key, and an unqualified test re-locked the
+        // field over the buyer's own value.
+        env.browserStorage.setItem(
+          H.COMPANY_SELECTION_KEY,
+          JSON.stringify({
+            quote_id: "test-quote-1",
+            company_name: "Example Trading Ltd",
+            company_id: "12345678",
+            company_id_source: source,
+            manual_mode: false,
+          }),
+        );
 
-      const restored = mountPaymentComponent().component;
+        const restored = mountPaymentComponent().component;
 
-      expect(restored.companyId).toBe("12345678");
-      expect(restored.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
-      // The other path companyNameHintText's doc comment calls out: the
-      // restore happens through initialize()'s pre-$nextTick synchronous
-      // derivation, same as the id hint, so the name hint must land already
-      // showing the restored company -- not empty, not the wrong company.
-      expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
-      expect(restored[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
-        "Example Trading Ltd",
-      );
-    });
+        expect(restored.companyId).toBe("12345678");
+        expect(restored.companyIdEntryRequired).toBe(entryRequired);
+        expect(companyIdInput().disabled).toBe(disabled);
+        // The restore lands through initialize()'s synchronous derivation, so
+        // the label shows the restored company on the first render — not empty,
+        // not the wrong company.
+        expect(restored[COMPANY_CAPTURE_GATE_BINDING]).toBe(gate);
+        expect(restored[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
+          "Example Trading Ltd",
+        );
+      },
+    );
 
     test("nothing stored leaves the field open", () => {
       // Companion to the assertion above, on the flag rather than the field.
@@ -766,7 +807,7 @@ describe("payment component company selection", () => {
       // company A's registry number back beside a name the buyer had typed over.
       // `commitManualCompany()` → `forgetStaleCompanyId()` drops the identifier
       // from STORAGE as well as state, so the rebuild has nothing to re-lock with.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       editNameInManualMode("Other Example");
       expect(companyIdInput().disabled).toBe(false);
       expect(storedSelection().company_id).toBe("");
@@ -795,7 +836,7 @@ describe("payment component company selection", () => {
       // that rather than restoring nothing and depending on the DOM value
       // surviving. What must not happen — company A's name coming back — is
       // asserted directly.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       expect(storedSelection().company_name).toBe("Example Trading Ltd");
 
       editNameInManualMode("Other Example");
@@ -990,7 +1031,7 @@ describe("payment component company selection", () => {
      * off `selectItem()` alone.
      */
     test("goes stale-safe: drops when the buyer edits the name after a pick, before any new pick exists", () => {
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
@@ -1010,14 +1051,16 @@ describe("payment component company selection", () => {
     });
 
     test("re-trips once the buyer picks a new identified company", () => {
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       // Manual-mode edit, for the same reason as the test above.
       editNameInManualMode("Other Example");
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
       expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
 
-      component.selectItem(pickerItem("Other Example Ltd", "87654321"));
+      // The route back the panel offers: a pick can only arrive in search mode.
+      panel().options.onExitManualEntry();
+      pickThroughPopover("Other Example Ltd", "87654321");
       syncCompanyIdField(component);
       syncCompanyTileLabel(component);
 
@@ -1110,7 +1153,10 @@ describe("payment component company selection", () => {
       // Asserted on the number, not the message: the harness resolves every
       // `__()` to one placeholder, so an assertion on the rendered hint could
       // not tell the threshold from any other string.
-      expect(component.companyPopoverSearchApi().MIN_INPUT_LENGTH).toBe(
+      expect(component.capturePanelMinChars()).toBe(component.minSearchChars);
+      // Reached through the controller's own `search` object, which is what the
+      // panel reads — a surface method the panel never consults would drift.
+      expect(panel().options.search.MIN_INPUT_LENGTH).toBe(
         component.minSearchChars,
       );
     });
@@ -1207,7 +1253,7 @@ describe("payment component company selection", () => {
     test("a manual-mode name edit drops the identifier from state, storage and the submitted input", () => {
       // Manual mode is where the field genuinely IS the capture control, so this
       // is the one path on which the text can diverge from the captured company.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       syncCompanyIdField(component);
       expect(companyIdInput().value).toBe("12345678");
       expect(storedSelection().company_id).toBe("12345678");
@@ -1230,7 +1276,7 @@ describe("payment component company selection", () => {
       // Dropping the identifier without unlocking the field leaves a required
       // input that is empty AND uneditable — the checkout blocker this ticket's
       // editability rule exists for.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
+      pickThroughPopover("Example Trading Ltd", "12345678");
       syncCompanyIdField(component);
       expect(companyIdInput().disabled).toBe(true);
 
@@ -1244,8 +1290,7 @@ describe("payment component company selection", () => {
       // The guard rail, and the reason `forgetStaleCompanyId()` compares the text
       // against the captured name rather than clearing unconditionally. A
       // synthetic re-fire of the edit handler must not throw away a good pick.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      component.enterManually();
+      pickThroughPopover("Example Trading Ltd", "12345678");
 
       editNameInManualMode("Example Trading Ltd");
 
@@ -1254,14 +1299,26 @@ describe("payment component company selection", () => {
       expect(storedSelection().company_id).toBe("12345678");
     });
 
-    test("the identifier the buyer never touched survives a mode bounce", () => {
-      // enterManually() deliberately does not clear a previous pick, so entering
-      // and leaving manual mode without typing must leave everything as it was.
-      component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
-      syncCompanyIdField(component);
+    test("this tile offers no route into manual entry at all", () => {
+      // Manual entry captures no organisation number, and this tile hosts the
+      // control only where the address-step lookup that could supply one later
+      // is off — so the chip is withheld and the captured identifier has no
+      // mode route that could drop it.
+      expect(panel().options.isChipVisible("manual")).toBe(false);
+      expect(env.captureControllers[0].config().isCompanySearchEnabled).toBe(
+        false,
+      );
+    });
 
-      component.enterManually();
-      component.enableSearch();
+    test("the identifier survives the modes this tile does offer", () => {
+      pickThroughPopover("Example Trading Ltd", "12345678");
+
+      panel()
+        .options.getChips()
+        .filter((chip) => panel().options.isChipVisible(chip.mode))
+        .forEach((chip) => {
+          if (chip.mode !== "soletrader") chip.onActivate();
+        });
       syncCompanyIdField(component);
 
       expect(component.companyId).toBe("12345678");

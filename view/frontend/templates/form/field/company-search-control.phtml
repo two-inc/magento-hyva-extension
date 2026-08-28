@@ -30,10 +30,11 @@ use Magento\Framework\Escaper;
  *  - component/payment/method/gateway_method.phtml — the payment tile, when the
  *    same setting puts the control there instead.
  *
- * The behaviour half is `twoGatewayCompanySearchControl()` in
- * component/payment/method/gateway_method-csp-js.phtml — an adapter over the
- * shared panel, likewise one implementation, adapted per surface by the options
- * each mount point passes.
+ * The behaviour half is the base plugin's shared, framework-free
+ * `company-capture-component.js`, reached through
+ * `twoGatewayCaptureSurfaceMixin()` in
+ * component/payment/method/gateway_method-csp-js.phtml — likewise one
+ * implementation, adapted per surface by the options each mount point passes.
  *
  * Included with `include $block->getTemplateFile(...)` rather than declared as a
  * layout child. The address-step mount point is a Hyvä entity-form FIELD
@@ -49,6 +50,11 @@ use Magento\Framework\Escaper;
  *                                   the enclosing component's Alpine scope (the
  *                                   tile, whose search state lives on the
  *                                   payment form's own component)
+ * @var string $twoControlCaptureHost which of the two mount points this is,
+ *                                    'address' or 'tile'. The shared controller
+ *                                    decides where the one control belongs by
+ *                                    asking whether each host's field exists, so
+ *                                    this attribute is how it tells them apart.
  * @var string $twoControlInputClass  raw `class` attribute value for the
  *                                    company-NAME input
  * @var string $twoControlInputAttributes raw extra attributes for that input —
@@ -79,6 +85,7 @@ use Magento\Framework\Escaper;
     ?>
     <div
         <?= /* @noEscape */ $twoControlAlpineData ?>
+        data-two-capture-host="<?= $escaper->escapeHtmlAttr($twoControlCaptureHost) ?>"
         class="two-company-search relative w-full"
     >
         <?php
@@ -106,6 +113,7 @@ use Magento\Framework\Escaper;
         ?>
         <input
             type="text"
+            data-two-capture-field
             class="<?= /* @noEscape */ $twoControlInputClass ?>"
             placeholder="<?= $escaper->escapeHtmlAttr(__('Enter company name to search')) ?>"
             :placeholder="<?= $gwBase ?>GetCompanyNamePlaceholder"

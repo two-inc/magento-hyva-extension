@@ -46,8 +46,8 @@ describe("a Magewire re-render that morphs the popover away", () => {
 
   beforeEach(() => {
     document.body.innerHTML = [
-      '<div id="root" class="two-company-search">',
-      '  <input type="text" id="field" value="" />',
+      '<div id="root" class="two-company-search" data-two-capture-host="address">',
+      '  <input type="text" id="field" data-two-capture-field value="" />',
       "</div>",
     ].join("\n");
     field = document.getElementById("field");
@@ -79,15 +79,23 @@ describe("a Magewire re-render that morphs the popover away", () => {
   }
 
   /**
+   * @param {string} mode
+   * @returns {Object} the chip definition for `mode`
+   */
+  function chip(mode) {
+    return panel()
+      .options.getChips()
+      .find((candidate) => candidate.mode === mode);
+  }
+
+  /**
    * What a morph does to this control: the wrapper is not in the server markup
-   * so it goes, the field is put back where the server rendered it, and the
-   * mount attribute the adapter stamped is not reinstated.
+   * so it goes, and the field is put back where the server rendered it.
    */
   function morphServerMarkupOverControl() {
     const wrap = field.parentElement;
     root.insertBefore(field, wrap);
     wrap.remove();
-    delete field.dataset.twoCompanyPanel;
   }
 
   test.each([
@@ -95,18 +103,18 @@ describe("a Magewire re-render that morphs the popover away", () => {
     [
       "in manual entry",
       "the buyer was typing a company the registry does not have",
-      (c) => c.enterManually(),
+      () => chip("manual").onActivate(),
     ],
     [
       "just back from manual entry",
       "the buyer used the return link, which is the cleanest reproduction",
-      (c) => {
-        c.enterManually();
-        c.enableSearch();
+      () => {
+        chip("manual").onActivate();
+        panel().options.onExitManualEntry();
       },
     ],
   ])("%s — %s", (_state, _because, reach) => {
-    reach(component);
+    reach();
     expect(document.querySelectorAll(WRAP)).toHaveLength(1);
 
     morphServerMarkupOverControl();
@@ -131,21 +139,25 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(env.companyPanels).toHaveLength(1);
   });
 
-  test("the field is stamped again, so the panel can address it", () => {
+  test("the field is still addressable, because the morph restores what addresses it", () => {
+    // The panel's selector is the two server-rendered attributes, so a morph
+    // reinstates it rather than deleting it — a runtime stamp on the field would
+    // go with the wrapper and leave the rebuilt panel addressing nothing.
     morphServerMarkupOverControl();
 
     env.fireMagewireHook("element.updated");
 
-    expect(field.dataset.twoCompanyPanel).toBeDefined();
     expect(panel().fieldSelector).toBe(
-      '[data-two-company-panel="' + field.dataset.twoCompanyPanel + '"]',
+      '[data-two-capture-host="address"] input[data-two-capture-field]',
     );
+    expect(document.querySelectorAll(panel().fieldSelector)).toHaveLength(1);
+    expect(panel().getField()[0]).toBe(field);
   });
 
   test("manual entry keeps its way back after the rebuild", () => {
     // The return link lives in the wrapper the morph deleted, and the panel
     // renders it only when the field is released.
-    component.enterManually();
+    chip("manual").onActivate();
     morphServerMarkupOverControl();
     const before = panel().calls.filter((call) => call === "releaseField").length;
 

@@ -70,6 +70,7 @@ $form = $block->getData("form");
      * `EntityFieldInterface` to render it from.
      */
     $twoControlAlpineData = 'x-data="' . $escaper->escapeHtmlAttr($gwBase . 'CompanySearchField') . '"';
+    $twoControlCaptureHost = 'address';
     $twoControlInputClass = $escaper->escapeHtmlAttr(
         $element->renderClass(["block w-full form-input grow renderer-text"]),
     );
