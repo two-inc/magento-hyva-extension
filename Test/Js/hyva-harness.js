@@ -949,6 +949,9 @@ function installCompanyIdentityStub() {
     },
     write: function (written, options) {
       const authoritative = !!(options && options.authoritative);
+      const hadName = state.companyName;
+      const hadId = state.companyId;
+      const hadSource = state.companyIdSource;
       if (written.companyName || authoritative) {
         state.companyName = asString(written.companyName);
       }
@@ -960,6 +963,15 @@ function installCompanyIdentityStub() {
               ? "registry"
               : ""
             : asString(written.companyIdSource);
+      }
+      // A no-op write notifies nobody, so no mirror can be refreshed here by a
+      // write that would refresh nothing on the page.
+      if (
+        state.companyName === hadName &&
+        state.companyId === hadId &&
+        state.companyIdSource === hadSource
+      ) {
+        return;
       }
       notify();
     },
@@ -1552,14 +1564,19 @@ function installHyvaEnvironment() {
   const capture = installCompanyCaptureStub();
 
   /*
-   * Magewire's re-render hooks. Only `hook()` is stubbed, because that is the
-   * whole of the API this module uses: it registers callbacks and Magewire runs
-   * them, several times, once per element a re-render touched.
+   * Magewire's re-render hooks and its server-event bus. `hook()` registers
+   * callbacks Magewire runs once per element a re-render touched; `on()` is what
+   * the payment bridge polls for, and without it that poll re-arms itself every
+   * 100ms for the rest of the file.
    */
   const magewireHooks = {};
+  const magewireEvents = {};
   window.Magewire = {
     hook: function (name, handler) {
       (magewireHooks[name] = magewireHooks[name] || []).push(handler);
+    },
+    on: function (name, handler) {
+      (magewireEvents[name] = magewireEvents[name] || []).push(handler);
     },
   };
 
@@ -1597,6 +1614,20 @@ function installHyvaEnvironment() {
           handler();
         });
       }
+    },
+    /**
+     * Fire one of Magewire's server events.
+     *
+     * @param {string} name
+     * @param {Object} [payload]
+     * @returns {number} handlers called, so a caller can fail on nought
+     */
+    fireMagewireEvent: function (name, payload) {
+      const handlers = (magewireEvents[name] || []).slice();
+      handlers.forEach(function (handler) {
+        handler(payload);
+      });
+      return handlers.length;
     },
     /**
      * Undo everything installed here, plus the shared helpers themselves.

@@ -4,10 +4,10 @@
  *
  * The identity-watcher registry, keyed on each surface's own ROOT NODE.
  *
- * The address step's company field renderer is registered globally, so the same
- * component mounts on the delivery form AND the invoice form: two live surfaces,
- * and a key naming the KIND of host is one key between them — the second mount
- * disposes the first's subscription, and the OWNER is left with no watcher.
+ * Each surface's root node is its own key: the address renderer mounts on the
+ * delivery form AND the invoice form, so a key naming the kind of host would be
+ * shared between them, and the second mount would dispose the first's
+ * subscription.
  *
  * Both surfaces mount before anything is written: a write is the only thing that
  * tells a live subscription from a disposed one.
@@ -71,8 +71,9 @@ describe("two address surfaces on one page", () => {
   }
 
   beforeEach(() => {
-    // No `#billing-as-shipping`, so the invoice role is the DELIVERY form — and
-    // it is mounted FIRST, which is the arrangement the shared key broke.
+    // No `#billing-as-shipping`, so the invoice role is the DELIVERY form, and
+    // it mounts FIRST — the arrangement in which a key shared between the two
+    // surfaces leaves the owner with no watcher.
     document.body.innerHTML = addressForm("shipping") + addressForm("billing");
 
     env = H.installHyvaEnvironment();
@@ -121,12 +122,13 @@ describe("two address surfaces on one page", () => {
       ).toHaveLength(1);
     });
 
-    test.each([
-      ["shipping", "the owner, mounted first"],
-      ["billing", "the deferring surface, mounted second"],
-    ])("reaches the %s surface's mirror — %s", (role) => {
-      expect(surfaces[role].companyName).toBe("Example Trading Ltd");
-      expect(surfaces[role].companyId).toBe("12345678");
+    test("reaches BOTH surfaces' mirrors", () => {
+      // One test, not a row each: only the surface mounted FIRST can lose its
+      // subscription to a shared key, so the symmetry is the property.
+      expect(surfaces.shipping.companyName).toBe("Example Trading Ltd");
+      expect(surfaces.shipping.companyId).toBe("12345678");
+      expect(surfaces.billing.companyName).toBe("Example Trading Ltd");
+      expect(surfaces.billing.companyId).toBe("12345678");
     });
 
     test("and the owner persists it and announces it", () => {

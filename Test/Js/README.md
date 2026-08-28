@@ -167,6 +167,12 @@ the interaction ends — the earlier once-per-_page-load_ latch left the buyer w
 field for the rest of the session), and a genuine zero-result search is _not_ flagged
 unavailable.
 
+A mutation check runs in a tree nobody else is writing to. A repeat-run loop sharing a
+working tree with a mutation check reads as a flaky test: one round chased a 2-in-10
+single-test failure in `payment-company-selection.test.js` as cross-suite contamination,
+and it was the mutant that drops the `companyIdSource === 'registry'` term from
+`hasVouchedCompanyId()`, which fails exactly that one test and nothing else.
+
 The suite was mutation-checked against the four behaviours it claims to pin, by breaking
 each one in the template and confirming a red run: relaxing `degraded === true` to
 truthiness fails 2 tests, moving the 30s ceiling to 5s fails 3, treating every abort as a
@@ -206,6 +212,10 @@ fix changes what the field's state is at mount:
 | Drop the `x-for :key` fallback                                                  | 1                                                                                |
 | Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
 | `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
+| Drop the `company_id_source` argument from the on-load initialisation           | 1                                                                                |
+| `update-company-data`'s entry-required gated on `Boolean(companyName)`          | 1                                                                                |
+| Drop `companyIdSource` from the `update-company-data` listener                   | 1                                                                                |
+| Drop `on()` from the harness's Magewire stub                                     | 1                                                                                |
 
 One of these **started green** in an earlier round, and it is worth recording why. Flipping
 the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls

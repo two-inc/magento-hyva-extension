@@ -490,8 +490,7 @@ describe("shipping to payment company sync", () => {
 
   describe("the stored provenance of a hand-typed number", () => {
     // An omitted source is re-derived downstream as 'registry', which re-locks
-    // the field over a value the buyer typed. The Magewire registration is the
-    // same by-hand drive as the describe above.
+    // the field over a value the buyer typed.
     let handler;
 
     beforeEach(() => {
@@ -543,6 +542,21 @@ describe("shipping to payment company sync", () => {
       ],
     ])("reaches the tile through %s", (name, drive) => {
       drive();
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+    });
+
+    test("reaches the tile through the on-load initialisation", () => {
+      // The latch that guards the page-load restore is per template load, and
+      // this describe's beforeEach has already tripped it. Last test here,
+      // because the second instance keeps listening for the rest of the file.
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+
+      document.dispatchEvent(new Event("DOMContentLoaded"));
 
       expect(syncedEvents[syncedEvents.length - 1]).toEqual({
         companyName: "Example Trading Ltd",

@@ -701,19 +701,60 @@ describe("payment component company selection", () => {
     });
 
     test.each([
-      ["manual", true, false, "the buyer typed it, so it stays theirs to correct"],
-      ["registry", false, true, "the registry vouched for it"],
-      [undefined, false, true, "no provenance can only be a lookup's"],
+      [
+        "12345678",
+        "manual",
+        "manual",
+        true,
+        false,
+        "the buyer typed it, so it stays theirs to correct",
+      ],
+      [
+        "12345678",
+        "registry",
+        "registry",
+        false,
+        true,
+        "the registry vouched for it",
+      ],
+      [
+        "12345678",
+        undefined,
+        "registry",
+        false,
+        true,
+        "no provenance can only be a lookup's",
+      ],
+      [
+        "",
+        undefined,
+        "",
+        true,
+        false,
+        "a cleared company must not leave a locked empty required field",
+      ],
     ])(
-      "a number arriving as %s leaves entry-required %s and locked %s — %s",
-      (source, required, locked) => {
-        syncFromShipping("Example Trading Ltd", "12345678", source);
+      "a number arriving as %p sourced %s leaves source %p, entry-required %s and locked %s — %s",
+      (companyId, source, storedSource, required, locked) => {
+        syncFromShipping(companyId ? "Example Trading Ltd" : "", companyId, source);
 
-        expect(component.companyIdSource).toBe(source || "registry");
+        expect(component.companyIdSource).toBe(storedSource);
         expect(component.companyIdEntryRequired).toBe(required);
         expect(companyIdInput().disabled).toBe(locked);
       },
     );
+
+    test("tracks the provenance with no shared identity on the page", () => {
+      // With the base plugin's identity store absent, the listener's own
+      // assignment is the only carrier; with it present either alone passes.
+      delete window.TwoCompanyIdentity;
+
+      syncFromShipping("Example Trading Ltd", "12345678", "registry");
+
+      expect(component.companyIdSource).toBe("registry");
+      expect(component.companyIdEntryRequired).toBe(false);
+      expect(companyIdInput().disabled).toBe(true);
+    });
   });
 
   describe("restored from browser storage", () => {
