@@ -2383,9 +2383,10 @@ $quoteDetails = json_encode(
              * INVOICE one (TWO-25461 §1(a.3)). Any other surface defers, unless
              * no invoice-role form resolves at all.
              *
+             * @param {boolean} claim stamp the claim, rather than only report it
              * @returns {boolean} whether this surface owns the popover
              */
-            claimCaptureField() {
+            resolveCaptureOwnership(claim) {
                 const field = this.companyNameField();
                 if (!field) return false;
                 if (field.hasAttribute('data-two-capture-active')) return true;
@@ -2397,10 +2398,19 @@ $quoteDetails = json_encode(
                     // invoice-role form to prefer: leave it alone.
                     if (!invoiceForm || !invoiceForm.contains(field)) return false;
                     if (invoiceForm.contains(claimed)) return false;
-                    claimed.removeAttribute('data-two-capture-active');
+                    if (claim) claimed.removeAttribute('data-two-capture-active');
                 }
-                field.setAttribute('data-two-capture-active', '');
+                if (claim) field.setAttribute('data-two-capture-active', '');
                 return true;
+            },
+
+            claimCaptureField() {
+                return this.resolveCaptureOwnership(true);
+            },
+
+            /** The same question, without taking the claim. */
+            ownsCaptureField() {
+                return this.resolveCaptureOwnership(false);
             },
 
             /**
@@ -2447,12 +2457,20 @@ $quoteDetails = json_encode(
                 // rebuild, so a subscription kept here would never be reachable
                 // to dispose and every dead copy would go on writing the
                 // selection blob on one notification.
-                const slot = opts.captureHost || 'address';
-                window.twoGatewayCaptureIdentityWatchers =
-                    window.twoGatewayCaptureIdentityWatchers || {};
-                if (window.twoGatewayCaptureIdentityWatchers[slot]) {
-                    window.twoGatewayCaptureIdentityWatchers[slot].dispose();
-                }
+                // Keyed on the surface's own ROOT NODE. `captureHost` names the
+                // KIND of host, and the address field renderer mounts on the
+                // delivery form AND the invoice form — two surfaces, one key.
+                const registry = window.twoGatewayCaptureIdentityWatchers instanceof Map
+                    ? window.twoGatewayCaptureIdentityWatchers
+                    : (window.twoGatewayCaptureIdentityWatchers = new Map());
+                // A departed root can never be reached to dispose again.
+                registry.forEach(function (watcher, node) {
+                    if (!node || node.isConnected !== false) return;
+                    watcher.dispose();
+                    registry.delete(node);
+                });
+                const slot = this.$root || opts.captureHost || 'address';
+                if (registry.has(slot)) registry.get(slot).dispose();
                 const self = this;
                 let restoring = false;
                 const apply = function () {
@@ -2509,7 +2527,7 @@ $quoteDetails = json_encode(
                         restoring
                     );
                 };
-                window.twoGatewayCaptureIdentityWatchers[slot] = identity.subscribe(apply);
+                registry.set(slot, identity.subscribe(apply));
                 // The priming pass looks like a fresh pick to every `!==` above,
                 // so a surface acting on one — the tile dispatches an order
                 // intent — is told it is a restore.
@@ -3225,6 +3243,11 @@ $quoteDetails = json_encode(
                 // Not while a signup is live: that flow never writes the blob, so
                 // the stored pair is the registered company that preceded it and
                 // restoring it puts that company under sole-trader mode.
+                //
+                // AUTHORITATIVE ONLY FROM THE SURFACE THAT HOSTS THE CONTROL:
+                // an authoritative write replaces both halves empty ones
+                // included, and a non-hosting tile's stored pair is routinely
+                // empty, so it would blank what the address step captured.
                 if (identity && !identity.isSoleTrader()) {
                     identity.write(
                         {
@@ -3232,7 +3255,7 @@ $quoteDetails = json_encode(
                             companyId: shippingCompanySelectionData.company_id || '',
                             companyIdSource: shippingCompanySelectionData.company_id_source || ''
                         },
-                        { authoritative: true }
+                        { authoritative: this.ownsCaptureField() }
                     );
                 }
 
@@ -3285,15 +3308,18 @@ $quoteDetails = json_encode(
                 // this the buyer's shipping pick of an identifier-less company
                 // would land in a field still locked from the previous pick.
                 this.$el.addEventListener('update-company-data', (event) => {
+                    const detail = event.detail || {};
+                    const companyName = detail.companyName || '';
+                    const companyId = detail.companyId || '';
+                    // Resolved once, for both the shared write and this tile's
+                    // own state. A number with no provenance came from a lookup.
+                    const companyIdSource = companyId
+                        ? (detail.companyIdSource || 'registry')
+                        : '';
                     const shared = window.TwoCompanyIdentity;
                     if (shared) {
                         shared.write(
-                            {
-                                companyName: event.detail.companyName || '',
-                                companyId: event.detail.companyId || '',
-                                companyIdSource: event.detail.companyIdSource
-                                    || (event.detail.companyId ? 'registry' : '')
-                            },
+                            { companyName, companyId, companyIdSource },
                             { authoritative: true }
                         );
                     }
@@ -3304,16 +3330,18 @@ $quoteDetails = json_encode(
                      * looking at the previous company's name.
                      */
                     const nameField = this.companyNameField();
-                    if (nameField) nameField.value = event.detail.companyName || '';
+                    if (nameField) nameField.value = companyName;
                     // And this tile's own state. Where the ADDRESS step owns the
                     // control this tile claims nothing, so it carries no identity
                     // mirror — and its order-intent verdict, its label and its
                     // supersede guard all read `companyId`.
-                    this.search = event.detail.companyName || '';
-                    this.companyName = event.detail.companyName || '';
-                    this.companyId = event.detail.companyId || '';
-                    this.companyIdEntryRequired = Boolean(event.detail.companyName)
-                        && !event.detail.companyId;
+                    this.search = companyName;
+                    this.companyName = companyName;
+                    this.companyId = companyId;
+                    this.companyIdSource = companyIdSource;
+                    // The engine's formula, not a second one: a hand-typed
+                    // number stays the buyer's to correct.
+                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
                     this.applyCompanyIdEditability();
                 });
 

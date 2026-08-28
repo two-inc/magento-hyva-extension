@@ -647,12 +647,17 @@ describe("payment component company selection", () => {
      *
      * @param {string} companyName
      * @param {string} companyId
+     * @param {string} [companyIdSource] omitted where the sync carries none
      * @returns {void}
      */
-    function syncFromShipping(companyName, companyId) {
+    function syncFromShipping(companyName, companyId, companyIdSource) {
       document.getElementById("payment-root").dispatchEvent(
         new CustomEvent("update-company-data", {
-          detail: { companyName: companyName, companyId: companyId },
+          detail: {
+            companyName: companyName,
+            companyId: companyId,
+            companyIdSource: companyIdSource,
+          },
         }),
       );
       syncCompanyIdField(component);
@@ -694,6 +699,21 @@ describe("payment component company selection", () => {
         "Other Example Ltd",
       );
     });
+
+    test.each([
+      ["manual", true, false, "the buyer typed it, so it stays theirs to correct"],
+      ["registry", false, true, "the registry vouched for it"],
+      [undefined, false, true, "no provenance can only be a lookup's"],
+    ])(
+      "a number arriving as %s leaves entry-required %s and locked %s — %s",
+      (source, required, locked) => {
+        syncFromShipping("Example Trading Ltd", "12345678", source);
+
+        expect(component.companyIdSource).toBe(source || "registry");
+        expect(component.companyIdEntryRequired).toBe(required);
+        expect(companyIdInput().disabled).toBe(locked);
+      },
+    );
   });
 
   describe("restored from browser storage", () => {

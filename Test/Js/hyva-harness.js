@@ -1629,6 +1629,8 @@ function installHyvaEnvironment() {
       // already in place, with the previous file's Magewire holding it.
       delete window.twoGatewayCompanyMorphHooked;
       delete window.twoGatewayCompanyMorphDeferred;
+      // Same reason: created on first mount, and keyed on DOM roots.
+      delete window.twoGatewayCaptureIdentityWatchers;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];

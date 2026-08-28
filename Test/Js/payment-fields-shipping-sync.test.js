@@ -488,6 +488,70 @@ describe("shipping to payment company sync", () => {
     });
   });
 
+  describe("the stored provenance of a hand-typed number", () => {
+    // An omitted source is re-derived downstream as 'registry', which re-locks
+    // the field over a value the buyer typed. The Magewire registration is the
+    // same by-hand drive as the describe above.
+    let handler;
+
+    beforeEach(() => {
+      handler = null;
+      global.Magewire = {
+        on: (eventName, callback) => {
+          if (eventName === "billing_as_shipping_address_updated") {
+            handler = callback;
+          }
+        },
+      };
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      if (typeof handler !== "function") {
+        throw new Error(
+          "the template did not register a billing_as_shipping_address_updated " +
+            "handler — this throws rather than skipping, so a template change " +
+            "cannot quietly reduce these tests to testing nothing",
+        );
+      }
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          company_id_source: "manual",
+          manual_mode: false,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      delete global.Magewire;
+    });
+
+    test.each([
+      [
+        "the payment method becoming active",
+        () =>
+          window.dispatchEvent(
+            new CustomEvent("checkout:payment:method-activate", {
+              detail: { method: "two_payment" },
+            }),
+          ),
+      ],
+      [
+        "billing collapsing back onto shipping",
+        () => handler({ billingAsShipping: true }),
+      ],
+    ])("reaches the tile through %s", (name, drive) => {
+      drive();
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+    });
+  });
+
   test("does not sync when billing is not the same as shipping", () => {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";

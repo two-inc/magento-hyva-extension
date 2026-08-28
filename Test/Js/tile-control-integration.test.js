@@ -263,6 +263,28 @@ describe("a payment tile that renders no capture field", () => {
       expect(component[member]).toBe(expected);
     });
 
+    test.each([
+      ["companyName", "Address Step Ltd"],
+      ["companyId", "88888888"],
+    ])("the address step's %s survives this tile's init", (member, expected) => {
+      // Given a capture on the address step and nothing in this tile's records;
+      // when the tile initialises. An authoritative write replaces both halves,
+      // empty ones included, so it would blank the capture.
+      env.identity.write(
+        {
+          companyName: "Address Step Ltd",
+          companyId: "88888888",
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
+      component.$watch = function () {};
+
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      expect(env.identity[member]()).toBe(expected);
+    });
+
     test("a hand-typed number keeps its provenance across the sync", () => {
       // Re-deriving it as 'registry' makes hasVouchedNumber() true, which
       // re-locks the number field over a value the buyer typed.
