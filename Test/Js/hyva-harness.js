@@ -88,6 +88,16 @@ const PHP_VALUE_RULES = [
   // Production's default: the token only reaches the browser where a merchant
   // switched that on. The suite that covers the header overrides it.
   [/^\$firewallToken$/, ""],
+  // Emitted bare as a JS boolean. `true` is the state a base module meeting
+  // composer.json's floor is in; the fallback suite overrides it to `false`,
+  // which is what proves each call site reads the injected value rather than
+  // hardcoding the proxy.
+  [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
+  // Read on the direct-call fallback only.
+  [/^\$clientName$/, "magento-hyva"],
+  [/^\$clientVersion$/, "2.1.0"],
+  [/^\$merchantShortName$/, "Example Shop"],
+  [/^\$companySearchLimit$/, "50"],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
   // the same meaning; the min-chars suite overrides it via `extraRules` with a

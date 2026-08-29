@@ -194,8 +194,10 @@ jobs:
             php /data/extensions/magento-hyva-extension/dev/stub-hyva
 
       - name: Install extension from uploaded source
-        # The Hyvä module requires the base Two plugin (two-inc/magento2 ^2.0);
-        # composer pulls it from Packagist (public) alongside the local path copy.
+        # The Hyvä module requires the base Two plugin at the floor in
+        # composer.json; composer pulls it from Packagist (public) alongside the
+        # local path copy, so this leg cannot resolve until a release carrying
+        # the proxy routes is published there.
         run: |
           docker exec magento-project-community-edition \
             composer config repositories.local path '/data/extensions/*'

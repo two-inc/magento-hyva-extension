@@ -30,9 +30,12 @@ class CheckoutConfig implements ArgumentInterface
     public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
-     * into. Local rather than a reference to the parent module's constant:
-     * the token never crosses the module boundary at runtime — this view
-     * model produces it and this module's own JS consumes it.
+     * into. Local rather than a reference to the parent module's constant: the
+     * token never crosses the module boundary at runtime (this view model
+     * produces it and this module's own JS consumes it), and referencing the
+     * parent's constant would fatal on a parent release that predates it,
+     * defeating the method_exists() degradation in
+     * getOrderIntentApprovedNotice().
      */
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
@@ -230,6 +233,73 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * Whether the installed base module exposes the registry and order-intent
+     * proxy routes, which is what decides between calling them and calling the
+     * API straight from the browser as this checkout did before they existed.
+     *
+     * This runtime check, NOT the `^2.3.0` floor in composer.json, is the
+     * mechanism that keeps a too-old base from fataling the checkout: release
+     * versions here are computed from commit-type keywords rather than from
+     * what shipped, so the floor states intent and cannot be trusted to mean
+     * the routes are present. Both interfaces are checked because the two
+     * fallbacks are independent — a base carrying one and not the other still
+     * gets the right path for each.
+     *
+     * String literals rather than imported constants: an import resolved at
+     * runtime would itself fatal on the base this method exists to detect.
+     */
+    public function getIsProxyAvailable(): bool
+    {
+        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface') &&
+            interface_exists('Two\Gateway\Api\Webapi\OrderIntentInterface');
+    }
+
+    /**
+     * Plugin identifier for the `client` query param on browser-side Two API calls.
+     *
+     * @deprecated Feeds the direct-call fallback only; delete once the release
+     * process guarantees the composer floor corresponds to shipped code.
+     */
+    public function getClientName(): ?string
+    {
+        return $this->configRepository->getExtensionPlatformName();
+    }
+
+    /**
+     * Plugin version for the `client_v` query param on browser-side Two API calls.
+     *
+     * @deprecated Feeds the direct-call fallback only; delete once the release
+     * process guarantees the composer floor corresponds to shipped code.
+     */
+    public function getClientVersion(): ?string
+    {
+        return $this->configRepository->getExtensionDBVersion();
+    }
+
+    /**
+     * Merchant slug for the `merchant` query param on browser-side Two API calls.
+     *
+     * @deprecated Feeds the direct-call fallback only; delete once the release
+     * process guarantees the composer floor corresponds to shipped code.
+     */
+    public function getMerchantShortName(): string
+    {
+        return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
+    }
+
+    /**
+     * Rows a browser-side company search asks the registry for. The proxy route
+     * sets its own bound, so this is read only on the direct-call fallback.
+     *
+     * @deprecated Feeds the direct-call fallback only; delete once the release
+     * process guarantees the composer floor corresponds to shipped code.
+     */
+    public function getCompanySearchLimit(): int
+    {
+        return 50;
+    }
+
+    /**
      * TWO-25326 (WooCommerce-plugin port, PR #445): company search must
      * not run while a merchant's API key can't be verified, on top of
      * (not instead of) the existing `enable_company_search` toggle — see
@@ -414,11 +484,22 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
-        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+        // A base predating these registry methods means "no brand opinion":
+        // the notice is ON with the platform default copy, which is correct
+        // for every brand that has not opted out. Same reasoning as
+        // getIsProxyAvailable() — the composer floor cannot be trusted to
+        // mean the methods are present.
+        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
+            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
+            : true;
+
+        if (!$enabled) {
             return null;
         }
 
-        $override = $this->brandRegistry->getIntentApprovedNotice();
+        $override = method_exists($this->brandRegistry, "getIntentApprovedNotice")
+            ? $this->brandRegistry->getIntentApprovedNotice()
+            : null;
 
         $productName = $this->brandRegistry->getProductName();
 
@@ -466,7 +547,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentNotAvailableNotice(): ?array
     {
-        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
+            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
+            : true;
+
+        if (!$enabled) {
             return null;
         }
 

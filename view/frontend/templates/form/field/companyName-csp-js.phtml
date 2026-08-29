@@ -33,6 +33,12 @@ $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // host, so a store served under a subdirectory or a store-coded URL reaches
 // its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
+$isProxyAvailable = $configModel->getIsProxyAvailable();
+// The four below are read on the direct-call fallback only.
+$clientName = $configModel->getClientName();
+$clientVersion = $configModel->getClientVersion();
+$merchantShortName = $configModel->getMerchantShortName();
+$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -143,6 +149,11 @@ function <?= $gwBase ?>CompanySearchField() {
         manualEntryOffered: true,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+        isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
+        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+        merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
+        companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,

@@ -255,7 +255,28 @@ whose network traffic passes through a firewall appliance can have a token
 attached there without it ever reaching a buyer's browser. Each answers a
 `{ok, status, body}` envelope — `ok: false` means the upstream call failed and
 must produce exactly what a failed direct call used to. Paging and client
-identification are the server's to set, so nothing here sends them. The one
+identification are the server's to set, so nothing here sends them.
+
+**What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
+`^2.3.0` floor in `composer.json`.** The floor states the intent and is not
+evidence: a release version is computed from commit-type keywords rather than
+from the code that shipped, so a base numbered past the floor may still not
+carry the routes — and addressing an unregistered route is a 404 the tile turns
+into a failed checkout. The getter answers `interface_exists()` on the base's
+own `CompanyLookupInterface` and `OrderIntentInterface`, and the answer is
+emitted to every mount as `isProxyAvailable`. `false` takes each of the three
+call sites back to the **direct browser-to-API call it made before the routes
+existed** — query-string client identification and merchant name restored, the
+order-intent body naming the merchant again, and no firewall token on any of
+it. That is not a new exposure: it is precisely what ran on that base already,
+and it is the only path on which those fallbacks are reachable.
+
+Those fallback branches are **deprecated on arrival**. Delete them, and the
+flag threading them, once the release process guarantees a version number
+corresponds to the code that shipped — the fix is to the version automation's
+content-blindness, not a floor raised high enough to look safe.
+
+The one
 exception is `/autofill/v1/buyer/current`, which is authenticated by the buyer's
 own cookie on the API's domain and so cannot be proxied at all; it carries the
 firewall token as an `X-WAF-TOKEN` header instead, and only where a merchant

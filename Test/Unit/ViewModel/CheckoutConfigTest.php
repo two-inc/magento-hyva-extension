@@ -350,6 +350,55 @@ class CheckoutConfigTest extends TestCase
         ];
     }
 
+    /**
+     * The runtime answer to "does the installed base module carry the proxy
+     * routes", which is what keeps a base that predates them from being sent
+     * to a route it has not registered. composer.json's floor cannot answer
+     * it: release versions here are computed from commit-type keywords, not
+     * from what shipped.
+     *
+     * Both interfaces are declared mid-test rather than stubbed at bootstrap,
+     * because the three states have to be observed in one process and a
+     * bootstrap stub would make the absent one unreachable.
+     */
+    public function testProxyAvailabilityTracksTheBaseModulesOwnInterfaces(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $this->assertFalse(
+            $viewModel->getIsProxyAvailable(),
+            'a base carrying neither interface predates the routes'
+        );
+
+        eval('namespace Two\Gateway\Api\Webapi; interface CompanyLookupInterface {}');
+        $this->assertFalse(
+            $viewModel->getIsProxyAvailable(),
+            'one of the two is not the pair the checkout needs'
+        );
+
+        eval('namespace Two\Gateway\Api\Webapi; interface OrderIntentInterface {}');
+        $this->assertTrue($viewModel->getIsProxyAvailable(), 'both present');
+    }
+
+    /**
+     * A brand registry predating the notice methods means "no brand opinion",
+     * not a fatal: the notice stays on with the platform default copy, which
+     * is right for every brand that has not opted out.
+     */
+    public function testNoticeSurvivesABrandRegistryWithoutTheDeclarationMethods(): void
+    {
+        $notice = $this->noticeFor(new class {
+            public function getProductName(): string
+            {
+                return 'TestProduct';
+            }
+        });
+
+        $this->assertNotNull($notice);
+        $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
+    }
+
     public function testGetIsApiKeyVerifiedDelegatesToTheInjectedStatusService(): void
     {
         $this->assertTrue($this->isApiKeyVerifiedFor(true));
