@@ -30,12 +30,9 @@ class CheckoutConfig implements ArgumentInterface
     public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
-     * into. Deliberately a local constant rather than a reference to the
-     * parent module's config provider: the token never crosses the module
-     * boundary at runtime (this view model produces it and this module's own
-     * JS consumes it), and referencing the parent's constant would fatal on
-     * a parent release that predates it, defeating the method_exists()
-     * degradation in getOrderIntentApprovedNotice().
+     * into. Local rather than a reference to the parent module's constant:
+     * the token never crosses the module boundary at runtime — this view
+     * model produces it and this module's own JS consumes it.
      */
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
@@ -223,15 +220,10 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * The firewall token, for the one API call the browser still makes
-     * directly. Empty unless the merchant turned that on, and empty on a base
-     * release predating the setting.
+     * directly. Empty unless the merchant turned that on.
      */
     public function getFirewallToken(): string
     {
-        if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
-            return "";
-        }
-
         return $this->configRepository->isFirewallTokenSentFromBrowser()
             ? $this->configRepository->getFirewallToken()
             : "";
@@ -422,25 +414,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
-        // Degrade gracefully on an older parent. composer.json requires
-        // two-inc/magento2 ^2.0, which cannot express "the patch release that
-        // added these registry methods" — and tightening the constraint would
-        // block installs on parents that are otherwise perfectly compatible.
-        // A missing method therefore means "no brand opinion": the notice is
-        // ON, with the platform default copy, which is correct for every
-        // brand that has not opted out. Drop these guards once the parent
-        // constraint moves past the release that introduced the methods.
-        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
-            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
-            : true;
-
-        if (!$enabled) {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
             return null;
         }
 
-        $override = method_exists($this->brandRegistry, "getIntentApprovedNotice")
-            ? $this->brandRegistry->getIntentApprovedNotice()
-            : null;
+        $override = $this->brandRegistry->getIntentApprovedNotice();
 
         $productName = $this->brandRegistry->getProductName();
 
@@ -488,11 +466,7 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentNotAvailableNotice(): ?array
     {
-        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
-            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
-            : true;
-
-        if (!$enabled) {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
             return null;
         }
 

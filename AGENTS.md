@@ -96,12 +96,11 @@ so it never dirties the working tree. `.two-deployed-commit` is gitignored and
 must never be committed: a committed stamp would be frozen at commit time and
 would shadow the two fresher signals.
 
-`Provenance` is deliberately a near-copy of the base module's equivalent
-provenance model rather than an injection of it — that class ships in no
-published `two-inc/magento2` release, so depending on it would break DI on
-every base version a merchant can install. Once a base release carries it and
-this repo's constraint has a floor at that release, delete the local copy and
-inject the base one; the public surface is identical for exactly that reason.
+`Provenance` is a near-copy of the base module's equivalent provenance model
+rather than an injection of it, with an identical public surface. The base
+class predates the `^2.2.1` floor in `composer.json`, so every base a merchant
+can install carries it and nothing depends on the copy staying local: delete
+it and inject `Two\Gateway\Model\Provenance` instead.
 
 ## Hyvä config registration
 

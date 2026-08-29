@@ -4,11 +4,10 @@
  *
  * TWO-25245. Browser-JS-in-Jest harness for the Hyvä extension.
  *
- * This module's JS is neither AMD nor ESM nor even a `.js` file: it is an
- * inline `<script>` block inside a `.phtml` template, registered with Hyvä's
- * CSP helper and rendered into a page where Alpine, Magewire and Hyvä's own
- * `hyva` global already exist. There is nothing to `require()` — and Jest
- * cannot import a `.phtml` at all.
+ * This module's JS is an inline `<script>` block inside a `.phtml` template, so
+ * there is nothing to `require()` and Jest cannot import it. The harness does
+ * the extraction at test time: it renders the template the way PHP would (minus
+ * PHP), pulls the `<script>` bodies out, and evaluates them in global scope.
  *
  * Extracting the JS to a real `.js` file would be the clean answer, but that is
  * a production change, and PR #71 (TWO-25238, the CSP-token fix) is open over
