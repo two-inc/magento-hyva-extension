@@ -98,7 +98,7 @@ would shadow the two fresher signals.
 
 `Provenance` is a near-copy of the base module's equivalent provenance model
 rather than an injection of it, with an identical public surface. The base
-class predates the `^2.2.1` floor in `composer.json`, so every base a merchant
+class predates the `^2.3.0` floor in `composer.json`, so every base a merchant
 can install carries it and nothing depends on the copy staying local: delete
 it and inject `Two\Gateway\Model\Provenance` instead.
 
