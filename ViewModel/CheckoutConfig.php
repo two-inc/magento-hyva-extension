@@ -224,9 +224,24 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * The firewall token, for the one API call the browser still makes
      * directly. Empty unless the merchant turned that on.
+     *
+     * A base predating these config methods has no firewall-token feature at
+     * all, so absent reads the same as the toggle being off. Same reasoning as
+     * getOrderIntentApprovedNotice(): the composer floor cannot be trusted to
+     * mean the methods are present, and this getter is called unconditionally
+     * at the top of the payment tile — ahead of every proxy-availability
+     * branch — so an unguarded call fatals the tile on exactly the bases the
+     * fallback exists for.
      */
     public function getFirewallToken(): string
     {
+        if (
+            !method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")
+            || !method_exists($this->configRepository, "getFirewallToken")
+        ) {
+            return "";
+        }
+
         return $this->configRepository->isFirewallTokenSentFromBrowser()
             ? $this->configRepository->getFirewallToken()
             : "";
@@ -239,19 +254,19 @@ class CheckoutConfig implements ArgumentInterface
      *
      * This runtime check, NOT the `^2.3.0` floor in composer.json, is the
      * mechanism that keeps a too-old base from fataling the checkout: release
-     * versions here are computed from commit-type keywords rather than from
-     * what shipped, so the floor states intent and cannot be trusted to mean
-     * the routes are present. Both interfaces are checked because the two
-     * fallbacks are independent — a base carrying one and not the other still
-     * gets the right path for each.
+     * versions are computed from commit-type keywords rather than from what
+     * shipped, so the floor states intent only.
      *
-     * String literals rather than imported constants: an import resolved at
+     * One interface answers for both routes — they and their webapi/di
+     * registration land in a single base-module commit, so no release carries
+     * one without the other.
+     *
+     * A string literal rather than an imported constant: an import resolved at
      * runtime would itself fatal on the base this method exists to detect.
      */
     public function getIsProxyAvailable(): bool
     {
-        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface') &&
-            interface_exists('Two\Gateway\Api\Webapi\OrderIntentInterface');
+        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
     }
 
     /**

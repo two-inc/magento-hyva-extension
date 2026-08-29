@@ -262,26 +262,55 @@ describe("company lookups without the proxy routes", () => {
 
   // Keyed by the direct URL rather than the proxy's synthetic key, so the two
   // paths cannot serve each other's answers within one page.
-  test("the direct search caches under its own URL", async () => {
+  test("a direct search is not answered from the proxy's cache entry", async () => {
+    const proxied = window.twoGatewayCompanySearch({
+      useProxy: true,
+      restBaseUrl: REST_BASE,
+      checkoutApiUrl: API,
+      countryCode: "gb",
+      query: "acme",
+      limit: 10,
+    });
+    fetchStub.last().respondProxy({ items: [] });
+    await proxied;
+
+    const afterProxied = fetchStub.calls.length;
+    const direct = window.twoGatewayCompanySearch({
+      useProxy: false,
+      restBaseUrl: REST_BASE,
+      checkoutApiUrl: API,
+      countryCode: "gb",
+      query: "acme",
+      limit: 10,
+    });
+    // Same country and query: a shared key would serve the proxy's answer and
+    // never reach the wire.
+    expect(fetchStub.calls.length).toBe(afterProxied + 1);
+    expect(fetchStub.last().url).toContain(API + "/companies/v2/company?");
+
+    fetchStub.last().respond({ items: [] });
+    await direct;
+  });
+
+  test("a repeated direct search is served from cache", async () => {
     const first = window.twoGatewayCompanySearch({
       useProxy: false,
       checkoutApiUrl: API,
       countryCode: "gb",
       query: "acme",
-      limit: 50,
+      limit: 10,
     });
     fetchStub.last().respond({ items: [] });
     await first;
 
     const before = fetchStub.calls.length;
-    const second = window.twoGatewayCompanySearch({
+    await window.twoGatewayCompanySearch({
       useProxy: false,
       checkoutApiUrl: API,
       countryCode: "gb",
       query: "acme",
-      limit: 50,
+      limit: 10,
     });
-    await second;
 
     expect(fetchStub.calls).toHaveLength(before);
   });

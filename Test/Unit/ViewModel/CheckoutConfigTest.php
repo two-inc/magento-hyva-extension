@@ -357,28 +357,47 @@ class CheckoutConfigTest extends TestCase
      * it: release versions here are computed from commit-type keywords, not
      * from what shipped.
      *
-     * Both interfaces are declared mid-test rather than stubbed at bootstrap,
-     * because the three states have to be observed in one process and a
-     * bootstrap stub would make the absent one unreachable.
+     * The interface is declared mid-test because both states have to be
+     * observed and a bootstrap stub would make the absent one unreachable.
+     * Declaring it is irreversible within a process, so the test gets one of
+     * its own — otherwise it would decide the answer for every later test.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
      */
-    public function testProxyAvailabilityTracksTheBaseModulesOwnInterfaces(): void
+    public function testProxyAvailabilityTracksTheBaseModulesOwnInterface(): void
     {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
         $this->assertFalse(
             $viewModel->getIsProxyAvailable(),
-            'a base carrying neither interface predates the routes'
+            'a base without the interface predates the routes'
         );
 
         eval('namespace Two\Gateway\Api\Webapi; interface CompanyLookupInterface {}');
-        $this->assertFalse(
-            $viewModel->getIsProxyAvailable(),
-            'one of the two is not the pair the checkout needs'
-        );
+        $this->assertTrue($viewModel->getIsProxyAvailable(), 'interface present');
+    }
 
-        eval('namespace Two\Gateway\Api\Webapi; interface OrderIntentInterface {}');
-        $this->assertTrue($viewModel->getIsProxyAvailable(), 'both present');
+    /**
+     * The tile reads this getter unconditionally, ahead of every
+     * proxy-availability branch, so a base predating the firewall-token config
+     * methods must degrade rather than fatal. Absent reads as the toggle being
+     * off, which is right: such a base has no firewall-token feature at all.
+     */
+    public function testFirewallTokenSurvivesAConfigRepositoryWithoutTheMethods(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, new class {
+            public function getApiKey(): string
+            {
+                return 'key';
+            }
+        });
+
+        $this->assertSame('', $viewModel->getFirewallToken());
     }
 
     /**

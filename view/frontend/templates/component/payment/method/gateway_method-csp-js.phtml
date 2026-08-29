@@ -949,10 +949,12 @@ $quoteDetails = json_encode(
         const term = unescape(options.query);
         const useProxy = options.useProxy !== false;
         /*
-         * Direct-call fallback URL, for a base module without the proxy
-         * routes. DEPRECATED: delete it, and every `useProxy` branch it
-         * feeds, once the release process guarantees the composer floor
-         * corresponds to the code that actually shipped.
+         * DEPRECATED, and the canonical statement of it for every
+         * fallback branch below: the direct-call path exists only for a base
+         * module without the proxy routes. Delete it, the `useProxy` /
+         * `isProxyAvailable` branches it feeds, and the flag itself, once the
+         * release process guarantees the composer floor corresponds to the
+         * code that actually shipped.
          */
         const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
             country: country,
@@ -1105,9 +1107,7 @@ $quoteDetails = json_encode(
      * @param {string} lookupId
      * @param {Object|null} [direct] `{checkoutApiUrl, client, clientV, merchant}`
      *   on a base module without the proxy routes, which takes the direct-call
-     *   fallback. DEPRECATED: delete it, and every branch on it, once the
-     *   release process guarantees the composer floor corresponds to the code
-     *   that actually shipped.
+     *   fallback. DEPRECATED — see twoGatewayCompanySearch.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
@@ -1397,7 +1397,7 @@ $quoteDetails = json_encode(
             client: '',
             clientV: '',
             merchant: '',
-            companySearchLimit: 50,
+            companySearchLimit: 10,
             minSearchChars: 3,
             isCompanySearchEnabled: true,
             isAddressSearchEnabled: false,
@@ -4068,12 +4068,7 @@ $quoteDetails = json_encode(
 
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
 
-                    /*
-                     * Direct call, for a base module without the proxy route.
-                     * DEPRECATED: delete this branch once the release process
-                     * guarantees the composer floor corresponds to the code
-                     * that actually shipped.
-                     */
+                    // DEPRECATED — see twoGatewayCompanySearch.
                     if (!this.isProxyAvailable) {
                         const queryParams = new URLSearchParams({
                             client: this.orderIntentConfig_extensionPlatformName,

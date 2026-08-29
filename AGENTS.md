@@ -263,7 +263,8 @@ evidence: a release version is computed from commit-type keywords rather than
 from the code that shipped, so a base numbered past the floor may still not
 carry the routes — and addressing an unregistered route is a 404 the tile turns
 into a failed checkout. The getter answers `interface_exists()` on the base's
-own `CompanyLookupInterface` and `OrderIntentInterface`, and the answer is
+own `CompanyLookupInterface` — one interface answers for both routes, which
+land with their webapi/di registration in a single base commit — and the answer is
 emitted to every mount as `isProxyAvailable`. `false` takes each of the three
 call sites back to the **direct browser-to-API call it made before the routes
 existed** — query-string client identification and merchant name restored, the

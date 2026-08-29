@@ -34,11 +34,10 @@ $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $isProxyAvailable = $configModel->getIsProxyAvailable();
-// The four below are read on the direct-call fallback only.
+// The three below are read on the direct-call fallback only.
 $clientName = $configModel->getClientName();
 $clientVersion = $configModel->getClientVersion();
 $merchantShortName = $configModel->getMerchantShortName();
-$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -153,7 +152,7 @@ function <?= $gwBase ?>CompanySearchField() {
         client: '<?= $escaper->escapeJs((string) $clientName) ?>',
         clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
         merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-        companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+        companySearchLimit: 10,
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
