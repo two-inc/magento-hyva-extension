@@ -102,13 +102,12 @@ describe("placeholder organisation numbers are never shown (requirement 12)", ()
       const fetchStub = H.stubFetch();
       try {
         const pending = window.twoGatewayCompanySearch({
-          checkoutApiUrl: "https://api.test.invalid",
+          restBaseUrl: "https://shop.test.invalid",
           countryCode: "GB",
           query: "example",
-          limit: 10,
         });
         await H.flushPromises();
-        fetchStub.last().respond({
+        fetchStub.last().respondProxy({
           items: [
             {
               name: "Example Trading Ltd",

@@ -249,6 +249,19 @@ Three layers, innermost first:
 | Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
 | Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
 
+**Registry and order-intent calls go through the base module's own REST routes**
+(`rest/V1/two/company-search`, `.../company`, `.../order-intent`), never straight
+at the API: the merchant API key authenticates them server-side, and a merchant
+whose network traffic passes through a firewall appliance can have a token
+attached there without it ever reaching a buyer's browser. Each answers a
+`{ok, status, body}` envelope — `ok: false` means the upstream call failed and
+must produce exactly what a failed direct call used to. Paging and client
+identification are the server's to set, so nothing here sends them. The one
+exception is `/autofill/v1/buyer/current`, which is authenticated by the buyer's
+own cookie on the API's domain and so cannot be proxied at all; it carries the
+firewall token as an `X-WAF-TOKEN` header instead, and only where a merchant
+enabled that for the browser.
+
 **The popover is framework-free with a UMD tail**, which is why this checkout can
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
 options — `search`, `translate` and `observe`. This checkout injects the first

@@ -44,10 +44,9 @@ describe("shared company-search helpers", () => {
   function searchOptions(overrides) {
     return Object.assign(
       {
-        checkoutApiUrl: "https://api.test.invalid",
+        restBaseUrl: "https://shop.test.invalid",
         countryCode: "gb",
         query: "acme",
-        limit: 10,
       },
       overrides || {},
     );
@@ -83,19 +82,20 @@ describe("shared company-search helpers", () => {
     // Each of these settles its request before finishing. An unsettled search
     // leaves a live 30s timer armed behind the test, which is both a leak and a
     // reason for jest to complain about a worker that would not exit.
-    test("the query string carries an upper-cased country, limit, offset and q", async () => {
+    test("the request is a POST to the proxy route carrying country and query", async () => {
       const promise = window.twoGatewayCompanySearch(
         searchOptions({ countryCode: "no", query: "a b" }),
       );
 
-      const url = new URL(fetchStub.last().url);
-      expect(url.pathname).toBe("/companies/v2/company");
-      expect(url.searchParams.get("country")).toBe("NO");
-      expect(url.searchParams.get("limit")).toBe("10");
-      expect(url.searchParams.get("offset")).toBe("0");
-      expect(url.searchParams.get("q")).toBe("a b");
+      const call = fetchStub.last();
+      expect(call.url).toBe(
+        "https://shop.test.invalid/rest/V1/two/company-search",
+      );
+      expect(call.init.method).toBe("POST");
+      // Paging and client identification are the server's to set.
+      expect(call.jsonBody()).toEqual({ country: "NO", query: "a b" });
 
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await promise;
     });
 
@@ -104,11 +104,9 @@ describe("shared company-search helpers", () => {
         searchOptions({ countryCode: undefined }),
       );
 
-      expect(new URL(fetchStub.last().url).searchParams.get("country")).toBe(
-        "",
-      );
+      expect(fetchStub.last().jsonBody().country).toBe("");
 
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await promise;
     });
   });
@@ -116,7 +114,7 @@ describe("shared company-search helpers", () => {
   describe("outcomes", () => {
     test("results are mapped and reported as ok", async () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
 
       const result = await promise;
 
@@ -161,7 +159,7 @@ describe("shared company-search helpers", () => {
       test("is reported ok, with no identifier suffix and an empty id", async () => {
         const item = unusableItem();
         const promise = window.twoGatewayCompanySearch(searchOptions());
-        fetchStub.last().respond({ items: [item] });
+        fetchStub.last().respondProxy({ items: [item] });
 
         const result = await promise;
 
@@ -181,7 +179,7 @@ describe("shared company-search helpers", () => {
         // The whole point of the guard: one hit with no identifier must not
         // cost the buyer every other company that matched.
         const promise = window.twoGatewayCompanySearch(searchOptions());
-        fetchStub.last().respond({
+        fetchStub.last().respondProxy({
           items: [unusableItem(), apiItem("Other Example Ltd", "222")],
         });
 
@@ -201,7 +199,7 @@ describe("shared company-search helpers", () => {
       // the order-intent guard, so a number arriving from the API has to be
       // coerced here rather than at each of those call sites.
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({
+      fetchStub.last().respondProxy({
         items: [
           {
             name: "Example Trading Ltd",
@@ -225,7 +223,7 @@ describe("shared company-search helpers", () => {
       // an empty company-number field to retype an identifier the registry had
       // already answered with.
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({
+      fetchStub.last().respondProxy({
         items: [
           {
             name: "Example Trading Ltd",
@@ -245,14 +243,14 @@ describe("shared company-search helpers", () => {
 
     test("a genuine zero-result answer is empty, not failed", async () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
 
       expect((await promise).status).toBe("empty");
     });
 
     test("a body with no items array at all is empty rather than a throw", async () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({});
+      fetchStub.last().respondProxy({});
 
       const result = await promise;
 
@@ -260,9 +258,30 @@ describe("shared company-search helpers", () => {
       expect(result.items).toEqual([]);
     });
 
-    test("a non-2xx is failed, never empty", async () => {
+    // The registry call is made server-side now, so its failure arrives as a
+    // 200 carrying `ok: false`. Both routes to a failure must land on the one
+    // outcome, or a buyer sees "no companies matched" for an outage.
+    test.each([
+      {
+        settle: (call) => call.respondWithStatus(503),
+        label: "the proxy route itself answering non-2xx",
+      },
+      {
+        settle: (call) =>
+          call.respondProxy({ error_code: "SERVICE_ERROR" }, false, 502),
+        label: "the envelope reporting the registry call failed",
+      },
+      {
+        settle: (call) => call.networkError(),
+        label: "the connection dropping",
+      },
+      {
+        settle: (call) => call.respond(["not json"]),
+        label: "an envelope that will not parse",
+      },
+    ])("a search is failed, never empty, on $label", async ({ settle }) => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respondWithStatus(503);
+      settle(fetchStub.last());
 
       const result = await promise;
 
@@ -270,11 +289,16 @@ describe("shared company-search helpers", () => {
       expect(result.items).toEqual([]);
     });
 
-    test("a network error is failed", async () => {
-      const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().networkError();
+    test("a failed search is not cached, so the next keystroke retries", async () => {
+      const first = window.twoGatewayCompanySearch(searchOptions());
+      fetchStub.last().respondProxy(null, false, 502);
+      await first;
 
-      expect((await promise).status).toBe("failed");
+      const second = window.twoGatewayCompanySearch(searchOptions());
+      expect(fetchStub.calls).toHaveLength(2);
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
+
+      expect((await second).status).toBe("ok");
     });
   });
 
@@ -283,7 +307,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
       fetchStub
         .last()
-        .respond({ degraded: true, items: [apiItem("Acme Widgets", "111")] });
+        .respondProxy({ degraded: true, items: [apiItem("Acme Widgets", "111")] });
 
       const result = await promise;
 
@@ -294,11 +318,11 @@ describe("shared company-search helpers", () => {
 
     test("a degraded answer is never cached", async () => {
       const first = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ degraded: true, items: [] });
+      fetchStub.last().respondProxy({ degraded: true, items: [] });
       await first;
 
       const second = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
 
       // Caching it would pin the buyer to a transient upstream failure
       // for the rest of the session.
@@ -315,7 +339,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanySearch(searchOptions());
       fetchStub
         .last()
-        .respond(
+        .respondProxy(
           Object.assign({ items: [apiItem("Acme Widgets", "111")] }, body),
         );
 
@@ -386,7 +410,7 @@ describe("shared company-search helpers", () => {
     test("the timeout timer is cleared once a search settles", async () => {
       jest.useFakeTimers();
       const promise = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await promise;
 
       // A leaked timer would abort a controller nobody is listening to
@@ -398,7 +422,7 @@ describe("shared company-search helpers", () => {
   describe("the result cache", () => {
     test("an identical search is served from cache", async () => {
       const first = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
       await first;
 
       const second = await window.twoGatewayCompanySearch(searchOptions());
@@ -410,7 +434,7 @@ describe("shared company-search helpers", () => {
 
     test("a cached empty answer still reads as empty, not ok", async () => {
       const first = window.twoGatewayCompanySearch(searchOptions());
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await first;
 
       expect(
@@ -422,14 +446,14 @@ describe("shared company-search helpers", () => {
       const first = window.twoGatewayCompanySearch(
         searchOptions({ countryCode: "GB" }),
       );
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
       await first;
 
       const second = window.twoGatewayCompanySearch(
         searchOptions({ countryCode: "NO" }),
       );
       expect(fetchStub.calls).toHaveLength(2);
-      fetchStub.last().respond({ items: [apiItem("Acme Norge", "222")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme Norge", "222")] });
 
       expect((await second).items[0].companyId).toBe("222");
     });
@@ -439,7 +463,7 @@ describe("shared company-search helpers", () => {
         const promise = window.twoGatewayCompanySearch(
           searchOptions({ query: "q" + i }),
         );
-        fetchStub.last().respond({ items: [apiItem("Acme " + i, String(i))] });
+        fetchStub.last().respondProxy({ items: [apiItem("Acme " + i, String(i))] });
         await promise;
       }
       expect(window.twoGatewayCompanySearchCache.size).toBe(50);
@@ -447,7 +471,7 @@ describe("shared company-search helpers", () => {
       const overflow = window.twoGatewayCompanySearch(
         searchOptions({ query: "q50" }),
       );
-      fetchStub.last().respond({ items: [apiItem("Acme 50", "50")] });
+      fetchStub.last().respondProxy({ items: [apiItem("Acme 50", "50")] });
       await overflow;
 
       expect(window.twoGatewayCompanySearchCache.size).toBe(50);
@@ -460,7 +484,7 @@ describe("shared company-search helpers", () => {
         searchOptions({ query: "q0" }),
       );
       expect(fetchStub.calls).toHaveLength(callsBefore + 1);
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await evicted;
     });
   });
@@ -468,33 +492,44 @@ describe("shared company-search helpers", () => {
   describe("twoGatewayCompanyDetail", () => {
     test("the record is returned on success", async () => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://api.test.invalid",
+        "https://shop.test.invalid",
         "lookup-111",
       );
 
       expect(fetchStub.last().url).toBe(
-        "https://api.test.invalid/companies/v2/company/lookup-111?client=&client_v=&merchant=",
+        "https://shop.test.invalid/rest/V1/two/company",
       );
-      fetchStub.last().respond({ addresses: [{ city: "Oslo" }] });
+      expect(fetchStub.last().jsonBody()).toEqual({ lookupId: "lookup-111" });
+      fetchStub.last().respondProxy({ addresses: [{ city: "Oslo" }] });
 
       expect(await promise).toEqual({ addresses: [{ city: "Oslo" }] });
     });
 
-    test("a non-2xx returns null instead of parsing the error body as an address", async () => {
+    // Without a check on each layer an error body parses cleanly and silently
+    // produces "no addresses".
+    test.each([
+      {
+        settle: (call) => call.respondWithStatus(500),
+        label: "the proxy route itself answering non-2xx",
+      },
+      {
+        settle: (call) =>
+          call.respondProxy({ error_code: "NOT_FOUND" }, false, 404),
+        label: "the envelope reporting the registry call failed",
+      },
+    ])("null rather than an address payload on $label", async ({ settle }) => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://api.test.invalid",
+        "https://shop.test.invalid",
         "x",
       );
-      fetchStub.last().respondWithStatus(500);
+      settle(fetchStub.last());
 
-      // Without the response.ok check an error body parses cleanly and
-      // silently produces "no addresses".
       expect(await promise).toBeNull();
     });
 
     test("a network error returns null", async () => {
       const promise = window.twoGatewayCompanyDetail(
-        "https://api.test.invalid",
+        "https://shop.test.invalid",
         "x",
       );
       fetchStub.last().networkError();
@@ -505,7 +540,7 @@ describe("shared company-search helpers", () => {
     test("it carries the same 30s ceiling, and clears the timer", async () => {
       jest.useFakeTimers();
       const promise = window.twoGatewayCompanyDetail(
-        "https://api.test.invalid",
+        "https://shop.test.invalid",
         "x",
       );
 

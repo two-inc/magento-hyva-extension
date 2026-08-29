@@ -21,10 +21,10 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
-$merchantShortName = $configModel->getMerchantShortName();
-$companySearchLimit = $configModel->getCompanySearchLimit();
+// Where `rest/V1/two/...` lives. The link base URL rather than a hand-built
+// host, so a store served under a subdirectory or a store-coded URL reaches
+// its own REST entry point.
+$restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -161,10 +161,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('searchInput', window['searchInput'] = () => twoGatewayComposeLiveFn(
         twoGatewayCompanySearchEngineFn({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-            merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
             isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',

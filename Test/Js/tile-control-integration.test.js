@@ -396,7 +396,7 @@ describe("the payment tile's mounted control (integration)", () => {
   async function search(term, identifier) {
     const pending = panel.options.search.searchCompanies({ term: term });
     await H.flushPromises();
-    fetchStub.lastSearch().respond({
+    fetchStub.lastSearch().respondProxy({
       items: [
         {
           name: "Example Trading Ltd",
@@ -455,8 +455,13 @@ describe("the payment tile's mounted control (integration)", () => {
     const result = await search("example", "123456789");
 
     expect(fetchStub.searchCalls().length).toBe(1);
-    expect(fetchStub.lastSearch().url).toContain("country=GB");
-    expect(fetchStub.lastSearch().url).toContain("q=example");
+    expect(fetchStub.lastSearch().url).toBe(
+      "https://shop.test.invalid/rest/V1/two/company-search",
+    );
+    expect(fetchStub.lastSearch().jsonBody()).toEqual({
+      country: "GB",
+      query: "example",
+    });
     expect(result.items).toHaveLength(1);
     // The panel holds the query in its own box; it never leaks into the field
     // that submits.
@@ -564,7 +569,7 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.twoTileNotAvailableVisible).toBe(false);
     expect(component.twoTileErrorVisible).toBe(false);
 
-    fetchStub.lastSearch().respond({ items: [] });
+    fetchStub.lastSearch().respondProxy({ items: [] });
     await pending;
   });
 
@@ -660,7 +665,7 @@ describe("the payment tile's mounted control (integration)", () => {
     const pending = panel.options.search.searchCompanies({ term: "example" });
     await H.flushPromises();
     expect(component.orderIntentApprovedNotice).toBe("");
-    fetchStub.lastSearch().respond({ items: [] });
+    fetchStub.lastSearch().respondProxy({ items: [] });
     await pending;
 
     // …and abandoning it puts the box back, because the company on screen is

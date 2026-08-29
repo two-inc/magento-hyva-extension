@@ -61,7 +61,7 @@ describe("template renderer contract", () => {
     });
 
     test("a (string) cast inside the wrapper does not hide the value", () => {
-      expect(rendered()).toContain("const limit = '10';");
+      expect(rendered()).toContain("const flag = '1';");
     });
 
     test("only an expression with no rule of its own falls back", () => {
@@ -81,7 +81,7 @@ describe("template renderer contract", () => {
         const js = H.renderTemplateJs(template);
         [
           "checkoutApiUrl",
-          "companySearchLimit",
+          "restBaseUrl",
           "isAddressSearchEnabled",
           "isCompanySearchEnabled",
           "isOrderIntentEnabled",

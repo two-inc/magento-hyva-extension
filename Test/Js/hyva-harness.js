@@ -86,7 +86,9 @@ const PHP_VALUE_RULES = [
   // turned address autopopulation on; the phone-autofill suite overrides it via
   // `extraRules`, which is what proves the gate reads the injected value.
   [/^\$isAddressAutopopulationEnabled$/, "false"],
-  [/^\$companySearchLimit$/, "10"],
+  // Production's default: the token only reaches the browser where a merchant
+  // switched that on. The suite that covers the header overrides it.
+  [/^\$firewallToken$/, ""],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
   // the same meaning; the min-chars suite overrides it via `extraRules` with a
@@ -635,6 +637,8 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayIsDegradedResponse",
   "twoGatewayCompanySearch",
   "twoGatewayCompanyDetail",
+  "twoGatewayUnwrapProxyResponse",
+  "twoGatewayProxyPost",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
   // The popover's translated copy, and the register of live mounts a re-render
@@ -1773,6 +1777,24 @@ function stubFetch() {
           return Promise.resolve(body);
         },
       });
+    };
+    /** The request body, parsed — every proxy route takes JSON. */
+    record.jsonBody = function () {
+      return JSON.parse(record.init.body);
+    };
+    /**
+     * Resolve as a proxy route does: HTTP 200 carrying an `{ok, status, body}`
+     * envelope, JSON-encoded inside the one-element array Magento's webapi
+     * layer wraps a `: string` return in.
+     */
+    record.respondProxy = function (body, ok, status) {
+      record.respond([
+        JSON.stringify({
+          ok: ok === undefined ? true : ok,
+          status: status === undefined ? 200 : status,
+          body: body,
+        }),
+      ]);
     };
     /** Resolve as a non-2xx with a body that would parse as a payload. */
     record.respondWithStatus = function (status) {

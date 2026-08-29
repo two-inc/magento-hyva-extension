@@ -163,8 +163,8 @@ describe("form-scoped country resolution", () => {
 
     const call = fetchStub.lastSearch();
     if (!call) return null;
-    const country = new URL(call.url).searchParams.get("country");
-    call.respond({ items: [] });
+    const country = call.jsonBody().country;
+    call.respondProxy({ items: [] });
     await H.flushPromises();
     return country;
   }
@@ -316,7 +316,7 @@ describe("form-scoped country resolution", () => {
       const component = H.mountComponent(
         () =>
           window.twoGatewayCompanySearchEngine({
-            checkoutApiUrl: "https://api.test.invalid",
+            restBaseUrl: "https://shop.test.invalid",
             getQuote: function () {
               return {};
             },
@@ -330,7 +330,7 @@ describe("form-scoped country resolution", () => {
       const pending = component.runCompanySearch("Exa");
       expect(component.countryCode).toBe("NO");
 
-      fetchStub.calls[fetchStub.calls.length - 1].respond({ items: [] });
+      fetchStub.calls[fetchStub.calls.length - 1].respondProxy({ items: [] });
       await pending;
     });
   });
@@ -369,8 +369,8 @@ describe("form-scoped country resolution", () => {
       await H.flushPromises();
 
       const call = fetchStub.calls[fetchStub.calls.length - 1];
-      expect(new URL(call.url).searchParams.get("country")).toBe("GB");
-      call.respond({ items: [] });
+      expect(call.jsonBody().country).toBe("GB");
+      call.respondProxy({ items: [] });
       await H.flushPromises();
     });
   });

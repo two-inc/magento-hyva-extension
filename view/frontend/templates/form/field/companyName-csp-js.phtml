@@ -29,9 +29,10 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
-$merchantShortName = $configModel->getMerchantShortName();
+// Where `rest/V1/two/...` lives. The link base URL rather than a hand-built
+// host, so a store served under a subdirectory or a store-coded URL reaches
+// its own REST entry point.
+$restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -141,13 +142,10 @@ function <?= $gwBase ?>CompanySearchField() {
         // registry number later, so this is the surface that offers the chip.
         manualEntryOffered: true,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-        merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
+        restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
-        companySearchLimit: 10,
         editableCompanyId: true,
         // The address step unlocks the (unused, provenance-only —
         // companyName.phtml binds nothing to it, see the doc comment there)

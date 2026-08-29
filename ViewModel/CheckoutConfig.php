@@ -222,27 +222,19 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * Plugin identifier for the `client` query param on browser-side Two API calls.
+     * The firewall token, for the one API call the browser still makes
+     * directly. Empty unless the merchant turned that on, and empty on a base
+     * release predating the setting.
      */
-    public function getClientName(): ?string
+    public function getFirewallToken(): string
     {
-        return $this->configRepository->getExtensionPlatformName();
-    }
+        if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
+            return "";
+        }
 
-    /**
-     * Plugin version for the `client_v` query param on browser-side Two API calls.
-     */
-    public function getClientVersion(): ?string
-    {
-        return $this->configRepository->getExtensionDBVersion();
-    }
-
-    /**
-     * Merchant slug for the `merchant` query param on browser-side Two API calls.
-     */
-    public function getMerchantShortName(): string
-    {
-        return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
+        return $this->configRepository->isFirewallTokenSentFromBrowser()
+            ? $this->configRepository->getFirewallToken()
+            : "";
     }
 
     /**
@@ -326,11 +318,6 @@ class CheckoutConfig implements ArgumentInterface
     public function getIsAddressAutopopulationEnabled(): bool
     {
         return (bool) $this->configRepository->isAddressSearchEnabled();
-    }
-
-    public function getCompanySearchLimit()
-    {
-        return 50;
     }
 
     /**
