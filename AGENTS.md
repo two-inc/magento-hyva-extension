@@ -278,9 +278,11 @@ distinctly for that reason — the capability check has already ruled out "old
 base", so on this path a 404 means stale cache — and the window closes on a
 flush. There is deliberately no runtime fallback for it: a 404 that reopened
 the direct browser-to-API path would make a missed cache flush invisible
-instead of loud. `false` takes each of the three
-call sites back to the **direct browser-to-API call it made before the routes
-existed** — query-string client identification and merchant name restored, the
+instead of loud.
+
+`false` takes each of the three call sites back to the **direct
+browser-to-API call it made before the routes existed** — query-string client
+identification and merchant name restored, the
 order-intent body naming the merchant again, and no firewall token on any of
 it. That is not a new exposure: it is precisely what ran on that base already,
 and it is the only path on which those fallbacks are reachable.
