@@ -1831,7 +1831,7 @@ $quoteDetails = json_encode(
     /*
      * The shared popover's copy, translated.
      *
-     * `company-search-panel.js` is framework-free by design — it reaches no
+     * The shared panel is framework-free by design — it reaches no
      * Magento translator — so its strings are English literals it hands back to
      * the host. This is the one place they are translated, rather than once per
      * mount point, so the two surfaces cannot say different things.
@@ -1928,11 +1928,10 @@ $quoteDetails = json_encode(
     /**
      * THE HYVÄ HALF of the shared company-capture controller (TWO-25503).
      *
-     * The controller is not here and must never be again: it is
-     * `Two_Gateway/js/model/company-capture-component.js`, loaded by
-     * `hyva_checkout_index_index.xml` with the identity, the sole-trader flow
-     * and the popover it drives. What follows is the Alpine-shaped half those
-     * four ask for by name.
+     * The controller is not here and must never be again: it is the base
+     * plugin's shared component, loaded by this checkout's layout together
+     * with the identity, the sole-trader flow and the popover it drives.
+     * What follows is the Alpine-shaped half those four ask for by name.
      *
      * One controller per PAGE, held on `window` rather than in an Alpine
      * component: Magewire rebuilds the surface on every totals, address and term

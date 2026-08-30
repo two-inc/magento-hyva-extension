@@ -54,7 +54,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  * never-throw behaviour, same method names — rather than reusing it.
  *
  * Reuse would be the obvious call (this extension already sequences after
- * Two_Gateway and constructor-injects base classes elsewhere, so there is no
+ * the base plugin and constructor-injects base classes elsewhere, so there is no
  * circularity), but no published base release carries the equivalent model:
  * every base version a merchant can actually install today lacks it, under
  * this extension's current constraint or the relaxation in flight. Injecting

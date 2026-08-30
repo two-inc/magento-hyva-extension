@@ -13,9 +13,9 @@
  *
  * TWO-25503 then replaced this checkout's own answer to all of that with the
  * base plugin's shared popover, so the query field, the results, the verdict
- * lines, the mode chips and every key and focus decision are now
- * `Two_Gateway/js/model/company-search-panel.js` — a file this repo neither
- * ships nor can load, covered where that file lives, not here.
+ * lines, the mode chips and every key and focus decision are now the shared
+ * panel's — a file this repo neither ships nor can load, covered where that
+ * file lives, not here.
  *
  * What is left here, and what this suite is now about, is the seam: the
  * company-name field this checkout renders, and the options it hands the panel.

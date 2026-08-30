@@ -753,11 +753,11 @@ function wrapField(field) {
  * @returns {Object} handles for asserting on what the code under test did
  */
 /**
- * Stand in for the base plugin's `company-search-panel.js`.
+ * Stand in for the base plugin's shared company-search panel.
  *
- * That file is the popover, and it is NOT in this repo — it ships in
- * two-inc/magento2 and the checkout loads it from `Two_Gateway::`. There is no
- * copy here to load and no vendor tree in CI, so what this repo can test is its
+ * That panel is the popover, and it is NOT in this repo — it ships in the
+ * two-inc/magento2 package, whose script this checkout's layout loads. There is
+ * no copy here to load and no vendor tree in CI, so what this repo can test is its
  * own half of the contract: the options the adapter hands the panel, and the
  * six-member search API it builds over the engine. The panel's own behaviour —
  * the DOM it builds, its open/close, its keyboard handling — is covered where

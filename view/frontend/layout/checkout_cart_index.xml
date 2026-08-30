@@ -8,7 +8,7 @@
 <!--
     Render the Two payment-terms surcharge as a line in the Hyvä cart-page
     totals. Hyvä's PHP cart renders totals server-side (no KnockoutJS), so
-    the jsLayout component Two_Gateway registers for the Luma cart never
+    the jsLayout component the base plugin registers for the Luma cart never
     fires here — the surcharge was folded into the grand total but shown
     without its own row. Hyvä's php-cart/totals.phtml loops the
     `total_segments` and renders every child of checkout.cart.totals; each

@@ -11,8 +11,8 @@
  * the buyer a field they can actually type in.
  *
  * It does NOT pin the affordance's markup. The affordance is a chip inside the
- * shared popover now (`Two_Gateway/js/model/company-search-panel.js`), which
- * this repo neither ships nor can load — so what is testable here is the
+ * base plugin's shared popover now, which this repo neither ships nor can load
+ * — so what is testable here is the
  * adapter's half: which chips it offers, what each one runs, and what it tells
  * the panel to do. The chip's rendering, its keyboard behaviour and the return
  * link are covered where that file lives, not here.

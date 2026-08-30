@@ -11,13 +11,13 @@
 		<!--
 			The company popover itself, loaded from the BASE plugin rather than
 			reimplemented here (TWO-25503). It is framework-free with a UMD tail,
-			so with no RequireJS on the page it attaches
-			`window.TwoCompanySearchPanel`.
+			so with no RequireJS on the page it attaches itself to a browser
+			global the mounts then read.
 
-			`Two_Gateway::` resolves because two-inc/magento2 is a hard composer
-			dependency and Magento deploys a module's web assets for every
-			frontend theme — verified on the deployed static tree, where
-			`Two_Gateway/js/model/surcharge.js` serves under Hyva/default.
+			The reference below resolves because the base plugin is a hard
+			composer dependency and Magento deploys a module's web assets for
+			every frontend theme — verified on the deployed static tree, where
+			the base plugin's scripts serve under Hyva/default.
 		-->
 		<script src="Two_Gateway::js/model/company-search-panel.js"/>
 		<!--

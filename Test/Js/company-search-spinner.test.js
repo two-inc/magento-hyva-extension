@@ -8,8 +8,8 @@
  * component state, drove it correctly on every exit path, and bound it to
  * nothing — so that form searched with no feedback whatsoever.
  *
- * The indicator itself is no longer this module's markup. The shared popover
- * (`Two_Gateway/js/model/company-search-panel.js`) renders and gates its own,
+ * The indicator itself is no longer this module's markup. The base plugin's
+ * shared popover renders and gates its own,
  * off the promise `searchCompanies()` returns, so what this repo can still be
  * wrong about is whether either surface hands the panel a promise that spans
  * the request at all. A `searchCompanies()` that settled before its fetch did

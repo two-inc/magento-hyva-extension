@@ -13,8 +13,8 @@
  *
  * TWO-25503 deleted this checkout's own popover. The dropdown, its query box,
  * the mode chips and the route in and out of manual entry are the base
- * plugin's shared panel (`window.TwoCompanySearchPanel`), which is not loadable
- * here — its behaviour is covered where that file lives, and the options this
+ * plugin's shared panel, which is not loadable here — its behaviour is covered
+ * where that file lives, and the options this
  * checkout hands it in `company-popover-adapter.test.js`.
  *
  * What is left for this suite is the ENGINE beneath the panel and the address

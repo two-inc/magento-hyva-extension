@@ -269,9 +269,9 @@ builds, and answers `isBound()` from them: that is the minimum DOM that makes a
 re-render's morph observable here, and a constant `true` is the answer that
 hides it.
 
-**The popover's STYLING comes from the base plugin too** —
-`<css src="Two_Gateway::css/style.css"/>`, loaded BEFORE `custom.css` so this
-module keeps the last word. Do not copy popover rules into `custom.css`; a test
+**The popover's STYLING comes from the base plugin too** — its stylesheet is
+loaded by this checkout's layout BEFORE `custom.css`, so this module keeps the
+last word. Do not copy popover rules into `custom.css`; a test
 guards against it. That stylesheet also restyles `.two-term-chip` and its
 siblings, which this checkout already paints: any class that genuinely needs to
 mesh with Hyvä's styling gets a **selective override**, written after someone

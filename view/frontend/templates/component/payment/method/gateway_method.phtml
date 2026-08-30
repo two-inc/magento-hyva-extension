@@ -246,7 +246,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * company-name field, which is the whole point of the ticket. A row
              * here was a sibling the dropdown drew over, so the buyer was offered
              * the other capture modes only while the control that offers them was
-             * shut. Do not re-add one: `company-search-panel.js` renders
+             * shut. Do not re-add one: the shared panel renders
              * `.two-company-mode-chips` as the last child of the panel, after the
              * results, because DOM order is what makes the tab order correct.
              *
