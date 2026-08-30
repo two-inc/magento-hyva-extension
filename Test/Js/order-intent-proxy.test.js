@@ -87,6 +87,12 @@ describe("order intent through the plugin's own backend", () => {
 
     expect(call.url).toBe(ROUTE);
     expect(call.init.method).toBe("POST");
+    // twoGatewayProxyPost is the one fetch wrapper behind every proxy route;
+    // covering it here covers search/detail/order-intent alike.
+    expect(call.init.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
 
     const sent = call.jsonBody();
     expect(Object.keys(sent)).toEqual(["payload"]);

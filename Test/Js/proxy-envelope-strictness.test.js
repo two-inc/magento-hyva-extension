@@ -126,7 +126,7 @@ describe("proxy envelope strictness", () => {
     });
   });
 
-  test("a non-404 proxy failure carries its status into the error", async () => {
+  test("a non-404 HTTP-level proxy failure carries its HTTP status into the error", async () => {
     // The logged message is the only place a 503 is distinguishable.
     jest.spyOn(console, "warn").mockImplementation(() => {});
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
@@ -140,6 +140,25 @@ describe("proxy envelope strictness", () => {
     await H.flushPromises();
 
     fetchStub.calls[0].respondWithStatus(503);
+    expect((await search).status).toBe("failed");
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0][1])).toContain("503");
+  });
+
+  test("an HTTP-200 envelope that itself says ok:false relays the ENVELOPE's status, not the HTTP one", async () => {
+    // HTTP 200 the whole way — only the envelope body says the upstream call failed.
+    const error = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const search = window.twoGatewayCompanySearch({
+      useProxy: true,
+      restBaseUrl: REST_BASE,
+      countryCode: "GB",
+      query: "Acme",
+    });
+    await H.flushPromises();
+
+    fetchStub.calls[0].respondProxy({ items: [] }, false, 503);
     expect((await search).status).toBe("failed");
 
     expect(error).toHaveBeenCalledTimes(1);

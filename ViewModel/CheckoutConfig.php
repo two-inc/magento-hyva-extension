@@ -241,7 +241,8 @@ class CheckoutConfig implements ArgumentInterface
      * String literal, not an import that would itself fatal on the base being
      * detected. Base-module literals are duplicated in this repo's tests, so drift
      * surfaces only at runtime — accepted because it fails closed. The four getters
-     * below stay `@deprecated`: static-analysis noise at their call sites is the reminder.
+     * below stay `@deprecated` so static-analysis noise at their call sites reminds
+     * a reader to delete them once the fallback goes.
      */
     public function getIsProxyAvailable(): bool
     {

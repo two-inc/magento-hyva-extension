@@ -32,7 +32,7 @@ $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // Where `rest/V1/two/...` lives — see gateway_method-csp-js.phtml.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $isProxyAvailable = $configModel->getIsProxyAvailable();
-// The three below are read on the direct-call fallback only.
+// The four below are read on the direct-call fallback only.
 $clientName = $configModel->getClientName();
 $clientVersion = $configModel->getClientVersion();
 $merchantShortName = $configModel->getMerchantShortName();

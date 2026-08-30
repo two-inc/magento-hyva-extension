@@ -1257,6 +1257,7 @@ $quoteDetails = json_encode(
             }
             return null;
         } catch (error) {
+            console.warn('Two: buyer autofill lookup threw', error);
             return null;
         }
     };
