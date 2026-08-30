@@ -45,7 +45,7 @@ const BASE_MODULES = [
 
 describe('the popover implementation is loaded from the base plugin', () => {
     test.each(BASE_MODULES)(
-        'the checkout page pulls in Two_Gateway\'s %s (%s — %s)',
+        'the checkout page pulls in the base plugin\'s %s (%s — %s)',
         (file) => {
             expect(read(CHECKOUT_LAYOUT)).toContain(
                 `<script src="Two_Gateway::js/model/${file}"/>`
