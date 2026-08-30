@@ -2,12 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * What this checkout does on a base module that does NOT carry the registry
- * and order-intent proxy routes — see CheckoutConfig::getIsProxyAvailable().
- *
- * Both halves are asserted against the SAME rendered templates with only the
- * injected flag differing, so a call site that hardcoded either path fails one
- * of the two.
+ * Both halves render the SAME templates with only the injected flag differing,
+ * so a call site that hardcoded either path fails one of the two.
  */
 
 "use strict";
@@ -18,18 +14,10 @@ const COMPONENT = "twoGatewayHyvaPaymentMethodBase";
 const API = "https://api.test.invalid";
 const REST_BASE = "https://shop.test.invalid";
 
-/** The flag as the templates emit it, forced to the no-routes answer. */
 const PROXY_ABSENT = [[/^\$isProxyAvailable \? "true" : "false"$/, "false"]];
 
-/** A decision as the API answers one. */
 const APPROVED = { approved: true, decision: "APPROVED" };
 
-/**
- * The company pair the order-intent body is built from, plus the country
- * field the tile resolves the buyer's country through.
- *
- * @returns {void}
- */
 function installFixture() {
   document.body.innerHTML =
     '<div id="checkout">' +
@@ -41,12 +29,6 @@ function installFixture() {
     "</div>";
 }
 
-/**
- * Mount the payment tile with a quote an intent can be built from.
- *
- * @param {Array<[RegExp, string]>} [extraRules] harness render rules
- * @returns {Object} `{component, fetchStub, restore}`
- */
 function mountTile(extraRules) {
   const env = H.installHyvaEnvironment();
   const fetchStub = H.stubFetch();
@@ -99,8 +81,7 @@ describe("the capability flag reaches the browser", () => {
 
   afterEach(() => tile && tile.restore());
 
-  // The mutation proof for every assertion below it: the templates carry no
-  // literal, so flipping the one PHP value moves every call site.
+  // Mutation proof: no literal in the templates, so one PHP value moves every site.
   test.each([
     { rules: undefined, expected: true, label: "routes present" },
     { rules: PROXY_ABSENT, expected: false, label: "routes absent" },
@@ -124,22 +105,18 @@ describe("order intent without the proxy route", () => {
     expect(call.url).toContain(API + "/v1/order_intent?");
     expect(call.init.method).toBe("POST");
 
-    // Every call, not just the last, and anchored outside the loop because a
-    // forEach body with no calls to inspect asserts nothing.
+    // Anchored outside the loop: a forEach body with no calls asserts nothing.
     expect(tile.fetchStub.calls.length).toBeGreaterThan(0);
     tile.fetchStub.calls.forEach((made) => {
       expect(made.url).not.toContain("/rest/V1/two/");
     });
 
-    // With no server to set it, identification travels on the query string.
     const query = new URLSearchParams(call.url.split("?")[1]);
-    // `client`/`client_v` come from the order-intent config block, which the
-    // harness renders as one placeholder; `merchant` has a rule of its own.
+    // The harness renders `client`/`client_v` as one placeholder; `merchant` has its own rule.
     expect(query.get("client")).toBe("test");
     expect(query.get("client_v")).toBe("test");
     expect(query.get("merchant")).toBe("Example Shop");
 
-    // The body is the request itself, not the proxy's `{payload}` wrapper.
     const sent = JSON.parse(call.init.body);
     expect(sent.payload).toBeUndefined();
     expect(sent.buyer.company.organization_number).toBe("123456789");
@@ -149,8 +126,6 @@ describe("order intent without the proxy route", () => {
     expect(await pending).toEqual(APPROVED);
   });
 
-  // With no server to resolve the merchant from the store's API key, the
-  // request has to name it itself.
   test("names the merchant, which the proxied body deliberately does not", async () => {
     tile = mountTile(PROXY_ABSENT);
 
@@ -212,7 +187,6 @@ describe("company lookups without the proxy routes", () => {
     const query = new URLSearchParams(call.url.split("?")[1]);
     expect(query.get("country")).toBe("GB");
     expect(query.get("q")).toBe("acme");
-    // Paging is the caller's, there being no server to set it.
     expect(query.get("limit")).toBe("50");
     expect(query.get("offset")).toBe("0");
     expect(query.get("merchant")).toBe("Example Shop");
@@ -233,8 +207,7 @@ describe("company lookups without the proxy routes", () => {
     expect(result.items[0].companyId).toBe("111");
   });
 
-  // The discriminated result is the helper's whole contract, and a failure
-  // that collapsed to `items: []` would read to a buyer as "no matches".
+  // A failure collapsing to `items: []` would read to a buyer as "no matches".
   test("a failed direct search still reports failed, not empty", async () => {
     const promise = window.twoGatewayCompanySearch({
       useProxy: false,
@@ -248,8 +221,6 @@ describe("company lookups without the proxy routes", () => {
     expect((await promise).status).toBe("failed");
   });
 
-  // Keyed by the direct URL rather than the proxy's synthetic key, so the two
-  // paths cannot serve each other's answers within one page.
   test("a direct search is not answered from the proxy's cache entry", async () => {
     const proxied = window.twoGatewayCompanySearch({
       useProxy: true,
@@ -271,8 +242,7 @@ describe("company lookups without the proxy routes", () => {
       query: "acme",
       limit: 10,
     });
-    // Same country and query: a shared key would serve the proxy's answer and
-    // never reach the wire.
+    // Same country and query: a shared cache key would never reach the wire.
     expect(fetchStub.calls.length).toBe(afterProxied + 1);
     expect(fetchStub.last().url).toContain(API + "/companies/v2/company?");
 
@@ -328,8 +298,7 @@ describe("company lookups without the proxy routes", () => {
     expect(await promise).toBeNull();
   });
 
-  // Fail closed — see twoGatewayCompanySearch's useProxy. Every real mount
-  // passes the flag, so only a future caller is affected.
+  // Fail closed — see twoGatewayCompanySearch's useProxy.
   describe("a caller that omits the flag entirely", () => {
     test("search takes the direct path, not the proxy route", async () => {
       const promise = window.twoGatewayCompanySearch({
@@ -346,20 +315,34 @@ describe("company lookups without the proxy routes", () => {
       await promise;
     });
 
-    test("detail takes the direct path, not the proxy route", async () => {
+    // The whole URL, not a substring: a host-less relative URL still contains the
+    // path and still omits the proxy route, so substring assertions pass on the bug.
+    test("detail builds the store's own direct URL, host and all", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => {});
       const promise = window.twoGatewayCompanyDetail(REST_BASE, "lookup-111");
 
-      expect(fetchStub.last().url).toContain(
-        "/companies/v2/company/lookup-111?",
+      expect(fetchStub.last().url).toBe(
+        API +
+          "/companies/v2/company/lookup-111" +
+          "?client=magento-hyva&client_v=2.1.0&merchant=Example+Shop",
       );
-      expect(fetchStub.last().url).not.toContain("/rest/V1/two/");
 
       fetchStub.last().respond({ addresses: [] });
       await promise;
     });
 
-    // Through the engine rather than the helper, because the mounts reach the
-    // helper only via this composition and its own default has to agree.
+    test("detail warns that it was called with no direct config", async () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+      const promise = window.twoGatewayCompanyDetail(REST_BASE, "lookup-111");
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("no direct config");
+
+      fetchStub.last().respond({ addresses: [] });
+      await promise;
+    });
+
+    // Through the engine: mounts reach the helper only via this composition.
     test("an engine composed without it searches direct", async () => {
       document.body.innerHTML =
         '<div id="checkout">' +
@@ -386,11 +369,7 @@ describe("company lookups without the proxy routes", () => {
   });
 });
 
-/**
- * Identity against `true` at all four sites, so that a merely truthy value — a
- * `"false"` that survived an encoder — cannot address a route the base may not
- * have registered.
- */
+/** A merely truthy value — a `"false"` out of an encoder — must not address a route the base may lack. */
 describe("the capability flag is read by identity at every selection site", () => {
   let tile;
 
@@ -462,8 +441,6 @@ describe("the capability flag is read by identity at every selection site", () =
     await pending;
   });
 
-  // Both order-intent reads at once: the route the check addresses, and the
-  // merchant pair the body carries only where no server resolves it.
   test.each(VALUES)("order intent — $label", async ({ flag, proxied }) => {
     tile = mountTile();
     tile.component.isProxyAvailable = flag;
@@ -498,13 +475,7 @@ describe("the flag is emitted as a JS boolean, not a quoted string", () => {
     ["the address-book modal", H.SHIPPING_COMPANY_TEMPLATE],
   ];
 
-  /**
-   * Every value the rendered JS assigns to the flag, source text as written.
-   *
-   * @param {string} template harness template constant
-   * @param {Array<[RegExp, string]>} [rules] harness render rules
-   * @returns {Array<string>} raw right-hand sides
-   */
+  /** Raw source text of every value the rendered JS assigns to the flag. */
   function emitted(template, rules) {
     const matches = H.renderTemplateJs(template, rules).matchAll(
       /isProxyAvailable:\s*([^,\n]+),/g,
@@ -513,14 +484,12 @@ describe("the flag is emitted as a JS boolean, not a quoted string", () => {
   }
 
   test.each(MOUNTS)("%s", (label, template) => {
-    // Given both PHP answers / When rendered / Then the mount's own emission
-    // flips true→false and nothing arrives quoted.
+    // Given both PHP answers / When rendered / Then true→false, nothing quoted.
     const present = emitted(template);
     const absent = emitted(template, PROXY_ABSENT);
 
-    // The mount is identified as the position that MOVED, never by matching
-    // "false" anywhere in the render: the engine's own `isProxyAvailable:
-    // false` default sits in the same file and would satisfy that on its own.
+    // Identified by the position that MOVED, never by matching "false" anywhere:
+    // the engine's own `isProxyAvailable: false` default would satisfy that alone.
     expect(absent).toHaveLength(present.length);
     const moved = present
       .map((value, index) => [value, absent[index]])

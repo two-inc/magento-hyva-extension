@@ -5,9 +5,8 @@
  * TWO-25245. Browser-JS-in-Jest harness for the Hyvä extension.
  *
  * This module's JS is an inline `<script>` block inside a `.phtml` template, so
- * there is nothing to `require()` and Jest cannot import it. The harness does
- * the extraction at test time: it renders the template the way PHP would (minus
- * PHP), pulls the `<script>` bodies out, and evaluates them in global scope.
+ * there is nothing to `require()`. The harness renders the template the way PHP
+ * would (minus PHP), pulls the `<script>` bodies out and evaluates them.
  *
  * Extracting the JS to a real `.js` file would be the clean answer, but that is
  * a production change, and PR #71 (TWO-25238, the CSP-token fix) is open over
@@ -85,13 +84,10 @@ const PHP_VALUE_RULES = [
   // turned address autopopulation on; the phone-autofill suite overrides it via
   // `extraRules`, which is what proves the gate reads the injected value.
   [/^\$isAddressAutopopulationEnabled$/, "false"],
-  // Production's default: the token only reaches the browser where a merchant
-  // switched that on. sole-trader-flow.test.js overrides it to cover the header.
+  // Production's default; sole-trader-flow.test.js overrides it to cover the header.
   [/^\$firewallToken$/, ""],
-  // Emitted bare as a JS boolean, and says nothing about the helpers' own
-  // default — proxy-capability-fallback.test.js overrides this to `false`.
+  // proxy-capability-fallback.test.js overrides this to `false`.
   [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
-  // Read on the direct-call fallback only.
   [/^\$clientName$/, "magento-hyva"],
   [/^\$clientVersion$/, "2.1.0"],
   [/^\$merchantShortName$/, "Example Shop"],
@@ -1785,15 +1781,10 @@ function stubFetch() {
         },
       });
     };
-    /** The request body, parsed — every proxy route takes JSON. */
     record.jsonBody = function () {
       return JSON.parse(record.init.body);
     };
-    /**
-     * Resolve as a proxy route does: HTTP 200 carrying an `{ok, status, body}`
-     * envelope, JSON-encoded inside the one-element array Magento's webapi
-     * layer wraps a `: string` return in.
-     */
+    /** HTTP 200 with an `{ok, status, body}` envelope, inside the one-element array Magento's webapi layer adds. */
     record.respondProxy = function (body, ok, status) {
       record.respond([
         JSON.stringify({

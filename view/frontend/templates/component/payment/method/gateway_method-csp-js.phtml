@@ -58,7 +58,6 @@ $isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnable
 // host, so a store served under a subdirectory or a store-coded URL reaches
 // its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
-// Read on the direct-call fallback only.
 $merchantDetails = $orderIntentConfig["merchant"] ?? [];
 $merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
@@ -804,19 +803,24 @@ $quoteDetails = json_encode(
     window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS = 30000;
 
     /**
+     * Fallback config for a helper reached without one; else it builds a host-less relative URL that 404s as "no addresses".
+     */
+    window.TWO_GATEWAY_DIRECT_CALL_CONFIG = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {
+        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+        merchant: '<?= $escaper->escapeJs($merchantName) ?>',
+    };
+
+    /**
      * Search-result cache, shared by all three Hyvä company pickers (the
      * address-form field, the shipping-step component and the payment-step
      * component). Deliberately hung off `window` rather than held in Alpine
      * component state: Magewire re-renders destroy and rebuild those
      * components, and a component-owned cache would be discarded exactly
-     * when re-issuing searches hurts most.
-     *
-     * The two call paths key entries differently, and a new caller must pick
-     * the one matching how it fetches. The direct fallback keys by its whole
-     * request URL, so country, limit and query all form part of the key. The
-     * proxy path has no URL of its own to key by and uses a synthetic
-     * `search|<country>|<query>` — limit is deliberately NOT in it, because
-     * the server owns paging and the proxied request carries no limit.
+     * when re-issuing searches hurts most. Keyed by request URL on the direct
+     * path; by `search|<country>|<query>` on the proxy path, which has no URL
+     * — no limit there, the server owns paging.
      *
      * Entries never expire, and because the cache is window-scoped it also
      * survives every Magewire re-render for the life of the page — so a
@@ -877,10 +881,7 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * Unwrap a proxy route's `{ok, status, body}` answer, which Magento hands
-     * back as a one-element array on some serialisation paths and as a bare
-     * string on others.
-     *
+     * Unwrap a proxy `{ok, status, body}` — a one-element array on some Magento serialisation paths, a string on others.
      * @param {*} raw
      * @returns {{ok: boolean, status: number, body: *}}
      */
@@ -895,25 +896,17 @@ $quoteDetails = json_encode(
             }
         }
         if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
-        // Identity, not Boolean(): a truthy `"false"` would render a failed call
-        // as "no matches" instead of as the failure it is.
+        // Identity, not Boolean(): a truthy `"false"` would read as "no matches".
         return { ok: parsed.ok === true, status: parsed.status || 0, body: parsed.body };
     };
 
     /**
-     * POST to one of the plugin's own proxy routes, which make the API call
-     * server-side so neither the merchant API key nor a firewall token has to
-     * reach the browser.
-     *
+     * POST to a plugin proxy route; the base module owns paths, bodies, envelope.
      * @param {string} restBaseUrl Magento link base URL, no trailing slash
      * @param {string} path route path, leading slash
      * @param {Object} body
      * @param {AbortSignal} [signal]
      * @returns {Promise<{ok: boolean, status: number, body: *}>}
-     *
-     * Route paths, request bodies and this envelope are the base module's
-     * contract — see CheckoutConfig::getIsProxyAvailable() for what a test
-     * here can and cannot catch about it.
      */
     window.twoGatewayProxyPost = window.twoGatewayProxyPost || async function(restBaseUrl, path, body, signal) {
         const response = await fetch(restBaseUrl + path, {
@@ -923,9 +916,7 @@ $quoteDetails = json_encode(
             signal: signal,
         });
         if (!response.ok) {
-            // A 404 here is NOT "base too old" — isProxyAvailable already ruled
-            // that out — but a base whose webapi route cache predates its code,
-            // which a cache flush fixes.
+            // Stale webapi route cache, not "base too old"; no fallback, which would hide the missed flush.
             if (response.status === 404) {
                 console.warn(
                     'Two: proxy route ' + path + ' is unregistered despite the base module '
@@ -954,15 +945,9 @@ $quoteDetails = json_encode(
      *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
      *
      * @param {Object} options
-     * @param {boolean} options.useProxy true only where the base carries the
-     *   proxy routes. THE FAIL-CLOSED RULE FOR EVERY PROXY-SELECTION SITE,
-     *   stated here once: the flag is compared by identity against `true`, so
-     *   anything else — an omitted flag, or a `"false"` that survived a JSON
-     *   boundary — takes the direct-call fallback, which works on every base,
-     *   rather than a proxy route that may not be registered. The other three
-     *   sites are addressLookup(), placeOrderIntent() and
-     *   buildOrderIntentRequestBody(). That fallback is DEPRECATED; see
-     *   CheckoutConfig::getIsProxyAvailable().
+     * @param {boolean} options.useProxy read by identity here and at the other three
+     *   proxy-selection sites, so anything but `true` takes the deprecated direct
+     *   fallback — see CheckoutConfig::getIsProxyAvailable().
      * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
      * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
@@ -977,7 +962,6 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
         const country = (options.countryCode || '').toUpperCase();
         const term = unescape(options.query);
-        // Fail closed — see the useProxy rule above.
         const useProxy = options.useProxy === true;
         const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
             country: country,
@@ -988,7 +972,6 @@ $quoteDetails = json_encode(
             client_v: options.clientV || '',
             merchant: options.merchant || '',
         });
-        // The proxied request has no URL of its own to key the cache by.
         const cacheKey = useProxy ? 'search|' + country + '|' + term : directUrl;
 
         /*
@@ -1128,21 +1111,21 @@ $quoteDetails = json_encode(
      *
      * @param {string} restBaseUrl Magento link base URL, no trailing slash
      * @param {string} lookupId
-     * @param {Object|null} [direct] `{checkoutApiUrl, client, clientV, merchant}`
-     *   for the direct-call fallback, or exactly `null` for the proxy route.
-     *   Fail closed, and deprecated, per twoGatewayCompanySearch's useProxy.
+     * @param {Object|null} [direct] fallback config, or exactly `null` for the
+     *   proxy route — fail closed per twoGatewayCompanySearch's useProxy.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
-        if (typeof direct === 'string') {
-            // On the removed (checkoutApiUrl, lookupId, client, …) signature a
-            // string third argument would read as a truthy `direct` and fetch a
-            // relative URL for "no addresses" with no error.
+        // A non-object third argument carries no host; the store's config avoids a relative URL that 404s as "no addresses".
+        const useProxy = direct === null;
+        let cfg = direct;
+        if (!useProxy && typeof direct !== 'object') {
             console.warn(
-                'Two: twoGatewayCompanyDetail was called with the removed '
-                + '(checkoutApiUrl, lookupId, client, clientV, merchant) signature; '
-                + 'it is now (restBaseUrl, lookupId, direct).'
+                'Two: twoGatewayCompanyDetail is (restBaseUrl, lookupId, direct); '
+                + 'it was called with no direct config, so the direct call falls '
+                + "back to the store's own direct-call config."
             );
+            cfg = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {};
         }
         const controller = new AbortController();
         // No reason argument: nothing reads it, and the sibling search helper
@@ -1154,8 +1137,7 @@ $quoteDetails = json_encode(
         try {
             // Without these checks an error body parses as an address payload
             // and silently produces "no addresses".
-            if (direct !== null) {
-                const cfg = direct || {};
+            if (!useProxy) {
                 const queryParams = new URLSearchParams({
                     client: cfg.client || '',
                     client_v: cfg.clientV || '',
@@ -1262,17 +1244,14 @@ $quoteDetails = json_encode(
         || async function(checkoutApiUrl, autofillToken, firewallToken) {
         try {
             const headers = { 'two-delegated-authority-token': autofillToken };
-            // Not proxied like its siblings: the buyer's own cookie on the API
-            // domain authenticates it, which a server-side call cannot present.
+            // Unproxiable: authenticated by the buyer's own cookie on the API domain.
             if (firewallToken) headers['X-WAF-TOKEN'] = firewallToken;
             const response = await fetch(checkoutApiUrl + '/autofill/v1/buyer/current', {
                 credentials: 'include',
                 headers: headers
             });
             if (response.ok) return await response.json();
-            // 404 is this endpoint's "no buyer" answer; any other status is a
-            // real rejection — a firewall appliance turning away a request that
-            // carried no token, most likely — and must not pass as "no buyer".
+            // 404 is this endpoint's "no buyer"; anything else is a real rejection (likely the firewall).
             if (response.status !== 404) {
                 console.warn('Two: buyer autofill lookup rejected with ' + response.status);
             }
@@ -1433,8 +1412,7 @@ $quoteDetails = json_encode(
         const cfg = Object.assign({
             checkoutApiUrl: '',
             restBaseUrl: '',
-            // Fail closed — see twoGatewayCompanySearch's useProxy. Every
-            // real mount passes the flag explicitly.
+            // Fail closed — see twoGatewayCompanySearch's useProxy.
             isProxyAvailable: false,
             client: '',
             clientV: '',
@@ -3203,7 +3181,7 @@ $quoteDetails = json_encode(
             // the address-step search, that lookup, is off.
             manualEntryOffered: false,
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            // Bare boolean, not quoted like its neighbours: the string "false" is truthy.
+            // Bare boolean, not quoted: the string "false" is truthy.
             isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             client: '<?= $escaper->escapeJs((string) $clientName) ?>',
@@ -3330,7 +3308,6 @@ $quoteDetails = json_encode(
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            // '' unless the merchant asked for it in the browser too.
             firewallToken: '<?= $escaper->escapeJs($firewallToken) ?>',
             // The one threshold for this repo, emitted from PHP
             // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as
@@ -3395,7 +3372,6 @@ $quoteDetails = json_encode(
             orderIntentConfig_weightUnit: '<?= $escaper->escapeJs(
                 $orderIntentConfig["weightUnit"],
             ) ?>',
-            // These four are read on the direct-call fallback only.
             orderIntentConfig_merchant_id: '<?= $escaper->escapeJs($merchantId) ?>',
             orderIntentConfig_merchant_shortName: '<?= $escaper->escapeJs(
                 $merchantName,
@@ -4216,9 +4192,7 @@ $quoteDetails = json_encode(
                             phone_number: quoteData.telephone
                         }
                     },
-                    // The proxy resolves the merchant from the store's own API
-                    // key and never relays a browser-supplied identity, so this
-                    // pair is sent on the direct-call fallback only.
+                    // The proxy resolves the merchant from the store's API key.
                     ...(this.isProxyAvailable === true ? {} : {
                         merchant_id: this.orderIntentConfig_merchant_id,
                         merchant_short_name: this.orderIntentConfig_merchant_shortName

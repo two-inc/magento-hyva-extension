@@ -30,12 +30,8 @@ class CheckoutConfig implements ArgumentInterface
     public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
-     * into. Local rather than a reference to the parent module's constant: the
-     * token never crosses the module boundary at runtime (this view model
-     * produces it and this module's own JS consumes it), and referencing the
-     * parent's constant would fatal on a parent release that predates it,
-     * defeating the method_exists() degradation in
-     * getOrderIntentApprovedNotice().
+     * into. Local, not the parent's constant: that import would fatal on a
+     * parent predating it, defeating the method_exists() degradation below.
      */
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
@@ -222,15 +218,8 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * The firewall token, for the one API call the browser still makes
-     * directly. Empty unless the merchant turned that on.
-     *
-     * Guarded, and guarded on one method for the pair, for the reasons set out
-     * in getIsProxyAvailable() — including the cross-repo limitation on the
-     * method names below. The guard is not optional here: the payment tile
-     * calls this unconditionally, ahead of every proxy-availability branch, so
-     * an unguarded call fatals the tile on exactly the bases the fallback
-     * exists for.
+     * "" unless the merchant opted in, so its presence in tile config is defence
+     * in depth, not a leak. Guarded — the tile calls it ahead of every proxy branch.
      */
     public function getFirewallToken(): string
     {
@@ -244,42 +233,15 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * Whether the installed base module exposes the registry and order-intent
-     * proxy routes; false takes every call site back to the direct
-     * browser-to-API call it made before they existed.
-     *
-     * Asked at runtime rather than read off the `^2.3.0` floor in
-     * composer.json because a release version is not a reliable signal that
-     * specific code shipped, so the floor states intent only.
-     *
-     * True proves the base's PHP is autoloadable, not that its routes are
-     * registered: webapi routes come from cached config, so a base updated
-     * without setup:upgrade/cache:flush answers 404 until the flush, which
-     * twoGatewayProxyPost() logs distinctly rather than falling back for.
-     *
-     * The registry routes and the order-intent route are gated on two
-     * DIFFERENT base interfaces, and only the registry one is checked here.
-     * That is a valid proxy for the other, not an answer for it: the pair and
-     * the route registration behind them arrived in a single base commit —
-     * confirmed against the base's history, see this method's PR — so no
-     * installable base can carry one without the other. Should that ever stop
-     * being true, this needs a second check, not a reworded comment. A string
-     * literal, not an imported constant: the import would itself fatal on the
-     * base this detects.
-     *
-     * THE CROSS-REPO LIMITATION, stated here once for everything that shares
-     * it — this method, getFirewallToken(), twoGatewayProxyPost() and the
-     * suites over them. Every literal naming the base module (interface FQCN,
-     * method name, route path, request body, response envelope) is duplicated
-     * independently in this repo's tests, so changing one HERE fails them.
-     * Changing one in the base module is a fact no test here can see, and it
-     * surfaces only at runtime. Accepted, because every such drift fails closed
-     * to the direct browser-to-API call the fallback exists to make.
-     *
-     * The one call that cannot fail over is the buyer read: it is
-     * authenticated by the buyer's own cookie on the API's domain, which a
-     * server-side call cannot present, so it is direct on every base and the
-     * firewall token is the only protection available to it.
+     * Whether the base exposes the proxy routes; false falls back to the direct call.
+     * Runtime check, not composer's ^2.3.0 floor — a version is not proof the code
+     * shipped. True proves autoload, not route registration (a stale route cache 404s
+     * until cache:flush). The registry interface stands in for the order-intent one,
+     * both landing in one base commit; if that stops holding add a second check.
+     * String literal, not an import that would itself fatal on the base being
+     * detected. Base-module literals are duplicated in this repo's tests, so drift
+     * surfaces only at runtime — accepted because it fails closed. The four getters
+     * below stay `@deprecated`: static-analysis noise at their call sites is the reminder.
      */
     public function getIsProxyAvailable(): bool
     {
@@ -288,7 +250,6 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Plugin identifier for the `client` query param on browser-side Two API calls.
-     *
      * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientName(): ?string
@@ -298,7 +259,6 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Plugin version for the `client_v` query param on browser-side Two API calls.
-     *
      * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientVersion(): ?string
@@ -308,7 +268,6 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Merchant slug for the `merchant` query param on browser-side Two API calls.
-     *
      * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getMerchantShortName(): string
@@ -316,12 +275,7 @@ class CheckoutConfig implements ArgumentInterface
         return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
     }
 
-    /**
-     * Rows a browser-side company search asks the registry for. The proxy route
-     * sets its own bound, so this is read only on the direct-call fallback.
-     *
-     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
-     */
+    /** @deprecated Fallback row bound; the proxy route sets its own. */
     public function getCompanySearchLimit(): int
     {
         return 50;
@@ -512,11 +466,8 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
-        // A base predating these registry methods means "no brand opinion":
-        // the notice is ON with the platform default copy, which is correct
-        // for every brand that has not opted out. Same reasoning as
-        // getIsProxyAvailable() — the composer floor cannot be trusted to
-        // mean the methods are present.
+        // A base predating these registry methods means "no brand opinion": notice
+        // ON with platform default copy. Floor untrusted per getIsProxyAvailable().
         $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
             ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
             : true;

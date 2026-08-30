@@ -36,6 +36,7 @@ $isProxyAvailable = $configModel->getIsProxyAvailable();
 $clientName = $configModel->getClientName();
 $clientVersion = $configModel->getClientVersion();
 $merchantShortName = $configModel->getMerchantShortName();
+$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -151,7 +152,7 @@ function <?= $gwBase ?>CompanySearchField() {
         client: '<?= $escaper->escapeJs((string) $clientName) ?>',
         clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
         merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-        companySearchLimit: 10,
+        companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,

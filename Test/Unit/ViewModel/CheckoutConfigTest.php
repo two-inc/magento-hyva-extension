@@ -15,8 +15,7 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
  *
  * The view model is built with newInstanceWithoutConstructor() and only the
  * collaborator under test injected by reflection: every other constructor
- * dependency is a Magento framework class these methods never touch, and
- * stubbing them would buy nothing but a bigger fixture.
+ * dependency is a framework class these methods never touch.
  */
 class CheckoutConfigTest extends TestCase
 {
@@ -294,10 +293,6 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * The browser toggle is what decides whether the token reaches the page at
-     * all — a configured token with the toggle off must not be emitted, since
-     * that is the default and the whole point of the separate switch.
-     *
      * @dataProvider firewallTokenCases
      */
     public function testFirewallTokenIsGatedOnTheBrowserToggle(
@@ -351,14 +346,8 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * The runtime answer to "does the installed base module carry the proxy
-     * routes" — why that is asked at runtime rather than read off
-     * composer.json's floor is in CheckoutConfig::getIsProxyAvailable().
-     *
-     * The interface is declared mid-test because both states have to be
-     * observed and a bootstrap stub would make the absent one unreachable.
-     * Declaring it is irreversible within a process, so the test gets one of
-     * its own — otherwise it would decide the answer for every later test.
+     * The interface is declared mid-test because both states have to be observed;
+     * declaring it is irreversible within a process, hence the separate one.
      *
      * @runInSeparateProcess
      * @preserveGlobalState disabled
@@ -378,18 +367,8 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * The tile reads this getter unconditionally, ahead of every
-     * proxy-availability branch, so a base predating the firewall-token config
-     * methods must degrade rather than fatal. Absent reads as the toggle being
-     * off, which is right: such a base has no firewall-token feature at all.
-     *
-     * The getter guards on the toggle method alone. Both shapes a base can
-     * actually present are covered here: neither method (which is what makes
-     * the single guard load-bearing — drop it and this fatals) and the toggle
-     * answering false, which returns before the token getter is ever reached.
-     * A base carrying one method but not the other is unreachable — they are
-     * declared and implemented in a single base commit — so it is documented
-     * rather than tested.
+     * The getter guards on the toggle method alone. A base carrying one config
+     * method but not the other is unreachable — one base commit declares both.
      *
      * @dataProvider firewallTokenAbsentMethodCases
      */
@@ -432,11 +411,7 @@ class CheckoutConfigTest extends TestCase
         ];
     }
 
-    /**
-     * A brand registry predating the notice methods means "no brand opinion",
-     * not a fatal: the notice stays on with the platform default copy, which
-     * is right for every brand that has not opted out.
-     */
+    /** No brand opinion means the platform default copy, not a fatal. */
     public function testNoticeSurvivesABrandRegistryWithoutTheDeclarationMethods(): void
     {
         $notice = $this->noticeFor(new class {

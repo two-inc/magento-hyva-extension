@@ -2,10 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * `ok` is read by identity, never for truthiness: the envelope crosses a JSON
- * boundary with more than one encoder behind it, and a truthy `"false"` would
- * render a failed call as "no companies matched" — which a buyer with a valid
- * company reads as "this shop will not take me".
+ * `ok` is read by identity: a truthy `"false"` out of one of the encoders behind
+ * this JSON boundary would render a failed call as "no companies matched".
  */
 
 "use strict";
@@ -54,8 +52,7 @@ describe("proxy envelope strictness", () => {
     ])("%s", (description, envelope, expected) => {
       // Given a proxy envelope / When unwrapped / Then ok is identity-tested.
       expect(window.twoGatewayUnwrapProxyResponse(envelope).ok).toBe(expected);
-      // Magento's webapi layer wraps a `: string` return in a one-element
-      // array, so the same answer must survive that encoding too.
+      // Magento's webapi layer wraps a `: string` return in a one-element array.
       expect(
         window.twoGatewayUnwrapProxyResponse([JSON.stringify(envelope)]).ok,
       ).toBe(expected);
@@ -63,16 +60,13 @@ describe("proxy envelope strictness", () => {
   });
 
   test("the engine defaults to the direct path when a caller omits the flag", () => {
-    // Every real mount passes it, so this default only ever answers for a
-    // caller that forgot — and the direct call it selects works on every base,
-    // where proxying to a route that may not exist is a failed checkout.
+    // The direct call works on every base; proxying to an absent route is a failed checkout.
     expect(window.twoGatewayCompanySearchEngine({}).isProxyAvailable).toBe(
       false,
     );
   });
 
   test('a search whose envelope says ok:"false" fails, and never renders as "no matches"', async () => {
-    // Given a failed upstream call whose envelope carries a plausible body.
     const search = window.twoGatewayCompanySearch({
       useProxy: true,
       restBaseUrl: REST_BASE,
@@ -85,14 +79,12 @@ describe("proxy envelope strictness", () => {
       JSON.stringify({ ok: "false", status: 502, body: { items: [] } }),
     ]);
 
-    // Then the buyer is told it failed, not that their company does not exist.
     const result = await search;
     expect(result.status).toBe("failed");
   });
 
   test("a 404 on a route the capability check said exists is called out as a stale cache", async () => {
-    // Given isProxyAvailable already ruled out "base too old", a 404 can only
-    // mean Magento is serving a route cache older than the base's code.
+    // isProxyAvailable already ruled out "base too old", so a 404 can only be a stale route cache.
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     const search = window.twoGatewayCompanySearch({
@@ -117,7 +109,7 @@ describe("proxy envelope strictness", () => {
       [404, false, "no buyer on this cookie — the documented answer"],
       [403, true, "an appliance turning away a request with no token"],
       [500, true, "any other rejection"],
-    ])("HTTP %i warns: %s", async (status, shouldWarn) => {
+    ])("HTTP %i (warns: %s) — %s", async (status, shouldWarn) => {
       const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 
       const buyer = window.twoGatewayAutofillBuyer(
@@ -128,16 +120,14 @@ describe("proxy envelope strictness", () => {
       await H.flushPromises();
       fetchStub.calls[0].respondWithStatus(status);
 
-      // Every rejection still resolves null — the caller's next step is signup
-      // either way. What must differ is whether it went unremarked.
+      // Every rejection resolves null; what differs is whether it went unremarked.
       expect(await buyer).toBeNull();
       expect(warn).toHaveBeenCalledTimes(shouldWarn ? 1 : 0);
     });
   });
 
   test("a non-404 proxy failure carries its status into the error", async () => {
-    // The logged message is the only place a 503 is distinguishable from any
-    // other failure.
+    // The logged message is the only place a 503 is distinguishable.
     jest.spyOn(console, "warn").mockImplementation(() => {});
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
 

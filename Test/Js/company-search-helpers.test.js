@@ -507,22 +507,26 @@ describe("shared company-search helpers", () => {
       expect(await promise).toEqual({ addresses: [{ city: "Oslo" }] });
     });
 
-    // Neither signature can be served, so the contract is that it says so
-    // rather than returning "no addresses" with nothing in the console.
-    test("the removed positional signature is named in a warning", async () => {
+    // A third argument that is not a config object carries no host. It warns,
+    // and then still serves the call off the store's own config — the whole
+    // URL is asserted because a host-less relative one contains the path too.
+    test("a non-config third argument warns and still builds a real URL", async () => {
       const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 
       const promise = window.twoGatewayCompanyDetail(
-        "https://api.test.invalid",
+        "https://shop.test.invalid",
         "lookup-111",
         "magento-hyva",
       );
-      fetchStub.last().respondWithStatus(404);
-      await promise;
 
-      expect(warn.mock.calls[0][0]).toContain(
-        "(checkoutApiUrl, lookupId, client, clientV, merchant)",
+      expect(warn.mock.calls[0][0]).toContain("no direct config");
+      expect(fetchStub.last().url).toBe(
+        "https://api.test.invalid/companies/v2/company/lookup-111" +
+          "?client=magento-hyva&client_v=2.1.0&merchant=Example+Shop",
       );
+
+      fetchStub.last().respond({ addresses: [] });
+      await promise;
     });
 
     // Without a check on each layer an error body parses cleanly and silently
