@@ -392,12 +392,7 @@ describe("company lookups without the proxy routes", () => {
   });
 });
 
-/**
- * The flag is the one value in these object literals emitted BARE — every
- * neighbouring config value is a quoted string, and the string "false" is
- * truthy, so a copy-paste matching the surrounding style would flip all three
- * mounts to the proxy on a base that has no proxy routes.
- */
+/** Quoting the flag to match its neighbours would flip all three mounts open. */
 describe("the flag is emitted as a JS boolean, not a quoted string", () => {
   const MOUNTS = [
     ["the payment tile", H.GATEWAY_METHOD_TEMPLATE],

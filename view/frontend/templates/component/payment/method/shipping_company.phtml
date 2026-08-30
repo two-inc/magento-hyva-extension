@@ -168,7 +168,7 @@ document.addEventListener('alpine:init', () => {
         twoGatewayCompanySearchEngineFn({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            // Bare boolean, not quoted like its neighbours: the string "false" is truthy.
+            // Bare boolean, not quoted — see gateway_method-csp-js.phtml.
             isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
             client: '<?= $escaper->escapeJs((string) $clientName) ?>',
             clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',

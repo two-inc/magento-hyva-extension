@@ -98,9 +98,9 @@ would shadow the two fresher signals.
 
 `Provenance` is a near-copy of the base module's equivalent provenance model
 rather than an injection of it, with an identical public surface. **Keep the
-copy.** No released base carries the base class — the newest release, `2.1.2`,
-predates it — so injecting `Two\Gateway\Model\Provenance` instead would fatal
-the admin field on every base a merchant can currently install. The `^2.3.0`
+copy.** No released base carries its own provenance model — the newest
+release, `2.1.2`, predates it — so injecting the base module's instead would
+fatal the admin field on every base a merchant can currently install. The `^2.3.0`
 floor in `composer.json` is not evidence to the contrary: it states intent
 only, for the reason set out under `getIsProxyAvailable()` below. Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
@@ -277,9 +277,9 @@ it. That is not a new exposure: it is precisely what ran on that base already,
 and it is the only path on which those fallbacks are reachable.
 
 Those fallback branches are **deprecated on arrival**. Delete them, and the
-flag threading them, once a release version can be trusted to correspond to the
-code that shipped — the fix belongs in the release automation, not in a floor
-raised high enough to look safe.
+flag threading them, once a base release is confirmed BY INSPECTION OF THAT
+RELEASE to carry the routes — never by raising the floor high enough to look
+safe.
 
 The one exception is `/autofill/v1/buyer/current`, which is authenticated by
 the buyer's own cookie on the API's domain and so cannot be proxied at all; it

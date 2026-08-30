@@ -226,19 +226,19 @@ class CheckoutConfig implements ArgumentInterface
      * directly. Empty unless the merchant turned that on.
      *
      * A base predating these config methods has no firewall-token feature at
-     * all, so absent reads the same as the toggle being off. Same reasoning as
-     * getOrderIntentApprovedNotice(): the composer floor cannot be trusted to
-     * mean the methods are present, and this getter is called unconditionally
-     * at the top of the payment tile — ahead of every proxy-availability
-     * branch — so an unguarded call fatals the tile on exactly the bases the
-     * fallback exists for.
+     * all, so absent reads the same as the toggle being off. The composer
+     * floor cannot be trusted to mean the methods are present, and this getter
+     * is called unconditionally at the top of the payment tile — ahead of every
+     * proxy-availability branch — so an unguarded call fatals the tile on
+     * exactly the bases the fallback exists for.
+     *
+     * One method answers for the pair, on the same grounds as
+     * getIsProxyAvailable(): both are declared and implemented in a single base
+     * commit, so no base exposes one without the other.
      */
     public function getFirewallToken(): string
     {
-        if (
-            !method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")
-            || !method_exists($this->configRepository, "getFirewallToken")
-        ) {
+        if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
             return "";
         }
 
@@ -252,20 +252,18 @@ class CheckoutConfig implements ArgumentInterface
      * proxy routes; false takes every call site back to the direct
      * browser-to-API call it made before they existed.
      *
-     * THE CANONICAL STATEMENT, pointed at from everywhere else that depends
-     * on it: this runtime check, not the `^2.3.0` floor in composer.json, is
-     * what keeps a too-old base off a route it never registered — a release
-     * version is not derived from the code that shipped, so the floor states
-     * intent only.
+     * Asked at runtime rather than read off the `^2.3.0` floor in
+     * composer.json because a release version is not a reliable signal that
+     * specific code shipped, so the floor states intent only.
      *
      * True proves the base's PHP is autoloadable, not that its routes are
      * registered: webapi routes come from cached config, so a base updated
      * without setup:upgrade/cache:flush answers 404 until the flush, which
      * twoGatewayProxyPost() logs distinctly rather than falling back for.
      *
-     * One interface answers for both routes, which land with their webapi/di
-     * registration in a single base commit. A string literal, not an imported
-     * constant: the import would itself fatal on the base this detects.
+     * One interface answers for all three routes, which land with their
+     * webapi/di registration in a single base commit. A string literal, not an
+     * imported constant: the import would itself fatal on the base this detects.
      */
     public function getIsProxyAvailable(): bool
     {

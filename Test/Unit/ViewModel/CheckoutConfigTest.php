@@ -382,20 +382,54 @@ class CheckoutConfigTest extends TestCase
      * proxy-availability branch, so a base predating the firewall-token config
      * methods must degrade rather than fatal. Absent reads as the toggle being
      * off, which is right: such a base has no firewall-token feature at all.
+     *
+     * The getter guards on the toggle method alone. Both shapes a base can
+     * actually present are covered here: neither method (which is what makes
+     * the single guard load-bearing — drop it and this fatals) and the toggle
+     * answering false, which returns before the token getter is ever reached.
+     * A base carrying one method but not the other is unreachable — they are
+     * declared and implemented in a single base commit — so it is documented
+     * rather than tested.
+     *
+     * @dataProvider firewallTokenAbsentMethodCases
      */
-    public function testFirewallTokenSurvivesAConfigRepositoryWithoutTheMethods(): void
-    {
+    public function testFirewallTokenDegradesOnABaseWithoutTheConfigMethods(
+        object $configRepository,
+        string $case
+    ): void {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
-        $reflection->getProperty('configRepository')->setValue($viewModel, new class {
-            public function getApiKey(): string
-            {
-                return 'key';
-            }
-        });
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
 
-        $this->assertSame('', $viewModel->getFirewallToken());
+        $this->assertSame('', $viewModel->getFirewallToken(), $case);
+    }
+
+    /**
+     * @return array<int, array{0:object, 1:string}>
+     */
+    public static function firewallTokenAbsentMethodCases(): array
+    {
+        return [
+            [
+                new class {
+                    public function getApiKey(): string
+                    {
+                        return 'key';
+                    }
+                },
+                'neither method: the guard is what stops the fatal',
+            ],
+            [
+                new class {
+                    public function isFirewallTokenSentFromBrowser(): bool
+                    {
+                        return false;
+                    }
+                },
+                'toggle off and no token getter: returns before reaching it',
+            ],
+        ];
     }
 
     /**

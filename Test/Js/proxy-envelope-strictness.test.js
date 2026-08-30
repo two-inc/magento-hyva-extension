@@ -2,15 +2,10 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * The proxy envelope's `ok` decides whether a body is a result or a failure,
- * and the two outcomes are rendered very differently: a failure the buyer can
- * see and retry, versus "no companies matched" — which is what a buyer with a
- * perfectly valid company reads as "this shop will not take me".
- *
- * So `ok` is read by IDENTITY, never for truthiness. The envelope crosses a
- * JSON boundary that has more than one encoder behind it, and a stringified
- * `"false"` is truthy: under a loose test a failed call renders as an empty
- * result set, which is the one failure mode that looks like a normal answer.
+ * `ok` is read by identity, never for truthiness: the envelope crosses a JSON
+ * boundary with more than one encoder behind it, and a truthy `"false"` would
+ * render a failed call as "no companies matched" — which a buyer with a valid
+ * company reads as "this shop will not take me".
  */
 
 "use strict";
@@ -144,8 +139,8 @@ describe("proxy envelope strictness", () => {
 
   test("a non-404 proxy failure carries its status into the error", async () => {
     // Both paths carry the upstream status in the message they log, which is
-    // the only place a 503 is distinguishable from any other failure. The 404
-    // above is the case with its own console.warn; this is every other one.
+    // the only place a 503 is distinguishable from any other failure. Only a
+    // 404 gets its own console.warn (the stale-cache test); this is the rest.
     jest.spyOn(console, "warn").mockImplementation(() => {});
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
 
