@@ -145,14 +145,18 @@ describe("order intent without the proxy route", () => {
 
   // With no server to resolve the merchant from the store's API key, the
   // request has to name it itself.
-  test("names the merchant, which the proxied body deliberately does not", () => {
+  test("names the merchant, which the proxied body deliberately does not", async () => {
     tile = mountTile(PROXY_ABSENT);
 
-    tile.component.placeOrderIntent();
-    const sent = JSON.parse(tile.fetchStub.last().init.body);
+    const pending = tile.component.placeOrderIntent();
+    const call = tile.fetchStub.last();
+    const sent = JSON.parse(call.init.body);
 
     expect(sent.merchant_id).toBe("test-merchant-id");
     expect(sent.merchant_short_name).toBe("Example Shop");
+
+    call.respond(APPROVED);
+    await pending;
   });
 
   test("a refusal still rejects, so the verdict box is painted not blank", async () => {
@@ -167,13 +171,19 @@ describe("order intent without the proxy route", () => {
   // The whole point of the fallback: a base without the route must not reach
   // one. A 404 from an unregistered route is what a missing capability check
   // would turn a checkout into.
-  test("the unregistered route is never addressed", () => {
+  test("the unregistered route is never addressed", async () => {
     tile = mountTile(PROXY_ABSENT);
-    tile.component.placeOrderIntent();
+    const pending = tile.component.placeOrderIntent();
 
+    // Anchored outside the loop: with no call to inspect, a forEach body
+    // asserts nothing and the test passes having covered nothing.
+    expect(tile.fetchStub.calls.length).toBeGreaterThan(0);
     tile.fetchStub.calls.forEach((call) => {
       expect(call.url).not.toContain("/rest/V1/two/order-intent");
     });
+
+    tile.fetchStub.last().respond(APPROVED);
+    await pending;
   });
 });
 
@@ -330,11 +340,8 @@ describe("company lookups without the proxy routes", () => {
     expect(await promise).toBeNull();
   });
 
-  // Fail closed, matching the engine's own `isProxyAvailable` default: a
-  // caller that omits the flag gets the direct call, which works on every
-  // base, rather than a proxy route the installed base may not have
-  // registered. Every real mount passes the flag, so only a future caller is
-  // affected — and it should land on the path that cannot 404 the checkout.
+  // Fail closed — see twoGatewayCompanySearch's useProxy. Every real mount
+  // passes the flag, so only a future caller is affected.
   describe("a caller that omits the flag entirely", () => {
     test("search takes the direct path, not the proxy route", async () => {
       const promise = window.twoGatewayCompanySearch({

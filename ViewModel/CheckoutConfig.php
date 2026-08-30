@@ -225,16 +225,11 @@ class CheckoutConfig implements ArgumentInterface
      * The firewall token, for the one API call the browser still makes
      * directly. Empty unless the merchant turned that on.
      *
-     * A base predating these config methods has no firewall-token feature at
-     * all, so absent reads the same as the toggle being off. The composer
-     * floor cannot be trusted to mean the methods are present, and this getter
-     * is called unconditionally at the top of the payment tile — ahead of every
-     * proxy-availability branch — so an unguarded call fatals the tile on
-     * exactly the bases the fallback exists for.
-     *
-     * One method answers for the pair, on the same grounds as
-     * getIsProxyAvailable(): both are declared and implemented in a single base
-     * commit, so no base exposes one without the other.
+     * Guarded, and guarded on one method for the pair, for the reasons set out
+     * in getIsProxyAvailable(). The guard is not optional here: the payment
+     * tile calls this unconditionally, ahead of every proxy-availability
+     * branch, so an unguarded call fatals the tile on exactly the bases the
+     * fallback exists for.
      */
     public function getFirewallToken(): string
     {
@@ -267,6 +262,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getIsProxyAvailable(): bool
     {
+        // BEFORE MERGE: re-verify this name against the PUBLISHED 2.3.0
+        // release artifact — the base branch it came from can still rename it,
+        // and a rename fails silently to the deprecated direct-call path. No
+        // test here can catch that: the unit test declares the interface
+        // itself, so it proves the mechanism, never the name.
         return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
     }
 

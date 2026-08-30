@@ -128,8 +128,13 @@ describe("order intent through the plugin's own backend", () => {
     const call = tile.fetchStub.last();
     const payload = JSON.parse(call.jsonBody().payload);
 
-    expect(payload.merchant_id).toBeUndefined();
-    expect(payload.merchant_short_name).toBeUndefined();
+    // Absent from the object, not merely undefined — a payload that decoded to
+    // `{}` would satisfy toBeUndefined() having sent nothing at all. The two
+    // fields that DO belong in it prove this is the real body.
+    expect(payload.buyer.company.organization_number).toBe("123456789");
+    expect(payload.currency).toBe("GBP");
+    expect(Object.keys(payload)).not.toContain("merchant_id");
+    expect(Object.keys(payload)).not.toContain("merchant_short_name");
 
     call.respondProxy(APPROVED);
     await pending;

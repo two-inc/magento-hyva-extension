@@ -816,7 +816,7 @@ $quoteDetails = json_encode(
      * request URL, so country, limit and query all form part of the key. The
      * proxy path has no URL of its own to key by and uses a synthetic
      * `search|<country>|<query>` — limit is deliberately NOT in it, because
-     * the server owns paging and the browser no longer sends one.
+     * the server owns paging and the proxied request carries no limit.
      *
      * Entries never expire, and because the cache is window-scoped it also
      * survives every Magewire re-render for the life of the page — so a
@@ -951,9 +951,11 @@ $quoteDetails = json_encode(
      *
      * @param {Object} options
      * @param {boolean} options.useProxy true only where the base carries the
-     *   proxy routes. Anything else, an omitted flag included, takes the
-     *   direct-call fallback below — DEPRECATED, see
-     *   CheckoutConfig::getIsProxyAvailable().
+     *   proxy routes. THE FAIL-CLOSED RULE FOR ALL THREE HELPERS, stated here
+     *   once: anything but an explicit `true` — an omitted flag included —
+     *   takes the direct-call fallback, which works on every base, rather than
+     *   a proxy route that may not be registered. That fallback is DEPRECATED;
+     *   see CheckoutConfig::getIsProxyAvailable().
      * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
      * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
@@ -968,8 +970,7 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
         const country = (options.countryCode || '').toUpperCase();
         const term = unescape(options.query);
-        // Fail closed: an omitted flag takes the direct call, which works on
-        // every base, rather than a proxy route that may not be registered.
+        // Fail closed — see the useProxy rule above.
         const useProxy = options.useProxy === true;
         const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
             country: country,
@@ -1122,8 +1123,7 @@ $quoteDetails = json_encode(
      * @param {string} lookupId
      * @param {Object|null} [direct] `{checkoutApiUrl, client, clientV, merchant}`
      *   for the direct-call fallback, or exactly `null` for the proxy route.
-     *   Fail closed like its siblings: an omitted argument is a direct call.
-     *   DEPRECATED — see twoGatewayCompanySearch.
+     *   Fail closed, and deprecated, per twoGatewayCompanySearch's useProxy.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
@@ -1416,8 +1416,8 @@ $quoteDetails = json_encode(
         const cfg = Object.assign({
             checkoutApiUrl: '',
             restBaseUrl: '',
-            // Fail closed: the direct call this selects works on every base,
-            // and every real mount passes the flag explicitly.
+            // Fail closed — see twoGatewayCompanySearch's useProxy. Every
+            // real mount passes the flag explicitly.
             isProxyAvailable: false,
             client: '',
             clientV: '',
