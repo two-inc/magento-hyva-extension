@@ -245,7 +245,7 @@ Three layers, innermost first:
 
 | Layer                                        | Where                                                                                                                                                                                                                  | Owns                                                                                                                                                                              |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Popover — `CompanySearchPanel`               | **two-inc/magento2**, loaded by `hyva_checkout_index_index.xml` as `Two_Gateway::js/model/company-search-panel.js` and reached as `window.TwoCompanySearchPanel`                                                        | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
+| Popover — the shared company-search panel     | **the base plugin**, whose script this checkout's layout loads and which the mounts reach through the browser global it registers itself under                                                                          | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
 | Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
 | Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
 
@@ -259,11 +259,11 @@ into the panel; if it needs to do something new, change it in the base plugin so
 both checkouts get it.
 
 **Its markup is not testable here.** The file is not in this repo and there is no
-vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub at
-`window.TwoCompanySearchPanel` (`installHyvaEnvironment()` returns
-`companyPanels`, with `.options` and `.calls`). What this repo tests is its own
-half of the contract — the options the adapter passes and the search API it
-builds over the engine. The panel's own behaviour is covered where that file
+vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub in
+place of the real panel (`installHyvaEnvironment()` returns `companyPanels`,
+with `.options` and `.calls`). What this repo tests is its own half of the
+contract — the options the adapter passes and the search API it builds over the
+engine. The panel's own behaviour is covered where that file
 lives, not here. The stub does build the wrapper and panel node the real one
 builds, and answers `isBound()` from them: that is the minimum DOM that makes a
 re-render's morph observable here, and a constant `true` is the answer that
