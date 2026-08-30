@@ -95,7 +95,6 @@ describe("proxy envelope strictness", () => {
     // Then the buyer is told it failed, not that their company does not exist.
     const result = await search;
     expect(result.status).toBe("failed");
-    expect(result.status).not.toBe("empty");
   });
 
   test("a 404 on a route the capability check said exists is called out as a stale cache", async () => {
@@ -144,9 +143,11 @@ describe("proxy envelope strictness", () => {
   });
 
   test("a non-404 proxy failure carries its status into the error", async () => {
-    // The direct-call fallback has always put the status in its message; the
-    // proxy path must not be the one that drops it.
+    // Both paths carry the upstream status in the message they log, which is
+    // the only place a 503 is distinguishable from any other failure. The 404
+    // above is the case with its own console.warn; this is every other one.
     jest.spyOn(console, "warn").mockImplementation(() => {});
+    const error = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const search = window.twoGatewayCompanySearch({
       useProxy: true,
@@ -158,5 +159,8 @@ describe("proxy envelope strictness", () => {
 
     fetchStub.calls[0].respondWithStatus(503);
     expect((await search).status).toBe("failed");
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0][1])).toContain("503");
   });
 });

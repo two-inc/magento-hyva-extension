@@ -249,25 +249,23 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Whether the installed base module exposes the registry and order-intent
-     * proxy routes, which is what decides between calling them and calling the
-     * API straight from the browser as this checkout did before they existed.
+     * proxy routes; false takes every call site back to the direct
+     * browser-to-API call it made before they existed.
      *
-     * This runtime check, NOT the `^2.3.0` floor in composer.json, is the
-     * mechanism that keeps a too-old base from fataling the checkout: release
-     * versions are computed from commit-type keywords rather than from what
-     * shipped, so the floor states intent only.
+     * THE CANONICAL STATEMENT, pointed at from everywhere else that depends
+     * on it: this runtime check, not the `^2.3.0` floor in composer.json, is
+     * what keeps a too-old base off a route it never registered — a release
+     * version is not derived from the code that shipped, so the floor states
+     * intent only.
      *
-     * One interface answers for both routes — they and their webapi/di
-     * registration land in a single base-module commit, so no release carries
-     * one without the other.
-     *
-     * True means the base's PHP is autoloadable, not that its routes are
+     * True proves the base's PHP is autoloadable, not that its routes are
      * registered: webapi routes come from cached config, so a base updated
-     * without setup:upgrade/cache:flush answers 404 until the flush. The JS
-     * proxy helper logs that 404 distinctly rather than falling back.
+     * without setup:upgrade/cache:flush answers 404 until the flush, which
+     * twoGatewayProxyPost() logs distinctly rather than falling back for.
      *
-     * A string literal rather than an imported constant: an import resolved at
-     * runtime would itself fatal on the base this method exists to detect.
+     * One interface answers for both routes, which land with their webapi/di
+     * registration in a single base commit. A string literal, not an imported
+     * constant: the import would itself fatal on the base this detects.
      */
     public function getIsProxyAvailable(): bool
     {
@@ -277,8 +275,7 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * Plugin identifier for the `client` query param on browser-side Two API calls.
      *
-     * @deprecated Feeds the direct-call fallback only; delete once the release
-     * process guarantees the composer floor corresponds to shipped code.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientName(): ?string
     {
@@ -288,8 +285,7 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * Plugin version for the `client_v` query param on browser-side Two API calls.
      *
-     * @deprecated Feeds the direct-call fallback only; delete once the release
-     * process guarantees the composer floor corresponds to shipped code.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientVersion(): ?string
     {
@@ -299,8 +295,7 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * Merchant slug for the `merchant` query param on browser-side Two API calls.
      *
-     * @deprecated Feeds the direct-call fallback only; delete once the release
-     * process guarantees the composer floor corresponds to shipped code.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getMerchantShortName(): string
     {
@@ -311,8 +306,7 @@ class CheckoutConfig implements ArgumentInterface
      * Rows a browser-side company search asks the registry for. The proxy route
      * sets its own bound, so this is read only on the direct-call fallback.
      *
-     * @deprecated Feeds the direct-call fallback only; delete once the release
-     * process guarantees the composer floor corresponds to shipped code.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getCompanySearchLimit(): int
     {

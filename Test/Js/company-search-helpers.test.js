@@ -47,6 +47,8 @@ describe("shared company-search helpers", () => {
         restBaseUrl: "https://shop.test.invalid",
         countryCode: "gb",
         query: "acme",
+        // Explicit: the helper's own default is the direct call.
+        useProxy: true,
       },
       overrides || {},
     );
@@ -258,9 +260,9 @@ describe("shared company-search helpers", () => {
       expect(result.items).toEqual([]);
     });
 
-    // The registry call is made server-side now, so its failure arrives as a
-    // 200 carrying `ok: false`. Both routes to a failure must land on the one
-    // outcome, or a buyer sees "no companies matched" for an outage.
+    // A server-side registry call reports its failure as a 200 carrying
+    // `ok: false`. Both routes to a failure must land on the one outcome, or a
+    // buyer sees "no companies matched" for an outage.
     test.each([
       {
         settle: (call) => call.respondWithStatus(503),
@@ -494,6 +496,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "lookup-111",
+        null,
       );
 
       expect(fetchStub.last().url).toBe(
@@ -521,6 +524,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
+        null,
       );
       settle(fetchStub.last());
 
@@ -531,6 +535,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
+        null,
       );
       fetchStub.last().networkError();
 
@@ -542,6 +547,7 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
+        null,
       );
 
       jest.advanceTimersByTime(29999);

@@ -88,10 +88,10 @@ const PHP_VALUE_RULES = [
   // Production's default: the token only reaches the browser where a merchant
   // switched that on. The suite that covers the header overrides it.
   [/^\$firewallToken$/, ""],
-  // Emitted bare as a JS boolean. `true` is the state a base module meeting
-  // composer.json's floor is in; the fallback suite overrides it to `false`,
-  // which is what proves each call site reads the injected value rather than
-  // hardcoding the proxy.
+  // Emitted bare as a JS boolean. `true` is a convenience for the legacy
+  // suites and says nothing about the helpers' own default, which is
+  // fail-closed and covered by tests that pass no flag at all. The fallback
+  // suite overrides it to `false`, which proves each call site reads the value.
   [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
   // Read on the direct-call fallback only.
   [/^\$clientName$/, "magento-hyva"],

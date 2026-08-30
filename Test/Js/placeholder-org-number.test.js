@@ -105,6 +105,8 @@ describe("placeholder organisation numbers are never shown (requirement 12)", ()
           restBaseUrl: "https://shop.test.invalid",
           countryCode: "GB",
           query: "example",
+          // Explicit: the helper's own default is the direct call.
+          useProxy: true,
         });
         await H.flushPromises();
         fetchStub.last().respondProxy({

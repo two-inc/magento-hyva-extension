@@ -146,8 +146,8 @@ describe("order intent through the plugin's own backend", () => {
 
   // Every failure the check can meet reaches the dispatcher as a rejection —
   // which is what puts the general error wording in the verdict box. An
-  // upstream refusal now arrives as a 200 carrying `ok: false`, so it has to
-  // be recognised from the envelope rather than from the HTTP status.
+  // upstream refusal arrives as a 200 carrying `ok: false`, so it is
+  // recognised from the envelope rather than from the HTTP status.
   test.each([
     {
       settle: (call) =>

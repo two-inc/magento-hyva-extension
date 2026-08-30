@@ -148,6 +148,7 @@ function <?= $gwBase ?>CompanySearchField() {
         manualEntryOffered: true,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+        // Bare boolean, not quoted like its neighbours: the string "false" is truthy.
         isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
         client: '<?= $escaper->escapeJs((string) $clientName) ?>',
         clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',

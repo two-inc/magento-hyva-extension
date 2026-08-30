@@ -951,8 +951,10 @@ $quoteDetails = json_encode(
      *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
      *
      * @param {Object} options
-     * @param {boolean} options.useProxy false on a base module without the
-     *   proxy routes, which takes the direct-call fallback below
+     * @param {boolean} options.useProxy true only where the base carries the
+     *   proxy routes. Anything else, an omitted flag included, takes the
+     *   direct-call fallback below — DEPRECATED, see
+     *   CheckoutConfig::getIsProxyAvailable().
      * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
      * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
@@ -967,15 +969,9 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
         const country = (options.countryCode || '').toUpperCase();
         const term = unescape(options.query);
-        const useProxy = options.useProxy !== false;
-        /*
-         * DEPRECATED, and the canonical statement of it for every
-         * fallback branch below: the direct-call path exists only for a base
-         * module without the proxy routes. Delete it, the `useProxy` /
-         * `isProxyAvailable` branches it feeds, and the flag itself, once the
-         * release process guarantees the composer floor corresponds to the
-         * code that actually shipped.
-         */
+        // Fail closed: an omitted flag takes the direct call, which works on
+        // every base, rather than a proxy route that may not be registered.
+        const useProxy = options.useProxy === true;
         const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
             country: country,
             limit: options.limit,
@@ -1126,8 +1122,9 @@ $quoteDetails = json_encode(
      * @param {string} restBaseUrl Magento link base URL, no trailing slash
      * @param {string} lookupId
      * @param {Object|null} [direct] `{checkoutApiUrl, client, clientV, merchant}`
-     *   on a base module without the proxy routes, which takes the direct-call
-     *   fallback. DEPRECATED — see twoGatewayCompanySearch.
+     *   for the direct-call fallback, or exactly `null` for the proxy route.
+     *   Fail closed like its siblings: an omitted argument is a direct call.
+     *   DEPRECATED — see twoGatewayCompanySearch.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
@@ -1141,13 +1138,14 @@ $quoteDetails = json_encode(
         try {
             // Without these checks an error body parses as an address payload
             // and silently produces "no addresses".
-            if (direct) {
+            if (direct !== null) {
+                const cfg = direct || {};
                 const queryParams = new URLSearchParams({
-                    client: direct.client || '',
-                    client_v: direct.clientV || '',
-                    merchant: direct.merchant || '',
+                    client: cfg.client || '',
+                    client_v: cfg.clientV || '',
+                    merchant: cfg.merchant || '',
                 });
-                const response = await fetch(`${direct.checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`, {
+                const response = await fetch(`${cfg.checkoutApiUrl || ''}/companies/v2/company/${lookupId}?${queryParams}`, {
                     signal: controller.signal,
                 });
                 if (!response.ok) throw new Error('Company detail responded ' + response.status);
@@ -1419,9 +1417,8 @@ $quoteDetails = json_encode(
         const cfg = Object.assign({
             checkoutApiUrl: '',
             restBaseUrl: '',
-            // Fail closed: every real mount passes this explicitly, so the
-            // default only answers for a caller that forgot, and the direct
-            // call it selects works on every base.
+            // Fail closed: the direct call this selects works on every base,
+            // and every real mount passes the flag explicitly.
             isProxyAvailable: false,
             client: '',
             clientV: '',
@@ -3190,6 +3187,7 @@ $quoteDetails = json_encode(
             // the address-step search, that lookup, is off.
             manualEntryOffered: false,
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+            // Bare boolean, not quoted like its neighbours: the string "false" is truthy.
             isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             client: '<?= $escaper->escapeJs((string) $clientName) ?>',
@@ -3316,7 +3314,6 @@ $quoteDetails = json_encode(
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             // '' unless the merchant asked for it in the browser too.
             firewallToken: '<?= $escaper->escapeJs($firewallToken) ?>',
             // The one threshold for this repo, emitted from PHP

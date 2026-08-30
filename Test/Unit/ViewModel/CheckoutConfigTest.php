@@ -352,10 +352,8 @@ class CheckoutConfigTest extends TestCase
 
     /**
      * The runtime answer to "does the installed base module carry the proxy
-     * routes", which is what keeps a base that predates them from being sent
-     * to a route it has not registered. composer.json's floor cannot answer
-     * it: release versions here are computed from commit-type keywords, not
-     * from what shipped.
+     * routes" — why that is asked at runtime rather than read off
+     * composer.json's floor is in CheckoutConfig::getIsProxyAvailable().
      *
      * The interface is declared mid-test because both states have to be
      * observed and a bootstrap stub would make the absent one unreachable.

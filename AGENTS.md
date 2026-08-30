@@ -262,23 +262,12 @@ must produce exactly what a failed direct call used to. Paging and client
 identification are the server's to set, so nothing here sends them.
 
 **What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
-`^2.3.0` floor in `composer.json`.** The floor states the intent and is not
-evidence: a release version is computed from commit-type keywords rather than
-from the code that shipped, so a base numbered past the floor may still not
-carry the routes — and addressing an unregistered route is a 404 the tile turns
-into a failed checkout. The getter answers `interface_exists()` on the base's
-own `CompanyLookupInterface` — one interface answers for both routes, which
-land with their webapi/di registration in a single base commit — and the answer is
-emitted to every mount as `isProxyAvailable`. What that proves is that the
-base's PHP is autoloadable, which is NOT the same as its routes being
-callable: Magento serves webapi routes out of CACHED config, so a base updated
-without `setup:upgrade` / `cache:flush` leaves a window in which the interface
-is present and the route still answers 404. `twoGatewayProxyPost()` logs a 404
-distinctly for that reason — the capability check has already ruled out "old
-base", so on this path a 404 means stale cache — and the window closes on a
-flush. There is deliberately no runtime fallback for it: a 404 that reopened
-the direct browser-to-API path would make a missed cache flush invisible
-instead of loud.
+`^2.3.0` floor in `composer.json`** — the reasoning is written once, in that
+method's docblock, and everything else points at it. Its answer reaches every
+mount as `isProxyAvailable`. `twoGatewayProxyPost()` deliberately has no
+runtime fallback for the 404 a stale route cache produces: a fallback that
+reopened the direct browser-to-API path would make a missed cache flush
+invisible instead of loud.
 
 `false` takes each of the three call sites back to the **direct
 browser-to-API call it made before the routes existed** — query-string client
@@ -288,9 +277,9 @@ it. That is not a new exposure: it is precisely what ran on that base already,
 and it is the only path on which those fallbacks are reachable.
 
 Those fallback branches are **deprecated on arrival**. Delete them, and the
-flag threading them, once the release process guarantees a version number
-corresponds to the code that shipped — the fix is to the version automation's
-content-blindness, not a floor raised high enough to look safe.
+flag threading them, once a release version can be trusted to correspond to the
+code that shipped — the fix belongs in the release automation, not in a floor
+raised high enough to look safe.
 
 The one exception is `/autofill/v1/buyer/current`, which is authenticated by
 the buyer's own cookie on the API's domain and so cannot be proxied at all; it

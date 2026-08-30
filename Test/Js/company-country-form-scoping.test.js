@@ -326,11 +326,14 @@ describe("form-scoped country resolution", () => {
 
       // Not awaited before the assertion: the country is resolved synchronously
       // at the top of the search, and the request is settled afterwards only so
-      // the suite leaves nothing in flight.
+      // the suite leaves nothing in flight. It settles as a DIRECT call because
+      // an engine composed with no `isProxyAvailable` fails closed.
       const pending = component.runCompanySearch("Exa");
       expect(component.countryCode).toBe("NO");
 
-      fetchStub.calls[fetchStub.calls.length - 1].respondProxy({ items: [] });
+      const call = fetchStub.calls[fetchStub.calls.length - 1];
+      expect(call.url).not.toContain("/rest/V1/two/");
+      call.respond({ items: [] });
       await pending;
     });
   });
