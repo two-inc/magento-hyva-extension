@@ -809,8 +809,14 @@ $quoteDetails = json_encode(
      * component). Deliberately hung off `window` rather than held in Alpine
      * component state: Magewire re-renders destroy and rebuild those
      * components, and a component-owned cache would be discarded exactly
-     * when re-issuing searches hurts most. Keyed by request URL, so
-     * country / limit / query are all part of the key.
+     * when re-issuing searches hurts most.
+     *
+     * The two call paths key entries differently, and a new caller must pick
+     * the one matching how it fetches. The direct fallback keys by its whole
+     * request URL, so country, limit and query all form part of the key. The
+     * proxy path has no URL of its own to key by and uses a synthetic
+     * `search|<country>|<query>` — limit is deliberately NOT in it, because
+     * the server owns paging and the browser no longer sends one.
      *
      * Entries never expire, and because the cache is window-scoped it also
      * survives every Magewire re-render for the life of the page — so a
@@ -889,7 +895,10 @@ $quoteDetails = json_encode(
             }
         }
         if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
-        return { ok: Boolean(parsed.ok), status: parsed.status || 0, body: parsed.body };
+        // Strict, like twoGatewayIsDegradedResponse: a string "false" is truthy
+        // under Boolean(), which would hand a failed call to mapItems and render
+        // it as "no matches" instead of as the failure it is.
+        return { ok: parsed.ok === true, status: parsed.status || 0, body: parsed.body };
     };
 
     /**
@@ -910,7 +919,18 @@ $quoteDetails = json_encode(
             body: JSON.stringify(body),
             signal: signal,
         });
-        if (!response.ok) throw new Error('Error response from ' + path);
+        if (!response.ok) {
+            // A 404 here is NOT "base too old" — isProxyAvailable already ruled
+            // that out — but a base whose webapi route cache predates its code,
+            // which a cache flush fixes.
+            if (response.status === 404) {
+                console.warn(
+                    'Two: proxy route ' + path + ' is unregistered despite the base module '
+                    + 'exposing it — run setup:upgrade and cache:flush on the store.'
+                );
+            }
+            throw new Error('Error response from ' + path + ': ' + response.status);
+        }
         return window.twoGatewayUnwrapProxyResponse(await response.json());
     };
 
@@ -1236,6 +1256,12 @@ $quoteDetails = json_encode(
                 headers: headers
             });
             if (response.ok) return await response.json();
+            // 404 is this endpoint's "no buyer" answer; any other status is a
+            // real rejection — a firewall appliance turning away a request that
+            // carried no token, most likely — and must not pass as "no buyer".
+            if (response.status !== 404) {
+                console.warn('Two: buyer autofill lookup rejected with ' + response.status);
+            }
             return null;
         } catch (error) {
             return null;
@@ -1393,7 +1419,10 @@ $quoteDetails = json_encode(
         const cfg = Object.assign({
             checkoutApiUrl: '',
             restBaseUrl: '',
-            isProxyAvailable: true,
+            // Fail closed: every real mount passes this explicitly, so the
+            // default only answers for a caller that forgot, and the direct
+            // call it selects works on every base.
+            isProxyAvailable: false,
             client: '',
             clientV: '',
             merchant: '',

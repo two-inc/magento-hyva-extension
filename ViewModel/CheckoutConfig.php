@@ -261,6 +261,11 @@ class CheckoutConfig implements ArgumentInterface
      * registration land in a single base-module commit, so no release carries
      * one without the other.
      *
+     * True means the base's PHP is autoloadable, not that its routes are
+     * registered: webapi routes come from cached config, so a base updated
+     * without setup:upgrade/cache:flush answers 404 until the flush. The JS
+     * proxy helper logs that 404 distinctly rather than falling back.
+     *
      * A string literal rather than an imported constant: an import resolved at
      * runtime would itself fatal on the base this method exists to detect.
      */

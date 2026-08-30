@@ -133,6 +133,9 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
         {
           checkoutApiUrl: "https://api.test.invalid",
           restBaseUrl: "https://shop.test.invalid",
+          // Explicit, like every real mount: the engine default is fail-closed,
+          // and these cases assert the proxy path.
+          isProxyAvailable: true,
           minSearchChars: 3,
           isCompanySearchEnabled: true,
           getQuote: function () {

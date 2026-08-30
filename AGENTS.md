@@ -97,10 +97,14 @@ must never be committed: a committed stamp would be frozen at commit time and
 would shadow the two fresher signals.
 
 `Provenance` is a near-copy of the base module's equivalent provenance model
-rather than an injection of it, with an identical public surface. The base
-class predates the `^2.3.0` floor in `composer.json`, so every base a merchant
-can install carries it and nothing depends on the copy staying local: delete
-it and inject `Two\Gateway\Model\Provenance` instead.
+rather than an injection of it, with an identical public surface. **Keep the
+copy.** No released base carries the base class — the newest release, `2.1.2`,
+predates it — so injecting `Two\Gateway\Model\Provenance` instead would fatal
+the admin field on every base a merchant can currently install. The `^2.3.0`
+floor in `composer.json` is not evidence to the contrary: it states intent
+only, for the reason set out under `getIsProxyAvailable()` below. Delete the
+copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
+the class — never on the strength of its version number.
 
 ## Hyvä config registration
 
@@ -265,7 +269,16 @@ carry the routes — and addressing an unregistered route is a 404 the tile turn
 into a failed checkout. The getter answers `interface_exists()` on the base's
 own `CompanyLookupInterface` — one interface answers for both routes, which
 land with their webapi/di registration in a single base commit — and the answer is
-emitted to every mount as `isProxyAvailable`. `false` takes each of the three
+emitted to every mount as `isProxyAvailable`. What that proves is that the
+base's PHP is autoloadable, which is NOT the same as its routes being
+callable: Magento serves webapi routes out of CACHED config, so a base updated
+without `setup:upgrade` / `cache:flush` leaves a window in which the interface
+is present and the route still answers 404. `twoGatewayProxyPost()` logs a 404
+distinctly for that reason — the capability check has already ruled out "old
+base", so on this path a 404 means stale cache — and the window closes on a
+flush. There is deliberately no runtime fallback for it: a 404 that reopened
+the direct browser-to-API path would make a missed cache flush invisible
+instead of loud. `false` takes each of the three
 call sites back to the **direct browser-to-API call it made before the routes
 existed** — query-string client identification and merchant name restored, the
 order-intent body naming the merchant again, and no firewall token on any of
@@ -277,11 +290,13 @@ flag threading them, once the release process guarantees a version number
 corresponds to the code that shipped — the fix is to the version automation's
 content-blindness, not a floor raised high enough to look safe.
 
-The one
-exception is `/autofill/v1/buyer/current`, which is authenticated by the buyer's
-own cookie on the API's domain and so cannot be proxied at all; it carries the
-firewall token as an `X-WAF-TOKEN` header instead, and only where a merchant
-enabled that for the browser.
+The one exception is `/autofill/v1/buyer/current`, which is authenticated by
+the buyer's own cookie on the API's domain and so cannot be proxied at all; it
+carries the firewall token as an `X-WAF-TOKEN` header instead, and only where a
+merchant enabled that for the browser. A rejection of that call is reported
+rather than swallowed: 404 is its documented "no buyer" answer, so any OTHER
+status is logged, which is what keeps an appliance rejecting a tokenless
+request distinguishable from a buyer who simply has no account.
 
 **The popover is framework-free with a UMD tail**, which is why this checkout can
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
