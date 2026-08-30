@@ -910,6 +910,11 @@ $quoteDetails = json_encode(
      * @param {Object} body
      * @param {AbortSignal} [signal]
      * @returns {Promise<{ok: boolean, status: number, body: *}>}
+     *
+     * Route paths, request bodies and this envelope are the base module's
+     * contract. Changing a literal here fails this repo's tests, which carry
+     * the same literals independently; changing one in the base module no test
+     * here can see — accepted, and that drift surfaces only at runtime.
      */
     window.twoGatewayProxyPost = window.twoGatewayProxyPost || async function(restBaseUrl, path, body, signal) {
         const response = await fetch(restBaseUrl + path, {
@@ -1127,6 +1132,18 @@ $quoteDetails = json_encode(
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
+        if (typeof direct === 'string') {
+            // The removed (checkoutApiUrl, lookupId, client, clientV, merchant)
+            // signature: a string third argument is that call's `client`, which
+            // would otherwise read as a truthy `direct` and fetch a relative URL
+            // for "no addresses" with no error. Neither signature can be served
+            // from here, so this only makes the failure legible.
+            console.warn(
+                'Two: twoGatewayCompanyDetail was called with the removed '
+                + '(checkoutApiUrl, lookupId, client, clientV, merchant) signature; '
+                + 'it is now (restBaseUrl, lookupId, direct).'
+            );
+        }
         const controller = new AbortController();
         // No reason argument: nothing reads it, and the sibling search helper
         // does not pass one either.

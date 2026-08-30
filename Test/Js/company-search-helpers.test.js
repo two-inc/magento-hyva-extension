@@ -508,6 +508,26 @@ describe("shared company-search helpers", () => {
       expect(await promise).toEqual({ addresses: [{ city: "Oslo" }] });
     });
 
+    // An out-of-repo caller on the removed five-argument signature passes a
+    // string where `direct` now is. Neither signature can be served, so the
+    // contract under test is that it says so instead of returning "no
+    // addresses" with nothing in the console.
+    test("the removed positional signature is named in a warning", async () => {
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      const promise = window.twoGatewayCompanyDetail(
+        "https://api.test.invalid",
+        "lookup-111",
+        "magento-hyva",
+      );
+      fetchStub.last().respondWithStatus(404);
+      await promise;
+
+      expect(warn.mock.calls[0][0]).toContain(
+        "(checkoutApiUrl, lookupId, client, clientV, merchant)",
+      );
+    });
+
     // Without a check on each layer an error body parses cleanly and silently
     // produces "no addresses".
     test.each([

@@ -233,6 +233,10 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getFirewallToken(): string
     {
+        // Renaming either method here fails the unit test, which declares both
+        // on its own stub. A rename in the base module no test here can see:
+        // method_exists answers false, the header is dropped, and the firewall
+        // rejects the call — accepted, and the same limitation as the FQCN.
         if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
             return "";
         }
@@ -262,11 +266,10 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getIsProxyAvailable(): bool
     {
-        // BEFORE MERGE: re-verify this name against the PUBLISHED 2.3.0
-        // release artifact — the base branch it came from can still rename it,
-        // and a rename fails silently to the deprecated direct-call path. No
-        // test here can catch that: the unit test declares the interface
-        // itself, so it proves the mechanism, never the name.
+        // Renaming this literal here fails the unit test, which declares the
+        // same FQCN independently. A rename in the base module, or a published
+        // release that ships without the interface, is a cross-repo fact no
+        // test here can see — accepted: both fail closed to the direct call.
         return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
     }
 
