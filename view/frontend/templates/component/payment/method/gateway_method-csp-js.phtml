@@ -912,9 +912,8 @@ $quoteDetails = json_encode(
      * @returns {Promise<{ok: boolean, status: number, body: *}>}
      *
      * Route paths, request bodies and this envelope are the base module's
-     * contract. Changing a literal here fails this repo's tests, which carry
-     * the same literals independently; changing one in the base module no test
-     * here can see — accepted, and that drift surfaces only at runtime.
+     * contract — see CheckoutConfig::getIsProxyAvailable() for what a test
+     * here can and cannot catch about it.
      */
     window.twoGatewayProxyPost = window.twoGatewayProxyPost || async function(restBaseUrl, path, body, signal) {
         const response = await fetch(restBaseUrl + path, {
@@ -956,11 +955,14 @@ $quoteDetails = json_encode(
      *
      * @param {Object} options
      * @param {boolean} options.useProxy true only where the base carries the
-     *   proxy routes. THE FAIL-CLOSED RULE FOR ALL THREE HELPERS, stated here
-     *   once: anything but an explicit `true` — an omitted flag included —
-     *   takes the direct-call fallback, which works on every base, rather than
-     *   a proxy route that may not be registered. That fallback is DEPRECATED;
-     *   see CheckoutConfig::getIsProxyAvailable().
+     *   proxy routes. THE FAIL-CLOSED RULE FOR EVERY PROXY-SELECTION SITE,
+     *   stated here once: the flag is compared by identity against `true`, so
+     *   anything else — an omitted flag, or a `"false"` that survived a JSON
+     *   boundary — takes the direct-call fallback, which works on every base,
+     *   rather than a proxy route that may not be registered. The other three
+     *   sites are addressLookup(), placeOrderIntent() and
+     *   buildOrderIntentRequestBody(). That fallback is DEPRECATED; see
+     *   CheckoutConfig::getIsProxyAvailable().
      * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
      * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
@@ -1133,11 +1135,9 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
         if (typeof direct === 'string') {
-            // The removed (checkoutApiUrl, lookupId, client, clientV, merchant)
-            // signature: a string third argument is that call's `client`, which
-            // would otherwise read as a truthy `direct` and fetch a relative URL
-            // for "no addresses" with no error. Neither signature can be served
-            // from here, so this only makes the failure legible.
+            // On the removed (checkoutApiUrl, lookupId, client, …) signature a
+            // string third argument would read as a truthy `direct` and fetch a
+            // relative URL for "no addresses" with no error.
             console.warn(
                 'Two: twoGatewayCompanyDetail was called with the removed '
                 + '(checkoutApiUrl, lookupId, client, clientV, merchant) signature; '
@@ -1939,7 +1939,7 @@ $quoteDetails = json_encode(
                 const data = await window.twoGatewayCompanyDetail(
                     this.restBaseUrl,
                     lookupId,
-                    this.isProxyAvailable ? null : {
+                    this.isProxyAvailable === true ? null : {
                         checkoutApiUrl: this.checkoutApiUrl,
                         client: this.client,
                         clientV: this.clientV,
@@ -4111,7 +4111,7 @@ $quoteDetails = json_encode(
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
 
                     // DEPRECATED — see twoGatewayCompanySearch.
-                    if (!this.isProxyAvailable) {
+                    if (this.isProxyAvailable !== true) {
                         const queryParams = new URLSearchParams({
                             client: this.orderIntentConfig_extensionPlatformName,
                             client_v: this.orderIntentConfig_extensionDBVersion,
@@ -4219,7 +4219,7 @@ $quoteDetails = json_encode(
                     // The proxy resolves the merchant from the store's own API
                     // key and never relays a browser-supplied identity, so this
                     // pair is sent on the direct-call fallback only.
-                    ...(this.isProxyAvailable ? {} : {
+                    ...(this.isProxyAvailable === true ? {} : {
                         merchant_id: this.orderIntentConfig_merchant_id,
                         merchant_short_name: this.orderIntentConfig_merchant_shortName
                     })

@@ -269,7 +269,8 @@ runtime fallback for the 404 a stale route cache produces: a fallback that
 reopened the direct browser-to-API path would make a missed cache flush
 invisible instead of loud.
 
-`false` takes each of the three call sites back to the **direct
+`false` — and, the flag being read by identity, anything that is not exactly
+`true` — takes each of those routes back to the **direct
 browser-to-API call it made before the routes existed** — query-string client
 identification and merchant name restored, the
 order-intent body naming the merchant again, and no firewall token on any of

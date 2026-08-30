@@ -226,17 +226,14 @@ class CheckoutConfig implements ArgumentInterface
      * directly. Empty unless the merchant turned that on.
      *
      * Guarded, and guarded on one method for the pair, for the reasons set out
-     * in getIsProxyAvailable(). The guard is not optional here: the payment
-     * tile calls this unconditionally, ahead of every proxy-availability
-     * branch, so an unguarded call fatals the tile on exactly the bases the
-     * fallback exists for.
+     * in getIsProxyAvailable() — including the cross-repo limitation on the
+     * method names below. The guard is not optional here: the payment tile
+     * calls this unconditionally, ahead of every proxy-availability branch, so
+     * an unguarded call fatals the tile on exactly the bases the fallback
+     * exists for.
      */
     public function getFirewallToken(): string
     {
-        // Renaming either method here fails the unit test, which declares both
-        // on its own stub. A rename in the base module no test here can see:
-        // method_exists answers false, the header is dropped, and the firewall
-        // rejects the call — accepted, and the same limitation as the FQCN.
         if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
             return "";
         }
@@ -260,16 +257,32 @@ class CheckoutConfig implements ArgumentInterface
      * without setup:upgrade/cache:flush answers 404 until the flush, which
      * twoGatewayProxyPost() logs distinctly rather than falling back for.
      *
-     * One interface answers for all three routes, which land with their
-     * webapi/di registration in a single base commit. A string literal, not an
-     * imported constant: the import would itself fatal on the base this detects.
+     * The registry routes and the order-intent route are gated on two
+     * DIFFERENT base interfaces, and only the registry one is checked here.
+     * That is a valid proxy for the other, not an answer for it: the pair and
+     * the route registration behind them arrived in a single base commit —
+     * confirmed against the base's history, see this method's PR — so no
+     * installable base can carry one without the other. Should that ever stop
+     * being true, this needs a second check, not a reworded comment. A string
+     * literal, not an imported constant: the import would itself fatal on the
+     * base this detects.
+     *
+     * THE CROSS-REPO LIMITATION, stated here once for everything that shares
+     * it — this method, getFirewallToken(), twoGatewayProxyPost() and the
+     * suites over them. Every literal naming the base module (interface FQCN,
+     * method name, route path, request body, response envelope) is duplicated
+     * independently in this repo's tests, so changing one HERE fails them.
+     * Changing one in the base module is a fact no test here can see, and it
+     * surfaces only at runtime. Accepted, because every such drift fails closed
+     * to the direct browser-to-API call the fallback exists to make.
+     *
+     * The one call that cannot fail over is the buyer read: it is
+     * authenticated by the buyer's own cookie on the API's domain, which a
+     * server-side call cannot present, so it is direct on every base and the
+     * firewall token is the only protection available to it.
      */
     public function getIsProxyAvailable(): bool
     {
-        // Renaming this literal here fails the unit test, which declares the
-        // same FQCN independently. A rename in the base module, or a published
-        // release that ships without the interface, is a cross-repo fact no
-        // test here can see — accepted: both fail closed to the direct call.
         return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
     }
 

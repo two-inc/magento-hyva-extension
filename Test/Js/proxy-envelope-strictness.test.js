@@ -23,8 +23,6 @@ describe("proxy envelope strictness", () => {
     env = H.installHyvaEnvironment();
     fetchStub = H.stubFetch();
     H.loadSharedHelpers();
-    // Window-scoped and deliberately never expiring, so it outlives a test.
-    window.twoGatewayCompanySearchCache = new Map();
   });
 
   afterEach(() => {
@@ -138,9 +136,8 @@ describe("proxy envelope strictness", () => {
   });
 
   test("a non-404 proxy failure carries its status into the error", async () => {
-    // Both paths carry the upstream status in the message they log, which is
-    // the only place a 503 is distinguishable from any other failure. Only a
-    // 404 gets its own console.warn (the stale-cache test); this is the rest.
+    // The logged message is the only place a 503 is distinguishable from any
+    // other failure.
     jest.spyOn(console, "warn").mockImplementation(() => {});
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
 

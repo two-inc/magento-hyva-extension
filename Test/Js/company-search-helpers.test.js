@@ -260,9 +260,8 @@ describe("shared company-search helpers", () => {
       expect(result.items).toEqual([]);
     });
 
-    // A server-side registry call reports its failure as a 200 carrying
-    // `ok: false`. Both routes to a failure must land on the one outcome, or a
-    // buyer sees "no companies matched" for an outage.
+    // A server-side failure arrives as a 200 carrying `ok: false`, and both
+    // routes to one must land on the same outcome.
     test.each([
       {
         settle: (call) => call.respondWithStatus(503),
@@ -508,10 +507,8 @@ describe("shared company-search helpers", () => {
       expect(await promise).toEqual({ addresses: [{ city: "Oslo" }] });
     });
 
-    // An out-of-repo caller on the removed five-argument signature passes a
-    // string where `direct` now is. Neither signature can be served, so the
-    // contract under test is that it says so instead of returning "no
-    // addresses" with nothing in the console.
+    // Neither signature can be served, so the contract is that it says so
+    // rather than returning "no addresses" with nothing in the console.
     test("the removed positional signature is named in a warning", async () => {
       const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 

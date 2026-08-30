@@ -128,9 +128,8 @@ describe("order intent through the plugin's own backend", () => {
     const call = tile.fetchStub.last();
     const payload = JSON.parse(call.jsonBody().payload);
 
-    // Absent from the object, not merely undefined — a payload that decoded to
-    // `{}` would satisfy toBeUndefined() having sent nothing at all. The two
-    // fields that DO belong in it prove this is the real body.
+    // Absent from the object, not merely undefined: a payload decoding to `{}`
+    // would satisfy toBeUndefined() having sent nothing at all.
     expect(payload.buyer.company.organization_number).toBe("123456789");
     expect(payload.currency).toBe("GBP");
     expect(Object.keys(payload)).not.toContain("merchant_id");

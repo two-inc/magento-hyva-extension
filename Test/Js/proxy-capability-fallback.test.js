@@ -122,8 +122,14 @@ describe("order intent without the proxy route", () => {
     const call = tile.fetchStub.last();
 
     expect(call.url).toContain(API + "/v1/order_intent?");
-    expect(call.url).not.toContain("/rest/V1/two/");
     expect(call.init.method).toBe("POST");
+
+    // Every call, not just the last, and anchored outside the loop because a
+    // forEach body with no calls to inspect asserts nothing.
+    expect(tile.fetchStub.calls.length).toBeGreaterThan(0);
+    tile.fetchStub.calls.forEach((made) => {
+      expect(made.url).not.toContain("/rest/V1/two/");
+    });
 
     // With no server to set it, identification travels on the query string.
     const query = new URLSearchParams(call.url.split("?")[1]);
@@ -166,24 +172,6 @@ describe("order intent without the proxy route", () => {
     tile.fetchStub.last().respondWithStatus(500);
 
     await expect(pending).rejects.toThrow();
-  });
-
-  // The whole point of the fallback: a base without the route must not reach
-  // one. A 404 from an unregistered route is what a missing capability check
-  // would turn a checkout into.
-  test("the unregistered route is never addressed", async () => {
-    tile = mountTile(PROXY_ABSENT);
-    const pending = tile.component.placeOrderIntent();
-
-    // Anchored outside the loop: with no call to inspect, a forEach body
-    // asserts nothing and the test passes having covered nothing.
-    expect(tile.fetchStub.calls.length).toBeGreaterThan(0);
-    tile.fetchStub.calls.forEach((call) => {
-      expect(call.url).not.toContain("/rest/V1/two/order-intent");
-    });
-
-    tile.fetchStub.last().respond(APPROVED);
-    await pending;
   });
 });
 
@@ -348,7 +336,6 @@ describe("company lookups without the proxy routes", () => {
         restBaseUrl: REST_BASE,
         checkoutApiUrl: API,
         countryCode: "gb",
-        // Its own term: the cache is window-scoped and outlives a test.
         query: "zeta",
       });
 
@@ -399,6 +386,110 @@ describe("company lookups without the proxy routes", () => {
   });
 });
 
+/**
+ * Identity against `true` at all four sites, so that a merely truthy value — a
+ * `"false"` that survived an encoder — cannot address a route the base may not
+ * have registered.
+ */
+describe("the capability flag is read by identity at every selection site", () => {
+  let tile;
+
+  afterEach(() => tile && tile.restore());
+
+  const VALUES = [
+    { flag: true, proxied: true, label: "true, the boolean PHP emits" },
+    { flag: false, proxied: false, label: "false, the other boolean" },
+    { flag: undefined, proxied: false, label: "an omitted flag" },
+    {
+      flag: "false",
+      proxied: false,
+      label: 'a stringified "false" — truthy, and the bug this guards',
+    },
+    {
+      flag: "true",
+      proxied: false,
+      label: 'a stringified "true" is still not the boolean',
+    },
+    { flag: 1, proxied: false, label: "a numeric 1 is not the boolean" },
+    { flag: 0, proxied: false, label: "a numeric 0" },
+  ];
+
+  test.each(VALUES)("company search — $label", async ({ flag, proxied }) => {
+    tile = mountTile();
+
+    const pending = window.twoGatewayCompanySearch({
+      useProxy: flag,
+      restBaseUrl: REST_BASE,
+      checkoutApiUrl: API,
+      countryCode: "gb",
+      query: "acme",
+    });
+    const call = tile.fetchStub.last();
+
+    expect(call.url === REST_BASE + "/rest/V1/two/company-search").toBe(
+      proxied,
+    );
+    expect(call.url.startsWith(API + "/companies/v2/company?")).toBe(!proxied);
+
+    if (proxied) {
+      call.respondProxy({ items: [] });
+    } else {
+      call.respond({ items: [] });
+    }
+    await pending;
+  });
+
+  test.each(VALUES)("address lookup — $label", async ({ flag, proxied }) => {
+    tile = mountTile();
+    tile.component.isProxyAvailable = flag;
+
+    const pending = tile.component.addressLookup(
+      "lookup-111",
+      document.getElementById("checkout"),
+    );
+    const call = tile.fetchStub.last();
+
+    expect(call.url === REST_BASE + "/rest/V1/two/company").toBe(proxied);
+    expect(call.url.startsWith(API + "/companies/v2/company/lookup-111?")).toBe(
+      !proxied,
+    );
+
+    if (proxied) {
+      call.respondProxy({ addresses: [] });
+    } else {
+      call.respond({ addresses: [] });
+    }
+    await pending;
+  });
+
+  // Both order-intent reads at once: the route the check addresses, and the
+  // merchant pair the body carries only where no server resolves it.
+  test.each(VALUES)("order intent — $label", async ({ flag, proxied }) => {
+    tile = mountTile();
+    tile.component.isProxyAvailable = flag;
+
+    const pending = tile.component.placeOrderIntent();
+    const call = tile.fetchStub.last();
+    const sent = JSON.parse(call.init.body);
+
+    expect(call.url === REST_BASE + "/rest/V1/two/order-intent").toBe(proxied);
+    expect(call.url.startsWith(API + "/v1/order_intent?")).toBe(!proxied);
+
+    if (proxied) {
+      expect(Object.keys(sent)).toEqual(["payload"]);
+      const payload = JSON.parse(sent.payload);
+      expect(Object.keys(payload)).not.toContain("merchant_id");
+      expect(Object.keys(payload)).not.toContain("merchant_short_name");
+      call.respondProxy(APPROVED);
+    } else {
+      expect(sent.merchant_id).toBe("test-merchant-id");
+      expect(sent.merchant_short_name).toBe("Example Shop");
+      call.respond(APPROVED);
+    }
+    await pending;
+  });
+});
+
 /** Quoting the flag to match its neighbours would flip all three mounts open. */
 describe("the flag is emitted as a JS boolean, not a quoted string", () => {
   const MOUNTS = [
@@ -422,12 +513,22 @@ describe("the flag is emitted as a JS boolean, not a quoted string", () => {
   }
 
   test.each(MOUNTS)("%s", (label, template) => {
-    // Given both PHP answers / When rendered / Then each arrives unquoted.
-    expect(emitted(template)).toContain("true");
-    expect(emitted(template, PROXY_ABSENT)).toContain("false");
+    // Given both PHP answers / When rendered / Then the mount's own emission
+    // flips true→false and nothing arrives quoted.
+    const present = emitted(template);
+    const absent = emitted(template, PROXY_ABSENT);
 
-    const quoted = emitted(template)
-      .concat(emitted(template, PROXY_ABSENT))
+    // The mount is identified as the position that MOVED, never by matching
+    // "false" anywhere in the render: the engine's own `isProxyAvailable:
+    // false` default sits in the same file and would satisfy that on its own.
+    expect(absent).toHaveLength(present.length);
+    const moved = present
+      .map((value, index) => [value, absent[index]])
+      .filter(([before, after]) => before !== after);
+    expect(moved).toEqual([["true", "false"]]);
+
+    const quoted = present
+      .concat(absent)
       .filter((value) => /^['"]/.test(value));
     expect(quoted).toEqual([]);
   });
