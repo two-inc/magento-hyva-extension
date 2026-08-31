@@ -125,7 +125,7 @@ function <?= $gwBase ?>CompanySearchField() {
      */
     // Both cross-file globals guarded the same way as twoAddressReadSelection/
     // twoAddressWriteSelection above: gateway_method-csp-js.phtml's inline
-    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // block is a SEPARATE CSP-signed script from this one, so a cspToken/CSP
     // failure there must degrade this surface, not throw a ReferenceError
     // out of it.
     const twoGatewayComposeLiveFn = window.twoGatewayComposeLive

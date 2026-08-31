@@ -707,7 +707,7 @@ What the suite therefore pins, in the order that matters:
 - **The PHP-side CSP guard.** `Test/Unit/` owns that; duplicating it in JS would assert
   the same thing twice with a weaker tool. (Note: the tests named in TWO-25245 —
   `CspInlineScriptTemplateTest.php`, `QuoteDetailsEncodingTest.php` — are not on `staging`
-  yet; they arrive with the open CSP-nonce PR.)
+  yet; they arrive with the open CSP-token PR.)
 - **Most of the payment-method Alpine components** in `gateway_method-csp-js.phtml`. The
   template is loaded whole, so the order-intent recheck and the term chips both _evaluate_
   under test — but nothing asserts on their behaviour, and mutating either leaves the suite

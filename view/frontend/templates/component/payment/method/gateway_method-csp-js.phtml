@@ -70,7 +70,7 @@ $currentStoreId = $quoteModel->getCurrentStoreId();
 // JSON_HEX_APOS a buyer's apostrophe closes the literal, and without
 // JSON_HEX_TAG a buyer who types a script end tag terminates the whole block
 // early — script injection on the checkout, and a second way to hijack the
-// tag search that HyvaCsp uses to place the nonce.
+// tag search that HyvaCsp uses to place the CSP token.
 //
 // What this is NOT is a JSON payload anything reads. The value below is the
 // `quote` default, and initialize() replaces it with the object parsed from
@@ -3072,13 +3072,13 @@ $quoteDetails = json_encode(
             // Never emit a literal script start tag after the opening tag of
             // this block, not even inside a comment, and not in any
             // interpolated value: Hyva's HtmlPageContent locates the element it
-            // has to nonce with a *last* occurrence, *case-insensitive* search
-            // for "<" + "script", so a second one hijacks the match. The nonce
-            // then lands in the middle of the JS (nonce path) or the hash is
-            // taken over the wrong substring (hash path, used when full page
-            // cache is on and the layout is cacheable), and either way the real
-            // tag goes out without a valid source. Under the checkout's
-            // enforced CSP (hyva-checkout ships
+            // must attach the CSP token to with a *last* occurrence,
+            // *case-insensitive* search for "<" + "script", so a second one
+            // hijacks the match. The CSP token then lands in the middle of the
+            // JS (cspToken path) or the hash is taken over the wrong substring
+            // (hash path, used when full page cache is on and the layout is
+            // cacheable), and either way the real tag goes out without a
+            // valid source. Under the checkout's enforced CSP (hyva-checkout ships
             // csp/policies/storefront_hyva_checkout_index_index/scripts/inline
             // = 0) the browser then silently refuses the whole block and every
             // Alpine.data registration below is lost. Two\GatewayHyva\Test\Unit
