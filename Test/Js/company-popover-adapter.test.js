@@ -5,12 +5,12 @@
  * TWO-25503 — this checkout's half of the shared-capture contract.
  *
  * The popover, the capture controller, the identity and the sole-trader flow are
- * all the base plugin's, loaded from `Two_Gateway::`. None of them is in this
- * repo and none can be loaded here, so what is testable is the ADAPTER: the
- * nineteen-member host contract this checkout supplies, the six-member search API
- * built over the engine, and the two mount selectors that tell the surfaces
- * apart. Those are also the only places drift can enter — the popover owns the
- * copy, the class names and the DOM order, and the controller owns the modes.
+ * all the base plugin's. None of them is in this repo and none can be loaded
+ * here, so what is testable is the ADAPTER: the nineteen-member host contract
+ * this checkout supplies, the six-member search API built over the engine, and
+ * the two mount selectors that tell the surfaces apart. Those are also the only
+ * places drift can enter — the popover owns the copy, the class names and the
+ * DOM order, and the controller owns the modes.
  *
  * The harness stubs record rather than swallow (`.options`, `.calls`), because a
  * stub that dropped its options would make every assertion here vacuous.
@@ -22,7 +22,7 @@ const H = require("./hyva-harness");
 
 const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
 
-/** Every member `CompanySearchPanel` reads off its injected `search`. */
+/** Every member the shared panel reads off its injected `search`. */
 const SEARCH_API_CONTRACT = [
   "MIN_INPUT_LENGTH",
   "SEARCH_DEBOUNCE_MS",

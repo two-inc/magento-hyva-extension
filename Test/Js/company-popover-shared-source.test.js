@@ -7,7 +7,7 @@
  * This checkout used to carry its own popover, and the two drifted: the base
  * one put the mode chips inside the panel, this one left them in a separate row
  * the dropdown drew over. The fix is to stop having two, which means the page
- * must actually load `Two_Gateway`'s implementation — a reference nothing else
+ * must actually load the base plugin's implementation — a reference nothing else
  * in the suite would notice losing, because every other test drives the
  * component rather than the page that assembles it.
  */

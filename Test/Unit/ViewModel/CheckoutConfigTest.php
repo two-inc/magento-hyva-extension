@@ -120,10 +120,9 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 §7.1, corrected 2026-08-04: Hyvä has no setting of its own —
-     * the location is the negation of the CORE module's
-     * `enable_company_search` setting (Two\Gateway\Api\Config\RepositoryInterface::isCompanySearchEnabled()),
-     * read through the same injected ConfigRepository as
+     * TWO-25326 §7.1: Hyvä has no setting of its own — the location is the
+     * negation of the CORE module's `enable_company_search` setting, read
+     * through the same injected ConfigRepository as
      * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below. Enabled
      * (true, address-area) must yield false here; disabled (false, tile) must
      * yield true.

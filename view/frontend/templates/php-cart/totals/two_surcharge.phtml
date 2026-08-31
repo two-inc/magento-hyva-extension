@@ -21,7 +21,7 @@ declare(strict_types=1);
  * `segment.title` carries the surcharge description (or "Payment terms
  * fee"), `segment.value` the net amount; surcharge tax is folded into the
  * Tax line by the collector. This is the Hyvä counterpart of the Luma
- * cart line registered in Two_Gateway's checkout_cart_index.xml.
+ * cart line the base plugin registers.
  *
  * Note: the core rows use `x-html` for the title because some Magento
  * total titles carry intended markup. Our title is plain text (the
