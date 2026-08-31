@@ -11,7 +11,7 @@
  * cannot import a `.phtml` at all.
  *
  * Extracting the JS to a real `.js` file would be the clean answer, but that is
- * a production change, and PR #71 (TWO-25238, the CSP nonce fix) is open over
+ * a production change, and PR #71 (TWO-25238, the CSP-token fix) is open over
  * exactly these templates. So the harness does the extraction at TEST time
  * instead: it renders the template the way PHP would (minus PHP), pulls the
  * `<script>` bodies out, and evaluates them in global scope exactly as a

@@ -151,7 +151,7 @@ document.addEventListener('alpine:init', () => {
      * the surface exactly as it always behaved.
      */
     // Both cross-file globals guarded: gateway_method-csp-js.phtml's inline
-    // block is a SEPARATE CSP-signed script from this one, so a nonce/CSP
+    // block is a SEPARATE CSP-signed script from this one, so a cspToken/CSP
     // failure there must degrade this surface, not throw a ReferenceError
     // out of it.
     const twoGatewayComposeLiveFn = window.twoGatewayComposeLive

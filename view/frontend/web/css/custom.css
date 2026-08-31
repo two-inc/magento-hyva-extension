@@ -273,7 +273,7 @@ summary::marker {
  * below, the same way gateway_method.phtml's equivalent input already
  * carries its own explicit `focus:ring focus:ring-indigo-300`. This rule
  * cannot use that utility class directly — the input sits inside an
- * Alpine/CSP-nonce component and the `:focus-within` suppression above
+ * Alpine/CSP-token component and the `:focus-within` suppression above
  * needs a scoped `>`-combinator rule of its own regardless — so the colour
  * is restated as its literal RGB. `rgb(165, 180, 252)` is Tailwind's actual
  * `indigo-300` (`#A5B4FC`); a prior revision of this rule used

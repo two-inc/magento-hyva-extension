@@ -19,7 +19,7 @@ use PHPUnit\Framework\TestCase;
  *  - a script END tag, which closes the inline block early. That is script
  *    execution on the checkout AND it relocates the last tag-open / tag-close
  *    that Hyva\Theme\Model\HtmlPageContent::extractLastElement() searches for,
- *    so the CSP nonce is placed on the wrong element.
+ *    so the CSP token is placed on the wrong element.
  *  - a script OPEN tag, which does not close anything but is exactly the second
  *    occurrence that hijacks that last-occurrence search. Worse in company with
  *    `<!--`: an `<!--<script>` sequence puts the tokenizer into
@@ -235,7 +235,7 @@ class QuoteDetailsEncodingTest extends TestCase
             sprintf(
                 '%s encodes the buyer-controlled quote payload without neutralising a script end '
                 . 'tag. A product name or a buyer field carrying one closes the inline block '
-                . 'early: script execution on the checkout, and the CSP nonce lands on the wrong '
+                . 'early: script execution on the checkout, and the CSP token lands on the wrong '
                 . 'element. Add JSON_HEX_TAG and do not use JSON_UNESCAPED_SLASHES.',
                 basename($path)
             )

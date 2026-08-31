@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  * Hyva Checkout enforces CSP with inline scripts disallowed
  * (csp/policies/storefront_hyva_checkout_index_index/scripts/inline = 0,
  * report_only = 0, shipped by hyva-themes/magento2-hyva-checkout itself), so
- * every inline script needs the nonce or hash that
+ * every inline script needs the CSP token or hash that
  * Hyva\Theme\ViewModel\HyvaCsp::registerInlineScript() registers. That helper
  * finds the element to act on with
  * Hyva\Theme\Model\HtmlPageContent::extractLastElement(), which has two
@@ -26,7 +26,7 @@ use PHPUnit\Framework\TestCase;
  *  2. the opening tag is resolved by a LAST-occurrence, CASE-INSENSITIVE
  *     (mb_strripos) search for the tag-open string.
  *
- * Break (2) with a second literal tag-open and the nonce is written into the
+ * Break (2) with a second literal tag-open and the CSP token is written into the
  * middle of the JavaScript, or the hash is taken over the wrong substring,
  * while the real tag goes out without a valid source. Break (1) and the helper
  * registers nothing at all. Both fail silently: nothing throws server-side and
@@ -172,7 +172,7 @@ class CspInlineScriptTemplateTest extends TestCase
                 . 'called: anything emitted after the tag, or a call placed before it, means the '
                 . 'buffer does not end with a complete script element and the helper silently '
                 . 'registers nothing, so the enforced checkout CSP refuses the block. If this '
-                . 'template renders only an external src= include it needs no nonce and does not '
+                . 'template renders only an external src= include it needs no CSP token and does not '
                 . 'belong in view/ mentioning the tag-open string at all — move it or rename the '
                 . 'mention. Trailer was: %s',
                 basename($path),
