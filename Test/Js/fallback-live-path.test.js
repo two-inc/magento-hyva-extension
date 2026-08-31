@@ -34,8 +34,8 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
       '  <select id="shipping-country_id" name="country_id">',
       '    <option value="GB" selected>GB</option>',
       "  </select>",
-      '  <div id="root" class="two-company-search">',
-      '    <input type="text" id="field" value="" />',
+      '  <div id="root" class="two-company-search" data-two-capture-host="address">',
+      '    <input type="text" id="field" data-two-capture-field value="" />',
       "  </div>",
       "</div>",
     ].join("\n");
@@ -66,9 +66,7 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
     component.init();
     component.countryCode = "gb";
 
-    const pending = component
-      .companyPopoverSearchApi()
-      .searchCompanies({ term: "acme" });
+    const pending = component.capturePanelSearch({ term: "acme" });
     await H.flushPromises();
 
     const call = fetchStub.last();
@@ -89,10 +87,13 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
     const result = await pending;
     expect(result.items[0].companyId).toBe("123456789");
 
-    // Selecting the hit hands it to the engine in the engine's own shape.
-    env.companyPanels[env.companyPanels.length - 1].options.onSelect(
-      result.items[0],
-    );
+    // Selecting the hit hands it to the engine in the engine's own shape —
+    // `companyName`, not the panel-mapped `text`.
+    component.selectItem({
+      companyName: result.items[0].text,
+      companyId: result.items[0].companyId,
+      lookupId: result.items[0].lookupId,
+    });
     expect(component.companyName).toBe("Acme Widgets");
     expect(component.companyId).toBe("123456789");
   });

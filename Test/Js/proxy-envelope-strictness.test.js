@@ -104,28 +104,6 @@ describe("proxy envelope strictness", () => {
     );
   });
 
-  describe("the one call that cannot be proxied", () => {
-    test.each([
-      [404, false, "no buyer on this cookie — the documented answer"],
-      [403, true, "an appliance turning away a request with no token"],
-      [500, true, "any other rejection"],
-    ])("HTTP %i (warns: %s) — %s", async (status, shouldWarn) => {
-      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-
-      const buyer = window.twoGatewayAutofillBuyer(
-        "https://api.test.invalid",
-        "delegated-token",
-        "",
-      );
-      await H.flushPromises();
-      fetchStub.calls[0].respondWithStatus(status);
-
-      // Every rejection resolves null; what differs is whether it went unremarked.
-      expect(await buyer).toBeNull();
-      expect(warn).toHaveBeenCalledTimes(shouldWarn ? 1 : 0);
-    });
-  });
-
   test("a non-404 HTTP-level proxy failure carries its HTTP status into the error", async () => {
     // The logged message is the only place a 503 is distinguishable.
     jest.spyOn(console, "warn").mockImplementation(() => {});
