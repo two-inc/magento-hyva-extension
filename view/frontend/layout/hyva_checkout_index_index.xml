@@ -21,6 +21,17 @@
 		-->
 		<script src="Two_Gateway::js/model/company-search-panel.js"/>
 		<!--
+			And the capture CONTROLLER above it, from the same place and for the
+			same reason (TWO-25503): the modes, the mount, the country the search
+			runs against and the sole-trader flow are one implementation, framework
+			-free with a UMD tail, attaching `window.TwoCompanyIdentity`,
+			`window.TwoSoleTrader` and `window.TwoCompanyCaptureComponent`. This
+			checkout supplies only the Alpine-shaped half each of them asks for.
+		-->
+		<script src="Two_Gateway::js/model/company-identity.js"/>
+		<script src="Two_Gateway::js/model/sole-trader.js"/>
+		<script src="Two_Gateway::js/model/company-capture-component.js"/>
+		<!--
 			And its STYLING, from the same place and for the same reason. Copying
 			the popover's rules here would duplicate exactly what this ticket
 			de-duplicates.

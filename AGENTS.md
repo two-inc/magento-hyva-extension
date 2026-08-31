@@ -407,9 +407,28 @@ what stops that propagation is a **pure content match**, not a flag:
   shipping" drops the billing company record and mirrors the shipping company
   across in the same handler, which is what leaves the pin nothing to hold.
 - The tracked set is **five** fields: country, company name, company id, address
-  line 2, region. Not two. A buyer typing into address line 2 is exactly as
-  strong a signal of independent editing as one retyping the company, and the
-  earlier two-field set could not see it.
+  line 2, region. A buyer typing into address line 2 is exactly as strong a
+  signal of independent editing as one retyping the company.
+- **Per-surface state is keyed on the surface's own root node, never on the kind
+  of host.** One renderer mounts the company field on both address forms, so one
+  key per kind of host is one key shared between two live surfaces, and the
+  second mount tears down the first's subscription.
+- **The `data-two-capture-active` attribute IS the capture claim.** A surface
+  holding it hosts the control; a surface without it hosts nothing, may SEED an
+  identity nobody has captured into, and may never displace one — the pair, the
+  mode and the tile's `#company_name`/`#company_id` submit fields alike.
+  `claimCaptureField()` is the only thing that stamps it; `ownsCaptureField()`
+  reports on it and takes nothing, so asking the question in the window a morph
+  opens (server markup carries no claim) cannot itself grant ownership.
+- **Ownership is re-read on every notification, never captured when a
+  subscription is opened.** The claim transfers at runtime — an invoice-role form
+  mounting after the delivery one displaces it — and an ex-owner holding a stale
+  answer persisted the blob, announced the pick and raised an order intent
+  alongside the real owner.
+- **A surface's subscription is disposed by the re-render that removed it.** The
+  `element.updated` hook reaps every watcher whose root has left the document,
+  because a teardown that waits for the next mount never runs on a page with one
+  control.
 
 `twoGatewayIsBillingAddressPinned()` is the one answer to this question and
 every surface asks it — the tile's `initialize()` and the bridge's

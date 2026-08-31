@@ -163,6 +163,11 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       searchApi = panel.options.search;
     });
 
+    /** @returns {Object} the one page-level capture controller */
+    function capture() {
+      return env.captureControllers[env.captureControllers.length - 1];
+    }
+
     afterEach(() => {
       fetchStub.restore();
       env.restore();
@@ -208,9 +213,9 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       nameField.value = "Previously Chosen Ltd";
 
       return search("acm").then(function () {
-        expect(fetchStub.calls).toHaveLength(1);
-        expect(fetchStub.calls[0].url).toMatch(/acm/);
-        expect(fetchStub.calls[0].url).not.toMatch(/Previously/);
+        expect(fetchStub.searchCalls()).toHaveLength(1);
+        expect(fetchStub.searchCalls()[0].url).toMatch(/acm/);
+        expect(fetchStub.searchCalls()[0].url).not.toMatch(/Previously/);
         expect(nameField.value).toBe("Previously Chosen Ltd");
       });
     });
@@ -219,7 +224,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       const { pending } = await search("acm");
       expect(component.isSearching).toBe(true);
 
-      fetchStub.calls[0].respond({ items: [] });
+      fetchStub.searchCalls()[0].respond({ items: [] });
       await pending;
 
       expect(component.isSearching).toBe(false);
@@ -260,7 +265,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       // from would be a claim the buyer acts on before it is true.
       expect(component.isSearching).toBe(true);
 
-      settle(fetchStub.calls[0]);
+      settle(fetchStub.searchCalls()[0]);
       const result = await pending;
 
       expect(result.aborted).toBe(false);
@@ -275,20 +280,20 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       const second = searchApi.searchCompanies({ term: "acme" });
       await H.flushPromises();
 
-      fetchStub.calls[0].respond({ items: [] });
+      fetchStub.searchCalls()[0].respond({ items: [] });
       const firstResult = await first;
 
       expect(firstResult.aborted).toBe(true);
       expect(firstResult.items).toHaveLength(0);
 
-      fetchStub.calls[1].respond(ONE_HIT);
+      fetchStub.searchCalls()[1].respond(ONE_HIT);
       await second;
     });
 
     test("a query below the threshold puts nothing on the wire", async () => {
       const result = await searchApi.searchCompanies({ term: "ac" });
 
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(result.items).toHaveLength(0);
       // Not a failure either — the panel's own hint is what explains this
       // state, and an "unavailable" line over it would contradict it.
@@ -297,12 +302,15 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
 
     test("§1 taking a result fills the NAME field and captures the identifier", async () => {
       const { pending } = await search("acm");
-      fetchStub.calls[0].respond(ONE_HIT);
+      fetchStub.searchCalls()[0].respond(ONE_HIT);
       const result = await pending;
 
       panel.options.onSelect(result.items[0]);
 
-      expect(nameField.value).toBe("Acme Ltd");
+      // The panel repaints the field from this getter, so what it is told is
+      // what the buyer ends up looking at.
+      expect(panel.options.getDisplayText()).toBe("Acme Ltd");
+      expect(component.companyName).toBe("Acme Ltd");
       expect(component.companyId).toBe("123456789");
       expect(component.companyIdSource).toBe("registry");
       // §5: the number is displayed, read-only, only for a registry-supplied
@@ -318,7 +326,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       ["TWO:ST-0001", "<em>Acme</em> Ltd", "an internal placeholder is not"],
     ])("§1 a results row renders %s as %p (%s)", async (identifier, expected) => {
       const { pending } = await search("acm");
-      fetchStub.calls[0].respond({
+      fetchStub.searchCalls()[0].respond({
         items: [
           {
             name: "Acme Ltd",
@@ -340,16 +348,16 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     });
 
     test("§2 entering manual entry hands the field back to the buyer", () => {
-      component.enterManually();
+      capture().manualEntryMode();
 
       expect(component.manualMode).toBe(true);
       expect(panel.calls).toContain("releaseField");
     });
 
     test("§3 returning to search takes the field back and reopens the panel", () => {
-      component.enterManually();
+      capture().manualEntryMode();
 
-      component.enableSearch();
+      panel.options.onExitManualEntry();
 
       expect(component.manualMode).toBe(false);
       expect(panel.calls).toContain("reclaimField");
@@ -407,6 +415,11 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       document.body.innerHTML = "";
     });
 
+    /** @returns {Object} the one page-level capture controller */
+    function capture() {
+      return env.captureControllers[env.captureControllers.length - 1];
+    }
+
     test("§5 manual entry announces the pair, so an already-mounted tile updates", () => {
       // Review round 1. Deleting the address step's editable number input took
       // `onCompanyIdInput()` — the only dispatcher on the manual path — out of
@@ -419,7 +432,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       };
       window.addEventListener("shipping-company-selected", listener);
       try {
-        component.enterManually();
+        capture().manualEntryMode();
         nameField.value = "Widgets Inc";
         component.$el = nameField;
         component.onNameFieldInput();
@@ -444,7 +457,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       };
       window.addEventListener("shipping-company-selected", listener);
       try {
-        component.enterManually();
+        capture().manualEntryMode();
         nameField.value = "Acme Ltd";
         component.$el = nameField;
         component.onNameFieldInput();
@@ -478,21 +491,34 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       };
       window.addEventListener("shipping-company-selected", listener);
       try {
-        component.enterManually();
-        component.companyId = "99999999";
-        component.companyIdSource = "manual";
-        component.companyName = "Some Other Company Ltd";
+        env.identity.write(
+          {
+            companyName: "Some Other Company Ltd",
+            companyId: "99999999",
+            companyIdSource: "registry",
+          },
+          { authoritative: true },
+        );
+        heard.length = 0;
 
         nameField.value = "Ac";
         component.$el = nameField;
-        component.onNameFieldInput();
+        capture().commitManualCompany(nameField.value);
 
         // The announcement still happens — silence is what round 2 got wrong.
-        expect(heard).toHaveLength(1);
-        // And it carries a coherent pair: the new name, and NO identifier.
-        expect(heard[0].company_name).toBe("Ac");
-        expect(heard[0].company_id).toBe("");
-        expect(heard[0].company_id_source).toBe("");
+        expect(heard.length).toBeGreaterThan(0);
+        // Every one of them carries a coherent pair, and the last is the new
+        // name with NO identifier. The dropped number and the new name arrive
+        // as two notifications, so "the last one is right" is not enough on its
+        // own: the stale number must never be paired with the new name.
+        expect(
+          heard.some(
+            (detail) => detail.company_name === "Ac" && detail.company_id,
+          ),
+        ).toBe(false);
+        expect(heard[heard.length - 1].company_name).toBe("Ac");
+        expect(heard[heard.length - 1].company_id).toBe("");
+        expect(heard[heard.length - 1].company_id_source).toBe("");
         expect(component.companyId).toBe("");
       } finally {
         window.removeEventListener("shipping-company-selected", listener);
@@ -541,12 +567,17 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       // buyer who picked a company and then chose "not on the list" kept a
       // registry-vouched number, and the label went on showing it. §5 requires
       // manual entry to show no number at all.
-      component.companyId = "123456789";
-      component.companyIdSource = "registry";
-      component.companyName = "Acme Ltd";
+      env.identity.write(
+        {
+          companyName: "Acme Ltd",
+          companyId: "123456789",
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
       expect(component.companyIdDisplayVisible).toBe(true);
 
-      component.enterManually();
+      capture().manualEntryMode();
 
       expect(component.manualMode).toBe(true);
       expect(component.companyIdDisplayVisible).toBe(false);

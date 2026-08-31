@@ -2,10 +2,11 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326, 2026-08-05. The payment tile mounts the ONE company-search control
- * (form/field/company-search-control.phtml + `twoGatewayCompanySearchControl()`)
- * with no `x-data` of its own, so the control's state lands on the payment form's
- * component beside the tile label and the order-intent dispatch.
+ * TWO-25326, 2026-08-05. The payment tile mounts the ONE company-capture control
+ * (form/field/company-search-control.phtml + `twoGatewayCaptureSurfaceMixin()`
+ * over the base plugin's shared controller) with no `x-data` of its own, so the
+ * control's state lands on the payment form's component beside the tile label
+ * and the order-intent dispatch.
  *
  * That is a WIRING claim, and wiring is what the rest of this directory cannot
  * check. The unit suites mount a component against a hand-built fixture, so they
@@ -36,6 +37,307 @@
 const H = require("./hyva-harness");
 
 const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
+
+describe("a rebuild restoring a captured company", () => {
+  /*
+   * Magewire destroys and rebuilds the tile on every totals, address and term
+   * change. The mirror's priming pass looks like a fresh pick to every
+   * comparison it makes, so without the restore flag each rebuild would clear
+   * the verdict box, raise the spinner and put another order intent on the wire
+   * — the per-company dedup record is component-local and empty by then.
+   */
+  let env;
+  let fetchStub;
+
+  /**
+   * @param {{soleTraderInFlight: boolean}} [options]
+   * @returns {{intents: function, component: object, identity: object}}
+   */
+  function rebuildWithStoredCompany(options) {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input id="shipping-country_id" value="GB" />',
+      '<form id="tile-form">',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" data-two-capture-field />',
+      "  </div>",
+      '  <input id="company_id" />',
+      "</form>",
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+
+    window.twoGatewayWriteBillingCompany({
+      company_name: "Acme Ltd",
+      company_id: "123456789",
+      company_id_source: "registry",
+    });
+
+    if (options && options.soleTraderInFlight) {
+      env.identity.captureMode("soletrader");
+      env.identity.clear();
+    }
+
+    let intents = 0;
+    window.addEventListener("dispatch-order-intent", () => {
+      intents += 1;
+    });
+
+    const component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: document.getElementById("company_name"),
+      root: document.getElementById("tile-form"),
+    });
+    // The harness deliberately withholds `$watch`; the tile installs its own.
+    component.$watch = function () {};
+    component.initialize({ quote_id: "1", billing_country_id: "GB" });
+    return { intents: () => intents, component: component, identity: env.identity };
+  }
+
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    jest.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  test("puts no order intent on the wire", () => {
+    const rebuilt = rebuildWithStoredCompany();
+
+    expect(rebuilt.intents()).toBe(0);
+  });
+
+  test("still restores the company into the field that submits", () => {
+    rebuildWithStoredCompany();
+
+    expect(document.getElementById("company_name").value).toBe("Acme Ltd");
+  });
+
+  describe("during a live sole-trader signup", () => {
+    /*
+     * The signup outlives the component and never writes the selection blob, so
+     * the stored pair is the registered company that preceded it. Restoring it
+     * puts that company's name and number on screen under sole-trader mode, and
+     * offers "select a different sole trader" against an identity nobody
+     * adopted.
+     */
+    test.each([
+      ["captureMode", "soletrader"],
+      ["companyName", ""],
+      ["companyId", ""],
+    ])("leaves the shared identity's %s as %j", (member, expected) => {
+      const rebuilt = rebuildWithStoredCompany({ soleTraderInFlight: true });
+
+      expect(rebuilt.identity[member]()).toBe(expected);
+    });
+  });
+});
+
+describe("a payment tile that renders no capture field", () => {
+  /*
+   * The one control lives on the address step in this configuration, so the
+   * tile renders no company field at all — but its `isCompanySearchEnabled` is
+   * a hardcoded constant, so nothing in its own state says so. Without the
+   * field check its init() would still claim the page-level controller, point
+   * every host function at a surface with no field, and race the address step
+   * over which storage record the buyer's company lands in.
+   */
+  let env;
+  let component;
+
+  beforeEach(() => {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input id="shipping-country_id" value="GB" />',
+      // The address step owns the control here.
+      '<div class="two-company-search" data-two-capture-host="address">',
+      '  <input type="text" id="address-field" data-two-capture-field />',
+      "</div>",
+      // The tile, with no capture field of its own.
+      '<form id="tile-form"><div id="tile-root"></div></form>',
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+
+    component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: document.getElementById("tile-root"),
+      root: document.getElementById("tile-form"),
+    });
+  });
+
+  afterEach(() => {
+    env.restore();
+    jest.restoreAllMocks();
+  });
+
+  test("does not claim the page-level controller", () => {
+    component.mountCompanyPopover();
+
+    expect(window.twoGatewayCaptureSurfaceCurrent).toBe(null);
+    expect(env.captureControllers).toHaveLength(0);
+  });
+
+  test("does not stamp a claim on any field", () => {
+    component.mountCompanyPopover();
+
+    expect(document.querySelectorAll("input[data-two-capture-active]")).toHaveLength(0);
+  });
+
+  describe("but still tracks the company, because it renders the verdict", () => {
+    /*
+     * Claiming nothing means no identity mirror, and in this configuration the
+     * order-intent notice is the tile's only Two content. Every part of it —
+     * `refreshOrderIntentVerdict()`, the label, the supersede guard on an error
+     * reply — reads `companyId`, so a tile left at '' shows the buyer nothing at
+     * all, forever.
+     */
+    test("the sole-trader progress row follows the shared flow", () => {
+      // `x-show` tracks COMPONENT properties. The identity is a plain object no
+      // Alpine effect can depend on, so a getter reading it directly never
+      // repaints and the buyer watches an empty tile through the token mint.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      expect(component.soleTraderSpinnerVisible).toBe(false);
+
+      env.identity.beginFlight();
+
+      expect(component.soleTraderSpinnerVisible).toBe(true);
+      expect(component.soleTraderBusy).toBe(true);
+
+      // And it is the COMPONENT property the row reads, not the identity: only
+      // a component property is something an Alpine effect can depend on.
+      component.soleTraderBusy = false;
+      expect(component.soleTraderSpinnerVisible).toBe(false);
+    });
+
+    test("does not persist or announce what it does not own", () => {
+      // The tile reads the BILLING record and the address step owns the
+      // SHIPPING one. A tile that persisted from a mirror of the address step's
+      // identity would copy one into the other on every notification.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+      const announced = [];
+      const listener = (event) => announced.push(event.detail);
+      window.addEventListener("shipping-company-selected", listener);
+      const before = env.storage[H.BILLING_COMPANY_KEY];
+
+      try {
+        env.identity.write(
+          { companyName: "Mirrored Ltd", companyId: "999" },
+          { authoritative: true },
+        );
+      } finally {
+        window.removeEventListener("shipping-company-selected", listener);
+      }
+
+      expect(announced).toEqual([]);
+      expect(env.storage[H.BILLING_COMPANY_KEY]).toBe(before);
+      // …but the mirror still ran.
+      expect(component.companyName).toBe("Mirrored Ltd");
+    });
+
+    test.each([
+      ["companyName", "Acme Ltd"],
+      ["companyId", "12345678"],
+      ["search", "Acme Ltd"],
+    ])("a restore reaches %s", (member, expected) => {
+      window.twoGatewayWriteBillingCompany({
+        company_name: "Acme Ltd",
+        company_id: "12345678",
+        company_id_source: "registry",
+      });
+      component.$watch = function () {};
+
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      expect(component[member]).toBe(expected);
+    });
+
+    describe.each([
+      ["nothing in this tile's records", null],
+      [
+        "a different company in this tile's record",
+        {
+          company_name: "Tile Record Ltd",
+          company_id: "77777777",
+          company_id_source: "registry",
+        },
+      ],
+    ])("with %s", (label, record) => {
+      test.each([
+        ["companyName", "Address Step Ltd"],
+        ["companyId", "88888888"],
+      ])("the address step's %s survives this tile's init", (member, expected) => {
+        // Given a capture on the address step; when the tile initialises. This
+        // tile holds no claim, so neither an empty record — an authoritative
+        // write replaces both halves, empty ones included — nor a record naming
+        // some other company may reach the identity.
+        if (record) window.twoGatewayWriteBillingCompany(record);
+        env.identity.write(
+          {
+            companyName: "Address Step Ltd",
+            companyId: "88888888",
+            companyIdSource: "registry",
+          },
+          { authoritative: true },
+        );
+        component.$watch = function () {};
+
+        component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+        expect(env.identity[member]()).toBe(expected);
+      });
+    });
+
+    test("a hand-typed number keeps its provenance across the sync", () => {
+      // Re-deriving it as 'registry' makes hasVouchedNumber() true, which
+      // re-locks the number field over a value the buyer typed.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      document.getElementById("tile-root").dispatchEvent(
+        new CustomEvent("update-company-data", {
+          detail: {
+            companyName: "Acme Ltd",
+            companyId: "12345678",
+            companyIdSource: "manual",
+          },
+        }),
+      );
+
+      expect(env.identity.companyIdSource()).toBe("manual");
+      expect(env.identity.hasVouchedNumber()).toBe(false);
+    });
+
+    test.each([
+      ["companyName", "Acme Ltd"],
+      ["companyId", "12345678"],
+      ["search", "Acme Ltd"],
+    ])("a cross-step sync reaches %s", (member, expected) => {
+      // The harness withholds `$watch`; the tile installs its own.
+      component.$watch = function () {};
+      component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+      document.getElementById("tile-root").dispatchEvent(
+        new CustomEvent("update-company-data", {
+          detail: { companyName: "Acme Ltd", companyId: "12345678" },
+        }),
+      );
+
+      expect(component[member]).toBe(expected);
+    });
+  });
+});
 
 describe("the payment tile's mounted control (integration)", () => {
   let env;
@@ -94,7 +396,7 @@ describe("the payment tile's mounted control (integration)", () => {
   async function search(term, identifier) {
     const pending = panel.options.search.searchCompanies({ term: term });
     await H.flushPromises();
-    fetchStub.last().respond({
+    fetchStub.lastSearch().respond({
       items: [
         {
           name: "Example Trading Ltd",
@@ -117,6 +419,11 @@ describe("the payment tile's mounted control (integration)", () => {
    */
   function select(item) {
     panel.options.onSelect(item);
+  }
+
+  /** @returns {Object} the one page-level capture controller */
+  function capture() {
+    return env.captureControllers[env.captureControllers.length - 1];
   }
 
   test("the shipped markup and the shipped component resolve to each other", () => {
@@ -147,9 +454,9 @@ describe("the payment tile's mounted control (integration)", () => {
   test("searching goes on the wire, and leaves the captured name alone", async () => {
     const result = await search("example", "123456789");
 
-    expect(fetchStub.calls.length).toBe(1);
-    expect(fetchStub.last().url).toContain("country=GB");
-    expect(fetchStub.last().url).toContain("q=example");
+    expect(fetchStub.searchCalls().length).toBe(1);
+    expect(fetchStub.lastSearch().url).toContain("country=GB");
+    expect(fetchStub.lastSearch().url).toContain("q=example");
     expect(result.items).toHaveLength(1);
     // The panel holds the query in its own box; it never leaks into the field
     // that submits.
@@ -189,8 +496,16 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.companyTileLabelText).toBe("Example Trading Ltd");
   });
 
-  test("manual entry is reachable from the panel and hands the field back", () => {
-    component.enterManually();
+  test("the manual chip is withheld on this surface", () => {
+    // Manual entry captures no organisation number, and this tile hosts the
+    // control only when the address-step lookup that could supply one is off —
+    // so the chip would strand the buyer.
+    expect(capture().config().isCompanySearchEnabled).toBe(false);
+    expect(panel.options.isChipVisible("manual")).toBe(false);
+  });
+
+  test("manual entry hands the field back, and search takes it again", () => {
+    capture().manualEntryMode();
 
     expect(component.manualMode).toBe(true);
     expect(component.manualModeActive).toBe(true);
@@ -202,13 +517,13 @@ describe("the payment tile's mounted control (integration)", () => {
     // an identifier for a hand-typed name.
     expect(component.companyIdDisabled).toBe(false);
 
-    component.enableSearch();
+    capture().registeredMode();
     expect(component.searchModeActive).toBe(true);
     expect(panel.calls).toContain("reclaimField");
   });
 
   test("a hand-typed name is committed as the company, with no identifier", () => {
-    component.enterManually();
+    capture().manualEntryMode();
 
     nameField.value = "Unlisted Trading Ltd";
     component.$el = nameField;
@@ -241,7 +556,7 @@ describe("the payment tile's mounted control (integration)", () => {
     await H.flushPromises();
 
     // A request is on the wire and NOTHING has come back yet.
-    expect(fetchStub.calls.length).toBe(1);
+    expect(fetchStub.searchCalls().length).toBe(1);
     expect(component.orderIntentApprovedNotice).toBe("");
     expect(component.orderIntentNotAvailableNotice).toBe("");
     expect(component.orderIntentErrorNotice).toBe("");
@@ -249,23 +564,23 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(component.twoTileNotAvailableVisible).toBe(false);
     expect(component.twoTileErrorVisible).toBe(false);
 
-    fetchStub.last().respond({ items: [] });
+    fetchStub.lastSearch().respond({ items: [] });
     await pending;
   });
 
-  test("the panel-closed hook fires with the INCOMING company already written", async () => {
-    // Round 9: the outcome-only version of this test below cannot fail on the
-    // ordering it names, because fillCompanyData() clears or re-derives in the
-    // same synchronous call and erases the wrong-company repaint before anything
-    // can observe it. So observe the hook ITSELF: what the company was at the
-    // moment it ran is the whole claim.
+  test("the commit hook fires with the INCOMING company already written", async () => {
+    // The outcome-only version of this test below cannot fail on the ordering it
+    // names, because fillCompanyData() clears or re-derives in the same
+    // synchronous call and erases a wrong-company repaint before anything can
+    // observe it. So observe the hook ITSELF: what the company was at the moment
+    // it ran is the whole claim.
     select((await search("alpha", "111111111")).items[0]);
 
     const seenAtHookTime = [];
-    const real = component.refreshOrderIntentVerdict.bind(component);
-    component.refreshOrderIntentVerdict = function () {
+    const real = component.fillCompanyData.bind(component);
+    component.fillCompanyData = function (companyId, companyName) {
       seenAtHookTime.push({ id: this.companyId, name: this.companyName });
-      return real();
+      return real(companyId, companyName);
     };
 
     select((await search("beta", "222222222")).items[0]);
@@ -345,7 +660,7 @@ describe("the payment tile's mounted control (integration)", () => {
     const pending = panel.options.search.searchCompanies({ term: "example" });
     await H.flushPromises();
     expect(component.orderIntentApprovedNotice).toBe("");
-    fetchStub.last().respond({ items: [] });
+    fetchStub.lastSearch().respond({ items: [] });
     await pending;
 
     // …and abandoning it puts the box back, because the company on screen is
@@ -368,7 +683,7 @@ describe("the payment tile's mounted control (integration)", () => {
     await panel.options.search.searchCompanies({ term: "e" });
     await H.flushPromises();
 
-    expect(fetchStub.calls.length).toBe(0);
+    expect(fetchStub.searchCalls().length).toBe(0);
     expect(component.orderIntentApprovedNotice).toBe(
       "Available for Example Trading Ltd",
     );
@@ -380,5 +695,17 @@ describe("the payment tile's mounted control (integration)", () => {
     // The tile carries the number in its single `<name> (<number>)` label, so
     // the control's display would print it twice.
     expect(component.companyIdDisplayVisible).toBe(false);
+  });
+
+  test("the search text is discarded with the company, not remembered", async () => {
+    // `search` is re-read as the manual-entry name and gates the no-op return
+    // on commit, so a value surviving a discard resurrects a company the buyer
+    // abandoned.
+    select((await search("example", "123456789")).items[0]);
+    expect(component.search).toBe("Example Trading Ltd");
+
+    env.identity.clear();
+
+    expect(component.search).toBe("");
   });
 });

@@ -20,8 +20,12 @@
  * What is left for this suite is the ENGINE beneath the panel and the address
  * step's own wiring over it. Searches are driven two ways:
  *   - `runCompanySearch(term)` where the case is about engine state;
- *   - `companyPopoverSearchApi().searchCompanies({term})` where it is about
- *     what the buyer's search yields, since that is the path the panel takes.
+ *   - `capturePanelSearch({term})` where it is about what the buyer's search
+ *     yields, since that is the path the panel takes.
+ *
+ * Mode is driven through the page-level capture controller, never by assigning
+ * `manualMode`: that property is a MIRROR of the shared identity, rewritten on
+ * every notification, so an assignment to it decides nothing.
  */
 
 "use strict";
@@ -55,8 +59,8 @@ describe("company-name field picker", () => {
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
       "  <div><div><div>",
-      '    <div id="company-root" class="two-company-search">',
-      '      <input type="text" id="company-field" value="" />',
+      '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
+      '      <input type="text" id="company-field" data-two-capture-field value="" />',
       "    </div>",
       "  </div></div></div>",
       "</div>",
@@ -122,11 +126,14 @@ describe("company-name field picker", () => {
    * @returns {Promise<{pending: Promise<{items: Array, unavailable: boolean, aborted: boolean}>}>}
    */
   async function startPanelSearch(term) {
-    const pending = component
-      .companyPopoverSearchApi()
-      .searchCompanies({ term: term });
+    const pending = component.capturePanelSearch({ term: term });
     await H.flushPromises();
     return { pending: pending };
+  }
+
+  /** @returns {Object} the one page-level capture controller */
+  function capture() {
+    return env.captureControllers[env.captureControllers.length - 1];
   }
 
   test("the picker registers itself under the branded Alpine name", () => {
@@ -169,7 +176,7 @@ describe("company-name field picker", () => {
       // And the search behind it asks for nothing, because there is no query
       // left to ask for.
       await component.runCompanySearch("");
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(component.isSearching).toBe(false);
     });
 
@@ -196,14 +203,12 @@ describe("company-name field picker", () => {
     });
 
     test("manual entry mode never reaches the wire", async () => {
-      component.manualMode = true;
+      capture().manualEntryMode();
 
-      const result = await component
-        .companyPopoverSearchApi()
-        .searchCompanies({ term: "acme" });
+      const result = await component.capturePanelSearch({ term: "acme" });
 
       expect(result.aborted).toBe(true);
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(component.isSearching).toBe(false);
     });
 
@@ -216,7 +221,7 @@ describe("company-name field picker", () => {
       // The verdict from the previous search is dropped with the list, or
       // "No matches found" would sit under a query that was never run.
       expect(component.searchCompletedFor).toBeNull();
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(component.isSearching).toBe(false);
     });
 
@@ -226,7 +231,7 @@ describe("company-name field picker", () => {
       await component.runCompanySearch("acme");
       await component.runCompanySearch("acme");
 
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(component.isSearching).toBe(false);
       expect(env.messages).toHaveLength(1);
       expect(component.countrySelectionShown).toBe(true);
@@ -234,7 +239,7 @@ describe("company-name field picker", () => {
 
     test("an in-flight search is aborted when the buyer drops below three characters", async () => {
       const { pending } = await startSearch("acme");
-      expect(fetchStub.calls).toHaveLength(1);
+      expect(fetchStub.searchCalls()).toHaveLength(1);
 
       const shortened = component.runCompanySearch("ac");
       await Promise.all([pending, shortened]);
@@ -253,7 +258,7 @@ describe("company-name field picker", () => {
       const { pending } = await startSearch("acme");
       expect(component.isSearching).toBe(true);
 
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.lastSearch().respond({ items: [apiItem("Acme Widgets", "111")] });
       await pending;
 
       expect(component.items).toHaveLength(1);
@@ -268,20 +273,20 @@ describe("company-name field picker", () => {
     test("the search asks for the country the quote resolves to", async () => {
       const { pending } = await startSearch("acme");
 
-      const url = new URL(fetchStub.last().url);
+      const url = new URL(fetchStub.lastSearch().url);
       expect(url.searchParams.get("country")).toBe("GB");
       expect(url.searchParams.get("q")).toBe("acme");
 
       // Settled before finishing: an unsettled search leaves a live 30s timer
       // armed behind the test.
-      fetchStub.last().respond({ items: [] });
+      fetchStub.lastSearch().respond({ items: [] });
       await pending;
     });
 
     test("a genuine zero-result search is not flagged unavailable", async () => {
       const { pending } = await startPanelSearch("acme");
 
-      fetchStub.last().respond({ items: [] });
+      fetchStub.lastSearch().respond({ items: [] });
       const result = await pending;
 
       expect(result).toEqual({ items: [], unavailable: false, aborted: false });
@@ -293,7 +298,7 @@ describe("company-name field picker", () => {
 
     test("a failed search says nothing about whether matches exist", async () => {
       const { pending } = await startPanelSearch("acme");
-      fetchStub.last().networkError();
+      fetchStub.lastSearch().networkError();
       const result = await pending;
 
       expect(result.unavailable).toBe(true);
@@ -309,7 +314,7 @@ describe("company-name field picker", () => {
       '%#: is flagged unavailable, not as "no companies found" (%s)',
       async (settle) => {
         const { pending } = await startPanelSearch("acme");
-        settle(fetchStub.last());
+        settle(fetchStub.lastSearch());
         const result = await pending;
 
         expect(result.unavailable).toBe(true);
@@ -332,12 +337,12 @@ describe("company-name field picker", () => {
 
     test("a stale response cannot repopulate the list under a newer search", async () => {
       const { pending: first } = await startSearch("acm");
-      const staleRequest = fetchStub.last();
+      const staleRequest = fetchStub.lastSearch();
       const { pending: second } = await startSearch("acme");
 
       staleRequest.respond({ items: [apiItem("Stale Result", "999")] });
       await first;
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub.lastSearch().respond({ items: [apiItem("Acme Widgets", "111")] });
       await second;
 
       expect(component.items).toHaveLength(1);
@@ -347,8 +352,8 @@ describe("company-name field picker", () => {
     test("switching to manual entry mid-flight discards the results", async () => {
       const { pending } = await startSearch("acme");
 
-      component.enterManually();
-      fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+      capture().manualEntryMode();
+      fetchStub.lastSearch().respond({ items: [apiItem("Acme Widgets", "111")] });
       await pending;
 
       // Writing items here would leave a stale result list ready to appear the
@@ -424,7 +429,7 @@ describe("company-name field picker", () => {
       const { pending } = await startSearch("acme");
 
       component.selectItem(chosen);
-      fetchStub.last().respondWithStatus(500);
+      fetchStub.lastSearch().respondWithStatus(500);
       await Promise.all([pending, H.flushPromises()]);
 
       expect(component.isSearching).toBe(false);
@@ -434,10 +439,10 @@ describe("company-name field picker", () => {
     test("the detail record fills the address fields", async () => {
       component.selectItem(chosen);
 
-      expect(fetchStub.last().url).toContain(
+      expect(fetchStub.lastSearch().url).toContain(
         "/companies/v2/company/lookup-111",
       );
-      fetchStub.last().respond({
+      fetchStub.lastSearch().respond({
         addresses: [
           {
             city: "Oslo",
@@ -461,7 +466,7 @@ describe("company-name field picker", () => {
       document.querySelector('input[name="city"]').value = "Typed by the buyer";
 
       component.selectItem(chosen);
-      fetchStub.last().respondWithStatus(500);
+      fetchStub.lastSearch().respondWithStatus(500);
       await H.flushPromises();
 
       expect(document.querySelector('input[name="city"]').value).toBe(
@@ -476,20 +481,20 @@ describe("company-name field picker", () => {
         lookupId: "",
       });
 
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
     });
   });
 
   describe("manual entry", () => {
-    test("entering manual mode persists it and clears the list", () => {
-      component.items = [{ companyName: "Acme Widgets" }];
-      component.isOpen = true;
+    test("entering manual mode persists it and abandons the vouched number", () => {
+      capture().selectCompany({ text: "Acme Widgets", companyId: "111" });
 
-      component.enterManually();
+      capture().manualEntryMode();
 
       expect(component.manualMode).toBe(true);
-      expect(component.items).toEqual([]);
-      expect(component.isOpen).toBe(false);
+      // The registry number goes with the mode: nothing vouches for a company
+      // the buyer is about to type by hand.
+      expect(component.companyId).toBe("");
       expect(
         JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY))
           .manual_mode,
@@ -497,8 +502,10 @@ describe("company-name field picker", () => {
     });
 
     test("going back to search persists that too", () => {
-      component.enterManually();
-      component.enableSearch();
+      capture().selectCompany({ text: "Acme Widgets", companyId: "111" });
+      capture().manualEntryMode();
+
+      capture().registeredMode();
 
       expect(component.manualMode).toBe(false);
       expect(
@@ -507,16 +514,17 @@ describe("company-name field picker", () => {
       ).toBe(false);
     });
 
-    test("the click handlers stop propagation so the address modal stays open", () => {
-      const event = {
-        stopPropagation: jest.fn(),
-        stopImmediatePropagation: jest.fn(),
-      };
+    test("this surface owns no second manual-entry toggle", () => {
+      // The route in and out is the panel's chips, driving the page-level
+      // controller. The engine's own toggles are composed inert
+      // (`manualModeSupported: false`), so a call to one decides nothing —
+      // two live toggles over one identity is the duplication TWO-25503 removed.
+      capture().manualEntryMode();
 
-      component.enterManually(event);
+      component.enableSearch();
 
-      expect(event.stopPropagation).toHaveBeenCalled();
-      expect(event.stopImmediatePropagation).toHaveBeenCalled();
+      expect(component.manualMode).toBe(true);
+      expect(capture().identity().captureMode()).toBe("manual");
     });
   });
 
@@ -524,39 +532,31 @@ describe("company-name field picker", () => {
     test("does NOT re-run the manually-typed company name as a query", async () => {
       // The name field is a NAME, not a search box: replaying it would put the
       // buyer's hand-entered company name onto the wire as a registry query.
-      component.enterManually();
+      capture().manualEntryMode();
       field.value = "Beta Holdings";
       component.onNameFieldInput();
-      const before = fetchStub.calls.length;
+      const before = fetchStub.searchCalls().length;
 
-      component.enableSearch();
+      capture().registeredMode();
       await H.flushPromises();
 
-      expect(fetchStub.calls).toHaveLength(before);
+      expect(fetchStub.searchCalls()).toHaveLength(before);
       expect(field.value).toBe("Beta Holdings");
       expect(component.query).toBe("");
     });
 
-    test("a pick survives bouncing out to manual entry and back", async () => {
-      const started = await startSearch("Gamma Trading");
-      fetchStub.last().respond({ items: [apiItem("Gamma Trading", "333")] });
-      await started.pending;
+    test("the picked NAME survives bouncing out to manual entry and back", async () => {
+      // The number does not: manual entry abandons what vouched for it. The
+      // name does, because the buyer is still buying as that company.
+      capture().selectCompany({ text: "Gamma Trading", companyId: "333" });
+      const before = fetchStub.searchCalls().length;
 
-      component.selectItem({
-        companyName: "Gamma Trading",
-        companyId: "333",
-        lookupId: "",
-      });
-      await H.flushPromises();
-      const before = fetchStub.calls.length;
-
-      component.enterManually();
-      component.enableSearch();
+      capture().manualEntryMode();
+      capture().registeredMode();
       await H.flushPromises();
 
-      expect(fetchStub.calls).toHaveLength(before);
-      expect(field.value).toBe("Gamma Trading");
-      expect(component.companyId).toBe("333");
+      expect(fetchStub.searchCalls()).toHaveLength(before);
+      expect(component.companyName).toBe("Gamma Trading");
       expect(component.items).toEqual([]);
     });
 
@@ -569,7 +569,8 @@ describe("company-name field picker", () => {
       button.type = "button";
       root.appendChild(button);
       field.value = "Delta Logistics";
-      component.enterManually();
+      capture().manualEntryMode();
+      field.value = "Delta Logistics";
 
       component.$el = button;
 
@@ -578,7 +579,7 @@ describe("company-name field picker", () => {
       component.onNameFieldInput();
 
       expect(component.search).toBe("Delta Logistics");
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
     });
 
     test("never mistakes the company-number input for the search field", () => {
@@ -620,11 +621,11 @@ describe("company-name field picker", () => {
       });
       restored.init();
       field.value = "";
-      const before = fetchStub.calls.length;
+      const before = fetchStub.searchCalls().length;
 
-      restored.enableSearch();
+      capture().registeredMode();
 
-      expect(fetchStub.calls).toHaveLength(before);
+      expect(fetchStub.searchCalls()).toHaveLength(before);
       expect(restored.companyId).toBe("111");
       expect(restored.companyIdSource).toBe("registry");
       expect(restored.companyIdDisabled).toBe(true);
@@ -634,7 +635,7 @@ describe("company-name field picker", () => {
   describe("a Magewire re-render mid-flight", () => {
     test("does not write results into a detached component", async () => {
       const started = await startSearch("example");
-      expect(fetchStub.calls.length).toBe(1);
+      expect(fetchStub.searchCalls().length).toBe(1);
 
       // Magewire's diff-merge replaces the address-form subtree: this
       // component's root leaves the document while its request is in flight.
@@ -642,7 +643,7 @@ describe("company-name field picker", () => {
       // Magewire-bound address field — so the guard is in the engine.
       root.remove();
 
-      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub.lastSearch().respond({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items).toEqual([]);
@@ -660,7 +661,7 @@ describe("company-name field picker", () => {
       // which is how it shipped the first time.
       component.$root = undefined;
 
-      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub.lastSearch().respond({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items).toEqual([]);
@@ -671,7 +672,7 @@ describe("company-name field picker", () => {
     test("a component still in the document is written to as normal", async () => {
       const started = await startSearch("example");
 
-      fetchStub.last().respond({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub.lastSearch().respond({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items.length).toBe(1);
@@ -691,7 +692,7 @@ describe("company-name field picker", () => {
 
     test.each([
       [(c) => c.selectItem(c.items[1]), "a pick"],
-      [(c) => c.enterManually(), "switching to manual entry"],
+      [(c) => c.closeDropdown(), "the results going away"],
     ])("%#: resets the highlight (%s)", async (act) => {
       act(component);
       await H.flushPromises();
@@ -704,7 +705,7 @@ describe("company-name field picker", () => {
 
       expect(component.selectedIndex).toBe(-1);
 
-      fetchStub.last().respond({ items: [] });
+      fetchStub.lastSearch().respond({ items: [] });
       await pending;
     });
   });
@@ -728,6 +729,43 @@ describe("company-name field picker", () => {
       expect(names.filter((n) => n.startsWith("@keydown"))).toEqual([]);
       expect(names.filter((n) => n.startsWith("@click"))).toEqual([]);
     });
+
+    /**
+     * Every Alpine binding the control renders, as `[label, attribute name]`.
+     *
+     * CSP-friendly Alpine looks the WHOLE attribute string up as a KEY, so a
+     * binding naming something the component does not define paints nothing and
+     * says nothing. The payment tile's own enumeration cannot reach these: the
+     * harness substitutes one `x-data` value for both mount points, so the
+     * control's subtree reads as a foreign scope there.
+     *
+     * @returns {Array<Array<string>>}
+     */
+    function controlBindings() {
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const found = [];
+      Array.from(doc.querySelectorAll("*")).forEach((element) => {
+        Array.from(element.attributes).forEach((attr) => {
+          const bound =
+            attr.name.startsWith("x-show") ||
+            attr.name.startsWith("x-text") ||
+            attr.name.startsWith("@") ||
+            attr.name.startsWith(":");
+          if (!bound || attr.value === "") return;
+          found.push([attr.name + '="' + attr.value + '"', attr.value]);
+        });
+      });
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    }
+
+    test.each(controlBindings())(
+      "%s names a key the component defines",
+      (_label, expression) => {
+        expect(component[expression]).toBeDefined();
+      },
+    );
 
     test("keeps the debounced input binding manual entry commits through", () => {
       // Under Hyvä's CSP-friendly Alpine the attribute is a key lookup, so a

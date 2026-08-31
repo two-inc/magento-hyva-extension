@@ -81,16 +81,16 @@ describe("address-step company number", () => {
     //
     // Two inputs: the company NAME field, and the number driver described at
     // ID_DRIVER — a test stand-in for the payment step's input, since this
-    // surface renders none. The driver carries `.company_id` so that
-    // `companyNameField()`'s exclusion is exercised, and sits FIRST for the
-    // same reason: document order must not be what makes the resolver right.
+    // surface renders none. Only the name field carries
+    // `data-two-capture-field`, and the driver sits FIRST, so document order is
+    // not what makes `companyNameField()` right.
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
       "  <div><div><div>",
-      '    <div id="company-root">',
+      '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
       '      <input type="text" class="company_id" data-test-company-id-driver="true" value="" />',
-      '      <input type="text" id="company-field" value="" />',
+      '      <input type="text" id="company-field" data-two-capture-field value="" />',
       "    </div>",
       "  </div></div></div>",
       "</div>",
@@ -138,7 +138,31 @@ describe("address-step company number", () => {
       root: root,
     });
     mounted.init();
+    // The mount's own restore announcement has a test of its own below.
+    selectedEvents.length = 0;
     return mounted;
+  }
+
+  /** @returns {Object} the one popover the shared controller mounted */
+  function panel() {
+    expect(env.companyPanels).toHaveLength(1);
+    return env.companyPanels[0];
+  }
+
+  /** @returns {Object} the page-level capture controller */
+  function capture() {
+    expect(env.captureControllers).toHaveLength(1);
+    return env.captureControllers[0];
+  }
+
+  /** The "Enter manually" chip. Abandons the number in play and blanks the field. */
+  function enterManual() {
+    capture().manualEntryMode();
+  }
+
+  /** The "Registered company" chip — the way back out. */
+  function leaveManual() {
+    capture().registeredMode();
   }
 
   /** The stored blob, as the accessors left it. */
@@ -176,11 +200,9 @@ describe("address-step company number", () => {
    * @returns {Promise<void>}
    */
   async function typeQuery(text) {
-    const pending = component
-      .companyPopoverSearchApi()
-      .searchCompanies({ term: text });
+    const pending = component.capturePanelSearch({ term: text });
     await H.flushPromises();
-    const call = fetchStub.last();
+    const call = fetchStub.lastSearch();
     if (call !== undefined && !call.settled) {
       call.respond({ items: [] });
     }
@@ -188,22 +210,18 @@ describe("address-step company number", () => {
   }
 
   /**
-   * Pick a search hit.
-   *
-   * There is no echo to simulate any more. The old helper had to fire a search
-   * tick by hand, because
-   * selectItem() writing the chosen name back into the company-name field
-   * re-entered the SEARCH path through that field's `input` binding, and two
-   * one-shot flags (`awaitingSelectionEcho`, `isSelecting`) existed to swallow
-   * it. TWO-25326 §1 removed the path and both flags with it: the name field's
-   * `input` handler is `onNameFieldInput`, which does nothing in search mode
-   * beyond syncing `search`.
+   * Pick a search hit, through the popover — the one route a registry pick
+   * takes. It lands on the shared identity, which is what this surface mirrors.
    *
    * @param {Object} item
    * @returns {Promise<void>}
    */
   async function pick(item) {
-    component.selectItem(item);
+    panel().options.onSelect({
+      text: item.companyName,
+      companyId: item.companyId,
+      lookupId: item.lookupId,
+    });
     await H.flushPromises();
   }
 
@@ -414,10 +432,10 @@ describe("address-step company number", () => {
       expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("a pick WITH an identifier fills and locks the field", () => {
+    test("a pick WITH an identifier fills and locks the field", async () => {
       component = mount({ quote_id: "test-quote-1" });
 
-      component.selectItem(hit("Acme Ltd", "111"));
+      await pick(hit("Acme Ltd", "111"));
 
       expect(component.companyId).toBe("111");
       expect(component.companyName).toBe("Acme Ltd");
@@ -425,10 +443,10 @@ describe("address-step company number", () => {
       expect(storedSelection().company_id).toBe("111");
     });
 
-    test("a pick WITHOUT an identifier leaves the field empty and typeable", () => {
+    test("a pick WITHOUT an identifier leaves the field empty and typeable", async () => {
       component = mount({ company_id: "999" });
 
-      component.selectItem(hit("Example Trading Ltd", ""));
+      await pick(hit("Example Trading Ltd", ""));
 
       // The previous pick's number must not survive beside a new company's
       // name — that submits company A while the buyer selected company B.
@@ -459,7 +477,7 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       expect(component.companyIdDisabled).toBe(true);
 
-      component.enterManually();
+      enterManual();
       await typeName("Acme Limited");
 
       expect(component.companyIdDisabled).toBe(false);
@@ -468,7 +486,7 @@ describe("address-step company number", () => {
     test("it stays unlocked while the buyer keeps typing", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      component.enterManually();
+      enterManual();
 
       await typeName("Acme Limite");
       await typeName("Acme Limited");
@@ -485,7 +503,7 @@ describe("address-step company number", () => {
       // name beside the PREVIOUS company's number, uneditable.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      component.enterManually();
+      enterManual();
 
       await typeName("Different Company Ltd");
       await typeName("Different Company Ltd");
@@ -493,39 +511,46 @@ describe("address-step company number", () => {
       expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("a name still matching its pick keeps the number locked", async () => {
-      // The point of the lock: a registry-supplied number must not be typeable
-      // over while the field still names the company it belongs to. Driven
-      // through manual mode's re-entry into search, which is the one route
-      // that recomputes the lock against unchanged text.
-      component = mount({ quote_id: "test-quote-1" });
-      await pick(hit("Acme Ltd", "111"));
+    test.each([
+      ["Acme Ltd", "re-typing the captured name"],
+      ["Acme Limited", "typing a different one"],
+    ])(
+      "manual entry abandons a vouched number and %s does not bring it back (%s)",
+      async (typed) => {
+        // The chip means "the company in play is not the one I want", so the
+        // number goes with the mode switch, before anything is typed.
+        component = mount({ quote_id: "test-quote-1" });
+        await pick(hit("Acme Ltd", "111"));
+        expect(component.companyIdDisabled).toBe(true);
 
-      component.enterManually();
-      await typeName("Acme Ltd");
-      component.enableSearch();
+        enterManual();
+        expect(component.companyId).toBe("");
 
-      expect(component.companyIdDisabled).toBe(true);
-    });
+        await typeName(typed);
+
+        expect(component.companyId).toBe("");
+        expect(component.companyIdDisabled).toBe(false);
+        expect(storedSelection().company_id).toBe("");
+        expect(storedSelection().company_name).toBe(typed);
+      },
+    );
 
     test("bouncing through manual mode does not re-lock an unvouched number", async () => {
-      // The sole-trader route is enterManually(), and a buyer who takes it and
-      // then returns to search must not find the number field locked — nothing
-      // has vouched for a number for the name they are holding.
+      // A buyer who takes the manual-entry chip and returns to search must not
+      // find the number field locked — nothing has vouched for a number for the
+      // name they are holding.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Example Trading Ltd", ""));
       expect(component.companyIdDisabled).toBe(false);
 
-      component.enterManually();
+      enterManual();
       expect(component.companyIdDisabled).toBe(false);
 
-      component.enableSearch();
+      leaveManual();
       expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("manual mode unlocks a number a registry pick had vouched for", () => {
-      // And returning to search re-locks it, because the pick is still intact:
-      // same single writer, no second piece of state saying otherwise.
+    test("manual mode unlocks the number a registry pick vouched for, by abandoning it", () => {
       component = mount({
         company_name: "Acme Ltd",
         company_id: "111",
@@ -533,21 +558,23 @@ describe("address-step company number", () => {
       });
       expect(component.companyIdDisabled).toBe(true);
 
-      component.enterManually();
+      enterManual();
       expect(component.companyIdDisabled).toBe(false);
+      expect(component.companyId).toBe("");
 
-      component.enableSearch();
-      expect(component.companyIdDisabled).toBe(true);
+      leaveManual();
+
+      // Nothing vouches for a number for the name now held, so the way back out
+      // leaves the field typeable rather than re-locking it.
+      expect(component.companyIdDisabled).toBe(false);
+      expect(component.companyIdSource).toBe("");
     });
   });
 
   describe("init restores the completed-selection flag (TWO-25288 element 5 round 2)", () => {
-    // `isCompanySelected` gates `belowFieldManualEntryVisible` — the
-    // manual-entry link below the field. init() restores `companyName` and
-    // `companyId` from storage but, pre-fix, left `isCompanySelected` at its
-    // `false` default: a page reload after a completed pick showed the
-    // "my company is not on the list" link beside a field that already held a
-    // valid, restored answer.
+    // `isCompanySelected` says a company has actually been captured, and the
+    // mount has to restore it: a page reload after a completed pick otherwise
+    // reads as an untouched field.
     test("a restored pick with a valid id marks the selection complete", () => {
       component = mount({
         company_name: "Acme Ltd",
@@ -600,7 +627,7 @@ describe("address-step company number", () => {
       });
       expect(component.isCompanySelected).toBe(true);
 
-      component.enterManually();
+      enterManual();
       await typeName("Acme Limited");
 
       expect(component.isCompanySelected).toBe(false);
@@ -641,6 +668,7 @@ describe("address-step company number", () => {
         company_name: "Acme Ltd",
         company_id: "12345678",
         company_id_source: "manual",
+        manual_mode: false,
       });
       expect(component.companyId).toBe("12345678");
     });
@@ -653,6 +681,62 @@ describe("address-step company number", () => {
       expect(selectedEvents).toHaveLength(1);
       expect(selectedEvents[0].company_id).toBe("12345678");
       expect(selectedEvents[0].company_name).toBe("Acme Ltd");
+    });
+
+    test("the mount announces the company it restored", () => {
+      // An already-mounted payment tile syncs from this event, so a restored
+      // company that never announced would leave the tile on the previous one.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Acme Ltd",
+          company_id: "111",
+          company_id_source: "registry",
+        }),
+      );
+
+      H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: nameField,
+        root: root,
+      }).init();
+
+      expect(selectedEvents).toHaveLength(1);
+      expect(selectedEvents[0]).toMatchObject({
+        company_name: "Acme Ltd",
+        company_id: "111",
+        company_id_source: "registry",
+      });
+    });
+
+    test("and marks it a restore, so the tile syncs without re-checking", () => {
+      // The tile answers an unmarked announcement with an order intent, and its
+      // per-company dedup record is emptied by the same rebuild — so an unmarked
+      // restore puts a fresh request on the wire for every re-render.
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Acme Ltd",
+          company_id: "111",
+          company_id_source: "registry",
+        }),
+      );
+
+      H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: nameField,
+        root: root,
+      }).init();
+
+      expect(selectedEvents[0].restored).toBe(true);
+    });
+
+    test("a company the buyer typed is not marked a restore", () => {
+      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
+
+      typeNumber("12345678");
+
+      expect(selectedEvents[0].restored).toBe(false);
     });
 
     test("re-firing with an unchanged value announces nothing", () => {
@@ -697,12 +781,12 @@ describe("address-step company number", () => {
       // nothing recorded the name — and placement needs a name beside the
       // number. This is the sole-trader path on this surface.
       component = mount({ quote_id: "test-quote-1" });
-      component.enterManually();
+      enterManual();
 
       await typeName("Jo Smith Trading");
 
       expect(storedSelection().company_name).toBe("Jo Smith Trading");
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
     });
 
     test("a name edit in MANUAL mode announces the pair it leaves behind", async () => {
@@ -725,23 +809,27 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       selectedEvents.length = 0;
 
-      component.enterManually();
+      enterManual();
       await typeName("Different Company Ltd");
 
       expect(storedSelection().company_name).toBe("Different Company Ltd");
-      expect(selectedEvents).toHaveLength(1);
-      // The announced pair must carry the NEW name and NO number — never the
-      // new name beside the old company's identifier.
-      expect(selectedEvents[0].company_name).toBe("Different Company Ltd");
-      expect(selectedEvents[0].company_id).toBe("");
-      expect(selectedEvents[0].company_id_source).toBe("");
+      // Two announcements: the mode switch abandoning the number, then the name
+      // edit. Neither may pair a name with the other company's identifier.
+      expect(selectedEvents).toHaveLength(2);
+      expect(selectedEvents[0]).toMatchObject({
+        company_name: "Acme Ltd",
+        company_id: "",
+      });
+      expect(selectedEvents[1].company_name).toBe("Different Company Ltd");
+      expect(selectedEvents[1].company_id).toBe("");
+      expect(selectedEvents[1].company_id_source).toBe("");
     });
 
     test("a name edit in SEARCH mode still announces nothing", async () => {
       // The other half of the same rule, and the reason the fix above is scoped
-      // to manual mode. In search mode selectItem() is the single writer and
-      // announces the complete pair itself; the name field cannot be edited by
-      // hand there at all, so an announcement from this path could only ever
+      // to manual mode. In search mode the registry pick is the single writer
+      // and announces the complete pair itself; the name field cannot be edited
+      // by hand there at all, so an announcement from this path could only ever
       // carry a partial pair.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
@@ -752,15 +840,17 @@ describe("address-step company number", () => {
       expect(selectedEvents).toEqual([]);
     });
 
-    test("an intact pick is never overwritten by its own field", async () => {
+    test("re-typing the captured name in manual entry keeps the name", async () => {
+      // The mode switch abandons the number; it must not take the name with it,
+      // because that is all manual entry captures.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
-      component.enterManually();
+      enterManual();
       await typeName("Acme Ltd");
 
       expect(storedSelection().company_name).toBe("Acme Ltd");
-      expect(storedSelection().company_id).toBe("111");
+      expect(component.companyName).toBe("Acme Ltd");
     });
   });
 
@@ -787,7 +877,7 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       expect(storedSelection().company_id).toBe("111");
 
-      component.enterManually();
+      enterManual();
       await typeName("Different Company Ltd");
 
       expect(component.companyId).toBe("");
@@ -817,7 +907,6 @@ describe("address-step company number", () => {
         company_id: "111",
         company_id_source: "registry",
       });
-      expect(component.search).toBe("");
       expect(component.companyName).toBe("Acme Ltd");
 
       await typeQuery("Different Company Ltd");
@@ -835,19 +924,19 @@ describe("address-step company number", () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
-      component.enterManually();
+      enterManual();
       await typeName("Different Company Ltd");
 
       expect(Boolean(storedSelection().company_id)).toBe(false);
     });
 
     test("switching to manual entry and renaming clears it too", async () => {
-      // Same mismatch by the other route: enterManually() does not recompute the
-      // pair, so the picked number used to travel with a hand-typed name.
+      // The same mismatch by the other route: a hand-typed name must not travel
+      // with the picked number.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
-      component.enterManually();
+      enterManual();
       await typeName("Jo Smith Trading");
 
       expect(component.companyId).toBe("");
@@ -860,10 +949,10 @@ describe("address-step company number", () => {
       // and dropping the number is exactly what can create it.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      component.enterManually();
+      enterManual();
       await typeName("Jo Smith Trading");
 
-      component.enableSearch();
+      leaveManual();
 
       expect(component.companyIdDisabled).toBe(false);
     });
@@ -883,7 +972,7 @@ describe("address-step company number", () => {
       // The payment tile, which DOES still have a typeable number field, keeps
       // its own state and is unaffected.
       component = mount({ quote_id: "test-quote-1" });
-      component.enterManually();
+      enterManual();
       await typeName("Jo Smith Trading");
       typeNumber("1234567");
 
@@ -897,16 +986,20 @@ describe("address-step company number", () => {
       expect(storedSelection().company_name).toBe("Jo Smith Trading Ltd");
     });
 
-    test("an intact pick keeps its number through a re-fired handler", async () => {
+    test("a re-fired handler on unchanged text announces nothing further", async () => {
+      // The handler fires more than once for the same text — a second debounce
+      // window, a blur, a Magewire echo — and only a real change may announce.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
+      enterManual();
+      await typeName("Jo Smith Trading");
+      selectedEvents.length = 0;
 
-      component.enterManually();
-      await typeName("Acme Ltd");
-      await typeName("Acme Ltd");
+      await typeName("Jo Smith Trading");
 
-      expect(component.companyId).toBe("111");
-      expect(storedSelection().company_id).toBe("111");
+      expect(selectedEvents).toEqual([]);
+      expect(storedSelection().company_name).toBe("Jo Smith Trading");
+      expect(storedSelection().company_id).toBe("");
     });
   });
 
@@ -915,7 +1008,7 @@ describe("address-step company number", () => {
      * REPLACES "only a settled name is published", which pinned a length guard
      * on the search path's commit. TWO-25326 §1 removed that commit outright:
      * in search mode the name field is not a query box and not a capture field
-     * — only `selectItem()` writes the company name. That is strictly stronger
+     * — only a registry pick writes the company name. That is strictly stronger
      * than the old guard, which still published every fragment at or above the
      * threshold, so the assertions are now "nothing is written", at every
      * length, including one long enough to search.
@@ -948,7 +1041,7 @@ describe("address-step company number", () => {
       // The path that is deliberately unchanged: with no registry hit to
       // supply one, the typed name is the only name the order will ever carry.
       component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
-      component.enterManually();
+      enterManual();
 
       await typeName("Jo Smith Trading");
 
@@ -971,7 +1064,7 @@ describe("address-step company number", () => {
       // and the popover is mounted unconditionally there.
       await typeQuery("Acme Widgets Limited");
 
-      expect(fetchStub.calls).toHaveLength(0);
+      expect(fetchStub.searchCalls()).toHaveLength(0);
       expect(component.isSearching).toBe(false);
       expect(component.items).toEqual([]);
     });
@@ -997,7 +1090,7 @@ describe("address-step company number", () => {
       // stale number.
       expect(selectedEvents).toHaveLength(2);
       expect(selectedEvents[0].company_name).toBe("Acme Widgets Limited");
-      expect(selectedEvents[0].company_id).toBeUndefined();
+      expect(selectedEvents[0].company_id).toBe("");
       expect(selectedEvents[1]).toMatchObject({
         company_name: "Acme Widgets Limited",
         company_id: "87654321",
@@ -1084,7 +1177,7 @@ describe("address-step company number", () => {
       // transcribes on the payment step must stay theirs to correct, so it
       // must not appear here as inert, vouched-for text.
       component = mount({ quote_id: "test-quote-1" });
-      component.enterManually();
+      enterManual();
       typeNumber("1234567");
 
       const state = readDisplayState();
@@ -1104,7 +1197,7 @@ describe("address-step company number", () => {
       await pick(hit("Acme Ltd", "111"));
       expect(readDisplayState().displayVisible).toBe(true);
 
-      component.enterManually();
+      enterManual();
       await typeName("Acme Limited");
 
       expect(readDisplayState().displayVisible).toBe(false);

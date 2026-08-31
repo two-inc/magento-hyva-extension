@@ -30,13 +30,35 @@ function read(relativePath) {
 const CHECKOUT_LAYOUT = 'view/frontend/layout/hyva_checkout_index_index.xml';
 const CUSTOM_CSS = 'view/frontend/web/css/custom.css';
 
+/**
+ * The whole capture implementation, in load order. `Two_Gateway::`, not
+ * `Two_GatewayHyva::` — this module owns no second copy of any of them to drift
+ * from the first, and each is framework-free with a UMD tail so it attaches its
+ * global with no RequireJS on the page.
+ */
+const BASE_MODULES = [
+    ['company-search-panel.js', 'TwoCompanySearchPanel', 'the popover'],
+    ['company-identity.js', 'TwoCompanyIdentity', 'the captured company'],
+    ['sole-trader.js', 'TwoSoleTrader', 'the hosted signup flow'],
+    ['company-capture-component.js', 'TwoCompanyCaptureComponent', 'the capture controller']
+];
+
 describe('the popover implementation is loaded from the base plugin', () => {
-    test('the checkout page pulls in Two_Gateway\'s panel module', () => {
-        // `Two_Gateway::`, not `Two_GatewayHyva::` — the whole point is that
-        // this module owns no second implementation to drift from the first.
-        expect(read(CHECKOUT_LAYOUT)).toContain(
-            '<script src="Two_Gateway::js/model/company-search-panel.js"/>'
-        );
+    test.each(BASE_MODULES)(
+        'the checkout page pulls in Two_Gateway\'s %s (%s — %s)',
+        (file) => {
+            expect(read(CHECKOUT_LAYOUT)).toContain(
+                `<script src="Two_Gateway::js/model/${file}"/>`
+            );
+        }
+    );
+
+    test('this module ships no copy of any of them', () => {
+        // A file of the same name here would be loaded by nothing and drift
+        // unnoticed — which is how the two popovers diverged.
+        BASE_MODULES.forEach(([file]) => {
+            expect(fs.existsSync(path.join(ROOT, 'view/frontend/web/js/model', file))).toBe(false);
+        });
     });
 
     test('it is loaded before this module\'s own stylesheet', () => {

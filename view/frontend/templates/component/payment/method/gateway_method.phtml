@@ -253,8 +253,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * The progress row below is what the chip row's in-field spinner
              * became. It cannot go into the panel — the panel builds only the
              * search spinner, driven by the search API — and the wait it covers
-             * is real: the token mint and the buyer read both happen before the
-             * hosted signup popup can open.
+             * is real: a signup round trip is outstanding.
              */
             ?>
             <div
@@ -267,25 +266,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 <span><?= $escaper->escapeHtml(__('Opening sole trader sign-up')) ?></span>
                 <span class="two-company-search__spinner" aria-hidden="true"></span>
             </div>
-            <?php
-            /*
-             * The blocked-popup fallback. The signup popup opens after an await
-             * (the tokens are minted on the click, not up front), so a browser
-             * can refuse it; this is the buyer's way through when it does. Shown
-             * only once the tokens exist — see `hasSignupTokens()`.
-             *
-             * A <button>, not an <a href="#">: it takes no navigation and needs
-             * no `.prevent` modifier to be safe under CSP Alpine.
-             */
-            ?>
-            <p x-cloak x-show="soleTraderPopupMessageVisible">
-                <button type="button"
-                        class="two-soletrader-link"
-                        data-name="soletrader_signup_link"
-                        @click="openSoleTraderSignupFromLink">
-                    <?= $escaper->escapeHtml(__('Click here to log in or sign up as a Sole Trader.')) ?>
-                </button>
-            </p>
             <?php
             /*
              * Only meaningful once an identity has been adopted, so its own
@@ -526,7 +506,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              *
              * No `x-data`: the control's state lives on THIS form's component
              * (`PaymentFormWithValidation`, which composes
-             * `twoGatewayCompanySearchControl`), because the tile label, the
+             * `twoGatewayCaptureSurfaceMixin`), because the tile label, the
              * order-intent dispatch and the Company Number block below all read
              * the same captured-company state. `$twoControlAlpineData` is
              * therefore empty and the control inherits this scope.
@@ -537,6 +517,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * keep reading it by exactly the name and id they always did.
              */
             $twoControlAlpineData = '';
+            $twoControlCaptureHost = 'tile';
             $twoControlInputClass = 'company_name block w-full form-input grow renderer-text'
                 . ' border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate';
             $twoControlInputAttributes = 'id="company_name" name="payment[company_name]"'

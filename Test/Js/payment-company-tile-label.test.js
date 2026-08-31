@@ -192,9 +192,13 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
   let component;
 
   beforeEach(() => {
+    // The two `data-two-capture-*` attributes are how the shared controller
+    // tells the two mount points apart; without them it mounts no popover here.
     document.body.innerHTML = [
       '<div id="payment-root">',
-      '  <input type="text" id="company_name" value="" />',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" data-two-capture-field value="" />',
+      "  </div>",
       '  <input type="text" id="company_id" data-name="company_id" value="" />',
       '  <div data-name="company_tile_label"></div>',
       "</div>",
@@ -230,6 +234,12 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    * @param {string} id the mapped identifier — '' when the hit had none
    * @returns {Object}
    */
+  /** @returns {Object} the one popover the shared controller mounted */
+  function panel() {
+    expect(env.companyPanels).toHaveLength(1);
+    return env.companyPanels[0];
+  }
+
   function pickerItem(name, id) {
     return {
       companyName: name,
@@ -397,11 +407,15 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // keyed on it directly would leave the block hidden for a company the
       // buyer has just typed away from.
       //
-      // The name field is the ONE input, shared between modes (TWO-25326,
-      // 2026-08-05 ruling), and the panel holds it in search mode — a registry
-      // pick was made in SEARCH mode above, so editing the name by hand is only
-      // reachable through manual mode, exactly as the shipped control gates it.
-      component.enterManually();
+      // Driven through the popover and the shared identity, because the mirror
+      // that state lands on is written from the identity's notification — a pick
+      // put straight onto the component would be overwritten by the first one.
+      panel().options.onSelect({
+        text: "Example Trading Ltd",
+        companyId: "123456789",
+        lookupId: "lookup-1",
+      });
+      env.identity.captureMode("manual");
       const nameInput = document.getElementById("company_name");
       nameInput.value = "Other Example";
       const previousEl = component.$el;
@@ -838,17 +852,23 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       }
     });
 
-    test("toggling manual entry and back dispatches no extra intent", () => {
-      // `enterManually()` / `enableSearch()` flip mode only, they never write
-      // `companyName` / `companyId`, so the notice survives them and there is
-      // nothing to repaint.
+    test("re-selecting an offered mode dispatches no extra intent", () => {
+      // A mode chip flips mode only, never `companyName` / `companyId`, so the
+      // notice survives it and there is nothing to repaint. Sole trader is
+      // excluded: it launches the hosted signup, which is a different subject.
       const live = mountLive();
       try {
         live.component.selectItem(pickerItem(SAME[0], SAME[1]));
         expect(live.intents).toEqual([SAME[1]]);
 
-        live.component.enterManually();
-        live.component.enableSearch();
+        panel()
+          .options.getChips()
+          .filter(
+            (chip) =>
+              chip.mode !== "soletrader" &&
+              panel().options.isChipVisible(chip.mode),
+          )
+          .forEach((chip) => chip.onActivate());
 
         expect(live.intents).toEqual([SAME[1]]);
         expect(live.component.orderIntentDecisions[SAME[1]]).toBeDefined();

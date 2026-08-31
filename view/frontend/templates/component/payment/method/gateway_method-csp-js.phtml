@@ -1064,130 +1064,6 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * Per-country memo of the registry's supported company types (TWO-25503).
-     *
-     * Keyed by lower-cased ISO code. Only a SUCCESSFUL answer is memoized —
-     * an error resolves to `[]` for this call and records nothing, so the next
-     * country change retries rather than inheriting a transport failure as
-     * "this country is business-only".
-     */
-    window.TWO_GATEWAY_SUPPORTED_COMPANY_TYPES = window.TWO_GATEWAY_SUPPORTED_COMPANY_TYPES
-        || new Map();
-
-    /**
-     * The registry's supported-company-types answer for a billing country, via
-     * the plugin's own server-side relay — the merchant API key never reaches
-     * the browser.
-     *
-     * @param {string} restBaseUrl Magento link base URL, no trailing slash
-     * @param {string} countryCode ISO country code, any casing
-     * @returns {Promise<Array<string>>}
-     */
-    window.twoGatewaySupportedCompanyTypes = window.twoGatewaySupportedCompanyTypes
-        || async function(restBaseUrl, countryCode) {
-        const key = String(countryCode || '').toLowerCase();
-        if (!key) return [];
-        if (window.TWO_GATEWAY_SUPPORTED_COMPANY_TYPES.has(key)) {
-            return window.TWO_GATEWAY_SUPPORTED_COMPANY_TYPES.get(key);
-        }
-        const url = restBaseUrl + '/rest/V1/two/supported-company-types/'
-            + encodeURIComponent(key);
-        try {
-            const response = await fetch(url, { headers: { Accept: 'application/json' } });
-            if (!response.ok) throw new Error('Error response from ' + url);
-            const types = await response.json();
-            const resolved = Array.isArray(types) ? types : [];
-            window.TWO_GATEWAY_SUPPORTED_COMPANY_TYPES.set(key, resolved);
-            return resolved;
-        } catch (error) {
-            console.error('Two_GatewayHyva: supported-company-types failed', error);
-            return [];
-        }
-    };
-
-    /**
-     * Mint the delegation + autofill token pair for the sole-trader signup and
-     * the buyer read that follows it.
-     *
-     * @param {string} restBaseUrl Magento link base URL, no trailing slash
-     * @param {string} cartId
-     * @returns {Promise<Object>} `{delegation_token, autofill_token}`
-     */
-    window.twoGatewaySoleTraderTokens = window.twoGatewaySoleTraderTokens
-        || async function(restBaseUrl, cartId) {
-        const url = restBaseUrl + '/rest/V1/two/get-tokens';
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cartId: cartId })
-        });
-        if (!response.ok) throw new Error('Error response from ' + url);
-        const json = await response.json();
-        return json[0] || {};
-    };
-
-    /**
-     * Read the buyer the Two cookie identifies, or null.
-     *
-     * A 404 is the "no buyer on this cookie" answer, not a failure, and so is
-     * every transport error here: the caller's next step is signup either way,
-     * and a throw would take the chip click with it.
-     *
-     * @param {string} checkoutApiUrl
-     * @param {string} autofillToken
-     * @returns {Promise<Object|null>}
-     */
-    window.twoGatewayAutofillBuyer = window.twoGatewayAutofillBuyer
-        || async function(checkoutApiUrl, autofillToken) {
-        try {
-            const response = await fetch(checkoutApiUrl + '/autofill/v1/buyer/current', {
-                credentials: 'include',
-                headers: { 'two-delegated-authority-token': autofillToken }
-            });
-            if (response.ok) return await response.json();
-            return null;
-        } catch (error) {
-            return null;
-        }
-    };
-
-    /**
-     * Build the hosted sole-trader signup URL.
-     *
-     * PDEV-4669: the popup renders its country-specific identity step (the US
-     * Onfido biometric-consent screen, for one) only when the URL carries
-     * `&country=`; without it the hosted form silently defaulted to GB. The
-     * caller must therefore source `country` from the QUOTE's own billing
-     * address — server-resolved — and never from an address-form field, or a
-     * buyer could self-select which country's identity checks they face.
-     * This function has no DOM access of its own, which is what keeps that
-     * rule enforceable from a test.
-     *
-     * @param {Object} options
-     * @param {string} options.checkoutPageUrl
-     * @param {string} options.delegationToken
-     * @param {string} options.autofillToken
-     * @param {string} options.autofillData base64 signup prefill
-     * @param {string} [options.country] ISO country code, any casing
-     * @param {boolean} [options.autoselect] false stops the hosted flow
-     *        re-picking the registration already adopted
-     * @returns {string}
-     */
-    window.twoGatewaySoleTraderSignupUrl = window.twoGatewaySoleTraderSignupUrl
-        || function(options) {
-        const opts = options || {};
-        const params = new URLSearchParams({
-            businessToken: opts.delegationToken || '',
-            autofillToken: opts.autofillToken || '',
-            autofillData: opts.autofillData || ''
-        });
-        const country = String(opts.country || '').trim().toUpperCase();
-        if (country) params.set('country', country);
-        if (opts.autoselect === false) params.set('autoselect', 'false');
-        return opts.checkoutPageUrl + '/soletrader/signup?' + params.toString();
-    };
-
-    /**
      * The address form holding the INVOICE role, for a caller that is not
      * mounted in an address form at all — the payment tile.
      *
@@ -1249,7 +1125,7 @@ $quoteDetails = json_encode(
      *   markup of its own to hang a toggle link on — its visible input is
      *   rendered by Hyvä Checkout's own address-book form).
      * @param {boolean} [options.querySplit=false] set by
-     *   `twoGatewayCompanySearchControl()`, so both surfaces that mount the
+     *   `twoGatewayCaptureSurfaceMixin()`, so both surfaces that mount the
      *   control get it (TWO-25326 §1): the visible name field and the panel's
      *   own query box are different state, so a keystroke in the panel never
      *   overwrites the captured name until a result is picked. Only the
@@ -1964,7 +1840,6 @@ $quoteDetails = json_encode(
      * mismatch is silent, degrading to the untranslated English.
      */
     window.twoGatewayPanelStrings = window.twoGatewayPanelStrings || {
-        'Enter company name to search': '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
         'Search for company': '<?= $escaper->escapeJs(__('Search for company')) ?>',
         'Enter %1 or more characters': '<?= $escaper->escapeJs(__('Enter %1 or more characters')) ?>',
         'No matches found': '<?= $escaper->escapeJs(__('No matches found')) ?>',
@@ -1974,54 +1849,6 @@ $quoteDetails = json_encode(
         'Sole trader': '<?= $escaper->escapeJs(__('Sole trader')) ?>',
         'Enter manually': '<?= $escaper->escapeJs(__('Enter manually')) ?>',
     };
-
-    /*
-     * Per-page counter for the attribute each mount stamps on its own company
-     * field. One page can hold two of these — the address-step field renderer
-     * is registered globally and mounts on the delivery form AND the invoice
-     * form — and the panel resolves its host with a document-wide selector, so
-     * each mount needs one nothing else answers to.
-     */
-    window.twoGatewayCompanyFieldSeq = window.twoGatewayCompanyFieldSeq || 0;
-
-    /**
-     * Every popover built on this page, so an abandoned one can be torn down.
-     *
-     * The per-component closure is not enough. A Magewire re-render re-invokes
-     * the Alpine factory, which produces a FRESH closure whose `panel` is null,
-     * so the rebuilt component builds a second panel — and the base panel
-     * adopts the existing DOM rather than duplicating it, which hides the
-     * problem: two instances then hold live listeners on the same query field
-     * and the same document, so one keystroke searches twice.
-     *
-     * Reaped by OWNERSHIP, never by count: a page legitimately holds two panels
-     * at once — the address field renderer mounts on the delivery form AND the
-     * invoice form — so what makes one abandoned is that another panel has
-     * taken its field, not that there is more than one.
-     *
-     * Connectedness alone is not the test. It catches only the case where the
-     * re-render replaced the subtree; when Magewire morphs and KEEPS the input
-     * in place, the abandoned panel's field is still in the document and still
-     * the one the new panel is binding to — two instances on one input, and
-     * `_unbind` is per-instance, so every keystroke searches twice.
-     */
-    window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels || [];
-
-    /**
-     * @param {Object} panel the newly built popover
-     * @param {HTMLElement|null} field the field it is taking over
-     */
-    function twoGatewayRegisterCompanyPanel(panel, field) {
-        window.twoGatewayCompanyPanels = window.twoGatewayCompanyPanels
-            .filter(function (existing) {
-                const held = existing.getField()[0];
-                const abandoned = !held || !held.isConnected || held === field;
-                if (!abandoned) return true;
-                existing.destroy();
-                return false;
-            });
-        window.twoGatewayCompanyPanels.push(panel);
-    }
 
     /*
      * Every live company control on the page, so a Magewire re-render can put
@@ -2037,13 +1864,42 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts || [];
 
+    /**
+     * Dispose the identity subscription of every surface no longer in the
+     * document.
+     *
+     * The registry is keyed on the surface's root node, so a departed root can
+     * never be reached to dispose again and its subscription would go on
+     * writing storage and dispatching cross-step events on every notification.
+     * Driven by the re-render hook below, which is the event that actually
+     * removes a surface — not by the next surface's mount.
+     */
+    function twoGatewayReapCaptureIdentityWatchers() {
+        const registry = window.twoGatewayCaptureIdentityWatchers;
+        if (!(registry instanceof Map)) return;
+        registry.forEach(function (watcher, node) {
+            if (!node || node.isConnected !== false) return;
+            watcher.dispose();
+            registry.delete(node);
+        });
+    }
+
+    window.twoGatewayReapCaptureIdentityWatchers = twoGatewayReapCaptureIdentityWatchers;
+
     /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */
     function twoGatewayRemountCompanyPopovers() {
+        twoGatewayReapCaptureIdentityWatchers();
+        // Over a SNAPSHOT: a remount can register a new mount, and an entry
+        // appended to the array being filtered is never visited and so is
+        // dropped by the assignment.
+        const live = window.twoGatewayCompanyMounts.filter(function (mount) {
+            if (!mount.root.isConnected) return false;
+            mount.remount();
+            return true;
+        });
         window.twoGatewayCompanyMounts = window.twoGatewayCompanyMounts
             .filter(function (mount) {
-                if (!mount.root.isConnected) return false;
-                mount.remount();
-                return true;
+                return live.indexOf(mount) !== -1 || mount.root.isConnected;
             });
     }
 
@@ -2070,66 +1926,245 @@ $quoteDetails = json_encode(
     }
 
     /**
-     * THE company-capture control — the Hyvä ADAPTER over one shared popover.
+     * THE HYVÄ HALF of the shared company-capture controller (TWO-25503).
      *
-     * TWO-25503. The popover itself is not here and must never be again: it is
-     * `Two_Gateway/js/model/company-search-panel.js`, loaded by
-     * `hyva_checkout_index_index.xml` and reached as
-     * `window.TwoCompanySearchPanel`. This checkout used to carry a second
-     * implementation, and the two drifted exactly where it mattered — the base
-     * one puts the mode chips INSIDE the panel, this one left them in a separate
-     * tile row the dropdown drew over, so the buyer was offered the other
-     * capture modes only while the thing that offers them was shut.
+     * The controller is not here and must never be again: it is
+     * `Two_Gateway/js/model/company-capture-component.js`, loaded by
+     * `hyva_checkout_index_index.xml` with the identity, the sole-trader flow
+     * and the popover it drives. What follows is the Alpine-shaped half those
+     * four ask for by name.
      *
-     * What is left here is what is genuinely Hyvä's:
-     *  - resolving the company-name input inside an Alpine/Magewire subtree that
-     *    is destroyed and rebuilt under the buyer;
-     *  - the six-member search API the panel asks for, expressed over
-     *    `twoGatewayCompanySearchEngine()`, which still owns the request, the
-     *    captured company, address write-back, storage, sole trader and order
-     *    intent;
-     *  - which chips this checkout offers and what each one does.
-     *
-     * @param {Object} options engine options, plus `translations` — the panel's
-     *   strings are English literals and Magento's translator is not reachable
-     *   from it.
-     * @returns {Object} an Alpine component body — compose a surface's own
-     *   members OVER it with `twoGatewayComposeLive`.
+     * One controller per PAGE, held on `window` rather than in an Alpine
+     * component: Magewire rebuilds the surface on every totals, address and term
+     * change, and a controller living inside one would take the buyer's captured
+     * company, their minted tokens and their open signup popup down with it.
      */
-    window.twoGatewayCompanySearchControl = window.twoGatewayCompanySearchControl || function(options) {
+
+    /** The live surface. Every host function reads it fresh: the component is
+     * replaced on every re-render while the controller is not. */
+    window.twoGatewayCaptureSurfaceCurrent = window.twoGatewayCaptureSurfaceCurrent || null;
+
+    function twoGatewayCaptureSurface() {
+        return window.twoGatewayCaptureSurfaceCurrent;
+    }
+
+    function twoGatewayOnSurface(member, args, fallback) {
+        const surface = twoGatewayCaptureSurface();
+        if (!surface || typeof surface[member] !== 'function') return fallback;
+        return surface[member].apply(surface, args || []);
+    }
+
+    /**
+     * The company-capture controller for this page, built on first use.
+     *
+     * @param {Object} settings the surface's own config — the same values it
+     *        passes the engine, plus which of the two hosts it is.
+     * @returns {Object} the shared `CompanyCaptureComponent`
+     */
+    window.twoGatewayCompanyCapture = window.twoGatewayCompanyCapture || function(settings) {
+        if (window.twoGatewayCompanyCaptureInstance) {
+            return window.twoGatewayCompanyCaptureInstance;
+        }
+        const Controller = window.TwoCompanyCaptureComponent;
+        const identity = window.TwoCompanyIdentity;
+        const Panel = window.TwoCompanySearchPanel;
+        const SoleTraderFlow = window.TwoSoleTrader;
+        // A CSP or deploy failure on the base module must degrade the company
+        // field to a plain input, not throw out of an Alpine init().
+        if (typeof Controller !== 'function'
+            || typeof Panel !== 'function'
+            || typeof SoleTraderFlow !== 'function'
+            || !identity) {
+            console.error('Two: company-capture modules are not loaded');
+            return null;
+        }
+
+        const restBaseUrl = settings.restBaseUrl || '';
+        let retrySignup = function () {};
+
+        const controller = new Controller({
+            config: {
+                checkoutApiUrl: settings.checkoutApiUrl,
+                checkoutPageUrl: settings.checkoutPageUrl,
+                brand: settings.brand,
+                brandVersion: settings.brandVersion,
+                // WHERE the one control lives is decided server-side here — the
+                // address step renders it or the tile does, never both — so this
+                // answers only the controller's other question: whether "Enter
+                // manually" has a later lookup to supply the number it captures.
+                isCompanySearchEnabled: !!settings.manualEntryOffered
+            },
+            Panel: Panel,
+            SoleTraderFlow: SoleTraderFlow,
+            identity: identity,
+            search: {
+                get MIN_INPUT_LENGTH() {
+                    return twoGatewayOnSurface('capturePanelMinChars', [], 3);
+                },
+                SEARCH_DEBOUNCE_MS: 300,
+                minInputLengthMessage() {
+                    return twoGatewayOnSurface('capturePanelMinCharsMessage', [], '');
+                },
+                noResultsMessage() {
+                    return twoGatewayOnSurface('capturePanelNoResultsMessage', [], '');
+                },
+                searchCompanies(request) {
+                    return twoGatewayOnSurface(
+                        'capturePanelSearch',
+                        [request],
+                        Promise.resolve({ items: [], unavailable: false, aborted: true })
+                    );
+                },
+                abortActiveRequest() {
+                    return twoGatewayOnSurface('capturePanelAbort', [], false);
+                }
+            },
+            translate(text) {
+                return twoGatewayOnSurface('translatePanelString', [text], text);
+            },
+            // Magewire has no `$.async` equivalent, and a MutationObserver per
+            // mount is how this checkout froze on this ticket in the first
+            // place. Each surface re-drives `refreshMount()` from its own init()
+            // instead, which Magewire re-runs on every rebuild.
+            observe: null,
+
+            // `data-two-capture-active`, not `data-two-capture-field`: the
+            // address-step field renderer is registered globally and mounts on
+            // the delivery form AND the invoice form, so a page can hold two
+            // address hosts while the controller owns exactly one popover.
+            // claimCaptureField() decides which one carries the attribute.
+            addressFieldSelector: '[data-two-capture-host="address"] input[data-two-capture-active]',
+            tileFieldSelector: '[data-two-capture-host="tile"] input[data-two-capture-active]',
+            fieldExists(selector) {
+                return !!document.querySelector(selector);
+            },
+            // Which host renders is a server-side decision on this checkout, so
+            // a virtual cart has already been accounted for by the time either
+            // field exists.
+            isVirtualCart() {
+                return false;
+            },
+
+            // `twoGatewayGetCountryCode()` is the ONE country resolution on this
+            // checkout (TWO-25461) and already falls back to the quote, so the
+            // controller's own quote and last-resort reads route to it too.
+            getAdjacentCountry() {
+                return String(twoGatewayOnSurface('captureCountryCode', [], '') || '').toLowerCase();
+            },
+            getQuoteCountry() {
+                return String(twoGatewayOnSurface('captureCountryCode', [], '') || '').toLowerCase();
+            },
+            getFallbackCountry() {
+                return '';
+            },
+            watchCountryChanges(onChange) {
+                // Captured, because Magewire replaces the address form's nodes
+                // freely and a listener bound to one would not survive.
+                document.addEventListener('change', function (event) {
+                    const target = event.target;
+                    // NAME as well as id, for the reason twoGatewayResolveCountry()
+                    // gives: an address form rendered under any other namespace —
+                    // a modal, an address-book form, a brand's own component —
+                    // carries the same field under a different id.
+                    if (!target) return;
+                    const key = target.id || target.name || '';
+                    if (!/country_id$/.test(key)) return;
+                    onChange(String(target.value || '').toLowerCase());
+                }, true);
+            },
+
+            supportedCompanyTypesUrl(country) {
+                return restBaseUrl + '/rest/V1/two/supported-company-types/'
+                    + encodeURIComponent(country);
+            },
+            applyCompanyAddress(selectedItem) {
+                twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
+            },
+            // This checkout keeps no record of what an autofill wrote, so there
+            // is nothing to take back out; a buyer who changes country after an
+            // autofill corrects the address themselves.
+            revertAutofilledAddress() {},
+            clearField(selector) {
+                const field = document.querySelector(selector);
+                if (!field) return;
+                field.value = '';
+                field.dispatchEvent(new Event('input', { bubbles: false }));
+                field.focus();
+                twoGatewayOnSurface('captureFieldCleared');
+            },
+
+            tokensUrl() {
+                return restBaseUrl + '/rest/V1/two/get-tokens';
+            },
+            quoteId() {
+                return twoGatewayOnSurface('captureQuoteId', [], '');
+            },
+            // This checkout's buyer read carries no client identification.
+            apiClientParams() {
+                return {};
+            },
+            signupPrefill() {
+                return twoGatewayOnSurface('captureSignupPrefill', [], {});
+            },
+            signupCountry() {
+                return twoGatewayOnSurface('captureSignupCountry', [], '');
+            },
+            applyBuyerAddress(source) {
+                twoGatewayOnSurface('captureApplyBuyerAddress', [source]);
+            },
+            applyTelephone(phoneNumber) {
+                twoGatewayOnSurface('captureApplyTelephone', [phoneNumber]);
+            },
+            showError(message) {
+                if (typeof window.dispatchMessages !== 'function') return;
+                // The merchant's own wording wins where a brand supplies one.
+                const text = settings.soleTraderErrorMessage || message;
+                window.dispatchMessages([{ type: 'error', text: text }], 5000);
+            },
+            /**
+             * The blocked-popup fallback is a bound element on the tile rather
+             * than DOM this builds, so the flag is all that moves here.
+             */
+            renderSignupPrompt(show, onRetry) {
+                retrySignup = onRetry;
+                twoGatewayOnSurface('captureSignupPromptVisible', [show]);
+            }
+        });
+
+        controller.retrySignup = function () {
+            retrySignup();
+        };
+        window.twoGatewayCompanyCaptureInstance = controller;
+        return controller;
+    };
+
+    /**
+     * The Alpine mixin every capture surface composes over its engine.
+     *
+     * @param {Object} options the surface's engine options, plus `restBaseUrl`,
+     *        `checkoutPageUrl`, `manualEntryOffered` and `translations`.
+     * @returns {Object} compose a surface's own members OVER it with
+     *          `twoGatewayComposeLive`.
+     */
+    window.twoGatewayCaptureSurfaceMixin = window.twoGatewayCaptureSurfaceMixin || function(options) {
         const opts = options || {};
+        const strings = opts.translations || window.twoGatewayPanelStrings || {};
         const surfaceCommitted = typeof opts.onCompanyCommitted === 'function'
             ? opts.onCompanyCommitted
             : function () {};
         const surfaceDropdownClear = typeof opts.onDropdownClear === 'function'
             ? opts.onDropdownClear
             : function () {};
-        /*
-         * The control's own default for "which form is asking" is its own root —
-         * `controlRoot()`, not `$root`: on the tile `$root` is the whole payment
-         * form. A surface that knows better still wins (the tile resolves the
-         * invoice-role address by role, having no address form of its own).
-         */
         const surfaceCountryContext = typeof opts.resolveCountryContext === 'function'
             ? opts.resolveCountryContext
             : function () { return this.controlRoot(); };
 
-        const strings = opts.translations || window.twoGatewayPanelStrings || {};
-
-        /*
-         * The panel lives in this CLOSURE, never in Alpine state. Alpine wraps
-         * component data in reactive proxies, and the panel compares DOM nodes
-         * by identity — a proxied node makes `field === event.target` false and
-         * the popover stops responding to its own field, silently.
-         */
-        let panel = null;
-
         const engineOptions = Object.assign({}, opts, {
             resolveCountryContext: surfaceCountryContext,
             // Fixed by the shared panel, not per surface: it renders its own
-            // query box and its own manual-entry chip.
+            // query box and owns every mode route.
             querySplit: true,
-            manualModeSupported: true,
+            manualModeSupported: false,
             // The panel renders an inline "unavailable" line inside itself, so a
             // toast on top of it would say the same thing twice.
             dispatchSearchUnavailableToast: false,
@@ -2143,37 +2178,21 @@ $quoteDetails = json_encode(
             },
             onDropdownClear: function () {
                 surfaceDropdownClear.call(this);
-            },
-            afterManualToggle: function (entering) {
-                if (!panel) return;
-                if (entering) {
-                    // Hands the field back as a plain input and renders the
-                    // return link, which is then the only route back.
-                    panel.releaseField();
-                    return;
-                }
-                panel.reclaimField();
-                panel.bind({ open: true });
-            },
-            onCompanyCommitted: function (companyName, companyId, source) {
-                if (panel) panel.syncChips();
-                surfaceCommitted.call(this, companyName, companyId, source);
-            },
+            }
         });
 
         return twoGatewayComposeLive(window.twoGatewayCompanySearchEngine(engineOptions), {
-            companyNamePlaceholder: typeof opts.companyNamePlaceholder === 'string'
-                ? opts.companyNamePlaceholder
-                : '',
+            // Mirrors of the shared identity, so the templates bind reactive
+            // Alpine state rather than reaching into the controller.
+            manualMode: false,
+            showSoleTrader: false,
+            showPopupMessage: false,
+            soleTraderBusy: false,
 
             /**
-             * This control's own root element.
-             *
-             * NOT `$root` unconditionally. On the address step the control IS
-             * the Alpine component, so `$root` is `.two-company-search`. In the
-             * payment tile the control has no `x-data` of its own — its state
-             * lives on the payment form's component, whose `$root` is the whole
-             * `<form>`.
+             * NOT `$root` unconditionally: on the address step the control IS
+             * the Alpine component, while in the payment tile it is a subtree of
+             * the payment form's, whose `$root` is the whole `<form>`.
              *
              * @returns {HTMLElement|null}
              */
@@ -2189,26 +2208,14 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * The company-name input this control owns.
-             *
-             * `$el` FIRST, then a lookup under the control root. The two are not
-             * interchangeable: Alpine resolves `$el` per expression, so it is
-             * the input when a method is reached from the field's own `@input`
-             * binding and something else entirely otherwise.
-             *
-             * The exclusions are load-bearing rather than defensive: this
-             * resolver decides what is published as `company_name`, so returning
-             * the organisation-number input or the POPOVER'S OWN QUERY BOX would
-             * write one of those into an order. The query box is the panel's
-             * `.two-company-dropdown__query`, and it is a descendant of this
-             * control root because the panel is built inside the field's wrapper.
+             * `$el` FIRST, then a lookup under the control root: Alpine resolves
+             * `$el` per expression, so it is the input only when a method is
+             * reached from the field's own `@input` binding.
              *
              * @returns {HTMLInputElement|null}
              */
             companyNameField() {
-                const selector = 'input[type="text"]'
-                    + ':not(.company_id)'
-                    + ':not(.two-company-dropdown__query)';
+                const selector = 'input[data-two-capture-field]';
                 const el = this.$el;
                 if (el && typeof el.matches === 'function' && el.matches(selector)) {
                     return el;
@@ -2218,9 +2225,7 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Translate one of the shared panel's literals.
-             *
-             * @param {string} text
+             * @param {string} text one of the shared popover's English literals
              * @returns {string}
              */
             translatePanelString(text) {
@@ -2229,294 +2234,225 @@ $quoteDetails = json_encode(
                     : text;
             },
 
+            capturePanelMinChars() {
+                return this.minSearchChars;
+            },
+            capturePanelMinCharsMessage() {
+                return this.translatePanelString('Enter %1 or more characters')
+                    .replace('%1', this.minSearchChars);
+            },
+            capturePanelNoResultsMessage() {
+                return this.translatePanelString('No matches found');
+            },
             /**
-             * The six members `CompanySearchPanel` asks for, over this engine.
+             * `runCompanySearch()` populates state and resolves void, so the
+             * answer is read off the engine afterwards rather than returned.
              *
-             * @returns {Object}
+             * @param {{term: string}} request
+             * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
              */
-            companyPopoverSearchApi() {
-                const self = this;
+            async capturePanelSearch(request) {
+                // With company search off — an admin setting, or an API key that
+                // has not verified — nothing was asked, so `aborted` rather than
+                // empty results: there is nothing to report.
+                if (!this.isCompanySearchEnabled || this.manualMode) {
+                    return { items: [], unavailable: false, aborted: true };
+                }
+                await this.runCompanySearch(request.term);
+                // Still searching means a later call superseded this one and
+                // owns the state now; painting from it would show the buyer
+                // results for a term they typed past.
+                if (this.isSearching) {
+                    return { items: [], unavailable: false, aborted: true };
+                }
                 return {
-                    get MIN_INPUT_LENGTH() {
-                        return self.minSearchChars;
-                    },
-                    // The panel debounces; the engine no longer does.
-                    SEARCH_DEBOUNCE_MS: 300,
-                    minInputLengthMessage() {
-                        return self.translatePanelString('Enter %1 or more characters')
-                            .replace('%1', self.minSearchChars);
-                    },
-                    noResultsMessage() {
-                        return self.translatePanelString('No matches found');
-                    },
-                    /**
-                     * `runCompanySearch()` populates state and resolves void, so
-                     * the answer is read off the engine afterwards rather than
-                     * returned.
-                     *
-                     * @param {{term: string}} request
-                     * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
-                     */
-                    async searchCompanies(request) {
-                        // The second half of the lookup-off gate. With
-                        // company search off — an admin setting, or an API key
-                        // that has not verified — this control still mounts so
-                        // the buyer has a company field, and without this it
-                        // would put live API requests on the wire for
-                        // a merchant whose lookup is switched off. `aborted`
-                        // rather than empty results: nothing was asked, so
-                        // there is nothing to report.
-                        if (!self.searchModeActive) {
-                            return { items: [], unavailable: false, aborted: true };
-                        }
-                        await self.runCompanySearch(request.term);
-                        // Still searching means a later call superseded this one
-                        // and owns the state now; painting from it would show
-                        // the buyer results for a term they typed past.
-                        if (self.isSearching) {
-                            return { items: [], unavailable: false, aborted: true };
-                        }
+                    items: (this.items || []).map(function (item) {
                         return {
-                            items: (self.items || []).map(function (item) {
-                                return {
-                                    text: item.companyName,
-                                    html: item.companyDisplayName,
-                                    companyId: item.companyId,
-                                    // Never synthesised: an absent lookupId is
-                                    // what disables address autofill.
-                                    lookupId: item.lookupId
-                                };
-                            }),
-                            unavailable: Boolean(self.isSearchUnavailable),
-                            aborted: false
+                            text: item.companyName,
+                            html: item.companyDisplayName,
+                            companyId: item.companyId,
+                            // Never synthesised: an absent lookupId is what
+                            // disables address autofill.
+                            lookupId: item.lookupId
                         };
-                    },
-                    /**
-                     * @returns {boolean} whether anything was actually in flight
-                     */
-                    abortActiveRequest() {
-                        const wasInFlight = Boolean(self.searchAbortController);
-                        self.abortCompanySearch();
-                        return wasInFlight;
-                    }
+                    }),
+                    unavailable: Boolean(this.isSearchUnavailable),
+                    aborted: false
                 };
             },
+            /** @returns {boolean} whether anything was actually in flight */
+            capturePanelAbort() {
+                const wasInFlight = Boolean(this.searchAbortController);
+                this.abortCompanySearch();
+                return wasInFlight;
+            },
 
+            captureCountryCode() {
+                return this.resolveCountryCode(this.getCaptureQuote());
+            },
+            captureQuoteId() {
+                return String(this.getCaptureQuote().quote_id || '');
+            },
+            captureAddressLookup(selectedItem) {
+                if (!this.isAddressSearchEnabled || !selectedItem.lookupId) return;
+                this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
+            },
+            captureApplyBuyerAddress(source) {
+                this.setAddressData(source, window.twoGatewayInvoiceRoleAddressForm());
+            },
             /**
-             * The modes this checkout offers, in display order.
-             *
-             * @returns {Array<{mode: string, text: string, onActivate: Function}>}
+             * A phone number is not part of the address the buyer is being shown
+             * a company for, so unlike the address itself this one field follows
+             * the merchant's autopopulation setting (TWO-25461 §5).
              */
-            companyPopoverChips() {
-                const self = this;
-                return [
-                    {
-                        mode: 'registered',
-                        text: self.translatePanelString('Registered company'),
-                        onActivate() {
-                            // The tile's own exit ALSO discards a sole-trader
-                            // identity and reverts its autofilled address;
-                            // enableSearch() only leaves manual mode, so using
-                            // it on the tile would leave a sole trader's name
-                            // and synthetic number standing under the
-                            // registered-company mode. Surfaces without sole
-                            // trader do not define it.
-                            if (typeof self.registeredOrganisationMode === 'function') {
-                                self.registeredOrganisationMode();
-                            }
-                            self.enableSearch();
-                        }
-                    },
-                    {
-                        mode: 'soletrader',
-                        text: self.translatePanelString('Sole trader'),
-                        onActivate() {
-                            // Fire-and-forget: the chip handler is synchronous so
-                            // the popup opens inside the click and a blocker
-                            // allows it.
-                            const launched = self.soleTraderMode();
-                            /*
-                             * Synchronously after, not in a `then`:
-                             * enterSoleTraderUi() sets the mode before the first
-                             * await, and this is the only thing that repaints
-                             * the selected chip AND takes the registered-mode
-                             * search row down. Without it the buyer sits in
-                             * sole-trader mode looking at a search box, with
-                             * "Registered company" still marked selected.
-                             */
-                            if (panel) panel.syncChips();
-                            return launched;
-                        }
-                    },
-                    {
-                        mode: 'manual',
-                        text: self.translatePanelString('Enter manually'),
-                        onActivate() { self.enterManually(); }
-                    }
-                ];
+            captureApplyTelephone(phoneNumber) {
+                const phone = String(phoneNumber || '').trim();
+                if (!phone || !this.isAddressAutopopulationEnabled) return;
+                const container = window.twoGatewayInvoiceRoleAddressForm();
+                const field = container && container.querySelector('input[name="telephone"]');
+                if (!field) return;
+                field.value = phone;
+                field.dispatchEvent(new Event('input', { bubbles: false }));
+            },
+            /**
+             * Every value is the quote's, so the hosted form the buyer lands on
+             * describes the order they are placing.
+             */
+            captureSignupPrefill() {
+                const quote = this.getCaptureQuote();
+                return {
+                    email: String(quote.email || '').trim().toLowerCase(),
+                    first_name: quote.first_name || '',
+                    last_name: quote.last_name || '',
+                    company_name: this.companyName || '',
+                    phone_number: quote.telephone || '',
+                    billing_address: { country_code: this.captureSignupCountry() }
+                };
+            },
+            /**
+             * SERVER-RESOLVED, off the quote and never an address-form field:
+             * PDEV-4669 makes this the country whose identity checks the buyer
+             * faces, so a DOM read would let them pick their own.
+             */
+            captureSignupCountry() {
+                const quote = this.getCaptureQuote();
+                return String(quote.billing_country_id || quote.country_id || '')
+                    .trim()
+                    .toUpperCase();
+            },
+            captureSignupPromptVisible(show) {
+                this.showPopupMessage = !!show;
+            },
+            captureFieldCleared() {
+                this.search = '';
+                this.captureFieldReleased();
+            },
+
+            /** @returns {Object} the quote this surface reads, plain and detached */
+            getCaptureQuote() {
+                const quote = this.quote || this.quoteData || {};
+                return quote;
+            },
+            resolveCaptureAddressContainer() {
+                return typeof opts.resolveAddressContainer === 'function'
+                    ? opts.resolveAddressContainer.call(this)
+                    : null;
             },
 
             /**
-             * @returns {string} the chip that reads as selected
-             */
-            companyPopoverSelectedMode() {
-                if (this.manualMode) return 'manual';
-                if (this.showSoleTrader) return 'soletrader';
-                return 'registered';
-            },
-
-            /**
-             * Whether a mode is offered on this checkout at all.
-             *
-             * Sole trader follows the billing country's registry. Manual entry
-             * needs somewhere for the registry number to come from later, so
-             * with company search off there is no such lookup and a typed name
-             * would be a dead end.
-             *
-             * @param {string} mode
-             * @returns {boolean}
-             */
-            companyPopoverModeOffered(mode) {
-                if (mode === 'soletrader') return Boolean(this.showModeTab);
-                // `manualEntryVisible`, not the flag it derives from: the tile
-                // overrides it to a constant false, and reading the flag here
-                // would re-derive an answer that surface has already given.
-                if (mode === 'manual') return Boolean(this.manualEntryVisible);
-                return true;
-            },
-
-            /**
-             * A selector matching THIS mount's company-name input and no other.
-             *
-             * The address-step field renderer is registered globally and mounts
-             * on the delivery form AND the invoice form, so a page can hold two
-             * of these; the panel resolves its host with a document-wide
-             * `querySelector`, which would give both mounts the first one.
-             *
-             * @returns {string} '' when the field is not rendered yet
-             */
-            companyFieldSelector() {
-                const field = this.companyNameField();
-                if (!field) return '';
-                // Our own attribute rather than the field's `id`: the id comes
-                // from Hyvä's entity-field config and can hold anything a
-                // selector would have to escape, and `CSS.escape` is not
-                // universally available. This one is ours and is always safe.
-                if (!field.dataset.twoCompanyPanel) {
-                    window.twoGatewayCompanyFieldSeq += 1;
-                    field.dataset.twoCompanyPanel = String(window.twoGatewayCompanyFieldSeq);
-                }
-                return '[data-two-company-panel="' + field.dataset.twoCompanyPanel + '"]';
-            },
-
-            /**
-             * Build the shared popover on this mount's field.
-             *
-             * Called from each surface's `init()`, which Magewire re-runs on
-             * every rebuild — so this re-points an existing panel rather than
-             * building a second one, and the panel is deliberately NOT given an
-             * observer of its own. `$.async` has no equivalent here, and a
-             * MutationObserver per mount is how the checkout froze on this
-             * ticket in the first place.
+             * Point the one page-level controller at this surface. Called from
+             * each surface's init(), which Magewire re-runs on every rebuild, so
+             * this re-points rather than building a second controller.
              */
             mountCompanyPopover() {
-                const self = this;
-                /*
-                 * NO POPOVER AT ALL where the lookup is switched off — an admin
-                 * setting, or an API key that has not verified.
-                 *
-                 * This surface still renders, because the checkout needs a
-                 * company field either way, but the popover must not take it:
-                 * it binds the field's own openers and moves every keystroke
-                 * into a query box whose searches can never run, and the way
-                 * out is shut too because the manual chip is withheld for the
-                 * same reason the search is. The buyer would be left unable to
-                 * type a company name at all. Gating the REQUEST is not enough;
-                 * the gate belongs at the mount.
-                 */
+                // NO POPOVER AT ALL where the lookup is switched off. The field
+                // still renders, because the checkout needs one either way, but
+                // the popover must not take it: it moves every keystroke into a
+                // query box whose searches can never run, and the way out is shut
+                // too because the manual chip is withheld for the same reason.
                 if (!this.isCompanySearchEnabled) return;
-
-                const Panel = window.TwoCompanySearchPanel;
-                if (typeof Panel !== 'function') {
-                    // A CSP or deploy failure on the base module must degrade
-                    // this field to a plain input, not throw out of init().
-                    console.error('Two: company popover module is not loaded');
-                    return;
-                }
-                const field = this.companyNameField();
-                const selector = this.companyFieldSelector();
-                if (!selector) return;
-
-                if (panel) {
-                    panel.fieldSelector = selector;
-                    panel.bind();
-                    // A re-render takes the return link with the wrapper, and
-                    // without it manual entry is a dead end.
-                    if (this.manualMode) panel.releaseField();
-                    return;
-                }
-
-                /*
-                 * Adopt what the field already holds as the search text.
-                 *
-                 * A returning customer's saved company arrives in the input's
-                 * server-rendered `value`, and nothing on the Two side has read
-                 * it. The panel repaints the field from `getDisplayText()` as it
-                 * attaches, so without this the mount silently wipes that
-                 * company and the `change` it fires carries the wipe into the
-                 * quote.
-                 *
-                 * Into `search` — LIVE state that already means "the text in the
-                 * name field" — rather than a closure constant, so every path
-                 * that deliberately discards a company discards this with it.
-                 * A remembered value cannot be invalidated, and would resurrect
-                 * a company the buyer had explicitly abandoned.
-                 */
-                if (field && field.value && !this.search) this.search = field.value;
-
-                panel = new Panel({
-                    fieldSelector: selector,
-                    config: {},
-                    search: this.companyPopoverSearchApi(),
-                    translate(text) { return self.translatePanelString(text); },
-                    getCountryCode() { return self.countryCode; },
-                    getChips() { return self.companyPopoverChips(); },
-                    isChipVisible(mode) { return self.companyPopoverModeOffered(mode); },
-                    getSelectedMode() { return self.companyPopoverSelectedMode(); },
-                    /*
-                     * `search` is the second term, not a fallback of last
-                     * resort: a manual-entry commit writes it and deliberately
-                     * never writes `companyName`, so without it the way back
-                     * out of manual entry repaints the field over the name the
-                     * buyer typed.
-                     */
-                    getDisplayText() { return self.companyName || self.search || ''; },
-                    onExitManualEntry() { self.enableSearch(); },
-                    onSelect(item) {
-                        self.selectItem({
-                            companyName: item.text,
-                            companyId: item.companyId,
-                            lookupId: item.lookupId
-                        });
-                    }
+                // The tile's `isCompanySearchEnabled` is a constant, so where
+                // the address step owns the control the CLAIM is the only thing
+                // stopping the tile pointing every host function at itself.
+                const owns = this.claimCaptureField();
+                // Mirrored either way. Where the ADDRESS step owns the control
+                // this tile still paints from the identity — the sole-trader
+                // progress row, the "select a different sole trader" link and the
+                // order-intent verdict all read state only the mirror writes.
+                // After the claim, never before: the mirror re-reads ownership on
+                // every notification and the claim is what answers it.
+                this.followCapturedIdentity();
+                if (!owns) return;
+                window.twoGatewayCaptureSurfaceCurrent = this;
+                const capture = window.twoGatewayCompanyCapture({
+                    restBaseUrl: opts.restBaseUrl,
+                    checkoutApiUrl: this.checkoutApiUrl,
+                    checkoutPageUrl: opts.checkoutPageUrl,
+                    brand: opts.brand,
+                    brandVersion: opts.brandVersion,
+                    soleTraderErrorMessage: opts.soleTraderErrorMessage,
+                    manualEntryOffered: !!opts.manualEntryOffered
                 });
-                // BEFORE bind, and the order is load-bearing: destroying the
-                // abandoned panel removes its `.two-company-dropdown` from the
-                // wrapper, which is what makes this one build fresh instead of
-                // adopting DOM whose handlers belong to a dead instance.
-                twoGatewayRegisterCompanyPanel(panel, field);
-                panel.bind();
-                if (this.manualMode) panel.releaseField();
+                if (!capture) return;
+                capture.start();
+                capture.onCountryChanged();
+                capture.refreshMount();
+                capture.refreshSoleTraderAvailability();
                 this.watchCompanyPopoverForMorphs();
             },
 
             /**
-             * Put this control on the page's re-render sweep.
+             * Take ownership of the one popover.
              *
-             * Keyed on the control's root, which is the node a morph keeps: a
-             * component rebuilt by Alpine brings a new root and a new closure,
-             * and the entry the old root left behind is dropped by the sweep
-             * itself once that root leaves the document.
+             * Two address hosts can render at once — the delivery form and the
+             * invoice form — and the buyer is billed as the company on the
+             * INVOICE one (TWO-25461 §1(a.3)). Any other surface defers, unless
+             * no invoice-role form resolves at all.
+             *
+             * @param {boolean} claim stamp the claim, rather than only report it
+             * @returns {boolean} whether this surface owns the popover
+             */
+            resolveCaptureOwnership(claim) {
+                const field = this.companyNameField();
+                if (!field) return false;
+                if (field.hasAttribute('data-two-capture-active')) return true;
+                // The ATTRIBUTE is the claim, so a surface not carrying it does
+                // not own the control. Answering the question could otherwise
+                // grant ownership by itself whenever no claim was standing —
+                // which is every morph, because a morph reinstates server markup
+                // that carries no claim, and that is the window in which "seed,
+                // never displace" has to hold.
+                if (!claim) return false;
+
+                const claimed = document.querySelector('input[data-two-capture-active]');
+                if (claimed && claimed.isConnected) {
+                    const invoiceForm = window.twoGatewayInvoiceRoleAddressForm();
+                    // The standing claim is the invoice-role one, or there is no
+                    // invoice-role form to prefer: leave it alone.
+                    if (!invoiceForm || !invoiceForm.contains(field)) return false;
+                    if (invoiceForm.contains(claimed)) return false;
+                    if (claim) claimed.removeAttribute('data-two-capture-active');
+                }
+                if (claim) field.setAttribute('data-two-capture-active', '');
+                return true;
+            },
+
+            claimCaptureField() {
+                return this.resolveCaptureOwnership(true);
+            },
+
+            /** Whether this surface already holds the claim. Takes nothing. */
+            ownsCaptureField() {
+                return this.resolveCaptureOwnership(false);
+            },
+
+            /**
+             * Put this surface on the page's re-render sweep.
+             *
+             * Keyed on the surface's root, which is the node a morph keeps: a
+             * component rebuilt by Alpine brings a new root, and the entry the
+             * old root left behind is dropped by the sweep itself once that root
+             * leaves the document.
              */
             watchCompanyPopoverForMorphs() {
                 const self = this;
@@ -2529,16 +2465,144 @@ $quoteDetails = json_encode(
                 if (watched) return;
                 window.twoGatewayCompanyMounts.push({
                     root: root,
+                    // Through the surface's mount, not the controller's
+                    // refreshMount(): a morph reinstates the server markup, which
+                    // carries no `data-two-capture-active`, so the selector
+                    // matches nothing until this surface has claimed again.
                     remount: function () {
-                        if (panel && panel.isBound()) return;
                         self.mountCompanyPopover();
                     }
                 });
             },
 
-            /** @returns {Object|null} the popover, for tests that drive it */
+            /**
+             * Mirror the shared identity onto this surface, and persist it.
+             * Everything this checkout does with a captured company hangs off
+             * that one notification.
+             */
+            followCapturedIdentity() {
+                const identity = window.TwoCompanyIdentity;
+                // A CSP or deploy failure on the base module degrades this field
+                // to a plain input; the mirror must not be what throws.
+                if (!identity) return;
+                // Held on `window` and keyed per mount point, not on the
+                // component: Magewire brings a NEW component object on every
+                // rebuild, so a subscription kept here would never be reachable
+                // to dispose and every dead copy would go on writing the
+                // selection blob on one notification.
+                // Keyed on the ROOT NODE, never on the kind of host: the
+                // address renderer mounts on two forms at once, so one key per
+                // kind is one key shared between two live surfaces.
+                const registry = window.twoGatewayCaptureIdentityWatchers instanceof Map
+                    ? window.twoGatewayCaptureIdentityWatchers
+                    : (window.twoGatewayCaptureIdentityWatchers = new Map());
+                twoGatewayReapCaptureIdentityWatchers();
+                // Fails closed: with no root there is no per-surface key to hold
+                // the subscription under, and a shared one is no key at all.
+                const slot = this.$root;
+                if (!slot) return;
+                if (registry.has(slot)) registry.get(slot).dispose();
+                const self = this;
+                let restoring = false;
+                const apply = function () {
+                    // The MODE counts as a change: it is persisted alongside the
+                    // pair, and a return to search that wrote nothing left
+                    // `manual_mode: true` in storage for the next re-render to
+                    // restore the buyer back into manual entry.
+                    const pairChanged = self.companyName !== identity.companyName()
+                        || self.companyId !== identity.companyId()
+                        || self.companyIdSource !== identity.companyIdSource();
+                    const changed = pairChanged
+                        || self.manualMode !== (identity.captureMode() === 'manual');
+                    self.companyName = identity.companyName();
+                    self.companyId = identity.companyId();
+                    self.companyIdSource = identity.companyIdSource();
+                    self.manualMode = identity.captureMode() === 'manual';
+                    self.showSoleTrader = identity.isSoleTrader();
+                    // Mirrored onto reactive state: `x-show` tracks component
+                    // properties, and the identity is a plain object no Alpine
+                    // effect can depend on.
+                    self.soleTraderBusy = identity.soleTraderBusy();
+                    // The search text IS the captured name, so every path that
+                    // discards a company discards this with it — a remembered
+                    // value cannot be invalidated and would resurrect a company
+                    // the buyer had explicitly abandoned.
+                    self.search = self.companyName;
+                    self.isCompanySelected = Boolean(self.companyId);
+                    self.companyIdEntryRequired = !identity.hasVouchedNumber();
+                    self.applyCompanyIdEditability();
+                    // Read FRESH, never captured at subscribe time: the claim
+                    // transfers at runtime — an invoice-role form mounting after
+                    // the delivery one displaces it — and an ex-owner holding a
+                    // stale `true` announced, persisted and raised an order
+                    // intent alongside the real owner.
+                    if (!changed || !self.ownsCaptureField()) return;
+                    // A discarded company has to leave the FIELD too. The commit
+                    // hook writes the name it is given and returns early on an
+                    // empty one, so nothing else blanks what a discarded sole
+                    // trader left in `payment[company_name]`. Behind the
+                    // ownership gate: `#company_name`/`#company_id` are the
+                    // tile's submit fields, and a non-hosting surface blanking
+                    // them wipes a company the tile still holds.
+                    if (!self.companyName) self.clearCapturedNameFields();
+                    const selectionData = self.writeCapturedSelection();
+                    // The cross-step announcement is about the COMPANY, so a
+                    // mode flip persists without making the other step re-read a
+                    // pair that has not moved.
+                    if (!pairChanged) return;
+                    if (opts.selectEventName) {
+                        // `restored` travels with it: the other step still syncs
+                        // (it may read a different storage record) but must not
+                        // answer a restore with an order intent.
+                        window.dispatchEvent(new CustomEvent(opts.selectEventName, {
+                            detail: Object.assign({ restored: restoring }, selectionData)
+                        }));
+                    }
+                    surfaceCommitted.call(
+                        self,
+                        self.companyName,
+                        self.companyId,
+                        self.companyIdSource,
+                        restoring
+                    );
+                };
+                // The priming pass looks like a fresh pick to every `!==` above,
+                // so a surface acting on one — the tile dispatches an order
+                // intent — is told it is a restore. Raised BEFORE subscribing:
+                // an implementation that primes the subscriber itself would
+                // otherwise deliver that first pass as a live pick.
+                restoring = true;
+                registry.set(slot, identity.subscribe(apply));
+                apply();
+                restoring = false;
+            },
+
+            /** Blank both name inputs: the control's own, and the one that submits. */
+            clearCapturedNameFields() {
+                [this.companyNameField(), document.getElementById('company_name')]
+                    .forEach(function (field, index, fields) {
+                        if (!field || fields.indexOf(field) !== index) return;
+                        field.value = '';
+                    });
+                const idField = document.getElementById('company_id');
+                if (idField) idField.value = '';
+            },
+
+            writeCapturedSelection() {
+                return typeof opts.writeSelection === 'function'
+                    ? opts.writeSelection.call(this, {
+                        company_name: this.companyName,
+                        company_id: this.companyId,
+                        company_id_source: this.companyIdSource,
+                        manual_mode: this.manualMode
+                    })
+                    : {};
+            },
+
+            /** @returns {?Object} the popover, for tests that drive it */
             companyPopover() {
-                return panel;
+                const capture = window.twoGatewayCompanyCaptureInstance;
+                return capture ? capture.panel() : null;
             },
 
             /**
@@ -2546,12 +2610,12 @@ $quoteDetails = json_encode(
              *
              * The order-intent box asks: "checking availability" and a verdict
              * may never be on screen together, and neither may a verdict and an
-             * open results list. Answers false before the panel is built, which
-             * is the correct answer — nothing is covering anything yet.
+             * open results list.
              *
              * @returns {boolean}
              */
             companyPopoverIsOpen() {
+                const panel = this.companyPopover();
                 return Boolean(panel && panel.isOpen());
             },
 
@@ -2564,7 +2628,39 @@ $quoteDetails = json_encode(
                 const field = this.companyNameField();
                 this.search = field ? field.value : '';
                 if (!this.manualMode && Boolean(this.isCompanySearchEnabled)) return;
-                this.commitManualCompany(this.search);
+                const capture = window.twoGatewayCompanyCaptureInstance;
+                if (capture) capture.commitManualCompany(this.search);
+            },
+
+            /**
+             * The engine's own manual toggle is inert here, so this is what ends
+             * the search interaction: otherwise a stale "unavailable" verdict and
+             * a populated result list sit behind the released field.
+             */
+            captureFieldReleased() {
+                this.closeDropdown();
+            },
+
+            get soleTraderPopupMessageVisible() {
+                return this.showPopupMessage;
+            },
+            // The token mint runs before the hosted signup can open, so the wait
+            // is real and needs saying.
+            get soleTraderSpinnerVisible() {
+                return this.soleTraderBusy;
+            },
+            // Offered only once an identity has been adopted: the hosted flow
+            // needs something to replace.
+            get selectDifferentSoleTraderVisible() {
+                return this.showSoleTrader && Boolean(this.companyName);
+            },
+            openSoleTraderSignupFromLink() {
+                const capture = window.twoGatewayCompanyCaptureInstance;
+                if (capture) capture.retrySignup();
+            },
+            selectDifferentSoleTrader() {
+                const capture = window.twoGatewayCompanyCaptureInstance;
+                if (capture) capture.soleTrader().selectDifferentSoleTrader();
             },
 
             /*
@@ -2575,20 +2671,6 @@ $quoteDetails = json_encode(
              */
             get manualModeActive() {
                 return Boolean(this.isCompanySearchEnabled) && this.manualMode;
-            },
-
-            /**
-             * Whether the "Enter manually" chip is offered at all.
-             *
-             * Manual entry captures no organisation number, so it needs a later
-             * lookup to supply one; the payment tile overrides this to a
-             * constant false because it hosts the control only when the
-             * address-step search — that lookup — is off.
-             *
-             * @returns {boolean}
-             */
-            get manualEntryVisible() {
-                return Boolean(this.isCompanySearchEnabled);
             },
 
             get searchModeActive() {
@@ -2621,16 +2703,6 @@ $quoteDetails = json_encode(
             // `x-show="!companyIdDisplayVisible"` resolves this key instead.
             ['!companyIdDisplayVisible']() {
                 return !this.companyIdDisplayVisible;
-            },
-
-            /**
-             * Bound as `:placeholder`. The markup also carries a static
-             * `placeholder` with the same string, so the hint is in the
-             * server-rendered HTML before Alpine boots; this is what lets manual
-             * mode clear it afterwards.
-             */
-            <?= $gwBase ?>GetCompanyNamePlaceholder() {
-                return this.manualMode ? '' : this.companyNamePlaceholder;
             },
         });
     };
@@ -2836,8 +2908,9 @@ $quoteDetails = json_encode(
     function <?= $gwBase ?>PaymentMethodBase() {
         /*
          * TWO-25326, 2026-08-05 ruling: this tile mounts THE company-search
-         * control (`twoGatewayCompanySearchControl`, defined above) — the same
-         * factory and the same markup the address step mounts. It used to carry
+         * controller (`twoGatewayCaptureSurfaceMixin`, defined above, over the
+         * base plugin's shared `company-capture-component.js`) — the same
+         * controller and the same markup the address step mounts. It used to carry
          * a second control of its own instead: its own dropdown markup, its own
          * manual-entry link, its own min-characters guard, its own search
          * and focus handlers, and a manual/search dual-input pair with eight
@@ -2849,7 +2922,14 @@ $quoteDetails = json_encode(
          * order-intent dispatch and its result rendering, the billing/shipping
          * storage split, and the optional payment fields.
          */
-        return twoGatewayComposeLive(window.twoGatewayCompanySearchControl({
+        return twoGatewayComposeLive(window.twoGatewayCaptureSurfaceMixin({
+            restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+            checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
+            soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
+            // Manual entry captures no organisation number, so it needs a later
+            // lookup to supply one — and this tile hosts the control only when
+            // the address-step search, that lookup, is off.
+            manualEntryOffered: false,
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             client: '<?= $escaper->escapeJs((string) $clientName) ?>',
             clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
@@ -2860,7 +2940,6 @@ $quoteDetails = json_encode(
             isAddressSearchEnabled: false,
             editableCompanyId: true,
             countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
-            companyNamePlaceholder: '<?= $escaper->escapeJs(__('Enter company name to search')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose
@@ -2913,8 +2992,8 @@ $quoteDetails = json_encode(
             onDropdownClear: function () {
                 this.refreshOrderIntentVerdict();
             },
-            onCompanyCommitted: function (companyName, companyId) {
-                this.fillCompanyData(companyId, companyName);
+            onCompanyCommitted: function (companyName, companyId, companyIdSource, restoring) {
+                this.fillCompanyData(companyId, companyName, !restoring);
             },
         }), {
             // State genuinely specific to this tile.
@@ -3052,26 +3131,11 @@ $quoteDetails = json_encode(
                 $orderIntentConfig["extensionDBVersion"],
             ) ?>',
             quote: '<?= $quoteDetails ?>',
-            checkoutPageUrl: '<?= $escaper->escapeUrl(__($checkoutPageUrl)) ?>',
+            checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
 
-            /* --- sole trader (TWO-25503) --- */
-            restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
+            // Gates the sole-trader PHONE write only; the registered address it
+            // arrives with is written regardless (TWO-25461 §5).
             isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
-            // Whether the billing country's registry recognises sole traders at
-            // all. False keeps the whole mode tab out of the page, which is the
-            // business-only checkout.
-            showModeTab: false,
-            showSoleTrader: false,
-            // The blocked-popup fallback link. Offered only once the tokens
-            // exist: a signup URL with an empty businessToken is rejected by the
-            // hosted flow, so an earlier link is worse than none.
-            showPopupMessage: false,
-            soleTraderLookupInFlight: false,
-            delegationToken: '',
-            autofillToken: '',
-            soleTraderLookup: { ready: false, buyer: null, matches: false },
-            soleTraderLookupEmail: null,
 
             // CSP-friendly event handlers (called from template)
             <?= $gwBase ?>OnInit() {
@@ -3115,18 +3179,8 @@ $quoteDetails = json_encode(
                 return !this.manualMode;
             },
 
-            /*
-             * The control's `enterManually()` / `enableSearch()` are bound
-             * directly in the shared markup, so the branded `OnSearchModeClick`
-             * / `OnManualEntryClick` / `OnCompanyItemClick` aliases this tile
-             * used to need are gone, along with the eight
-             * `GetCompanyNameId`-style getters that resolved which of two copies
-             * of each field was canonical. There is one copy of each field now.
-             *
-             * The search box, the results, the min-characters hint, the row
-             * keying and the arrow/Enter handling are the shared POPOVER's, and
-             * this file no longer has members for any of them.
-             */
+            // The mode routes belong to the shared controller and the search UI
+            // to the shared popover, so this file has members for neither.
 
             // The captured number is shown by the tile label below, never by
             // the control's own number display — otherwise the tile prints it
@@ -3203,52 +3257,31 @@ $quoteDetails = json_encode(
                  * company field has its own manual/search mode — and which
                  * writes it into the selection blob this tile also reads.
                  * Adopting another surface's mode as this tile's opening state
-                 * is the bug: the tile came up with a live-looking
-                 * company-search box whose every keystroke returned early at
-                 * the manual-mode guard — no request, no spinner, no results —
-                 * and with no way out, because
-                 * enableSearch() is bound on the address form and never here.
-                 *
-                 * So the tile now opens in search mode always. It is NOT
-                 * "manual entry is meaningless here": the dual-input pattern
-                 * swaps the `:id`/`:name` bindings, so whichever mode is
-                 * visible carries `payment[company_name]` / `payment[company_id]`
-                 * and submits canonically — a buyer who picks manual entry ON
-                 * THIS TILE gets a working, credit-checkable path, and that
-                 * affordance is left exactly as it was.
-                 *
-                 * ---
-                 *
-                 * The SAME invariant applyCompanyIdEditability() consumes:
-                 * `!(company_id && company_name === search)` — enabled whenever
-                 * there is no registry-supplied identifier for the name the
-                 * field is about to hold, locked exactly when one has been
-                 * written for it.
-                 *
-                 * initialize() is not only first paint. Magewire re-renders
-                 * destroy and rebuild this component (see the search-cache
-                 * comment at the top of this file), so every state the
-                 * editability recompute produced re-enters here — and only
-                 * selectItem() ever writes storage. A name the buyer typed and
-                 * never picked therefore leaves NOTHING stored, so deriving the
-                 * flag from `Boolean(company_name) && !company_id` made the
-                 * re-render re-lock a field the recompute had just opened:
-                 * empty AND disabled AND required, the very dead end this
-                 * binding exists to avoid.
-                 *
-                 * The `$nextTick` below restores the name from storage too, so
-                 * the name the field ends up holding IS `company_name` — which
-                 * collapses the comparison and leaves `!company_id`. Empty
-                 * storage therefore yields ENABLED (nothing has vouched for a
-                 * number for whatever is in the field), while a restored pick
-                 * that DID carry a registry identifier stays LOCKED.
-                 *
-                 * The declared default is deliberately still `companyIdDisabled: true`:
-                 * that is what Alpine binds before this method runs, and the
-                 * field must not flash open.
+                 * left it showing a live-looking search box whose every
+                 * keystroke returned early at the manual-mode guard, with no way
+                 * out because the exit is bound on the address form.
                  */
-                this.companyIdEntryRequired = !shippingCompanySelectionData.company_id;
-                this.applyCompanyIdEditability();
+                const identity = window.TwoCompanyIdentity;
+                // Not while a signup is live: that flow never writes the blob, so
+                // the stored pair is the registered company that preceded it and
+                // restoring it puts that company under sole-trader mode.
+                //
+                // A surface that hosts no control may SEED an identity nobody has
+                // captured into, never displace one: an authoritative write
+                // replaces both halves, and such a tile's stored pair is
+                // routinely empty or a quote older than the live capture.
+                const hostsControl = this.ownsCaptureField();
+                if (identity && !identity.isSoleTrader()
+                    && (hostsControl || !identity.companyName())) {
+                    identity.write(
+                        {
+                            companyName: shippingCompanySelectionData.company_name || '',
+                            companyId: shippingCompanySelectionData.company_id || '',
+                            companyIdSource: shippingCompanySelectionData.company_id_source || ''
+                        },
+                        { authoritative: hostsControl }
+                    );
+                }
 
                 // The intent-approved notice is persistent — it survives
                 // checkout re-renders and failed place-order validation, which
@@ -3292,13 +3325,6 @@ $quoteDetails = json_encode(
                     this.applyCompanyIdEditability();
                 });
 
-                // TWO-25503. Re-asked on every re-render rather than once per
-                // page: the quote this reads its country off is re-rendered by
-                // the same Magewire cycle, so an address change updates the tab
-                // with no watcher of its own. Memoized per country in the helper,
-                // so a re-render for an unrelated reason costs no request.
-                this.refreshSoleTraderAvailability();
-
                 // The shipping step's sync (company-name-payment.phtml's
                 // updatePaymentFields) arrives here. It can carry an EMPTY
                 // identifier now, for the same reason selectItem() can, so the
@@ -3306,37 +3332,66 @@ $quoteDetails = json_encode(
                 // this the buyer's shipping pick of an identifier-less company
                 // would land in a field still locked from the previous pick.
                 this.$el.addEventListener('update-company-data', (event) => {
-                    this.search = event.detail.companyName;
-                    this.companyName = event.detail.companyName;
-                    this.companyId = event.detail.companyId;
-                    this.companyIdEntryRequired = Boolean(event.detail.companyName)
-                        && !event.detail.companyId;
-                    this.applyCompanyIdEditability();
+                    const detail = event.detail || {};
+                    const companyName = detail.companyName || '';
+                    const companyId = detail.companyId || '';
+                    // A number with no provenance came from a lookup.
+                    const companyIdSource = companyId
+                        ? (detail.companyIdSource || 'registry')
+                        : '';
+                    const shared = window.TwoCompanyIdentity;
+                    // Seed, never displace — the same rule as initialize(). This
+                    // sync reaches the tile whether or not it hosts the control,
+                    // and an authoritative write from a tile hosting nothing
+                    // replaces both halves of whatever the address step has just
+                    // captured with this event's older pair.
+                    const hostsControl = this.ownsCaptureField();
+                    if (shared && (hostsControl || !shared.companyName())) {
+                        shared.write(
+                            { companyName, companyId, companyIdSource },
+                            { authoritative: hostsControl }
+                        );
+                    }
                     /*
-                     * The visible field has to be written too. It used to be
-                     * `:value="search"` and so updated itself off the assignment
-                     * above; the shared control's field is a plain, imperatively
-                     * written input (the same one the address step uses), which
-                     * is what lets `readonly` hold the captured name steady. So
-                     * a shipping-step sync that only touched state would leave
-                     * the buyer looking at the previous company's name.
+                     * The visible field has to be written too: the shared
+                     * control's field is a plain, imperatively written input, so
+                     * a sync that only touched state would leave the buyer
+                     * looking at the previous company's name.
                      */
                     const nameField = this.companyNameField();
-                    if (nameField) nameField.value = event.detail.companyName || '';
+                    if (nameField) nameField.value = companyName;
+                    // And this tile's own state. Where the ADDRESS step owns the
+                    // control this tile claims nothing, so it carries no identity
+                    // mirror — and its order-intent verdict, its label and its
+                    // supersede guard all read `companyId`.
+                    this.search = companyName;
+                    this.companyName = companyName;
+                    this.companyId = companyId;
+                    this.companyIdSource = companyIdSource;
+                    // The engine's formula, not a second one: a hand-typed
+                    // number stays the buyer's to correct.
+                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+                    this.applyCompanyIdEditability();
                 });
 
                 this.$nextTick(() => {
-                    const shippingCompany = shippingCompanySelectionData.company_name || "";
-
-                    if (!shippingCompany) {
+                    const restored = shippingCompanySelectionData.company_name || '';
+                    if (!restored) {
+                        // A checkout that server-rendered a company nobody has
+                        // captured yet: adopt what is in the field so the popover
+                        // does not repaint over it on attach.
                         this.search = document.getElementById('company_name')?.value ?? '';
-                    } else {
-                        this.search = shippingCompany;
-                        // fillCompanyData() writes `#company_name`.value itself,
-                        // which is what puts the restored name back into the
-                        // shared control's field after a Magewire re-render.
-                        this.fillCompanyData(shippingCompanySelectionData.company_id || "", shippingCompany, false);
+                        return;
                     }
+                    this.search = restored;
+                    // `false`: a restore is not a company the buyer just chose,
+                    // and the per-company dedup record is emptied by the same
+                    // rebuild that caused it.
+                    this.fillCompanyData(
+                        shippingCompanySelectionData.company_id || '',
+                        restored,
+                        false
+                    );
                 });
 
                 /*
@@ -3381,18 +3436,10 @@ $quoteDetails = json_encode(
             // unlike the address step, which unlocks whenever search itself
             // is switched off (see that surface's own options).
 
-            // Additive (TWO-25288): whether there is an actual registry id to
-            // show. Deliberately NOT just `companyIdDisabled` — on
-            // initialize() with a restored selection, `companyIdEntryRequired`
-            // (and so `companyIdDisabled`) is derived synchronously from
-            // storage, while `this.companyId` itself is only populated by the
-            // `$nextTick(() => fillCompanyData(...))` below, one tick later.
-            // Gating on `companyIdDisabled` alone would paint the hint/hide
-            // the input for that first tick with no number behind it yet —
-            // the same flash-of-wrong-state class `initialize()`'s own doc
-            // comment above already guards the `:disabled` binding against.
-            // Requiring `companyId` too makes both derived getters below wait
-            // for the real value, same tick it arrives.
+            // TWO-25288: whether there is an actual registry id to show.
+            // Deliberately NOT just `companyIdDisabled`, which the identity
+            // mirror can set a tick before the number itself lands — gating on
+            // it alone paints the hint with no number behind it.
             get companyIdHintVisible() {
                 return this.companyIdDisabled && Boolean(this.companyId);
             },
@@ -3776,525 +3823,6 @@ $quoteDetails = json_encode(
                      */
                     this.refreshOrderIntentVerdict();
                 }
-            },
-
-            /* ------------------------------ sole trader ------------------------------
-             *
-             * TWO-25503. Ported from the Luma renderer's sole-trader flow, which
-             * this checkout never loaded: Hyvä's payment step is Alpine, so none
-             * of that renderer runs here and every step below had no Hyvä
-             * equivalent at all.
-             *
-             * The sequence, unchanged from Luma: the billing country's registry
-             * says whether sole traders exist → the buyer clicks the chip →
-             * tokens are minted → the Two cookie is read for a buyer matching the
-             * email on the quote → a match is adopted, anything else opens the
-             * hosted signup popup → the popup posts ACCEPTED → the buyer is
-             * re-read and adopted.
-             */
-
-            /**
-             * The billing country, SERVER-RESOLVED.
-             *
-             * Off the quote the ViewModel rendered, never off an address-form
-             * field. Compliance depends on it (see openSoleTraderSignup), and
-             * gating the chip on the same value is what keeps the country the
-             * buyer is offered sole trader FOR and the country the popup runs
-             * identity checks IN the same country.
-             *
-             * @returns {string} ISO code, upper-cased, or ''
-             */
-            soleTraderCountry() {
-                const quote = this.quote || {};
-                return String(quote.billing_country_id || quote.country_id || '')
-                    .trim()
-                    .toUpperCase();
-            },
-
-            /**
-             * Ask the registry whether this country has sole traders, and show
-             * or hide the mode tab accordingly.
-             *
-             * Re-run on every Magewire re-render (initialize() calls it), which
-             * is what keeps the tab current after an address change — the quote
-             * this reads is re-rendered by the same cycle.
-             *
-             * @returns {Promise<void>}
-             */
-            async refreshSoleTraderAvailability() {
-                const country = this.soleTraderCountry();
-                const types = await window.twoGatewaySupportedCompanyTypes(
-                    this.restBaseUrl,
-                    country
-                );
-                // A country resolved after this call started is a different
-                // question; its own call answers it.
-                if (this.soleTraderCountry() !== country) return;
-                this.showModeTab = types.indexOf('SOLE_TRADER') !== -1;
-                // Losing sole-trader support mid-checkout must not leave the
-                // buyer stranded in a mode whose chip is gone.
-                if (!this.showModeTab && this.showSoleTrader) {
-                    this.registeredOrganisationMode();
-                }
-                /*
-                 * Whether or not the mode was withdrawn: the chip's visibility
-                 * follows `showModeTab`, so the panel has to be repainted even
-                 * when the buyer was not standing in the mode that just
-                 * disappeared — otherwise it keeps offering a mode this
-                 * country's registry cannot serve.
-                 *
-                 * Through the accessor, not the `panel` closure: this method
-                 * lives in the tile's own object, which is composed OVER the
-                 * control and has no sight of its locals.
-                 */
-                const popover = this.companyPopover();
-                if (popover) popover.syncChips();
-            },
-
-            /*
-             * CSP-friendly Alpine looks a bound expression up as a KEY rather
-             * than evaluating it, so every condition and class list the
-             * sole-trader markup binds has to exist under a bare identifier.
-             */
-            get soleTraderPopupMessageVisible() {
-                return this.showPopupMessage;
-            },
-            // The token mint and the buyer read both run before the hosted
-            // signup can open, so the wait is real and needs saying.
-            get soleTraderSpinnerVisible() {
-                return this.soleTraderLookupInFlight;
-            },
-            // Offered only once an identity has been adopted: the hosted flow
-            // needs something to replace.
-            get selectDifferentSoleTraderVisible() {
-                return this.showSoleTrader && Boolean(this.companyName);
-            },
-
-            /**
-             * Leave sole-trader mode, discarding the identity it captured.
-             *
-             * A sole trader's name and number are not a registered organisation,
-             * so carrying them across the switch would submit one identity under
-             * the other's mode. Also the tile's initial state, which is why it is
-             * a no-op when sole trader was never active.
-             *
-             * @returns {void}
-             */
-            registeredOrganisationMode() {
-                const wasSoleTrader = this.showSoleTrader;
-                this.showSoleTrader = false;
-                this.showPopupMessage = false;
-                if (!wasSoleTrader) return;
-                this.clearSoleTraderCompany();
-            },
-
-            /**
-             * Blank the captured company, in state, in the DOM and in storage.
-             *
-             * Storage too, not just the field: initialize() restores the billing
-             * record on the next Magewire re-render, so a clear that stopped at
-             * the DOM would be undone by the next totals update.
-             *
-             * @returns {void}
-             */
-            clearSoleTraderCompany() {
-                this.companyName = '';
-                // The search text too: it holds the same abandoned company, and
-                // it is what the popover repaints the field from when nothing
-                // is captured — so leaving it would put the discarded name back
-                // on the next re-attach.
-                this.search = '';
-                this.companyId = '';
-                this.companyIdSource = '';
-                this.companyIdEntryRequired = true;
-                this.applyCompanyIdEditability();
-                /*
-                 * BOTH name fields, because they are not always the same
-                 * element. fillCompanyData() writes `#company_name` by id;
-                 * `companyNameField()` resolves the control's own visible input,
-                 * which is that same element in the tile and a DIFFERENT one
-                 * when the control is mounted on the address step. Clearing only
-                 * one leaves the abandoned company either on screen or in the
-                 * field that submits.
-                 */
-                [this.companyNameField(), document.getElementById('company_name')]
-                    .forEach((field, index, fields) => {
-                        if (!field || fields.indexOf(field) !== index) return;
-                        field.value = '';
-                    });
-                const idField = document.getElementById('company_id');
-                if (idField) idField.value = '';
-                window.twoGatewayWriteBillingCompany({
-                    company_name: '',
-                    company_id: '',
-                    company_id_source: '',
-                });
-            },
-
-            /**
-             * Enter the sole-trader UI. No token or lookup work here — that is
-             * the chip handler's.
-             *
-             * @returns {void}
-             */
-            enterSoleTraderUi() {
-                this.showSoleTrader = true;
-                this.clearSoleTraderCompany();
-            },
-
-            /**
-             * Sole-trader chip click — the ONLY entry point to sole-trader
-             * autofill. Nothing is minted or looked up off email entry alone:
-             * the click is the buyer asking.
-             *
-             * @returns {Promise<void>}
-             */
-            async soleTraderMode() {
-                this.enterSoleTraderUi();
-                await this.lookupSoleTrader();
-                const pf = this.soleTraderLookup;
-                if (pf.ready && pf.matches && pf.buyer) {
-                    this.adoptSoleTraderBuyer(pf.buyer);
-                    return;
-                }
-                const win = this.openSoleTraderSignup();
-                this.showPopupMessage = !win && this.hasSignupTokens();
-            },
-
-            /**
-             * Mint the tokens and read the buyer the Two cookie identifies.
-             *
-             * Deduped per email so a repeated chip click does not re-mint. A
-             * duplicate call returns the OUTSTANDING chain rather than a
-             * resolved promise: the dedupe key is set synchronously, so a second
-             * click landing mid-flight would otherwise resume on a lookup that
-             * has recorded nothing and minted nothing.
-             *
-             * @returns {Promise<void>}
-             */
-            lookupSoleTrader() {
-                if (!this.showModeTab) return Promise.resolve();
-                const email = this.soleTraderEmail();
-                if (!email) return Promise.resolve();
-                if (email === this.soleTraderLookupEmail) {
-                    return this._soleTraderLookupChain || Promise.resolve();
-                }
-                this.soleTraderLookupEmail = email;
-                this.soleTraderLookup = { ready: false, buyer: null, matches: false };
-                this.soleTraderLookupInFlight = true;
-
-                /*
-                 * A chain is tied to the email it started for. An edit starts a
-                 * second one, the two settle in no guaranteed order, and the
-                 * loser must not record its buyer: `matches` is computed against
-                 * the email on the quote NOW, so a late chain for the previous
-                 * email resolves to a non-match and would revert sole-trader mode
-                 * under the newer one. The minted token travels as a local for
-                 * the same reason.
-                 */
-                const generation = (this._soleTraderLookupGeneration || 0) + 1;
-                this._soleTraderLookupGeneration = generation;
-                const isCurrent = () => this._soleTraderLookupGeneration === generation;
-
-                this._soleTraderLookupChain = window
-                    .twoGatewaySoleTraderTokens(this.restBaseUrl, this.quoteId())
-                    .then((json) => {
-                        if (!isCurrent()) return null;
-                        this.delegationToken = json.delegation_token || '';
-                        this.autofillToken = json.autofill_token || '';
-                        return this.resolveSoleTraderBuyer(false, this.autofillToken, isCurrent);
-                    })
-                    .catch(() => {
-                        if (!isCurrent()) return;
-                        this.soleTraderLookup = { ready: true, buyer: null, matches: false };
-                    })
-                    .finally(() => {
-                        // Guarded on THIS call's email: an earlier, still
-                        // outstanding call must not clear the flag out from under
-                        // a newer one started after an email edit.
-                        if (this.soleTraderLookupEmail === email) {
-                            this.soleTraderLookupInFlight = false;
-                        }
-                    });
-
-                return this._soleTraderLookupChain;
-            },
-
-            /**
-             * The email the identity is matched against, SERVER-RESOLVED.
-             *
-             * @returns {string} lower-cased, or ''
-             */
-            soleTraderEmail() {
-                return String((this.quote || {}).email || '').trim().toLowerCase();
-            },
-
-            /**
-             * @returns {string} the quote id the token mint is scoped to
-             */
-            quoteId() {
-                return String((this.quote || {}).quote_id || '');
-            },
-
-            /**
-             * Read the buyer on the Two cookie and record it as the lookup
-             * result.
-             *
-             * `authenticated` is the difference between the two callers and it is
-             * not cosmetic. On the PASSIVE path nothing proves the cookie's buyer
-             * is the person checking out, so the buyer only counts when its email
-             * matches the quote's. After the popup reports ACCEPTED the buyer has
-             * just authenticated server-side and the email it authenticated with
-             * IS the identity — requiring a match there discards an authenticated
-             * buyer and leaves the company field permanently blank (TWO-25461).
-             *
-             * @param {boolean} authenticated buyer already proved this identity
-             * @param {string} [autofillToken] the token THIS lookup minted
-             * @param {function(): boolean} [isCurrent] whether this lookup is still live
-             * @returns {Promise<Object>} the result, recorded unless superseded
-             */
-            resolveSoleTraderBuyer(authenticated, autofillToken, isCurrent) {
-                return window
-                    .twoGatewayAutofillBuyer(
-                        this.checkoutApiUrl,
-                        autofillToken || this.autofillToken
-                    )
-                    .then((buyer) => {
-                        const entered = this.soleTraderEmail();
-                        const matches = authenticated
-                            ? Boolean(buyer)
-                            : Boolean(
-                                buyer
-                                    && buyer.email
-                                    && String(buyer.email).toLowerCase() === entered
-                            );
-                        const resolved = { ready: true, buyer: buyer, matches: matches };
-                        if (isCurrent && !isCurrent()) return resolved;
-                        this.soleTraderLookup = resolved;
-                        return resolved;
-                    });
-            },
-
-            /**
-             * Adopt the sole trader an autofill record describes: the identity
-             * into the tile and into the billing company record, the registered
-             * ADDRESS into the checkout address form, and — only where the
-             * merchant turned address autopopulation on — the PHONE.
-             *
-             * The identity write goes through fillCompanyData() and the billing
-             * selection record, which is the same pair an ordinary company pick
-             * writes: nothing else survives a Magewire re-render.
-             *
-             * @param {Object} buyer `/autofill/v1/buyer/current` record
-             * @returns {void}
-             */
-            adoptSoleTraderBuyer(buyer) {
-                if (!buyer || typeof buyer !== 'object') return;
-                const companyName = String(buyer.company_name || '').trim();
-                const companyId = String(buyer.organization_number || '').trim();
-
-                if (companyName) {
-                    this.companyIdSource = companyId ? 'registry' : '';
-                    this.companyIdEntryRequired = !companyId;
-                    this.applyCompanyIdEditability();
-                    window.twoGatewayWriteBillingCompany({
-                        company_name: companyName,
-                        company_id: companyId,
-                        company_id_source: this.companyIdSource,
-                        manual_mode: false,
-                    });
-                    this.fillCompanyData(companyId, companyName);
-                }
-
-                // Isolated: a DOM failure in the address write must not take the
-                // identity fill or the popup message down with it.
-                try {
-                    this.writeSoleTraderAddress(buyer);
-                } catch (error) {
-                    console.error('Two_GatewayHyva: sole-trader address write failed', error);
-                }
-
-                this.showPopupMessage = false;
-            },
-
-            /**
-             * Write the buyer's registered address, and their phone number where
-             * the merchant asked for it.
-             *
-             * NOT gated on the address-autopopulation setting (TWO-25461 §5):
-             * that setting gates an ordinary company-search selection's address
-             * write, and it is legitimately off wherever company search is not
-             * mounted in the address area — which is exactly where this entry
-             * point lives. The PHONE is the one field it does gate, because a
-             * phone number is not part of the address the buyer is being shown a
-             * company for.
-             *
-             * `billing_address` is the registered address; `shipping_address` is
-             * a fallback for a record that carries no billing one.
-             *
-             * @param {Object} buyer `/autofill/v1/buyer/current` record
-             * @returns {boolean} whether an address was written
-             */
-            writeSoleTraderAddress(buyer) {
-                const container = window.twoGatewayInvoiceRoleAddressForm();
-                if (!container) return false;
-
-                if (this.isAddressAutopopulationEnabled) {
-                    this.writeSoleTraderPhone(buyer, container);
-                }
-
-                const source = buyer.billing_address || buyer.shipping_address || null;
-                if (!source || typeof source !== 'object') return false;
-                this.setAddressData(source, container);
-                return true;
-            },
-
-            /**
-             * Fill the buyer's phone number into the address form.
-             *
-             * Left ALONE when the record carries no number — blanking would
-             * delete a number the buyer typed themselves, which is a worse
-             * failure than not filling a field. Same rule as the address writer's
-             * second street line.
-             *
-             * @param {Object} buyer `/autofill/v1/buyer/current` record
-             * @param {HTMLElement} container the address form to write into
-             * @returns {boolean} whether a number was written
-             */
-            writeSoleTraderPhone(buyer, container) {
-                const phone = String(buyer.phone_number || '').trim();
-                if (!phone) return false;
-                const field = container.querySelector('input[name="telephone"]');
-                if (!field) return false;
-                field.value = phone;
-                field.dispatchEvent(new Event('input', { bubbles: false }));
-                return true;
-            },
-
-            /**
-             * True once a signup URL can be built. Both tokens are minted
-             * together, and neither is optional — the hosted flow rejects a
-             * signup link carrying an empty one.
-             *
-             * @returns {boolean}
-             */
-            hasSignupTokens() {
-                return Boolean(this.delegationToken && this.autofillToken);
-            },
-
-            /**
-             * The base64 prefill the hosted signup form opens with.
-             *
-             * Every value is the quote's, so the form the buyer lands on
-             * describes the order they are placing.
-             *
-             * @returns {string}
-             */
-            getSoleTraderAutofillData() {
-                const quote = this.quote || {};
-                const data = {
-                    email: this.soleTraderEmail(),
-                    first_name: quote.first_name || '',
-                    last_name: quote.last_name || '',
-                    company_name: this.companyName || '',
-                    phone_number: quote.telephone || '',
-                    billing_address: {
-                        country_code: this.soleTraderCountry(),
-                    },
-                };
-                // UTF-8 safe: a bare btoa() throws on any character outside
-                // Latin-1, and å/ø/æ in a buyer's own name are routine here.
-                return btoa(
-                    encodeURIComponent(JSON.stringify(data)).replace(
-                        /%([0-9A-F]{2})/g,
-                        (_match, hex) => String.fromCharCode(parseInt(hex, 16))
-                    )
-                );
-            },
-
-            /**
-             * Open the hosted sole-trader signup popup.
-             *
-             * PDEV-4669: the `country` param is what makes the popup render the
-             * identity step that country requires, and it is sourced from
-             * soleTraderCountry() — the quote's own billing country, resolved on
-             * the server — never from an address field. A DOM-sourced value would
-             * let a buyer choose which country's identity verification they face
-             * by editing a form, which is the whole point of the requirement.
-             *
-             * At most one popup is ever live: a prior one is CLOSED rather than
-             * left running, so it cannot later post a stale ACCEPTED that wins a
-             * race against the popup the buyer actually completed.
-             *
-             * @param {Object} [options]
-             * @param {boolean} [options.autoselect]
-             * @returns {Window|null} null when the tokens are not minted yet
-             */
-            openSoleTraderSignup(options) {
-                if (!this.hasSignupTokens()) return null;
-                if (this._soleTraderPopupWindow && !this._soleTraderPopupWindow.closed) {
-                    this._soleTraderPopupWindow.close();
-                }
-                const url = window.twoGatewaySoleTraderSignupUrl({
-                    checkoutPageUrl: this.checkoutPageUrl,
-                    delegationToken: this.delegationToken,
-                    autofillToken: this.autofillToken,
-                    autofillData: this.getSoleTraderAutofillData(),
-                    country: this.soleTraderCountry(),
-                    autoselect: options && options.autoselect,
-                });
-                this._soleTraderPopupWindow = window.open(
-                    url,
-                    '_blank',
-                    'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=700'
-                );
-                return this._soleTraderPopupWindow;
-            },
-
-            // The blocked-popup fallback link, and the "select a different sole
-            // trader" button. Both re-open the popup; the second suppresses the
-            // hosted flow's auto-pick so it does not hand back the registration
-            // the buyer is trying to replace.
-            openSoleTraderSignupFromLink() {
-                this.openSoleTraderSignup();
-            },
-            selectDifferentSoleTrader() {
-                this.openSoleTraderSignup({ autoselect: false });
-            },
-
-            /**
-             * Handle one `message` from the signup popup.
-             *
-             * Called by the module-level listener, which is what keeps a
-             * re-rendering checkout from stacking one live listener per render.
-             *
-             * @param {MessageEvent} event
-             * @returns {void}
-             */
-            handleSoleTraderPopupMessage(event) {
-                if (!this.showSoleTrader) return;
-                if (event.origin !== this.checkoutPageUrl) return;
-                // Correlating on `event.source` as well as origin: a message from
-                // any popup that is not the one currently tracked is stale by
-                // definition and must never overwrite a later adoption.
-                if (event.source !== this._soleTraderPopupWindow) return;
-
-                if (event.data !== 'ACCEPTED') {
-                    window.dispatchMessages(
-                        [{ type: 'error', text: this.soleTraderErrorMessage }],
-                        5000
-                    );
-                    return;
-                }
-
-                // Supersede any lookup still in flight. Its `matches` is computed
-                // against the quote's email, so a late pre-auth answer would
-                // disagree with the identity the buyer just authenticated and
-                // take this adoption back out.
-                this._soleTraderLookupGeneration = (this._soleTraderLookupGeneration || 0) + 1;
-                this.resolveSoleTraderBuyer(true).then((pf) => {
-                    if (pf.matches && pf.buyer) this.adoptSoleTraderBuyer(pf.buyer);
-                });
             },
 
             // Order Intent methods
@@ -4977,22 +4505,6 @@ $quoteDetails = json_encode(
 
     // Debounce timeout for order intent
     let orderIntentDebounceTimeout = null;
-
-    /*
-     * The signup popup's `message` channel (TWO-25503).
-     *
-     * Registered ONCE at module scope and routed to whichever component is
-     * live, rather than per component in initialize(): Magewire rebuilds the
-     * payment component on every totals, address or term change, so a listener
-     * attached there would stack one copy per render — each closed over a
-     * disposed component and each writing to the live address form on one
-     * message. The component's own handler does the origin and popup-handle
-     * correlation.
-     */
-    window.addEventListener('message', (event) => {
-        if (!twoPaymentComponentInstance) return;
-        twoPaymentComponentInstance.handleSoleTraderPopupMessage(event);
-    });
 
     /*
      * TWO-25326 tile bugfix batch, bug 4.

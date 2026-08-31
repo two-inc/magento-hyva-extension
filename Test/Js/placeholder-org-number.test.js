@@ -38,15 +38,21 @@ const NOTICE_COPY = {
 
 describe("placeholder organisation numbers are never shown (requirement 12)", () => {
   let env;
+  let fetchStub;
 
   beforeEach(() => {
     env = H.installHyvaEnvironment();
+    // Mounting a capture surface probes the registry for sole-trader
+    // availability, so every site below needs a wire even where it asserts on
+    // rendered text alone.
+    fetchStub = H.stubFetch();
     jest.spyOn(console, "error").mockImplementation(() => {});
     H.loadSharedHelpers();
     env.fireAlpineInit();
   });
 
   afterEach(() => {
+    fetchStub.restore();
     env.restore();
     document.body.innerHTML = "";
   });
@@ -152,9 +158,8 @@ describe("placeholder organisation numbers are never shown (requirement 12)", ()
      */
     function withPick(identifier) {
       document.body.innerHTML = [
-        '<div class="two-company-search" id="control-root">',
-        '  <input type="text" id="company-field" value="Example Trading Ltd" />',
-        '  <input type="text" class="two-company-query" value="" />',
+        '<div class="two-company-search" id="control-root" data-two-capture-host="address">',
+        '  <input type="text" id="company-field" data-two-capture-field value="Example Trading Ltd" />',
         "</div>",
       ].join("\n");
       H.loadTemplate(H.COMPANY_NAME_TEMPLATE);

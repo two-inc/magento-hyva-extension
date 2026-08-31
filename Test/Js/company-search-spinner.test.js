@@ -41,18 +41,25 @@ const LEGACY_HOOK_CLASS = "two-term-chip__loading";
  * harness substitutes one value for `$twoControlAlpineData` at both mount
  * points, so the address step's `x-data` has to be stripped back out.
  */
+/**
+ * Which mount point a control is, as the shared controller tells them apart.
+ * The harness resolves one value for both, so the tile has to say so itself.
+ */
+const TILE_HOST_RULE = [[/^\$twoControlCaptureHost$/, "tile"]];
+
 const SURFACES = [
   {
     label: "payment tile",
     js: H.GATEWAY_METHOD_TEMPLATE,
     component: "twoGatewayHyvaPaymentMethodBase",
+    rules: TILE_HOST_RULE,
     fixture: function () {
       return [
         '<input id="shipping-country_id" value="GB" />',
-        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE).replace(
-          /x-data="twoGatewayHyvaCompanySearchField"/,
-          "",
-        ),
+        H.renderTemplateMarkup(
+          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+          TILE_HOST_RULE,
+        ).replace(/x-data="twoGatewayHyvaCompanySearchField"/, ""),
       ].join("\n");
     },
     start: function (component) {
@@ -65,11 +72,12 @@ const SURFACES = [
     label: "shipping-address field",
     js: H.COMPANY_NAME_TEMPLATE,
     component: "twoGatewayHyvaCompanySearchField",
+    rules: undefined,
     fixture: function () {
       return [
         '<input id="shipping-country_id" value="GB" />',
-        '<div id="control-root" class="two-company-search">',
-        '  <input type="text" id="company-field" value="" />',
+        '<div id="control-root" class="two-company-search" data-two-capture-host="address">',
+        '  <input type="text" id="company-field" data-two-capture-field value="" />',
         "</div>",
       ].join("\n");
     },
@@ -92,8 +100,8 @@ describe.each(SURFACES)("search feedback — $label", (surface) => {
     fetchStub = H.stubFetch();
     jest.spyOn(console, "error").mockImplementation(() => {});
 
-    H.loadSharedHelpers();
-    H.loadTemplate(surface.js);
+    H.loadSharedHelpers(surface.rules);
+    H.loadTemplate(surface.js, surface.rules);
     env.fireAlpineInit();
 
     const root = document.getElementById(surface.rootId);
@@ -131,10 +139,10 @@ describe.each(SURFACES)("search feedback — $label", (surface) => {
 
     // A request is on the wire and nothing has come back: the indicator is up
     // for exactly this window, so resolving here is the original defect.
-    expect(fetchStub.calls.length).toBe(1);
+    expect(fetchStub.searchCalls().length).toBe(1);
     expect(settled).toBe(false);
 
-    fetchStub.last().respond({ items: [] });
+    fetchStub.lastSearch().respond({ items: [] });
     await pending;
 
     expect(settled).toBe(true);

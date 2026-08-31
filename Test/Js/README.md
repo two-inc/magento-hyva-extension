@@ -86,11 +86,23 @@ renderer cannot handle fails CI loudly instead of silently reducing the suite's 
 
 ### What is stubbed, and what is not
 
-Only the surroundings. `hyva` (browser storage, `formValidation`), `Alpine` (`data`,
-`store`), `window.dispatchMessages` and `fetch` are stubs; every line of behaviour being
-asserted is ours. Unlike `prestashop-plugin`, which loads the real jQuery UI because two
-of its target defects were properties _of the widget_, there is no npm distribution to
-load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
+Two tiers. **The surroundings** — `hyva` (browser storage, `formValidation`), `Alpine`
+(`data`, `store`), `window.dispatchMessages`, `fetch`. **And the four base-plugin
+singletons this module mounts**: the shared identity, the capture controller, the
+sole-trader flow and the search panel. Those four are not in this repo and there is no
+vendor tree in CI, so they are stubbed against a hand-written contract
+(`CAPTURE_HOST_CONTRACT`, asserted member by member in `company-popover-adapter.test.js`
+and `sole-trader-flow.test.js`) rather than loaded.
+
+**What that does and does not buy.** Every line of behaviour asserted here is this repo's
+own half — the options the adapters pass, the host functions the controller calls back
+into, what each writes into this checkout's DOM and storage. What it cannot catch is a
+change to the shared files' own contract: the stubs would go on agreeing with the suite
+while the real controller had moved. That risk is accepted deliberately and is covered
+where those files live; the mitigation available here is the contract list, which is why
+it is asserted rather than merely used. Unlike `prestashop-plugin`, which loads the real
+jQuery UI because two of its target defects were properties _of the widget_, there is no
+npm distribution to load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,
 so calling `component.getItems()` binds `this` the way Alpine's proxy does. `mountComponent()`
 attaches four magics — `$el`, `$root` and `$nextTick` from Alpine, `$wire` from Magewire — and
@@ -167,6 +179,11 @@ the interaction ends — the earlier once-per-_page-load_ latch left the buyer w
 field for the rest of the session), and a genuine zero-result search is _not_ flagged
 unavailable.
 
+A mutation check runs in a tree nobody else is writing to. A repeat-run loop sharing a
+working tree with one reads as a flaky test: a mutant that fails a single test — dropping
+the `companyIdSource === 'registry'` term from `hasVouchedCompanyId()` is one — is
+indistinguishable from cross-suite contamination while both are running.
+
 The suite was mutation-checked against the four behaviours it claims to pin, by breaking
 each one in the template and confirming a red run: relaxing `degraded === true` to
 truthiness fails 2 tests, moving the 30s ceiling to 5s fails 3, treating every abort as a
@@ -175,11 +192,8 @@ caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inv
 unconditional `done` fails the supersession test.
 
 The TWO-25253 identifier guard was mutation-checked the same way, **twenty-three** separate
-reverts, each red. Re-verified in full after the re-render fix below, against the shipped
-templates rather than carried forward — three counts in the previous revision of this table
-were wrong when written (`updatePaymentFields()` said 6, the shipping-sync gate said 3, and
-`applyCompanyIdEditability()` said 7), and several others legitimately moved because the
-fix changes what the field's state is at mount:
+reverts, each red. Every count below was taken against the shipped templates, one revert at
+a time, never carried forward from an earlier revision:
 
 | Mutation                                                                        | Tests failing                                                                    |
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -206,6 +220,27 @@ fix changes what the field's state is at mount:
 | Drop the `x-for :key` fallback                                                  | 1                                                                                |
 | Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
 | `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
+| Drop the `company_id_source` argument from the on-load initialisation           | 1                                                                                |
+| `update-company-data`'s entry-required gated on `Boolean(companyName)`          | 1                                                                                |
+| Drop `companyIdSource` from the `update-company-data` listener                   | 1                                                                                |
+| Drop `on()` from the harness's Magewire stub                                     | 1                                                                                |
+
+The dual-mount and shared-identity guards were mutation-checked the same way, against the
+shipped templates, one revert at a time:
+
+| Mutation                                                                     | Tests failing |
+| ---------------------------------------------------------------------------- | ------------- |
+| A same-root re-mount adds a second subscription instead of replacing it      | 1             |
+| The search text is remembered rather than discarded with the company         | 1             |
+| A surface holding no claim writes the shared identity unconditionally        | 3             |
+| A surface holding no claim writes it authoritatively                         | 1             |
+| The submit-field clear runs before the ownership guard                       | 1             |
+| Ownership captured when the subscription opens, not re-read per notification | 1             |
+| Querying ownership grants it when no claim is standing                       | 2             |
+| The stored capture MODE is adopted with no ownership gate                    | 1             |
+| `update-company-data` writes authoritatively from a tile hosting nothing     | 1             |
+| Watcher teardown left to the next mount's sweep instead of the re-render     | 1             |
+| A number recovered from the shipping form's own fields claimed as `registry` | 1             |
 
 One of these **started green** in an earlier round, and it is worth recording why. Flipping
 the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls

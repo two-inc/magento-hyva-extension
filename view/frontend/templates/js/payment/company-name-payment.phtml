@@ -123,7 +123,7 @@ $methodCode = $brandedViewModel->getMethodCode();
      * Update payment fields with company data and handle event synchronization.
      * Only updates if billing is same as shipping OR if forceUpdate is true.
      */
-    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false) => {
+    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false, companyIdSource = '') => {
         // Only sync if billing is same as shipping, unless force update is requested
         if (!forceUpdate && !isBillingAsShipping()) {
             return;
@@ -157,7 +157,11 @@ $methodCode = $brandedViewModel->getMethodCode();
                 alpineComponent.dispatchEvent(new CustomEvent('update-company-data', {
                     detail: {
                         companyName,
-                        companyId
+                        companyId,
+                        // Carried, not re-derived: a hand-typed number that came
+                        // back as 'registry' would re-lock the field over the
+                        // buyer's own value.
+                        companyIdSource
                     }
                 }));
             }
@@ -258,7 +262,13 @@ $methodCode = $brandedViewModel->getMethodCode();
 
             if (shippingCompany && shippingCompanyId) {
                 // Use stored shipping selection data
-                updatePaymentFields(shippingCompany, shippingCompanyId);
+                updatePaymentFields(
+                    shippingCompany,
+                    shippingCompanyId,
+                    false,
+                    false,
+                    shippingCompanySelectionData.company_id_source || ''
+                );
                 paymentFieldsInitialized = true;
             } else if (persistedShippingValue) {
                 // If shipping field has persisted value but no storage data,
@@ -267,6 +277,12 @@ $methodCode = $brandedViewModel->getMethodCode();
                 const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
 
                 if (persistedShippingIdValue) {
+                    // Recovered from the DOM, where no provenance is recorded, so
+                    // it is only registry-vouched if the stored record says so.
+                    // Absent provenance defaults to 'registry' downstream, which
+                    // re-locks the number field over a hand-typed value.
+                    const recoveredIdSource =
+                        shippingCompanySelectionData.company_id_source || 'manual';
                     // A merging write. This used to substitute a two-key object
                     // for the whole blob, which silently dropped `quote_id` —
                     // and the clearer above needs both quote ids non-empty, so
@@ -277,9 +293,16 @@ $methodCode = $brandedViewModel->getMethodCode();
                     twoPaymentWriteSelection({
                         quote_id: shippingCompanySelectionData.quote_id || currentQuoteId,
                         company_name: persistedShippingValue,
-                        company_id: persistedShippingIdValue
+                        company_id: persistedShippingIdValue,
+                        company_id_source: recoveredIdSource
                     });
-                    updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
+                    updatePaymentFields(
+                        persistedShippingValue,
+                        persistedShippingIdValue,
+                        false,
+                        false,
+                        recoveredIdSource
+                    );
                     paymentFieldsInitialized = true;
                 }
             }
@@ -430,7 +453,13 @@ $methodCode = $brandedViewModel->getMethodCode();
 
                 if (companyNameInput && companyIdInput && !companyNameInput.value) {
                     // Use the centralized update function for consistency and Alpine.js sync
-                    updatePaymentFields(capturedCompany, capturedCompanyId);
+                    updatePaymentFields(
+                        capturedCompany,
+                        capturedCompanyId,
+                        false,
+                        false,
+                        capturedCompanySelectionData.company_id_source || ''
+                    );
                     paymentFieldsInitialized = true; // Mark as initialized to prevent duplicates
                 }
             }
@@ -484,12 +513,21 @@ $methodCode = $brandedViewModel->getMethodCode();
                 // identifier: requests the listener discards, which still read
                 // as real submissions in the event log.
                 const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                // A restore is a rebuild re-announcing what it destroyed, not a
+                // company the buyer chose: sync, but do not re-check.
                 const shouldTriggerOrderIntent = Boolean(activePaymentMethod)
                     && activePaymentMethod.value === '<?= $escaper->escapeJs($methodCode) ?>'
-                    && shippingCompanyId !== "";
+                    && shippingCompanyId !== ""
+                    && !(event.detail || {}).restored;
 
                 // Use the centralized update function for consistency and Alpine.js sync
-                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
+                updatePaymentFields(
+                    shippingCompany,
+                    shippingCompanyId,
+                    shouldTriggerOrderIntent,
+                    true,
+                    (event.detail || {}).company_id_source || ''
+                );
             }
         }
     });
@@ -538,7 +576,13 @@ $methodCode = $brandedViewModel->getMethodCode();
                         // toggling billing back to "same as shipping" leaves
                         // the previous company's details in place.
                         if (shippingCompany) {
-                            updatePaymentFields(shippingCompany, shippingCompanyId, false, true);
+                            updatePaymentFields(
+                                shippingCompany,
+                                shippingCompanyId,
+                                false,
+                                true,
+                                shippingCompanySelectionData.company_id_source || ''
+                            );
                         }
                     }
                     // When billingAsShipping is false, let the user enter their own billing company

@@ -136,6 +136,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
   describe("the lifecycle", () => {
     let env;
+    let fetchStub;
     let component;
     let form;
 
@@ -151,6 +152,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       ].join("\n");
 
       env = H.installHyvaEnvironment();
+      // The capture controller asks the registry for the billing country's
+      // company types the moment the tile mounts.
+      fetchStub = H.stubFetch();
       jest.spyOn(console, "error").mockImplementation(() => {});
       H.loadSharedHelpers();
       env.fireAlpineInit();
@@ -165,6 +169,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     afterEach(() => {
+      fetchStub.restore();
       env.restore();
       jest.useRealTimers();
       document.body.innerHTML = "";
@@ -584,6 +589,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
   describe("the three verdicts are mutually exclusive", () => {
     let env;
+    let fetchStub;
     let component;
 
     beforeEach(() => {
@@ -592,12 +598,13 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // built around that field. Mounted with neither, there is no panel to
       // open and the rule cannot be expressed.
       document.body.innerHTML = [
-        '<div id="root" class="two-company-search">',
-        '  <input type="text" id="field" value="" />',
+        '<div id="root" class="two-company-search" data-two-capture-host="tile">',
+        '  <input type="text" id="field" data-two-capture-field value="" />',
         "</div>",
       ].join("\n");
 
       env = H.installHyvaEnvironment();
+      fetchStub = H.stubFetch();
       H.loadSharedHelpers();
       env.fireAlpineInit();
       component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
@@ -609,6 +616,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     afterEach(() => {
+      fetchStub.restore();
       env.restore();
     });
 

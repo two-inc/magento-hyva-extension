@@ -120,7 +120,7 @@ describe("shipping to payment company sync", () => {
     expect(companyNameInput().value).toBe("Example Trading Ltd");
     expect(companyIdInput().value).toBe("");
     expect(syncedEvents).toEqual([
-      { companyName: "Example Trading Ltd", companyId: "" },
+      { companyName: "Example Trading Ltd", companyId: "", companyIdSource: "" },
     ]);
   });
 
@@ -137,6 +137,7 @@ describe("shipping to payment company sync", () => {
     expect(syncedEvents[syncedEvents.length - 1]).toEqual({
       companyName: "Other Example Ltd",
       companyId: "",
+      companyIdSource: "",
     });
   });
 
@@ -218,6 +219,61 @@ describe("shipping to payment company sync", () => {
     }
   });
 
+  describe("a restored announcement", () => {
+    /**
+     * Fire the shipping event the way the address step's identity mirror does
+     * after a Magewire rebuild: same pair, marked as a restore.
+     *
+     * @param {boolean} restored
+     * @returns {Array<string>} what `dispatch-order-intent` fired
+     */
+    function announce(restored) {
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          manual_mode: false,
+        }),
+      );
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+      try {
+        window.dispatchEvent(
+          new CustomEvent("shipping-company-selected", {
+            detail: { restored: restored },
+          }),
+        );
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
+      return dispatched;
+    }
+
+    test.each([
+      [true, [], "a rebuild re-announcing what the tile already holds"],
+      [false, ["intent"], "a company the buyer just chose"],
+    ])("restored=%s dispatches %j: %s", (restored, expected) => {
+      // The tile's per-company dedup record is emptied by the same rebuild that
+      // causes the re-announcement, so an unmarked restore puts a fresh request
+      // on the wire every time.
+      activateTwoPayment();
+
+      expect(announce(restored)).toEqual(expected);
+    });
+
+    test("still syncs the fields, restore or not", () => {
+      activateTwoPayment();
+
+      announce(true);
+
+      expect(companyNameInput().value).toBe("Example Trading Ltd");
+      expect(companyIdInput().value).toBe("12345678");
+    });
+  });
+
   describe("the billing-as-shipping Magewire handler", () => {
     // Registered inside a `DOMContentLoaded` callback, behind a poll for the
     // `Magewire` global. jsdom has already fired DOMContentLoaded by the time
@@ -284,7 +340,7 @@ describe("shipping to payment company sync", () => {
       expect(companyNameInput().value).toBe("Other Example Ltd");
       expect(companyIdInput().value).toBe("");
       expect(syncedEvents).toEqual([
-        { companyName: "Other Example Ltd", companyId: "" },
+        { companyName: "Other Example Ltd", companyId: "", companyIdSource: "" },
       ]);
     });
 
@@ -427,8 +483,113 @@ describe("shipping to payment company sync", () => {
       expect(companyNameInput().value).toBe("Example Trading Ltd");
       expect(companyIdInput().value).toBe("12345678");
       expect(syncedEvents).toEqual([
-        { companyName: "Example Trading Ltd", companyId: "12345678" },
+        { companyName: "Example Trading Ltd", companyId: "12345678", companyIdSource: "" },
       ]);
+    });
+  });
+
+  describe("the stored provenance of a hand-typed number", () => {
+    // An omitted source is re-derived downstream as 'registry', which re-locks
+    // the field over a value the buyer typed.
+    let handler;
+
+    beforeEach(() => {
+      handler = null;
+      global.Magewire = {
+        on: (eventName, callback) => {
+          if (eventName === "billing_as_shipping_address_updated") {
+            handler = callback;
+          }
+        },
+      };
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      if (typeof handler !== "function") {
+        throw new Error(
+          "the template did not register a billing_as_shipping_address_updated " +
+            "handler — this throws rather than skipping, so a template change " +
+            "cannot quietly reduce these tests to testing nothing",
+        );
+      }
+      env.browserStorage.setItem(
+        H.COMPANY_SELECTION_KEY,
+        JSON.stringify({
+          quote_id: "test-quote-1",
+          company_name: "Example Trading Ltd",
+          company_id: "12345678",
+          company_id_source: "manual",
+          manual_mode: false,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      delete global.Magewire;
+    });
+
+    test.each([
+      [
+        "the payment method becoming active",
+        () =>
+          window.dispatchEvent(
+            new CustomEvent("checkout:payment:method-activate", {
+              detail: { method: "two_payment" },
+            }),
+          ),
+      ],
+      [
+        "billing collapsing back onto shipping",
+        () => handler({ billingAsShipping: true }),
+      ],
+    ])("reaches the tile through %s", (name, drive) => {
+      drive();
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+    });
+
+    test("reaches the tile through the on-load initialisation", () => {
+      // The latch that guards the page-load restore is per template load, and
+      // this describe's beforeEach has already tripped it. Last test here,
+      // because the second instance keeps listening for the rest of the file.
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+    });
+  });
+
+  describe("a company recovered from the shipping form's own fields", () => {
+    test("is not passed off as registry-vouched", () => {
+      // This route reads the pair out of the DOM, where no provenance is
+      // recorded. Sent on with none, the tile re-derives it as 'registry' and
+      // locks the number field over a value the buyer typed by hand.
+      const shippingFields = document.createElement("div");
+      shippingFields.innerHTML =
+        '<input id="shipping-company" value="Example Trading Ltd" />' +
+        '<input id="shipping-company_id" value="12345678" />';
+      document.body.appendChild(shippingFields);
+      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
+
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+
+      expect(syncedEvents[syncedEvents.length - 1]).toEqual({
+        companyName: "Example Trading Ltd",
+        companyId: "12345678",
+        companyIdSource: "manual",
+      });
+      // And the record it restores says the same, so the next reader agrees.
+      expect(
+        JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY))
+          .company_id_source,
+      ).toBe("manual");
     });
   });
 
