@@ -163,8 +163,8 @@ describe("form-scoped country resolution", () => {
 
     const call = fetchStub.lastSearch();
     if (!call) return null;
-    const country = new URL(call.url).searchParams.get("country");
-    call.respond({ items: [] });
+    const country = call.jsonBody().country;
+    call.respondProxy({ items: [] });
     await H.flushPromises();
     return country;
   }
@@ -316,7 +316,7 @@ describe("form-scoped country resolution", () => {
       const component = H.mountComponent(
         () =>
           window.twoGatewayCompanySearchEngine({
-            checkoutApiUrl: "https://api.test.invalid",
+            restBaseUrl: "https://shop.test.invalid",
             getQuote: function () {
               return {};
             },
@@ -326,11 +326,14 @@ describe("form-scoped country resolution", () => {
 
       // Not awaited before the assertion: the country is resolved synchronously
       // at the top of the search, and the request is settled afterwards only so
-      // the suite leaves nothing in flight.
+      // the suite leaves nothing in flight. It settles as a DIRECT call because
+      // an engine composed with no `isProxyAvailable` fails closed.
       const pending = component.runCompanySearch("Exa");
       expect(component.countryCode).toBe("NO");
 
-      fetchStub.calls[fetchStub.calls.length - 1].respond({ items: [] });
+      const call = fetchStub.calls[fetchStub.calls.length - 1];
+      expect(call.url).not.toContain("/rest/V1/two/");
+      call.respond({ items: [] });
       await pending;
     });
   });
@@ -369,8 +372,8 @@ describe("form-scoped country resolution", () => {
       await H.flushPromises();
 
       const call = fetchStub.calls[fetchStub.calls.length - 1];
-      expect(new URL(call.url).searchParams.get("country")).toBe("GB");
-      call.respond({ items: [] });
+      expect(call.jsonBody().country).toBe("GB");
+      call.respondProxy({ items: [] });
       await H.flushPromises();
     });
   });

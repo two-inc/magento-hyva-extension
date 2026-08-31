@@ -4,11 +4,9 @@
  *
  * TWO-25245. Browser-JS-in-Jest harness for the Hyvä extension.
  *
- * This module's JS is neither AMD nor ESM nor even a `.js` file: it is an
- * inline `<script>` block inside a `.phtml` template, registered with Hyvä's
- * CSP helper and rendered into a page where Alpine, Magewire and Hyvä's own
- * `hyva` global already exist. There is nothing to `require()` — and Jest
- * cannot import a `.phtml` at all.
+ * This module's JS is an inline `<script>` block inside a `.phtml` template, so
+ * there is nothing to `require()`. The harness renders the template the way PHP
+ * would (minus PHP), pulls the `<script>` bodies out and evaluates them.
  *
  * Extracting the JS to a real `.js` file would be the clean answer, but that is
  * a production change, and PR #71 (TWO-25238, the CSP-token fix) is open over
@@ -86,7 +84,14 @@ const PHP_VALUE_RULES = [
   // turned address autopopulation on; the phone-autofill suite overrides it via
   // `extraRules`, which is what proves the gate reads the injected value.
   [/^\$isAddressAutopopulationEnabled$/, "false"],
-  [/^\$companySearchLimit$/, "10"],
+  // Production's default; sole-trader-flow.test.js overrides it to cover the header.
+  [/^\$firewallToken$/, ""],
+  // proxy-capability-fallback.test.js overrides this to `false`.
+  [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
+  [/^\$clientName$/, "magento-hyva"],
+  [/^\$clientVersion$/, "2.1.0"],
+  [/^\$merchantShortName$/, "Example Shop"],
+  [/^\$companySearchLimit$/, "50"],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
   // the same meaning; the min-chars suite overrides it via `extraRules` with a
@@ -635,6 +640,8 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayIsDegradedResponse",
   "twoGatewayCompanySearch",
   "twoGatewayCompanyDetail",
+  "twoGatewayUnwrapProxyResponse",
+  "twoGatewayProxyPost",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
   // The popover's translated copy, and the register of live mounts a re-render
@@ -1773,6 +1780,19 @@ function stubFetch() {
           return Promise.resolve(body);
         },
       });
+    };
+    record.jsonBody = function () {
+      return JSON.parse(record.init.body);
+    };
+    /** HTTP 200 with an `{ok, status, body}` envelope, inside the one-element array Magento's webapi layer adds. */
+    record.respondProxy = function (body, ok, status) {
+      record.respond([
+        JSON.stringify({
+          ok: ok === undefined ? true : ok,
+          status: status === undefined ? 200 : status,
+          body: body,
+        }),
+      ]);
     };
     /** Resolve as a non-2xx with a body that would parse as a payload. */
     record.respondWithStatus = function (status) {

@@ -132,8 +132,11 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
       Object.assign(
         {
           checkoutApiUrl: "https://api.test.invalid",
+          restBaseUrl: "https://shop.test.invalid",
+          // Explicit, like every real mount: the engine default is fail-closed,
+          // and these cases assert the proxy path.
+          isProxyAvailable: true,
           minSearchChars: 3,
-          companySearchLimit: 10,
           isCompanySearchEnabled: true,
           getQuote: function () {
             return { quote_id: "q1", shipping_country_id: "GB" };
@@ -162,14 +165,14 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     // Immediately superseded before it resolves.
     const second = component.runCompanySearch("acme2");
 
-    fetchStub.calls[0].respond({ items: [] });
+    fetchStub.calls[0].respondProxy({ items: [] });
     await first;
     // The FIRST search's `done` must not have fired yet — it was
     // superseded, and firing it here would hide a spinner the SECOND
     // search still owns.
     expect(events).toEqual(["start", "start"]);
 
-    fetchStub.calls[1].respond({ items: [] });
+    fetchStub.calls[1].respondProxy({ items: [] });
     await second;
     expect(events).toEqual(["start", "start", "done"]);
   });
@@ -298,7 +301,7 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     });
 
     expect(fetchStub.calls).toHaveLength(1);
-    expect(fetchStub.calls[0].url).toContain("lookup-1");
+    expect(fetchStub.calls[0].jsonBody()).toEqual({ lookupId: "lookup-1" });
   });
 
   test("addressLookup()/setAddressData() are safe no-ops with no container resolved — never a throw", async () => {
@@ -310,7 +313,7 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     const component = mount({ isAddressSearchEnabled: true });
 
     const lookup = component.addressLookup("lookup-1");
-    fetchStub.calls[0].respond({ addresses: [{ city: "London" }] });
+    fetchStub.calls[0].respondProxy({ addresses: [{ city: "London" }] });
 
     await expect(lookup).resolves.toBeUndefined();
   });

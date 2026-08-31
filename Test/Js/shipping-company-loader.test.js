@@ -115,7 +115,7 @@ describe("shipping-company picker", () => {
     const { pending } = await startSearch("acme");
     expect(env.loaderEvents).toEqual(["start"]);
 
-    fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+    fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
     await pending;
 
     expect(env.loaderEvents).toEqual(["start", "done"]);
@@ -162,7 +162,7 @@ describe("shipping-company picker", () => {
     expect(overlayIsUp()).toBe(true);
     expect(fetchStub.calls).toHaveLength(2);
 
-    fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+    fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
     await Promise.all([first, second]);
 
     expect(env.loaderEvents).toEqual(["start", "start", "done"]);
@@ -174,9 +174,9 @@ describe("shipping-company picker", () => {
     const staleRequest = fetchStub.last();
     const { pending: second } = await startSearch("acme");
 
-    staleRequest.respond({ items: [apiItem("Stale Result", "999")] });
+    staleRequest.respondProxy({ items: [apiItem("Stale Result", "999")] });
     await first;
-    fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+    fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
     await second;
 
     expect(component.items).toHaveLength(1);
@@ -219,7 +219,7 @@ describe("shipping-company picker", () => {
     const { pending } = await startSearch("acme");
 
     field.remove();
-    fetchStub.last().respond({ items: [apiItem("Acme Widgets", "111")] });
+    fetchStub.last().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
     await pending;
 
     // The response arrives for a detached instance: the overlay still has
@@ -300,7 +300,7 @@ describe("shipping-company picker", () => {
 
     test("a degraded 200 is flagged as unavailable, not as an empty result", async () => {
       const { pending } = await startSearch("acme");
-      fetchStub.last().respond({ degraded: true, items: [] });
+      fetchStub.last().respondProxy({ degraded: true, items: [] });
       await pending;
 
       expect(component.isSearchUnavailable).toBe(true);
@@ -310,7 +310,7 @@ describe("shipping-company picker", () => {
 
     test("a genuine zero-result search is NOT flagged unavailable", async () => {
       const { pending } = await startSearch("acme");
-      fetchStub.last().respond({ items: [] });
+      fetchStub.last().respondProxy({ items: [] });
       await pending;
 
       expect(component.isSearchUnavailable).toBe(false);
@@ -339,8 +339,9 @@ describe("shipping-company picker", () => {
       lookupId: "lookup-111",
     });
 
-    expect(fetchStub.last().url).toContain("/companies/v2/company/lookup-111");
-    fetchStub.last().respond({
+    expect(fetchStub.last().url).toContain("/rest/V1/two/company");
+    expect(fetchStub.last().jsonBody()).toEqual({ lookupId: "lookup-111" });
+    fetchStub.last().respondProxy({
       addresses: [
         { city: "Oslo", postal_code: "0150", street_address: "1 Example Road" },
       ],

@@ -194,11 +194,82 @@ jobs:
             php /data/extensions/magento-hyva-extension/dev/stub-hyva
 
       - name: Install extension from uploaded source
-        # The Hyvä module requires the base Two plugin (two-inc/magento2 ^2.0);
-        # composer pulls it from Packagist (public) alongside the local path copy.
+        # The Hyvä module requires the base Two plugin at the floor in
+        # composer.json; composer pulls it from Packagist (public) alongside the
+        # local path copy, so this leg cannot resolve until a release carrying
+        # the proxy routes is published there.
         run: |
           docker exec magento-project-community-edition \
             composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
+
+      - name: Run setup:di:compile
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+  # The base module's floor tracks a route set that exists on the base repo's
+  # `staging` branch only — no release carries it yet (see
+  # `getIsProxyAvailable()` in AGENTS.md). Release timing there is a separate,
+  # unrelated decision, so this leg proves the real dependency: this branch
+  # against that staging code, installed via path repo instead of Packagist.
+  # This is the required gate for merge; `di-compile` above stays pointed at
+  # Packagist and is expected red until a release carries the floor.
+  di-compile-staging:
+    name: DI compile vs base staging (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    needs: discover-magento-matrix
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Upload tracked source into container
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-hyva-extension
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-hyva-extension
+
+      - name: Upload base module source into container
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2
+          git -C base-module ls-files -z | tar --null -cf - -C base-module -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/two-magento2
+
+      - name: Stub Hyvä / Magewire (no commercial credentials in CI)
+        # The Hyvä checkout package (hyva-themes/magento2-hyva-checkout) is
+        # commercial and can't be pulled in CI without credentials. dev/stub-hyva
+        # satisfies it via composer `provide` + minimal class stubs so
+        # setup:di:compile exercises the module structure credential-free. This
+        # is structural coverage, not a true Hyvä-integration run (TWO-24999).
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-hyva-extension/dev/stub-hyva
+
+      - name: Install extension from uploaded source
+        # Base module is registered by its own key, ahead of requiring this
+        # module, so composer resolves the transitive `two-inc/magento2`
+        # requirement against the uploaded staging source instead of Packagist.
+        run: |
+          docker exec magento-project-community-edition \
+            composer config repositories.two-magento2 path /data/extensions/two-magento2
+          docker exec magento-project-community-edition \
+            composer config repositories.local path '/data/extensions/magento-hyva-extension'
           docker exec magento-project-community-edition \
             composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
 

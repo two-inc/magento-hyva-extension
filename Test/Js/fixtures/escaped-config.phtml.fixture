@@ -7,6 +7,6 @@
 ?>
 <script>
 const apiUrl = '<?= $escaper->escapeJs($checkoutApiUrl) ?>';
-const limit = '<?= $escaper->escapeJs((string) $companySearchLimit) ?>';
+const flag = '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>';
 const message = '<?= $escaper->escapeJs(__('Please select a country first')) ?>';
 </script>

@@ -362,7 +362,7 @@ describe("the Hyvä adapter over the shared capture controller", () => {
       component.countryCode = "gb";
       const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
-      fetchStub.lastSearch().respond({
+      fetchStub.lastSearch().respondProxy({
         items: [hit("Alpha Ltd", "12345678", "lookup-1")],
       });
 
@@ -383,7 +383,7 @@ describe("the Hyvä adapter over the shared capture controller", () => {
       await H.flushPromises();
       fetchStub
         .lastSearch()
-        .respond({ items: [hit("Alpha Ltd", "12345678", undefined)] });
+        .respondProxy({ items: [hit("Alpha Ltd", "12345678", undefined)] });
 
       const result = await pending;
 
@@ -391,15 +391,28 @@ describe("the Hyvä adapter over the shared capture controller", () => {
     });
 
     test.each([
-      [500, true, "a server error is the search being down"],
-      [200, false, "a good response is not"],
-    ])("status %i reports unavailable: %p (%s)", async (status, unavailable) => {
+      {
+        settle: (call) => call.respond({}, 500),
+        unavailable: true,
+        label: "the proxy route itself failing is the search being down",
+      },
+      {
+        settle: (call) => call.respondProxy({ error_code: "x" }, false, 502),
+        unavailable: true,
+        label: "so is the registry call the proxy made failing",
+      },
+      {
+        settle: (call) => call.respondProxy({ items: [] }),
+        unavailable: false,
+        label: "a good answer is not",
+      },
+    ])("unavailable: $unavailable — $label", async ({ settle, unavailable }) => {
       // "The search is down" and "your company is not here" are different
       // answers to the buyer, and the panel paints them differently.
       component.countryCode = "gb";
       const pending = component.capturePanelSearch({ term: "alpha" });
       await H.flushPromises();
-      fetchStub.lastSearch().respond({ items: [] }, status);
+      settle(fetchStub.lastSearch());
 
       expect((await pending).unavailable).toBe(unavailable);
     });

@@ -230,6 +230,24 @@ describe("the host adapter the shared flow is given", () => {
     // back out — but the controller calls it on every country change.
     expect(() => tile.host.revertAutofilledAddress()).not.toThrow();
   });
+
+  test.each([
+    ["waf-abc123", "waf-abc123", "a configured token is relayed"],
+    ["", "", "the default carries no token at all"],
+  ])(
+    "firewall token %p reaches the flow's own config (%s)",
+    (configured, expected) => {
+      // The buyer-cookie read behind this config is the shared flow's own
+      // fetch — untestable here (see file header) — so this only pins that
+      // the value reaches it, the same way checkoutApiUrl and brand do.
+      tile.restore();
+      tile = mountTile({
+        extraRules: [[/^\$firewallToken$/, configured]],
+      });
+
+      expect(tile.capture.config().firewallToken).toBe(expected);
+    },
+  );
 });
 
 describe("sole-trader availability", () => {

@@ -30,12 +30,8 @@ class CheckoutConfig implements ArgumentInterface
     public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
      * Placeholder the Alpine component substitutes the buyer's company name
-     * into. Deliberately a local constant rather than a reference to the
-     * parent module's config provider: the token never crosses the module
-     * boundary at runtime (this view model produces it and this module's own
-     * JS consumes it), and referencing the parent's constant would fatal on
-     * a parent release that predates it, defeating the method_exists()
-     * degradation in getOrderIntentApprovedNotice().
+     * into. Local, not the parent's constant: that import would fatal on a
+     * parent predating it, defeating the method_exists() degradation below.
      */
     public const COMPANY_NAME_TOKEN = "{{companyName}}";
 
@@ -222,7 +218,40 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * "" unless the merchant opted in, so its presence in tile config is defence
+     * in depth, not a leak. Guarded — the tile calls it ahead of every proxy branch.
+     */
+    public function getFirewallToken(): string
+    {
+        if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
+            return "";
+        }
+
+        return $this->configRepository->isFirewallTokenSentFromBrowser()
+            ? $this->configRepository->getFirewallToken()
+            : "";
+    }
+
+    /**
+     * Whether the base exposes the proxy routes; false falls back to the direct call.
+     * Runtime check, not composer's ^2.3.0 floor — a version is not proof the code
+     * shipped. True proves autoload, not route registration (a stale route cache 404s
+     * until cache:flush). The registry interface stands in for the order-intent one,
+     * both landing in one base commit; if that stops holding add a second check.
+     * String literal, not an import that would itself fatal on the base being
+     * detected. Base-module literals are duplicated in this repo's tests, so drift
+     * surfaces only at runtime — accepted because it fails closed. The four getters
+     * below stay `@deprecated` so static-analysis noise at their call sites reminds
+     * a reader to delete them once the fallback goes.
+     */
+    public function getIsProxyAvailable(): bool
+    {
+        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
+    }
+
+    /**
      * Plugin identifier for the `client` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientName(): ?string
     {
@@ -231,6 +260,7 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Plugin version for the `client_v` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientVersion(): ?string
     {
@@ -239,10 +269,17 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Merchant slug for the `merchant` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getMerchantShortName(): string
     {
         return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
+    }
+
+    /** @deprecated Fallback row bound; the proxy route sets its own. */
+    public function getCompanySearchLimit(): int
+    {
+        return 50;
     }
 
     /**
@@ -326,11 +363,6 @@ class CheckoutConfig implements ArgumentInterface
     public function getIsAddressAutopopulationEnabled(): bool
     {
         return (bool) $this->configRepository->isAddressSearchEnabled();
-    }
-
-    public function getCompanySearchLimit()
-    {
-        return 50;
     }
 
     /**
@@ -435,14 +467,8 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getOrderIntentApprovedNotice(): ?array
     {
-        // Degrade gracefully on an older parent. composer.json requires
-        // two-inc/magento2 ^2.0, which cannot express "the patch release that
-        // added these registry methods" — and tightening the constraint would
-        // block installs on parents that are otherwise perfectly compatible.
-        // A missing method therefore means "no brand opinion": the notice is
-        // ON, with the platform default copy, which is correct for every
-        // brand that has not opted out. Drop these guards once the parent
-        // constraint moves past the release that introduced the methods.
+        // A base predating these registry methods means "no brand opinion": notice
+        // ON with platform default copy. Floor untrusted per getIsProxyAvailable().
         $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
             ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
             : true;

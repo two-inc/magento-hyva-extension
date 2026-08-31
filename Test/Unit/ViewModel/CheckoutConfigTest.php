@@ -13,12 +13,9 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
  * declarations (TWO-25218): a boolean switch and a copy override. The switch is
  * the only thing that suppresses the notice; an empty override is inert.
  *
- * The view model is built with newInstanceWithoutConstructor() and the brand
- * registry injected by reflection: every other constructor dependency is a
- * Magento framework class this method never touches, and stubbing them would
- * buy nothing but a bigger fixture. Fake registries are anonymous classes, not
- * mocks of the parent interface, precisely so one of them can OMIT a method and
- * stand in for an older parent release.
+ * The view model is built with newInstanceWithoutConstructor() and only the
+ * collaborator under test injected by reflection: every other constructor
+ * dependency is a framework class these methods never touch.
  */
 class CheckoutConfigTest extends TestCase
 {
@@ -60,25 +57,6 @@ class CheckoutConfigTest extends TestCase
     public function testSwitchDisabledWinsOverCopyOverride(): void
     {
         $this->assertNull($this->noticeFor($this->registry(false, 'Overridden for %1 and %2.')));
-    }
-
-    /**
-     * Older parent lacking the switch method: no brand opinion ⇒ notice ON.
-     * This degradation is load-bearing while composer requires only ^2.0.
-     */
-    public function testOlderParentWithoutSwitchMethodKeepsNoticeOn(): void
-    {
-        $registry = new class () {
-            public function getProductName(): string
-            {
-                return 'TestProduct';
-            }
-        };
-
-        $notice = $this->noticeFor($registry);
-
-        $this->assertNotNull($notice);
-        $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
     }
 
     public function testCopyOverridePassesThroughWithPlaceholders(): void
@@ -311,6 +289,139 @@ class CheckoutConfigTest extends TestCase
         $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
 
         return (bool) $viewModel->getIsAddressSearchEnabled();
+    }
+
+    /**
+     * @dataProvider firewallTokenCases
+     */
+    public function testFirewallTokenIsGatedOnTheBrowserToggle(
+        bool $sentFromBrowser,
+        string $configuredToken,
+        string $expected,
+        string $case
+    ): void {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class ($sentFromBrowser, $configuredToken) {
+            /** @var bool */
+            private $sentFromBrowser;
+
+            /** @var string */
+            private $token;
+
+            public function __construct(bool $sentFromBrowser, string $token)
+            {
+                $this->sentFromBrowser = $sentFromBrowser;
+                $this->token = $token;
+            }
+
+            public function isFirewallTokenSentFromBrowser(): bool
+            {
+                return $this->sentFromBrowser;
+            }
+
+            public function getFirewallToken(): string
+            {
+                return $this->token;
+            }
+        };
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+
+        $this->assertSame($expected, $viewModel->getFirewallToken(), $case);
+    }
+
+    /**
+     * @return array<int, array{0:bool, 1:string, 2:string, 3:string}>
+     */
+    public static function firewallTokenCases(): array
+    {
+        return [
+            [false, 'tok-abc', '', 'toggle off, token configured: absent'],
+            [true, 'tok-abc', 'tok-abc', 'toggle on, token configured: present'],
+            [true, '', '', 'toggle on, nothing configured: absent'],
+        ];
+    }
+
+    /**
+     * The interface is declared mid-test because both states have to be observed;
+     * declaring it is irreversible within a process, hence the separate one.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testProxyAvailabilityTracksTheBaseModulesOwnInterface(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $this->assertFalse(
+            $viewModel->getIsProxyAvailable(),
+            'a base without the interface predates the routes'
+        );
+
+        eval('namespace Two\Gateway\Api\Webapi; interface CompanyLookupInterface {}');
+        $this->assertTrue($viewModel->getIsProxyAvailable(), 'interface present');
+    }
+
+    /**
+     * The getter guards on the toggle method alone. A base carrying one config
+     * method but not the other is unreachable — one base commit declares both.
+     *
+     * @dataProvider firewallTokenAbsentMethodCases
+     */
+    public function testFirewallTokenDegradesOnABaseWithoutTheConfigMethods(
+        object $configRepository,
+        string $case
+    ): void {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+
+        $this->assertSame('', $viewModel->getFirewallToken(), $case);
+    }
+
+    /**
+     * @return array<int, array{0:object, 1:string}>
+     */
+    public static function firewallTokenAbsentMethodCases(): array
+    {
+        return [
+            [
+                new class {
+                    public function getApiKey(): string
+                    {
+                        return 'key';
+                    }
+                },
+                'neither method: the guard is what stops the fatal',
+            ],
+            [
+                new class {
+                    public function isFirewallTokenSentFromBrowser(): bool
+                    {
+                        return false;
+                    }
+                },
+                'toggle off and no token getter: returns before reaching it',
+            ],
+        ];
+    }
+
+    /** No brand opinion means the platform default copy, not a fatal. */
+    public function testNoticeSurvivesABrandRegistryWithoutTheDeclarationMethods(): void
+    {
+        $notice = $this->noticeFor(new class {
+            public function getProductName(): string
+            {
+                return 'TestProduct';
+            }
+        });
+
+        $this->assertNotNull($notice);
+        $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
     }
 
     public function testGetIsApiKeyVerifiedDelegatesToTheInjectedStatusService(): void

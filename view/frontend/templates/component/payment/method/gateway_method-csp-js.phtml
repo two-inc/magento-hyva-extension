@@ -30,6 +30,8 @@ $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
+$firewallToken = $configModel->getFirewallToken();
+$isProxyAvailable = $configModel->getIsProxyAvailable();
 $companySearchLimit = $configModel->getCompanySearchLimit();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
 $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
@@ -801,13 +803,24 @@ $quoteDetails = json_encode(
     window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS = 30000;
 
     /**
+     * Fallback config for a helper reached without one; else it builds a host-less relative URL that 404s as "no addresses".
+     */
+    window.TWO_GATEWAY_DIRECT_CALL_CONFIG = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {
+        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
+        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
+        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
+        merchant: '<?= $escaper->escapeJs($merchantName) ?>',
+    };
+
+    /**
      * Search-result cache, shared by all three Hyvä company pickers (the
      * address-form field, the shipping-step component and the payment-step
      * component). Deliberately hung off `window` rather than held in Alpine
      * component state: Magewire re-renders destroy and rebuild those
      * components, and a component-owned cache would be discarded exactly
-     * when re-issuing searches hurts most. Keyed by request URL, so
-     * country / limit / query are all part of the key.
+     * when re-issuing searches hurts most. Keyed by request URL on the direct
+     * path; by `search|<country>|<query>` on the proxy path, which has no URL
+     * — no limit there, the server owns paging.
      *
      * Entries never expire, and because the cache is window-scoped it also
      * survives every Magewire re-render for the life of the page — so a
@@ -868,6 +881,54 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * Unwrap a proxy `{ok, status, body}` — a one-element array on some Magento serialisation paths, a string on others.
+     * @param {*} raw
+     * @returns {{ok: boolean, status: number, body: *}}
+     */
+    window.twoGatewayUnwrapProxyResponse = window.twoGatewayUnwrapProxyResponse || function(raw) {
+        const first = Array.isArray(raw) ? raw[0] : raw;
+        let parsed = first;
+        if (typeof first === 'string') {
+            try {
+                parsed = JSON.parse(first);
+            } catch (error) {
+                return { ok: false, status: 0, body: null };
+            }
+        }
+        if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
+        // Identity, not Boolean(): a truthy `"false"` would read as "no matches".
+        return { ok: parsed.ok === true, status: parsed.status || 0, body: parsed.body };
+    };
+
+    /**
+     * POST to a plugin proxy route; the base module owns paths, bodies, envelope.
+     * @param {string} restBaseUrl Magento link base URL, no trailing slash
+     * @param {string} path route path, leading slash
+     * @param {Object} body
+     * @param {AbortSignal} [signal]
+     * @returns {Promise<{ok: boolean, status: number, body: *}>}
+     */
+    window.twoGatewayProxyPost = window.twoGatewayProxyPost || async function(restBaseUrl, path, body, signal) {
+        const response = await fetch(restBaseUrl + path, {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: signal,
+        });
+        if (!response.ok) {
+            // Stale webapi route cache, not "base too old"; no fallback, which would hide the missed flush.
+            if (response.status === 404) {
+                console.warn(
+                    'Two: proxy route ' + path + ' is unregistered despite the base module '
+                    + 'exposing it — run setup:upgrade and cache:flush on the store.'
+                );
+            }
+            throw new Error('Error response from ' + path + ': ' + response.status);
+        }
+        return window.twoGatewayUnwrapProxyResponse(await response.json());
+    };
+
+    /**
      * Run one company search with a timeout, a cache and a failure signal
      * the buyer can actually see.
      *
@@ -884,24 +945,34 @@ $quoteDetails = json_encode(
      *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
      *
      * @param {Object} options
-     * @param {string} options.checkoutApiUrl
+     * @param {boolean} options.useProxy read by identity here and at the other three
+     *   proxy-selection sites, so anything but `true` takes the deprecated direct
+     *   fallback — see CheckoutConfig::getIsProxyAvailable().
+     * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
+     * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
      * @param {string} options.query
-     * @param {number|string} options.limit
+     * @param {number|string} [options.limit] fallback path only
+     * @param {string} [options.client] fallback path only
+     * @param {string} [options.clientV] fallback path only
+     * @param {string} [options.merchant] fallback path only
      * @param {AbortSignal} [options.signal] caller's abort signal
      * @returns {Promise<{status: string, items: Array}>}
      */
     window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
-        const queryParams = new URLSearchParams({
-            country: (options.countryCode || '').toUpperCase(),
+        const country = (options.countryCode || '').toUpperCase();
+        const term = unescape(options.query);
+        const useProxy = options.useProxy === true;
+        const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
+            country: country,
             limit: options.limit,
             offset: 0,
-            q: unescape(options.query),
+            q: term,
             client: options.client || '',
             client_v: options.clientV || '',
             merchant: options.merchant || '',
         });
-        const url = options.checkoutApiUrl + '/companies/v2/company?' + queryParams;
+        const cacheKey = useProxy ? 'search|' + country + '|' + term : directUrl;
 
         /*
          * `national_identifier` is OPTIONAL in the search response — the
@@ -960,7 +1031,7 @@ $quoteDetails = json_encode(
             };
         });
 
-        const cached = window.twoGatewayCompanySearchCache.get(url);
+        const cached = window.twoGatewayCompanySearchCache.get(cacheKey);
         if (cached) {
             const items = mapItems(cached);
             return { status: items.length ? 'ok' : 'empty', items: items };
@@ -988,10 +1059,21 @@ $quoteDetails = json_encode(
         }
 
         try {
-            const response = await fetch(url, { signal: controller.signal });
-            if (!response.ok) throw new Error('Company search responded ' + response.status);
-
-            const data = await response.json();
+            let data;
+            if (useProxy) {
+                const envelope = await window.twoGatewayProxyPost(
+                    options.restBaseUrl,
+                    '/rest/V1/two/company-search',
+                    { country: country, query: term },
+                    controller.signal
+                );
+                if (!envelope.ok) throw new Error('Company search responded ' + envelope.status);
+                data = envelope.body;
+            } else {
+                const response = await fetch(directUrl, { signal: controller.signal });
+                if (!response.ok) throw new Error('Company search responded ' + response.status);
+                data = await response.json();
+            }
             const items = mapItems(data);
 
             if (window.twoGatewayIsDegradedResponse(data)) {
@@ -1005,7 +1087,7 @@ $quoteDetails = json_encode(
                 const oldest = window.twoGatewayCompanySearchCache.keys().next().value;
                 window.twoGatewayCompanySearchCache.delete(oldest);
             }
-            window.twoGatewayCompanySearchCache.set(url, data);
+            window.twoGatewayCompanySearchCache.set(cacheKey, data);
 
             return { status: items.length ? 'ok' : 'empty', items: items };
         } catch (error) {
@@ -1027,14 +1109,24 @@ $quoteDetails = json_encode(
     /**
      * Fetch one company's detail record, with the same timeout.
      *
-     * @param {string} checkoutApiUrl
+     * @param {string} restBaseUrl Magento link base URL, no trailing slash
      * @param {string} lookupId
-     * @param {string} [client]
-     * @param {string} [clientV]
-     * @param {string} [merchant]
+     * @param {Object|null} [direct] fallback config, or exactly `null` for the
+     *   proxy route — fail closed per twoGatewayCompanySearch's useProxy.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
-    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(checkoutApiUrl, lookupId, client, clientV, merchant) {
+    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
+        // A non-object third argument carries no host; the store's config avoids a relative URL that 404s as "no addresses".
+        const useProxy = direct === null;
+        let cfg = direct;
+        if (!useProxy && typeof direct !== 'object') {
+            console.warn(
+                'Two: twoGatewayCompanyDetail is (restBaseUrl, lookupId, direct); '
+                + 'it was called with no direct config, so the direct call falls '
+                + "back to the store's own direct-call config."
+            );
+            cfg = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {};
+        }
         const controller = new AbortController();
         // No reason argument: nothing reads it, and the sibling search helper
         // does not pass one either.
@@ -1043,18 +1135,28 @@ $quoteDetails = json_encode(
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
         try {
-            const queryParams = new URLSearchParams({
-                client: client || '',
-                client_v: clientV || '',
-                merchant: merchant || '',
-            });
-            const response = await fetch(`${checkoutApiUrl}/companies/v2/company/${lookupId}?${queryParams}`, {
-                signal: controller.signal,
-            });
-            // Without this check an error body parses as an address payload
+            // Without these checks an error body parses as an address payload
             // and silently produces "no addresses".
-            if (!response.ok) throw new Error('Company detail responded ' + response.status);
-            return await response.json();
+            if (!useProxy) {
+                const queryParams = new URLSearchParams({
+                    client: cfg.client || '',
+                    client_v: cfg.clientV || '',
+                    merchant: cfg.merchant || '',
+                });
+                const response = await fetch(`${cfg.checkoutApiUrl || ''}/companies/v2/company/${lookupId}?${queryParams}`, {
+                    signal: controller.signal,
+                });
+                if (!response.ok) throw new Error('Company detail responded ' + response.status);
+                return await response.json();
+            }
+            const envelope = await window.twoGatewayProxyPost(
+                restBaseUrl,
+                '/rest/V1/two/company',
+                { lookupId: lookupId },
+                controller.signal
+            );
+            if (!envelope.ok) throw new Error('Company detail responded ' + envelope.status);
+            return envelope.body;
         } catch (error) {
             console.error('Error fetching address:', error);
             return null;
@@ -1110,13 +1212,7 @@ $quoteDetails = json_encode(
      *
      * @param {Object} options
      * @param {string} options.checkoutApiUrl
-     * @param {string} [options.client] `client` query param stamped on every
-     *   browser-side Two API call this engine makes.
-     * @param {string} [options.clientV] `client_v` query param, sibling of
-     *   `client` above.
-     * @param {string} [options.merchant] `merchant` query param, sibling of
-     *   `client` above.
-     * @param {number} options.companySearchLimit
+     * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
      * @param {number} options.minSearchChars
      * @param {boolean} options.isCompanySearchEnabled
      * @param {boolean} [options.isAddressSearchEnabled]
@@ -1183,6 +1279,9 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanySearchEngine = window.twoGatewayCompanySearchEngine || function twoGatewayCompanySearchEngine(options) {
         const cfg = Object.assign({
             checkoutApiUrl: '',
+            restBaseUrl: '',
+            // Fail closed — see twoGatewayCompanySearch's useProxy.
+            isProxyAvailable: false,
             client: '',
             clientV: '',
             merchant: '',
@@ -1246,7 +1345,7 @@ $quoteDetails = json_encode(
 
         return {
             // --- state ---
-            // These five are seeded from `options` but, unlike the rest of
+            // These are seeded from `options` but, unlike the rest of
             // `options`, are live INSTANCE properties rather than values
             // closed over in `cfg` — every historical surface exposed them
             // as plain mutable state (a lookup-off store flips
@@ -1254,6 +1353,8 @@ $quoteDetails = json_encode(
             // it post-mount to simulate exactly that), so the engine's own
             // methods read `this.X` for these, never `cfg.X`.
             checkoutApiUrl: cfg.checkoutApiUrl,
+            restBaseUrl: cfg.restBaseUrl,
+            isProxyAvailable: cfg.isProxyAvailable,
             client: cfg.client,
             clientV: cfg.clientV,
             merchant: cfg.merchant,
@@ -1412,6 +1513,8 @@ $quoteDetails = json_encode(
                 let result;
                 try {
                     result = await window.twoGatewayCompanySearch({
+                        useProxy: this.isProxyAvailable,
+                        restBaseUrl: this.restBaseUrl,
                         checkoutApiUrl: this.checkoutApiUrl,
                         countryCode: this.countryCode,
                         query: term,
@@ -1679,7 +1782,16 @@ $quoteDetails = json_encode(
 
             // --- address lookup (identical across every surface that offers it) ---
             async addressLookup(lookupId, container) {
-                const data = await window.twoGatewayCompanyDetail(this.checkoutApiUrl, lookupId, this.client, this.clientV, this.merchant);
+                const data = await window.twoGatewayCompanyDetail(
+                    this.restBaseUrl,
+                    lookupId,
+                    this.isProxyAvailable === true ? null : {
+                        checkoutApiUrl: this.checkoutApiUrl,
+                        client: this.client,
+                        clientV: this.clientV,
+                        merchant: this.merchant,
+                    }
+                );
                 if (data && data.addresses && data.addresses.length > 0) {
                     this.setAddressData(data.addresses[0], container);
                 }
@@ -1991,7 +2103,12 @@ $quoteDetails = json_encode(
                 // address step renders it or the tile does, never both — so this
                 // answers only the controller's other question: whether "Enter
                 // manually" has a later lookup to supply the number it captures.
-                isCompanySearchEnabled: !!settings.manualEntryOffered
+                isCompanySearchEnabled: !!settings.manualEntryOffered,
+                // The sole-trader buyer read is the one call that cannot be
+                // proxied — it is authenticated by the buyer's own cookie on the
+                // API's domain — so it carries this instead, and only where a
+                // merchant enabled it for the browser.
+                firewallToken: settings.firewallToken
             },
             Panel: Panel,
             SoleTraderFlow: SoleTraderFlow,
@@ -2390,7 +2507,8 @@ $quoteDetails = json_encode(
                     brand: opts.brand,
                     brandVersion: opts.brandVersion,
                     soleTraderErrorMessage: opts.soleTraderErrorMessage,
-                    manualEntryOffered: !!opts.manualEntryOffered
+                    manualEntryOffered: !!opts.manualEntryOffered,
+                    firewallToken: this.firewallToken
                 });
                 if (!capture) return;
                 capture.start();
@@ -2929,6 +3047,9 @@ $quoteDetails = json_encode(
             // lookup to supply one — and this tile hosts the control only when
             // the address-step search, that lookup, is off.
             manualEntryOffered: false,
+            restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
+            // Bare boolean, not quoted: the string "false" is truthy.
+            isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             client: '<?= $escaper->escapeJs((string) $clientName) ?>',
             clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
@@ -3054,8 +3175,7 @@ $quoteDetails = json_encode(
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
+            firewallToken: '<?= $escaper->escapeJs($firewallToken) ?>',
             // The one threshold for this repo, emitted from PHP
             // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as
             // a literal in each guard (TWO-25288). Cast to an int, NOT quoted
@@ -3832,20 +3952,33 @@ $quoteDetails = json_encode(
                     if (this.shouldSkipOrderIntent(quoteData)) return null;
 
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
-                    const queryParams = new URLSearchParams({
-                        client: this.orderIntentConfig_extensionPlatformName,
-                        client_v: this.orderIntentConfig_extensionDBVersion,
-                        merchant: this.orderIntentConfig_merchant_shortName
-                    });
 
-                    const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(orderIntentRequestBody)
-                    });
+                    // DEPRECATED — see twoGatewayCompanySearch.
+                    if (this.isProxyAvailable !== true) {
+                        const queryParams = new URLSearchParams({
+                            client: this.orderIntentConfig_extensionPlatformName,
+                            client_v: this.orderIntentConfig_extensionDBVersion,
+                            merchant: this.orderIntentConfig_merchant_shortName
+                        });
 
-                    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-                    return await response.json();
+                        const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(orderIntentRequestBody)
+                        });
+
+                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                        return await response.json();
+                    }
+
+                    const envelope = await window.twoGatewayProxyPost(
+                        this.restBaseUrl,
+                        '/rest/V1/two/order-intent',
+                        { payload: JSON.stringify(orderIntentRequestBody) }
+                    );
+
+                    if (!envelope.ok) throw new Error(`HTTP error! Status: ${envelope.status}`);
+                    return envelope.body;
                 } catch (error) {
                     console.error('Error in placeOrderIntent:', error);
                     throw error;
@@ -3926,8 +4059,11 @@ $quoteDetails = json_encode(
                             phone_number: quoteData.telephone
                         }
                     },
-                    merchant_id: this.orderIntentConfig_merchant_id,
-                    merchant_short_name: this.orderIntentConfig_merchant_shortName
+                    // The proxy resolves the merchant from the store's API key.
+                    ...(this.isProxyAvailable === true ? {} : {
+                        merchant_id: this.orderIntentConfig_merchant_id,
+                        merchant_short_name: this.orderIntentConfig_merchant_shortName
+                    })
                 };
             },
 

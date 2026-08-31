@@ -214,8 +214,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
 
       return search("acm").then(function () {
         expect(fetchStub.searchCalls()).toHaveLength(1);
-        expect(fetchStub.searchCalls()[0].url).toMatch(/acm/);
-        expect(fetchStub.searchCalls()[0].url).not.toMatch(/Previously/);
+        expect(fetchStub.searchCalls()[0].jsonBody().query).toBe("acm");
         expect(nameField.value).toBe("Previously Chosen Ltd");
       });
     });
@@ -224,7 +223,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       const { pending } = await search("acm");
       expect(component.isSearching).toBe(true);
 
-      fetchStub.searchCalls()[0].respond({ items: [] });
+      fetchStub.searchCalls()[0].respondProxy({ items: [] });
       await pending;
 
       expect(component.isSearching).toBe(false);
@@ -239,7 +238,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     test.each([
       [
         function (call) {
-          call.respond({ items: [] });
+          call.respondProxy({ items: [] });
         },
         { count: 0, unavailable: false },
         "no matches is a verdict, not a failure",
@@ -253,7 +252,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       ],
       [
         function (call) {
-          call.respond(ONE_HIT);
+          call.respondProxy(ONE_HIT);
         },
         { count: 1, unavailable: false },
         "hits leave nothing to explain",
@@ -280,13 +279,13 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       const second = searchApi.searchCompanies({ term: "acme" });
       await H.flushPromises();
 
-      fetchStub.searchCalls()[0].respond({ items: [] });
+      fetchStub.searchCalls()[0].respondProxy({ items: [] });
       const firstResult = await first;
 
       expect(firstResult.aborted).toBe(true);
       expect(firstResult.items).toHaveLength(0);
 
-      fetchStub.searchCalls()[1].respond(ONE_HIT);
+      fetchStub.searchCalls()[1].respondProxy(ONE_HIT);
       await second;
     });
 
@@ -302,7 +301,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
 
     test("§1 taking a result fills the NAME field and captures the identifier", async () => {
       const { pending } = await search("acm");
-      fetchStub.searchCalls()[0].respond(ONE_HIT);
+      fetchStub.searchCalls()[0].respondProxy(ONE_HIT);
       const result = await pending;
 
       panel.options.onSelect(result.items[0]);
@@ -326,7 +325,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       ["TWO:ST-0001", "<em>Acme</em> Ltd", "an internal placeholder is not"],
     ])("§1 a results row renders %s as %p (%s)", async (identifier, expected) => {
       const { pending } = await search("acm");
-      fetchStub.searchCalls()[0].respond({
+      fetchStub.searchCalls()[0].respondProxy({
         items: [
           {
             name: "Acme Ltd",

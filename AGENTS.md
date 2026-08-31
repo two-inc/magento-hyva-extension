@@ -96,12 +96,15 @@ so it never dirties the working tree. `.two-deployed-commit` is gitignored and
 must never be committed: a committed stamp would be frozen at commit time and
 would shadow the two fresher signals.
 
-`Provenance` is deliberately a near-copy of the base module's equivalent
-provenance model rather than an injection of it — that class ships in no
-published `two-inc/magento2` release, so depending on it would break DI on
-every base version a merchant can install. Once a base release carries it and
-this repo's constraint has a floor at that release, delete the local copy and
-inject the base one; the public surface is identical for exactly that reason.
+`Provenance` is a near-copy of the base module's equivalent provenance model
+rather than an injection of it, with an identical public surface. **Keep the
+copy.** No released base carries its own provenance model — the newest
+release, `2.1.2`, predates it — so injecting the base module's instead would
+fatal the admin field on every base a merchant can currently install. The `^2.3.0`
+floor in `composer.json` is not evidence to the contrary: it states intent
+only, for the reason set out under `getIsProxyAvailable()` below. Delete the
+copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
+the class — never on the strength of its version number.
 
 ## Hyvä config registration
 
@@ -248,6 +251,44 @@ Three layers, innermost first:
 | Popover — the shared company-search panel     | **the base plugin**, whose script this checkout's layout loads and which the mounts reach through the browser global it registers itself under                                                                          | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
 | Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
 | Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
+
+**Registry and order-intent calls go through the base module's own REST routes**
+(`rest/V1/two/company-search`, `.../company`, `.../order-intent`), never straight
+at the API: the merchant API key authenticates them server-side, and a merchant
+whose network traffic passes through a firewall appliance can have a token
+attached there without it ever reaching a buyer's browser. Each answers a
+`{ok, status, body}` envelope — `ok: false` means the upstream call failed and
+must produce exactly what a failed direct call used to. Paging and client
+identification are the server's to set, so nothing here sends them.
+
+**What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
+`^2.3.0` floor in `composer.json`** — the reasoning is written once, in that
+method's docblock, and everything else points at it. Its answer reaches every
+mount as `isProxyAvailable`. `twoGatewayProxyPost()` deliberately has no
+runtime fallback for the 404 a stale route cache produces: a fallback that
+reopened the direct browser-to-API path would make a missed cache flush
+invisible instead of loud.
+
+`false` — and, the flag being read by identity, anything that is not exactly
+`true` — takes each of those routes back to the **direct
+browser-to-API call it made before the routes existed** — query-string client
+identification and merchant name restored, the
+order-intent body naming the merchant again, and no firewall token on any of
+it. That is not a new exposure: it is precisely what ran on that base already,
+and it is the only path on which those fallbacks are reachable.
+
+Those fallback branches are **deprecated on arrival**. Delete them, and the
+flag threading them, once a base release is confirmed BY INSPECTION OF THAT
+RELEASE to carry the routes — never by raising the floor high enough to look
+safe.
+
+The one exception is `/autofill/v1/buyer/current`, which is authenticated by
+the buyer's own cookie on the API's domain and so cannot be proxied at all; it
+carries the firewall token as an `X-WAF-TOKEN` header instead, and only where a
+merchant enabled that for the browser. A rejection of that call is reported
+rather than swallowed: 404 is its documented "no buyer" answer, so any OTHER
+status is logged, which is what keeps an appliance rejecting a tokenless
+request distinguishable from a buyer who simply has no account.
 
 **The popover is framework-free with a UMD tail**, which is why this checkout can
 load it with no RequireJS, no jQuery and no Knockout. It takes three injected
