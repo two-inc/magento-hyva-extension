@@ -2537,20 +2537,6 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Put the captured company back in this surface's own fields.
-             *
-             * A re-render rewrites the company input from the SERVER's value —
-             * empty for a company picked since the last roundtrip — and every
-             * other repaint is gated on something that did not change: the
-             * mirror on the component's own state, the popover's rebind on its
-             * wrapper having been removed. A morph that patched only the input
-             * leaves both satisfied and the field blank.
-             *
-             * Fires no event: the popover reads `input` on this field as typing,
-             * and a host that posts on `change` re-enters this sweep. Skipped in
-             * manual entry, where the committed name lags what is being typed.
-             */
-            /**
              * Tell this panel's Magewire component what was captured.
              *
              * THE bug behind the vanishing company. The popover announces a
@@ -2585,6 +2571,20 @@ $quoteDetails = json_encode(
                 component.set(model, name, true);
             },
 
+            /**
+             * Put the captured company back in this surface's own fields.
+             *
+             * A re-render rewrites the company input from the SERVER's value —
+             * empty for a company picked since the last roundtrip — and every
+             * other repaint is gated on something that did not change: the
+             * mirror on the component's own state, the popover's rebind on its
+             * wrapper having been removed. A morph that patched only the input
+             * leaves both satisfied and the field blank.
+             *
+             * Fires no event: the popover reads `input` on this field as typing,
+             * and a host that posts on `change` re-enters this sweep. Skipped in
+             * manual entry, where the committed name lags what is being typed.
+             */
             repaintCapturedNameFields() {
                 if (this.manualMode) return;
                 const identity = window.twoGatewayCompanyIdentity(this.captureRole());
