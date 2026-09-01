@@ -2552,7 +2552,13 @@ $quoteDetails = json_encode(
                 const identity = window.twoGatewayCompanyIdentity(this.captureRole());
                 if (!identity) return;
                 const name = identity.companyName();
-                if (!name) return;
+                // Both directions, because the server's value is as capable of
+                // being a company the buyer has since discarded as of being
+                // empty, and either way what the field shows is the identity.
+                if (!name) {
+                    this.clearCapturedNameFields();
+                    return;
+                }
                 const field = this.companyNameField();
                 if (field && field.value !== name) field.value = name;
                 if (!this.isTileSurface()) return;

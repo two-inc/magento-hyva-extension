@@ -179,5 +179,16 @@ describe("a captured company survives the morph that blanks its field", () => {
       expect(nameField(other).value).toBe("");
       expect(panels[other].companyName).toBe("");
     });
+
+    test("does not reinstate a company the buyer has discarded", () => {
+      // The server's value is as capable of being a company that has since been
+      // abandoned as of being empty, and a one-way repaint would put it back.
+      env.identityFor(role).clear();
+      nameField(role).value = "Stale Ltd";
+
+      env.fireMagewireHook("element.updated", 3);
+
+      expect(nameField(role).value).toBe("");
+    });
   });
 });
