@@ -675,6 +675,12 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCompanyCapture",
   "twoGatewayCaptureSurfaceMixin",
   "twoGatewayCaptureSurfaceCurrent",
+  // TWO-25554: the one page-level identity's memoizing builder. Same idiom,
+  // same reset reason as its neighbour above — its cache
+  // (`twoGatewayCompanyIdentityInstance`) is reset alongside
+  // `twoGatewayCompanyCaptureInstance` below, not listed here, for the same
+  // reason that one isn't.
+  "twoGatewayCompanyIdentity",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -877,8 +883,12 @@ function installCompanyPanelStub() {
 }
 
 /**
- * Stand in for the base plugin's `company-identity.js` — the page-level
- * singleton holding the company the buyer is paying as.
+ * Stand in for the base plugin's `company-identity.js` — the company the
+ * buyer is paying as. `window.TwoCompanyIdentity` is a FACTORY there (TWO-25554
+ * split the base module's one page-level singleton into two, plus a
+ * resolver), so this stub mirrors that shape: `window.TwoCompanyIdentity`
+ * resolves to a function, `installCompanyIdentityStub()`'s own return value
+ * stays the built instance, for tests that already hold onto it directly.
  *
  * Stubbed for the same reason the panel is: the file ships in two-inc/magento2
  * and there is no vendor tree here. Faithful rather than inert, because the
@@ -1010,7 +1020,9 @@ function installCompanyIdentityStub() {
     },
   };
 
-  window.TwoCompanyIdentity = identity;
+  window.TwoCompanyIdentity = function () {
+    return identity;
+  };
   return identity;
 }
 
@@ -1660,6 +1672,7 @@ function installHyvaEnvironment() {
       // first use, so a survivor would hand the next file a controller holding
       // this one's identity, panel and host adapter.
       delete window.twoGatewayCompanyCaptureInstance;
+      delete window.twoGatewayCompanyIdentityInstance;
       delete window.Magewire;
       // Not in SHARED_HELPER_GLOBALS: it exists only once a hook has actually
       // been registered, so the export check there would fail on it — and left

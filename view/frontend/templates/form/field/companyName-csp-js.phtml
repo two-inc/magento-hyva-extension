@@ -205,7 +205,7 @@ function <?= $gwBase ?>CompanySearchField() {
              * shipping company alone.
              */
             const data = twoAddressReadSelection();
-            const identity = window.TwoCompanyIdentity;
+            const identity = window.twoGatewayCompanyIdentity();
             if (identity) {
                 // A sole-trader signup is live across rebuilds and its handshake
                 // bails unless the mode is still `soletrader`, so the stored
