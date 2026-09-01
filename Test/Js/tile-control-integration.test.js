@@ -95,7 +95,11 @@ describe("a rebuild restoring a captured company", () => {
     // The harness deliberately withholds `$watch`; the tile installs its own.
     component.$watch = function () {};
     component.initialize({ quote_id: "1", billing_country_id: "GB" });
-    return { intents: () => intents, component: component, identity: env.identity };
+    return {
+      intents: () => intents,
+      component: component,
+      identity: env.identity,
+    };
   }
 
   afterEach(() => {
@@ -141,10 +145,9 @@ describe("a payment tile that renders no capture field", () => {
   /*
    * The one control lives on the address step in this configuration, so the
    * tile renders no company field at all — but its `isCompanySearchEnabled` is
-   * a hardcoded constant, so nothing in its own state says so. Without the
-   * field check its init() would still claim the page-level controller, point
-   * every host function at a surface with no field, and race the address step
-   * over which storage record the buyer's company lands in.
+   * a hardcoded constant, so nothing in its own state says so. What keeps it
+   * off the address step's field is that the controller addresses a mount by
+   * HOST as well as role, and this tile has no `host="tile"` field to offer.
    */
   let env;
   let component;
@@ -158,7 +161,11 @@ describe("a payment tile that renders no capture field", () => {
       '  <input type="text" id="address-field" data-two-capture-field />',
       "</div>",
       // The tile, with no capture field of its own.
-      '<form id="tile-form"><div id="tile-root"></div></form>',
+      // The tile's submit pair still reaches the server in this mode.
+      '<form id="tile-form"><div id="tile-root">',
+      '  <input type="hidden" id="company_name" name="payment[company_name]" />',
+      '  <input type="hidden" id="company_id" name="payment[company_id]" />',
+      "</div></form>",
     ].join("\n");
 
     env = H.installHyvaEnvironment();
@@ -179,26 +186,25 @@ describe("a payment tile that renders no capture field", () => {
     jest.restoreAllMocks();
   });
 
-  test("does not claim the page-level controller", () => {
+  test("mounts no popover, on its own field or the address step's", () => {
     component.mountCompanyPopover();
 
-    expect(window.twoGatewayCaptureSurfaceCurrent).toBe(null);
-    expect(env.captureControllers).toHaveLength(0);
-  });
-
-  test("does not stamp a claim on any field", () => {
-    component.mountCompanyPopover();
-
-    expect(document.querySelectorAll("input[data-two-capture-active]")).toHaveLength(0);
+    expect(env.companyPanels).toHaveLength(0);
+    // The address step's control root is untouched: only a surface's own
+    // mount() stamps its role, and that stamp is half of the mount selector.
+    expect(
+      document
+        .querySelector('[data-two-capture-host="address"]')
+        .hasAttribute("data-two-capture-role"),
+    ).toBe(false);
   });
 
   describe("but still tracks the company, because it renders the verdict", () => {
     /*
-     * Claiming nothing means no identity mirror, and in this configuration the
-     * order-intent notice is the tile's only Two content. Every part of it —
-     * `refreshOrderIntentVerdict()`, the label, the supersede guard on an error
-     * reply — reads `companyId`, so a tile left at '' shows the buyer nothing at
-     * all, forever.
+     * With no field of its own the order-intent notice is the tile's only Two
+     * content, and every part of it — `refreshOrderIntentVerdict()`, the label,
+     * the supersede guard on an error reply — reads `companyId`, so a tile left
+     * at '' shows the buyer nothing at all, forever.
      */
     test("the sole-trader progress row follows the shared flow", () => {
       // `x-show` tracks COMPONENT properties. The identity is a plain object no
@@ -220,121 +226,76 @@ describe("a payment tile that renders no capture field", () => {
       expect(component.soleTraderSpinnerVisible).toBe(false);
     });
 
-    test("does not persist or announce what it does not own", () => {
-      // The tile reads the BILLING record and the address step owns the
-      // SHIPPING one. A tile that persisted from a mirror of the address step's
-      // identity would copy one into the other on every notification.
-      component.$watch = function () {};
-      component.initialize({ quote_id: "1", billing_country_id: "GB" });
-      const announced = [];
-      const listener = (event) => announced.push(event.detail);
-      window.addEventListener("shipping-company-selected", listener);
-      const before = env.storage[H.BILLING_COMPANY_KEY];
-
-      try {
-        env.identity.write(
-          { companyName: "Mirrored Ltd", companyId: "999" },
-          { authoritative: true },
-        );
-      } finally {
-        window.removeEventListener("shipping-company-selected", listener);
-      }
-
-      expect(announced).toEqual([]);
-      expect(env.storage[H.BILLING_COMPANY_KEY]).toBe(before);
-      // …but the mirror still ran.
-      expect(component.companyName).toBe("Mirrored Ltd");
-    });
-
+    /*
+     * From its ROLE'S IDENTITY, never from its own stored record: with no field
+     * of its own this tile made no capture, so the record describes one it did
+     * not make while the identity is what the order carries.
+     */
     test.each([
       ["companyName", "Acme Ltd"],
       ["companyId", "12345678"],
       ["search", "Acme Ltd"],
-    ])("a restore reaches %s", (member, expected) => {
+    ])(
+      "the company on the verdict's %s comes from the identity",
+      (member, expected) => {
+        component.$watch = function () {};
+        component.initialize({ quote_id: "1", billing_country_id: "GB" });
+
+        env.identity.write(
+          {
+            companyName: "Acme Ltd",
+            companyId: "12345678",
+            companyIdSource: "registry",
+          },
+          { authoritative: true },
+        );
+
+        expect(component[member]).toBe(expected);
+      },
+    );
+
+    test("a record it never wrote reaches neither its state nor the submit pair", () => {
       window.twoGatewayWriteBillingCompany({
-        company_name: "Acme Ltd",
-        company_id: "12345678",
+        company_name: "Stale Ltd",
+        company_id: "99999999",
         company_id_source: "registry",
       });
       component.$watch = function () {};
 
       component.initialize({ quote_id: "1", billing_country_id: "GB" });
 
-      expect(component[member]).toBe(expected);
+      expect(component.companyName).toBe("");
+      expect(component.companyId).toBe("");
+      expect(document.getElementById("company_name").value).toBe("");
+      expect(document.getElementById("company_id").value).toBe("");
     });
 
-    describe.each([
-      ["nothing in this tile's records", null],
-      [
-        "a different company in this tile's record",
+    /*
+     * `quoteId()` identifies which surface answers: the address control's quote
+     * is the harness's, the tile's is the one its `initialize()` was handed.
+     */
+    test("leaves this role's controller pointed at the surface that hosts the control", () => {
+      // The address step's factory is not registered by this file's own load.
+      H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
+      env.fireAlpineInit();
+      const address = H.mountComponent(
+        env.alpineComponents.twoGatewayHyvaCompanySearchField,
         {
-          company_name: "Tile Record Ltd",
-          company_id: "77777777",
-          company_id_source: "registry",
+          el: document.getElementById("address-field"),
+          root: document.querySelector('[data-two-capture-host="address"]'),
         },
-      ],
-    ])("with %s", (label, record) => {
-      test.each([
-        ["companyName", "Address Step Ltd"],
-        ["companyId", "88888888"],
-      ])("the address step's %s survives this tile's init", (member, expected) => {
-        // Given a capture on the address step; when the tile initialises. This
-        // tile holds no claim, so neither an empty record — an authoritative
-        // write replaces both halves, empty ones included — nor a record naming
-        // some other company may reach the identity.
-        if (record) window.twoGatewayWriteBillingCompany(record);
-        env.identity.write(
-          {
-            companyName: "Address Step Ltd",
-            companyId: "88888888",
-            companyIdSource: "registry",
-          },
-          { authoritative: true },
-        );
-        component.$watch = function () {};
+      );
+      address.init();
+      component.$watch = function () {};
 
-        component.initialize({ quote_id: "1", billing_country_id: "GB" });
-
-        expect(env.identity[member]()).toBe(expected);
+      component.initialize({
+        quote_id: "tile-quote",
+        billing_country_id: "GB",
       });
-    });
 
-    test("a hand-typed number keeps its provenance across the sync", () => {
-      // Re-deriving it as 'registry' makes hasVouchedNumber() true, which
-      // re-locks the number field over a value the buyer typed.
-      component.$watch = function () {};
-      component.initialize({ quote_id: "1", billing_country_id: "GB" });
-
-      document.getElementById("tile-root").dispatchEvent(
-        new CustomEvent("update-company-data", {
-          detail: {
-            companyName: "Acme Ltd",
-            companyId: "12345678",
-            companyIdSource: "manual",
-          },
-        }),
-      );
-
-      expect(env.identity.companyIdSource()).toBe("manual");
-      expect(env.identity.hasVouchedNumber()).toBe(false);
-    });
-
-    test.each([
-      ["companyName", "Acme Ltd"],
-      ["companyId", "12345678"],
-      ["search", "Acme Ltd"],
-    ])("a cross-step sync reaches %s", (member, expected) => {
-      // The harness withholds `$watch`; the tile installs its own.
-      component.$watch = function () {};
-      component.initialize({ quote_id: "1", billing_country_id: "GB" });
-
-      document.getElementById("tile-root").dispatchEvent(
-        new CustomEvent("update-company-data", {
-          detail: { companyName: "Acme Ltd", companyId: "12345678" },
-        }),
-      );
-
-      expect(component[member]).toBe(expected);
+      expect(
+        window.twoGatewayCompanyCaptureInstances.shipping.host().quoteId(),
+      ).toBe(JSON.parse(H.QUOTE_JSON).quote_id);
     });
   });
 });
@@ -482,7 +443,9 @@ describe("the payment tile's mounted control (integration)", () => {
     );
     // The chips are repainted, so the mode the pick put the control in reads
     // as selected.
-    expect(panel.calls.some((call) => call.startsWith("syncChips:registered"))).toBe(true);
+    expect(
+      panel.calls.some((call) => call.startsWith("syncChips:registered")),
+    ).toBe(true);
     // And the intent check has visibly started.
     expect(component.orderIntentChecking).toBe(true);
   });

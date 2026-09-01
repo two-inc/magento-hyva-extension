@@ -55,7 +55,7 @@ const BUYER = {
 };
 
 /**
- * The address form the tile writes into, the two company inputs
+ * An address form the tile must never write into, the two company inputs
  * `fillCompanyData()` addresses by id, and the tile's own capture mount.
  *
  * `#shipping-country_id` is what `twoGatewayInvoiceRoleCountryField()` resolves
@@ -219,7 +219,9 @@ describe("the host adapter the shared flow is given", () => {
     field.value = "Something Ltd";
     tile.component.search = "Something Ltd";
 
-    tile.host.clearField('[data-two-capture-host="tile"] input[data-two-capture-field]');
+    tile.host.clearField(
+      '[data-two-capture-host="tile"] input[data-two-capture-field]',
+    );
 
     expect(field.value).toBe("");
     expect(tile.component.search).toBe("");
@@ -440,40 +442,30 @@ describe("what an adopted sole trader writes into this checkout", () => {
   afterEach(() => tile.restore());
 
   test.each([
-    ['input[name="city"]', "Ashford", "the town"],
-    ['input[name="postcode"]', "TN23 1AA", "the postcode"],
-    ['input[name="street[0]"]', "Mill House", "the building takes line 1"],
-    ['input[name="street[1]"]', "Mill Lane", "so the street moves to line 2"],
-  ])("applyBuyerAddress fills %s with %s (%s)", (selector, expected) => {
+    ['input[name="city"]', "the town"],
+    ['input[name="postcode"]', "the postcode"],
+    ['input[name="street[0]"]', "line 1"],
+    ['input[name="street[1]"]', "line 2"],
+  ])("applyBuyerAddress leaves %s empty (%s)", (selector) => {
+    // The tile is the invoice-role SUBMIT surface and has no address form of
+    // its own; filling a form the buyer is not looking at is forbidden.
     tile = mountTile();
 
     tile.host.applyBuyerAddress(BUYER.billing_address);
 
-    expect(document.querySelector(selector).value).toBe(expected);
+    expect(document.querySelector(selector).value).toBe("");
   });
 
   test.each([
-    [AUTOPOPULATION_ON, BUYER.phone_number, "autopopulation on — written"],
-    [undefined, "+44 typed", "off — the buyer's own number stands"],
-  ])("applyTelephone: %#, %s (%s)", (extraRules, expected) => {
-    // A phone number is not part of the address the buyer is being shown a
-    // company for, so unlike the address itself this one field follows the
-    // merchant's autopopulation setting (TWO-25461 §5).
+    [AUTOPOPULATION_ON, "autopopulation on"],
+    [undefined, "autopopulation off"],
+  ])("applyTelephone writes nothing from the tile (%#, %s)", (extraRules) => {
+    // Same reason as the address above, so the merchant's autopopulation
+    // setting cannot make the tile reach a form either.
     tile = mountTile({ extraRules: extraRules });
     document.querySelector('input[name="telephone"]').value = "+44 typed";
 
     tile.host.applyTelephone(BUYER.phone_number);
-
-    expect(document.querySelector('input[name="telephone"]').value).toBe(
-      expected,
-    );
-  });
-
-  test("a record carrying no phone number does not blank the one the buyer typed", () => {
-    tile = mountTile({ extraRules: AUTOPOPULATION_ON });
-    document.querySelector('input[name="telephone"]').value = "+44 typed";
-
-    tile.host.applyTelephone("");
 
     expect(document.querySelector('input[name="telephone"]').value).toBe(
       "+44 typed",
@@ -549,7 +541,10 @@ describe("what an adopted sole trader writes into this checkout", () => {
     // It is also the tile's initial state, so it runs on a component holding a
     // perfectly good registered company.
     tile = mountTile();
-    tile.capture.selectCompany({ text: "Registered Ltd", companyId: "12345678" });
+    tile.capture.selectCompany({
+      text: "Registered Ltd",
+      companyId: "12345678",
+    });
 
     tile.capture.registeredMode();
 

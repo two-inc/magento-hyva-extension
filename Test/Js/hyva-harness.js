@@ -674,13 +674,14 @@ const SHARED_HELPER_GLOBALS = [
   // answer every host call in the next.
   "twoGatewayCompanyCapture",
   "twoGatewayCaptureSurfaceMixin",
-  "twoGatewayCaptureSurfaceCurrent",
-  // TWO-25554: the one page-level identity's memoizing builder. Same idiom,
-  // same reset reason as its neighbour above — its cache
-  // (`twoGatewayCompanyIdentityInstance`) is reset alongside
-  // `twoGatewayCompanyCaptureInstance` below, not listed here, for the same
-  // reason that one isn't.
+  // The per-role identity builder. Same idiom, same reset reason as its
+  // neighbour above — its cache (`twoGatewayCompanyIdentityInstances`) is reset
+  // alongside `twoGatewayCompanyCaptureInstances` below, not listed here, for
+  // the same reason that one isn't.
   "twoGatewayCompanyIdentity",
+  // Which address role a panel belongs to — the whole basis of the per-role
+  // split, so a template that stopped publishing it must fail loudly.
+  "twoGatewayCaptureRoleForForm",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -703,12 +704,6 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCountryFieldsWithin",
   "twoGatewayCountryFieldScope",
   "twoGatewayInvoiceRoleCountryField",
-  // The content-match sync pin (TWO-25461 §2). Same `window.X = window.X || …`
-  // idiom as everything above, so the same leak-between-files reason to reset
-  // them, and listing them also asserts the template really publishes them —
-  // company-name-payment.phtml consults the pin through `window`.
-  "twoGatewayAddressMirrorFields",
-  "twoGatewayIsBillingAddressPinned",
   "twoGatewayInvoiceRoleAddressForm",
 ];
 
@@ -884,24 +879,24 @@ function installCompanyPanelStub() {
 
 /**
  * Stand in for the base plugin's `company-identity.js` — the company the
- * buyer is paying as. `window.TwoCompanyIdentity` is a FACTORY there (TWO-25554
- * split the base module's one page-level singleton into two, plus a
- * resolver), so this stub mirrors that shape: `window.TwoCompanyIdentity`
- * resolves to a function, `installCompanyIdentityStub()`'s own return value
- * stays the built instance, for tests that already hold onto it directly.
+ * buyer is paying as. `window.TwoCompanyIdentity` is a FACTORY there, and this
+ * stub mints a SEPARATE identity per call: the checkout holds one per address
+ * role, so a stub handing the same object to both would make every
+ * cross-panel-leak assertion vacuous.
  *
  * Stubbed for the same reason the panel is: the file ships in two-inc/magento2
  * and there is no vendor tree here. Faithful rather than inert, because the
  * surface mixin's every mirror is written from a `subscribe()` notification —
- * an identity that did not notify would make the mirrors, the stored selection
- * blob and the cross-step event all untestable at once.
+ * an identity that did not notify would make the mirrors and the stored
+ * selection blob untestable at once.
  *
- * Built fresh per environment, so a company captured in one test cannot decide
- * the next one's mode.
- *
- * @returns {Object} the identity
+ * @returns {{instances: Array, reserve: Function}} instances newest last
  */
 function installCompanyIdentityStub() {
+  const instances = [];
+  const pending = [];
+
+  function buildIdentity() {
   const state = {
     captureMode: "registered",
     companyName: "",
@@ -1020,10 +1015,24 @@ function installCompanyIdentityStub() {
     },
   };
 
-  window.TwoCompanyIdentity = function () {
+    instances.push(identity);
     return identity;
+  }
+
+  // A reserved identity is adopted by the first production call, so a test that
+  // touches the identity before mounting is looking at the same object the
+  // surface will.
+  window.TwoCompanyIdentity = function () {
+    return pending.length ? pending.shift() : buildIdentity();
   };
-  return identity;
+  return {
+    instances: instances,
+    reserve: function () {
+      const identity = buildIdentity();
+      pending.push(identity);
+      return identity;
+    },
+  };
 }
 
 /**
@@ -1578,7 +1587,7 @@ function installHyvaEnvironment() {
   // the company control reaches for it in init(), so it has to be here or that
   // path degrades to its console.error branch in every test.
   const companyPanel = installCompanyPanelStub();
-  const identity = installCompanyIdentityStub();
+  const identities = installCompanyIdentityStub();
   const soleTrader = installSoleTraderStub();
   const capture = installCompanyCaptureStub();
 
@@ -1610,8 +1619,24 @@ function installHyvaEnvironment() {
     loaderEvents: loaderEvents,
     /** Panels the code under test built, newest last. */
     companyPanels: companyPanel.instances,
-    /** The page-level company identity every surface mirrors. */
-    identity: identity,
+    /**
+     * The identity a single-surface test means. The first one built, or one
+     * reserved for the first surface that asks — never a second role's.
+     */
+    get identity() {
+      return identities.instances[0] || identities.reserve();
+    },
+    /** Identities built, newest last — one per address role in production. */
+    companyIdentities: identities.instances,
+    /**
+     * The identity of one address role, as the templates resolve it.
+     *
+     * @param {string} role 'shipping' or 'billing'
+     * @returns {?Object}
+     */
+    identityFor: function (role) {
+      return window.twoGatewayCompanyIdentity(role);
+    },
     /** Sole-trader flows the capture controller built, newest last. */
     soleTraderFlows: soleTrader.instances,
     /** Capture controllers built, newest last — one per page in production. */
@@ -1668,11 +1693,11 @@ function installHyvaEnvironment() {
       delete window.TwoCompanyIdentity;
       delete window.TwoSoleTrader;
       delete window.TwoCompanyCaptureComponent;
-      // Not in SHARED_HELPER_GLOBALS: the builder caches the controller here on
-      // first use, so a survivor would hand the next file a controller holding
-      // this one's identity, panel and host adapter.
-      delete window.twoGatewayCompanyCaptureInstance;
-      delete window.twoGatewayCompanyIdentityInstance;
+      // Not in SHARED_HELPER_GLOBALS: the builders cache per role here on first
+      // use, so a survivor would hand the next file a controller holding this
+      // one's identity, panel and host adapter.
+      delete window.twoGatewayCompanyCaptureInstances;
+      delete window.twoGatewayCompanyIdentityInstances;
       delete window.Magewire;
       // Not in SHARED_HELPER_GLOBALS: it exists only once a hook has actually
       // been registered, so the export check there would fail on it — and left

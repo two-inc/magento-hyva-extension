@@ -32,11 +32,22 @@ const SEARCH_API_CONTRACT = [
   "abortActiveRequest",
 ];
 
-/** The two mount points, as the controller is told to address them. */
-const ADDRESS_SELECTOR =
-  '[data-two-capture-host="address"] input[data-two-capture-active]';
-const TILE_SELECTOR =
-  '[data-two-capture-host="tile"] input[data-two-capture-active]';
+/**
+ * A mount point, as the controller of one role is told to address it.
+ *
+ * @param {string} host 'address' or 'tile'
+ * @param {string} role 'shipping' or 'billing'
+ * @returns {string}
+ */
+function captureSelector(host, role) {
+  return (
+    '[data-two-capture-host="' +
+    host +
+    '"][data-two-capture-role="' +
+    role +
+    '"] input[data-two-capture-field]'
+  );
+}
 
 /** A search response shaped the way the API returns one. */
 function hit(name, identifier, lookupId) {
@@ -53,16 +64,19 @@ function hit(name, identifier, lookupId) {
  *
  * `two-company-search` and both `data-two-capture-*` attributes are
  * load-bearing: `controlRoot()` resolves the component's root by the class, and
- * the controller resolves its mount by the attribute pair.
+ * the controller resolves its mount by the attribute pair. The role is empty in
+ * the server markup — `mountCompanyPopover()` stamps it.
  *
  * @param {string} id
  * @param {string} [value]
+ * @param {string} [role]
  * @returns {string}
  */
-function controlMarkup(id, value) {
+function controlMarkup(id, value, role) {
   return [
     '<div id="' + id + '" class="two-company-search"',
-    ' data-two-capture-host="address">',
+    ' data-two-capture-host="address"',
+    ' data-two-capture-role="' + (role || "") + '">',
     '<input type="text" id="' + id + '-field" data-two-capture-field',
     ' value="' + (value || "") + '" />',
     "</div>",
@@ -153,94 +167,66 @@ describe("the Hyvä adapter over the shared capture controller", () => {
 
       expect(env.captureControllers).toHaveLength(1);
       expect(env.companyPanels).toHaveLength(1);
-      expect(panel().getField()[0]).toBe(document.getElementById(id + "-field"));
+      expect(panel().getField()[0]).toBe(
+        document.getElementById(id + "-field"),
+      );
     });
 
-    test("a second mount point on the page does not get a panel of its own", () => {
+    test("a second mount point of the same role shares the one controller", () => {
       // Two mounts are legitimate markup — the address renderer runs on the
-      // delivery form and the invoice form — but there is one control, so the
-      // controller binds one of them and leaves the other alone.
+      // delivery form and the invoice form — and a controller is memoized per
+      // ROLE, so two shipping-role mounts must not build a second of either.
       document.body.innerHTML = controlMarkup("root") + controlMarkup("other");
       field = document.getElementById("root-field");
 
       remount("other");
 
+      expect(env.captureControllers).toHaveLength(1);
       expect(env.companyPanels).toHaveLength(1);
     });
 
     test.each([
-      [ADDRESS_SELECTOR, "addressFieldSelector", "the address step"],
-      [TILE_SELECTOR, "tileFieldSelector", "the payment tile"],
-    ])("%s is how %s addresses %s", (selector, option) => {
+      ["address", "addressFieldSelector", "the address step"],
+      ["tile", "tileFieldSelector", "the payment tile"],
+    ])("%s selectors are how %s addresses %s", (host, option) => {
       // Attributes of ours, never the field's id: the id comes from Hyvä's
       // entity-field config and can hold anything a selector would have to
       // escape, and the panel resolves its host with a document-wide
       // querySelector — so the selector has to name the mount point.
-      expect(capture().host()[option]).toBe(selector);
+      expect(capture().host()[option]).toBe(captureSelector(host, "shipping"));
     });
 
-    test("each mount selector matches exactly its own host", () => {
+    test("the role in the selector is what keeps two address panels apart", () => {
       document.body.innerHTML =
-        controlMarkup("root") +
-        '<div class="two-company-search" data-two-capture-host="tile">' +
+        controlMarkup("root", "", "shipping") +
+        controlMarkup("other", "", "billing") +
+        '<div class="two-company-search" data-two-capture-host="tile"' +
+        ' data-two-capture-role="shipping">' +
         '<input type="text" id="tile-field" data-two-capture-field /></div>';
-      // The selectors match the CLAIM, which is what keeps one popover on a
-      // page holding two address hosts.
-      document
-        .getElementById("root-field")
-        .setAttribute("data-two-capture-active", "");
-      document
-        .getElementById("tile-field")
-        .setAttribute("data-two-capture-active", "");
 
-      expect(document.querySelectorAll(ADDRESS_SELECTOR)).toHaveLength(1);
-      expect(document.querySelectorAll(TILE_SELECTOR)).toHaveLength(1);
+      expect(
+        document.querySelectorAll(captureSelector("address", "shipping")),
+      ).toHaveLength(1);
+      expect(
+        document.querySelector(captureSelector("address", "shipping")),
+      ).toBe(document.getElementById("root-field"));
+      expect(
+        document.querySelector(captureSelector("address", "billing")),
+      ).toBe(document.getElementById("other-field"));
+      expect(
+        document.querySelectorAll(captureSelector("tile", "shipping")),
+      ).toHaveLength(1);
     });
 
-    describe("which of two address hosts owns the one popover", () => {
-      /**
-       * Two address hosts, the second wrapped in a form the invoice-role
-       * resolver answers with.
-       *
-       * @param {boolean} invoiceRoleResolvable
-       * @returns {{first: HTMLInputElement, second: HTMLInputElement}}
-       */
-      function twoAddressHosts(invoiceRoleResolvable) {
-        document.body.innerHTML =
-          controlMarkup("root") +
-          '<div id="invoice-form">' +
-          controlMarkup("other") +
-          "</div>";
-        const invoiceForm = document.getElementById("invoice-form");
-        window.twoGatewayInvoiceRoleAddressForm = function () {
-          return invoiceRoleResolvable ? invoiceForm : null;
-        };
-        return {
-          first: document.getElementById("root-field"),
-          second: document.getElementById("other-field"),
-        };
-      }
+    test("mounting stamps the surface's own role on its control root", () => {
+      // A morph reinstates the server markup, which carries an empty role, so
+      // the selectors match nothing until the surface has stamped it again.
+      const root = document.getElementById("root");
+      root.setAttribute("data-two-capture-role", "");
 
-      test.each([
-        [true, false, true, "the invoice-role field takes it off the first"],
-        [false, true, false, "no invoice-role form leaves the first claim standing"],
-      ])(
-        "invoiceRoleResolvable=%s -> first=%s second=%s: %s",
-        (resolvable, firstKeeps, secondTakes) => {
-          const fields = twoAddressHosts(resolvable);
+      component.mountCompanyPopover();
 
-          remount("root");
-          remount("other");
-
-          expect(fields.first.hasAttribute("data-two-capture-active")).toBe(
-            firstKeeps,
-          );
-          expect(fields.second.hasAttribute("data-two-capture-active")).toBe(
-            secondTakes,
-          );
-          expect(document.querySelectorAll(ADDRESS_SELECTOR)).toHaveLength(1);
-        },
-      );
+      expect(root.getAttribute("data-two-capture-role")).toBe("shipping");
     });
 
     test.each(H.CAPTURE_HOST_CONTRACT.map((member) => [member]))(
@@ -290,7 +276,11 @@ describe("the Hyvä adapter over the shared capture controller", () => {
       });
 
       test.each([
-        ["captureMode", "soletrader", "the handshake still recognises the flow"],
+        [
+          "captureMode",
+          "soletrader",
+          "the handshake still recognises the flow",
+        ],
         ["companyName", "", "no registered company appears under it"],
         ["companyId", "", "and no registered number with it"],
       ])("leaves %s as %j, so %s", (member, expected) => {
@@ -337,7 +327,10 @@ describe("the Hyvä adapter over the shared capture controller", () => {
     ])("a missing %s degrades to a plain field (%s)", (global) => {
       // A CSP or deploy failure on a base module must not take init() down.
       delete window[global];
-      delete window.twoGatewayCompanyCaptureInstance;
+      // Emptied rather than removed: the memo answers before the module check,
+      // so a surviving entry is a controller built while the module was there.
+      window.twoGatewayCompanyCaptureInstances = {};
+      window.twoGatewayCompanyIdentityInstances = {};
 
       expect(() => component.mountCompanyPopover()).not.toThrow();
     });
@@ -406,16 +399,19 @@ describe("the Hyvä adapter over the shared capture controller", () => {
         unavailable: false,
         label: "a good answer is not",
       },
-    ])("unavailable: $unavailable — $label", async ({ settle, unavailable }) => {
-      // "The search is down" and "your company is not here" are different
-      // answers to the buyer, and the panel paints them differently.
-      component.countryCode = "gb";
-      const pending = component.capturePanelSearch({ term: "alpha" });
-      await H.flushPromises();
-      settle(fetchStub.lastSearch());
+    ])(
+      "unavailable: $unavailable — $label",
+      async ({ settle, unavailable }) => {
+        // "The search is down" and "your company is not here" are different
+        // answers to the buyer, and the panel paints them differently.
+        component.countryCode = "gb";
+        const pending = component.capturePanelSearch({ term: "alpha" });
+        await H.flushPromises();
+        settle(fetchStub.lastSearch());
 
-      expect((await pending).unavailable).toBe(unavailable);
-    });
+        expect((await pending).unavailable).toBe(unavailable);
+      },
+    );
 
     test("abortActiveRequest says whether anything was actually in flight", async () => {
       expect(component.capturePanelAbort()).toBe(false);
@@ -528,11 +524,11 @@ describe("the Hyvä adapter over the shared capture controller", () => {
 
   describe("the chips", () => {
     test("all three are offered, in display order", () => {
-      expect(panel().options.getChips().map((entry) => entry.mode)).toEqual([
-        "registered",
-        "soletrader",
-        "manual",
-      ]);
+      expect(
+        panel()
+          .options.getChips()
+          .map((entry) => entry.mode),
+      ).toEqual(["registered", "soletrader", "manual"]);
     });
 
     test.each([
@@ -547,14 +543,11 @@ describe("the Hyvä adapter over the shared capture controller", () => {
     test.each([
       [false, false, "the registry has no sole traders here"],
       [true, true, "it does"],
-    ])(
-      "sole trader available %p is offered %p (%s)",
-      (available, expected) => {
-        env.identity.soleTraderAvailable(available);
+    ])("sole trader available %p is offered %p (%s)", (available, expected) => {
+      env.identity.soleTraderAvailable(available);
 
-        expect(panel().options.isChipVisible("soletrader")).toBe(expected);
-      },
-    );
+      expect(panel().options.isChipVisible("soletrader")).toBe(expected);
+    });
 
     test("each chip carries something to run", () => {
       panel()

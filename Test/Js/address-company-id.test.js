@@ -67,13 +67,7 @@ describe("address-step company number", () => {
   let nameField;
   let idField;
   let root;
-  let selectedEvents;
-
-  /** Record every cross-step announcement the surface makes. */
-  function onSelected(event) {
-    selectedEvents.push(event.detail);
-  }
-
+  let recordedPairs;
 
   beforeEach(() => {
     // Nesting depth is load-bearing: setAddressData() walks four levels up
@@ -108,12 +102,19 @@ describe("address-step company number", () => {
     idField = document.querySelector(ID_DRIVER);
     root = document.getElementById("company-root");
 
-    selectedEvents = [];
-    window.addEventListener("shipping-company-selected", onSelected);
+    // Every pair this role's identity notified — the one channel by which a
+    // capture on this surface reaches anything else on the page.
+    recordedPairs = [];
+    env.identityFor("shipping").subscribe(function (identity) {
+      recordedPairs.push({
+        company_name: identity.companyName(),
+        company_id: identity.companyId(),
+        company_id_source: identity.companyIdSource(),
+      });
+    });
   });
 
   afterEach(() => {
-    window.removeEventListener("shipping-company-selected", onSelected);
     fetchStub.restore();
     env.restore();
     jest.useRealTimers();
@@ -138,8 +139,8 @@ describe("address-step company number", () => {
       root: root,
     });
     mounted.init();
-    // The mount's own restore announcement has a test of its own below.
-    selectedEvents.length = 0;
+    // The mount's own restore has a test of its own below.
+    recordedPairs.length = 0;
     return mounted;
   }
 
@@ -294,9 +295,7 @@ describe("address-step company number", () => {
       expect(display.tagName).not.toBe("INPUT");
       // Every text input the shipped markup owns, enumerated: the company NAME
       // field and nothing else. The panel's query box is built at runtime.
-      const textInputs = Array.from(
-        doc.querySelectorAll('input[type="text"]'),
-      );
+      const textInputs = Array.from(doc.querySelectorAll('input[type="text"]'));
       expect(textInputs).toHaveLength(1);
       expect(textInputs[0].className).toContain("company_name");
     });
@@ -673,19 +672,7 @@ describe("address-step company number", () => {
       expect(component.companyId).toBe("12345678");
     });
 
-    test("it is announced on the same event a registry pick uses", () => {
-      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
-
-      typeNumber("12345678");
-
-      expect(selectedEvents).toHaveLength(1);
-      expect(selectedEvents[0].company_id).toBe("12345678");
-      expect(selectedEvents[0].company_name).toBe("Acme Ltd");
-    });
-
-    test("the mount announces the company it restored", () => {
-      // An already-mounted payment tile syncs from this event, so a restored
-      // company that never announced would leave the tile on the previous one.
+    test("the mount restores the company into THIS role's identity", () => {
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
         JSON.stringify({
@@ -701,18 +688,14 @@ describe("address-step company number", () => {
         root: root,
       }).init();
 
-      expect(selectedEvents).toHaveLength(1);
-      expect(selectedEvents[0]).toMatchObject({
+      expect(recordedPairs[recordedPairs.length - 1]).toEqual({
         company_name: "Acme Ltd",
         company_id: "111",
         company_id_source: "registry",
       });
     });
 
-    test("and marks it a restore, so the tile syncs without re-checking", () => {
-      // The tile answers an unmarked announcement with an order intent, and its
-      // per-company dedup record is emptied by the same rebuild — so an unmarked
-      // restore puts a fresh request on the wire for every re-render.
+    test("the restore reaches no other role", () => {
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
         JSON.stringify({
@@ -728,50 +711,18 @@ describe("address-step company number", () => {
         root: root,
       }).init();
 
-      expect(selectedEvents[0].restored).toBe(true);
+      expect(env.identityFor("billing").companyName()).toBe("");
+      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
     });
 
-    test("a company the buyer typed is not marked a restore", () => {
-      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
-
-      typeNumber("12345678");
-
-      expect(selectedEvents[0].restored).toBe(false);
-    });
-
-    test("re-firing with an unchanged value announces nothing", () => {
+    test("re-firing with an unchanged value writes nothing", () => {
+      // The handler fires more than once for the same text — a second debounce
+      // window, a blur, a Magewire echo — and only a real change may write.
       component = mount({ quote_id: "test-quote-1", company_id: "12345678" });
 
       typeNumber("12345678");
 
-      expect(selectedEvents).toEqual([]);
-    });
-
-    test("the number reaches the payment step's submitted field", async () => {
-      // End to end over the real bridge template: the address step is the only
-      // company input, so its number has to land on the field the payment form
-      // submits. `data-name` is what the bridge writes through.
-      document.body.innerHTML += [
-        '<input type="checkbox" id="billing-as-shipping" checked />',
-        '<input name="payment-method-option" value="two_payment" checked />',
-        '<div id="tile"><form>',
-        '  <input type="text" name="payment[company_name]" data-name="company_name" value="" />',
-        '  <input type="text" name="payment[company_id]" data-name="company_id" value="" />',
-        "</form></div>",
-      ].join("\n");
-      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
-      window.document.dispatchEvent(new Event("DOMContentLoaded"));
-
-      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
-      typeNumber("12345678");
-      await H.flushPromises();
-
-      expect(document.querySelector('[name="payment[company_id]"]').value).toBe(
-        "12345678",
-      );
-      expect(
-        document.querySelector('[name="payment[company_name]"]').value,
-      ).toBe("Acme Ltd");
+      expect(storedSelection().company_id_source).toBe("");
     });
   });
 
@@ -789,55 +740,44 @@ describe("address-step company number", () => {
       expect(fetchStub.searchCalls()).toHaveLength(0);
     });
 
-    test("a name edit in MANUAL mode announces the pair it leaves behind", async () => {
-      // Reversed by TWO-25326 review round 1, and the reversal is the fix.
-      //
-      // This used to assert that a name edit announced nothing, on the
-      // reasoning that announcing a new name beside the PREVIOUS number would
-      // arm an order intent for a mismatched pair — and that the company-number
-      // handler would announce a moment later anyway. The second half stopped
-      // being true when §5 deleted the address step's editable number input:
-      // `onCompanyIdInput()` is bound to nothing on this surface now, so
-      // silence here meant the manual path announced NOTHING, ever.
-      //
-      // An already-mounted payment tile syncs from this event, so without it a
-      // buyer who reached payment, came back, changed the company and went
-      // forward again submitted the previous company. The mismatch worry does
-      // not apply: `forgetStaleCompanyId()` runs first and drops the previous
-      // registry number, which is exactly what the assertion below pins.
+    test("a name edit in MANUAL mode records the pair it leaves behind", async () => {
+      // A buyer who reached payment, came back and changed the company must not
+      // submit the previous one — and `forgetStaleCompanyId()` runs first, so
+      // the previous registry number never rides along with the new name.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      selectedEvents.length = 0;
+      recordedPairs.length = 0;
 
       enterManual();
       await typeName("Different Company Ltd");
 
       expect(storedSelection().company_name).toBe("Different Company Ltd");
-      // Two announcements: the mode switch abandoning the number, then the name
-      // edit. Neither may pair a name with the other company's identifier.
-      expect(selectedEvents).toHaveLength(2);
-      expect(selectedEvents[0]).toMatchObject({
-        company_name: "Acme Ltd",
+      // The number is abandoned before the new name lands, so no notification
+      // ever pairs the new name with the other company's identifier.
+      expect(
+        recordedPairs.filter(
+          (pair) =>
+            pair.company_name === "Different Company Ltd" && pair.company_id,
+        ),
+      ).toEqual([]);
+      expect(recordedPairs[recordedPairs.length - 1]).toEqual({
+        company_name: "Different Company Ltd",
         company_id: "",
+        company_id_source: "",
       });
-      expect(selectedEvents[1].company_name).toBe("Different Company Ltd");
-      expect(selectedEvents[1].company_id).toBe("");
-      expect(selectedEvents[1].company_id_source).toBe("");
     });
 
-    test("a name edit in SEARCH mode still announces nothing", async () => {
-      // The other half of the same rule, and the reason the fix above is scoped
-      // to manual mode. In search mode the registry pick is the single writer
-      // and announces the complete pair itself; the name field cannot be edited
-      // by hand there at all, so an announcement from this path could only ever
-      // carry a partial pair.
+    test("a name edit in SEARCH mode records nothing", async () => {
+      // In search mode the registry pick is the single writer and records the
+      // complete pair itself; the name field cannot be edited by hand there at
+      // all, so anything from this path could only ever carry a partial pair.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      selectedEvents.length = 0;
+      recordedPairs.length = 0;
 
       await typeName("Different Company Ltd");
 
-      expect(selectedEvents).toEqual([]);
+      expect(recordedPairs).toEqual([]);
     });
 
     test("re-typing the captured name in manual entry keeps the name", async () => {
@@ -958,19 +898,10 @@ describe("address-step company number", () => {
     });
 
     test("a name edit drops ANY identifier that no longer describes the name", async () => {
-      // Reversed in review round 3, and the reversal is the fix.
-      //
-      // This used to assert that a hand-typed number survived a name edit,
-      // because clearing it would have deleted the buyer's own entry from the
-      // field they typed it into. That field is gone: §5 removed the address
-      // step's company-number input, so nothing on this surface can write a
-      // `manual` identifier and nothing can correct one either. Sparing it only
-      // meant an identifier left in storage by an earlier session travelled
-      // with a name it never belonged to — and got announced to the payment
-      // step as a matched pair.
-      //
-      // The payment tile, which DOES still have a typeable number field, keeps
-      // its own state and is unaffected.
+      // §5 removed this surface's company-number input, so nothing here can
+      // write a `manual` identifier and nothing can correct one either —
+      // sparing it lets an identifier left in storage by an earlier session
+      // travel with a name it never belonged to.
       component = mount({ quote_id: "test-quote-1" });
       enterManual();
       await typeName("Jo Smith Trading");
@@ -986,18 +917,18 @@ describe("address-step company number", () => {
       expect(storedSelection().company_name).toBe("Jo Smith Trading Ltd");
     });
 
-    test("a re-fired handler on unchanged text announces nothing further", async () => {
+    test("a re-fired handler on unchanged text records nothing further", async () => {
       // The handler fires more than once for the same text — a second debounce
-      // window, a blur, a Magewire echo — and only a real change may announce.
+      // window, a blur, a Magewire echo — and only a real change may record.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       enterManual();
       await typeName("Jo Smith Trading");
-      selectedEvents.length = 0;
+      recordedPairs.length = 0;
 
       await typeName("Jo Smith Trading");
 
-      expect(selectedEvents).toEqual([]);
+      expect(recordedPairs).toEqual([]);
       expect(storedSelection().company_name).toBe("Jo Smith Trading");
       expect(storedSelection().company_id).toBe("");
     });
@@ -1076,26 +1007,24 @@ describe("address-step company number", () => {
       expect(component.companyIdDisabled).toBe(false);
     });
 
-    test("still carries a typed number to the rest of the checkout", async () => {
+    test("still carries a typed number into the stored record", async () => {
       await typeName("Acme Widgets Limited");
       typeNumber("87654321");
 
-      expect(storedSelection().company_id).toBe("87654321");
-      // TWO-25326 review round 1: the name edit now announces too, so this is
-      // two events rather than one. That is the fix, not a regression — with
-      // the address step's own number input deleted (§5), the name edit was
-      // otherwise silent, and an already-mounted payment tile kept the previous
-      // company. What matters is that the LAST announcement carries the
-      // complete pair, and that the first one never pairs a new name with a
-      // stale number.
-      expect(selectedEvents).toHaveLength(2);
-      expect(selectedEvents[0].company_name).toBe("Acme Widgets Limited");
-      expect(selectedEvents[0].company_id).toBe("");
-      expect(selectedEvents[1]).toMatchObject({
+      expect(storedSelection()).toMatchObject({
         company_name: "Acme Widgets Limited",
         company_id: "87654321",
         company_id_source: "manual",
       });
+      // The name edit is the identity's, and never pairs the typed name with a
+      // stale number.
+      expect(recordedPairs).toEqual([
+        {
+          company_name: "Acme Widgets Limited",
+          company_id: "",
+          company_id_source: "",
+        },
+      ]);
     });
   });
 

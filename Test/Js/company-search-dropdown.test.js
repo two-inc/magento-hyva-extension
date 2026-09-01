@@ -76,7 +76,9 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
         H.loadSharedHelpers();
         H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
         env.fireAlpineInit();
-        const component = H.mountComponent(env.alpineComponents[COMPONENT_NAME]);
+        const component = H.mountComponent(
+          env.alpineComponents[COMPONENT_NAME],
+        );
 
         const doc = shippedDoc();
         const root = doc.querySelector(".two-company-search");
@@ -96,7 +98,9 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
             // component.
             if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(expression)) return;
             if (!(expression in component)) {
-              missing.push(el.tagName + "[" + attr.name + "=" + expression + "]");
+              missing.push(
+                el.tagName + "[" + attr.name + "=" + expression + "]",
+              );
             }
           });
         });
@@ -317,34 +321,43 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(component.companyIdDisplayVisible).toBe(true);
       // The chips are repainted, so the mode the pick put the control in reads
       // as selected.
-      expect(panel.calls.some((call) => call.startsWith("syncChips:registered"))).toBe(true);
+      expect(
+        panel.calls.some((call) => call.startsWith("syncChips:registered")),
+      ).toBe(true);
     });
 
     test.each([
-      ["123456789", "<em>Acme</em> Ltd (123456789)", "a registry number is shown"],
+      [
+        "123456789",
+        "<em>Acme</em> Ltd (123456789)",
+        "a registry number is shown",
+      ],
       ["TWO:ST-0001", "<em>Acme</em> Ltd", "an internal placeholder is not"],
-    ])("§1 a results row renders %s as %p (%s)", async (identifier, expected) => {
-      const { pending } = await search("acm");
-      fetchStub.searchCalls()[0].respondProxy({
-        items: [
-          {
-            name: "Acme Ltd",
-            highlight: "<em>Acme</em> Ltd",
-            national_identifier: { id: identifier },
-            lookup_id: "lookup-1",
-          },
-        ],
-      });
-      const result = await pending;
+    ])(
+      "§1 a results row renders %s as %p (%s)",
+      async (identifier, expected) => {
+        const { pending } = await search("acm");
+        fetchStub.searchCalls()[0].respondProxy({
+          items: [
+            {
+              name: "Acme Ltd",
+              highlight: "<em>Acme</em> Ltd",
+              national_identifier: { id: identifier },
+              lookup_id: "lookup-1",
+            },
+          ],
+        });
+        const result = await pending;
 
-      // The panel renders `html`; `text` is what it puts in the field on a
-      // pick, so it never carries a number in either case.
-      expect(result.items[0].html).toBe(expected);
-      expect(result.items[0].text).toBe("Acme Ltd");
-      expect(result.items[0].companyId).toBe(identifier);
-      // Never synthesised: an absent lookupId is what disables address autofill.
-      expect(result.items[0].lookupId).toBe("lookup-1");
-    });
+        // The panel renders `html`; `text` is what it puts in the field on a
+        // pick, so it never carries a number in either case.
+        expect(result.items[0].html).toBe(expected);
+        expect(result.items[0].text).toBe("Acme Ltd");
+        expect(result.items[0].companyId).toBe(identifier);
+        // Never synthesised: an absent lookupId is what disables address autofill.
+        expect(result.items[0].lookupId).toBe("lookup-1");
+      },
+    );
 
     test("§2 entering manual entry hands the field back to the buyer", () => {
       capture().manualEntryMode();
@@ -419,59 +432,74 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       return env.captureControllers[env.captureControllers.length - 1];
     }
 
-    test("§5 manual entry announces the pair, so an already-mounted tile updates", () => {
-      // Review round 1. Deleting the address step's editable number input took
-      // `onCompanyIdInput()` — the only dispatcher on the manual path — out of
-      // the DOM with it, so manual entry wrote localStorage and announced
-      // nothing. A payment tile that is already mounted syncs from this event,
-      // not from storage, and so kept the previous company.
-      const heard = [];
-      const listener = function (e) {
-        heard.push(e.detail);
-      };
-      window.addEventListener("shipping-company-selected", listener);
-      try {
-        capture().manualEntryMode();
-        nameField.value = "Widgets Inc";
-        component.$el = nameField;
-        component.onNameFieldInput();
+    /** @returns {Object} this surface's persisted record */
+    function storedSelection() {
+      return JSON.parse(
+        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY) || "{}",
+      );
+    }
 
-        expect(heard).toHaveLength(1);
-        expect(heard[0].company_name).toBe("Widgets Inc");
-      } finally {
-        window.removeEventListener("shipping-company-selected", listener);
-      }
+    /**
+     * Every pair this role's identity notified, oldest first.
+     *
+     * @returns {Array<Object>}
+     */
+    function recordIdentityPairs() {
+      const seen = [];
+      env.identityFor("shipping").subscribe(function (identity) {
+        seen.push({
+          company_name: identity.companyName(),
+          company_id: identity.companyId(),
+          company_id_source: identity.companyIdSource(),
+        });
+      });
+      return seen;
+    }
+
+    test("§5 manual entry lands in this role's identity and record", () => {
+      // Review round 1. Deleting the address step's editable number input took
+      // `onCompanyIdInput()` — the only writer on the manual path — out of the
+      // DOM with it, so manual entry recorded nothing at all.
+      capture().manualEntryMode();
+      nameField.value = "Widgets Inc";
+      component.$el = nameField;
+      component.onNameFieldInput();
+
+      expect(env.identityFor("shipping").companyName()).toBe("Widgets Inc");
+      expect(storedSelection().company_name).toBe("Widgets Inc");
+    });
+
+    test("§5 manual entry leaves the other role alone", () => {
+      capture().manualEntryMode();
+      nameField.value = "Widgets Inc";
+      component.$el = nameField;
+      component.onNameFieldInput();
+
+      expect(env.identityFor("billing").companyName()).toBe("");
+      expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
     });
 
     test("clearing the manual company name CLEARS it from storage too", () => {
       // Review round 2. `commitCompanyName()` used to early-return on
       // `search === companyName`, and with no prior pick `companyName` is ''
       // for the whole page load — so deleting a typed name hit `'' === ''`,
-      // returned, and left the deleted name in storage. announceCompanyPair()
-      // then broadcast it, and the payment step repopulated the tile from it:
-      // an empty address field, the deleted company on the order.
-      const heard = [];
-      const listener = function (e) {
-        heard.push(e.detail);
-      };
-      window.addEventListener("shipping-company-selected", listener);
-      try {
-        capture().manualEntryMode();
-        nameField.value = "Acme Ltd";
-        component.$el = nameField;
-        component.onNameFieldInput();
+      // returned, and left the deleted name in storage. The payment step then
+      // repopulated the tile from it: an empty address field, the deleted
+      // company on the order.
+      capture().manualEntryMode();
+      nameField.value = "Acme Ltd";
+      component.$el = nameField;
+      component.onNameFieldInput();
 
-        nameField.value = "";
-        component.onNameFieldInput();
+      nameField.value = "";
+      component.onNameFieldInput();
 
-        expect(component.search).toBe("");
-        expect(heard[heard.length - 1].company_name).toBe("");
-      } finally {
-        window.removeEventListener("shipping-company-selected", listener);
-      }
+      expect(component.search).toBe("");
+      expect(env.identityFor("shipping").companyName()).toBe("");
+      expect(storedSelection().company_name).toBe("");
     });
 
-    test("a name edit drops an identifier that belonged to another name, and still announces", () => {
+    test("a name edit drops an identifier that belonged to another name", () => {
       // Rounds 2 and 3. `forgetStaleCompanyId()` used to spare a
       // `manual`-sourced identifier, and with the address step's own number
       // input gone (§5) nothing here can write or correct one — so an id left
@@ -479,49 +507,40 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       // keystroke, arming an order intent for a half-typed name beside somebody
       // else's number.
       //
-      // Round 2 suppressed the ANNOUNCEMENT in that state, which was worse: the
-      // buyer then silently stopped announcing anything for the rest of the
-      // page load, reinstating the stale-submission bug the announcement exists
-      // to prevent. The fix is to drop the mismatched id instead, so the pair
-      // announced is always coherent.
-      const heard = [];
-      const listener = function (e) {
-        heard.push(e.detail);
-      };
-      window.addEventListener("shipping-company-selected", listener);
-      try {
-        env.identity.write(
-          {
-            companyName: "Some Other Company Ltd",
-            companyId: "99999999",
-            companyIdSource: "registry",
-          },
-          { authoritative: true },
-        );
-        heard.length = 0;
+      // Round 2 suppressed the RECORD in that state, which was worse: the
+      // buyer's edits then stopped being recorded for the rest of the page
+      // load, reinstating the stale-submission bug. The fix is to drop the
+      // mismatched id instead, so every pair recorded is coherent.
+      env.identityFor("shipping").write(
+        {
+          companyName: "Some Other Company Ltd",
+          companyId: "99999999",
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
+      const pairs = recordIdentityPairs();
 
-        nameField.value = "Ac";
-        component.$el = nameField;
-        capture().commitManualCompany(nameField.value);
+      nameField.value = "Ac";
+      component.$el = nameField;
+      capture().commitManualCompany(nameField.value);
 
-        // The announcement still happens — silence is what round 2 got wrong.
-        expect(heard.length).toBeGreaterThan(0);
-        // Every one of them carries a coherent pair, and the last is the new
-        // name with NO identifier. The dropped number and the new name arrive
-        // as two notifications, so "the last one is right" is not enough on its
-        // own: the stale number must never be paired with the new name.
-        expect(
-          heard.some(
-            (detail) => detail.company_name === "Ac" && detail.company_id,
-          ),
-        ).toBe(false);
-        expect(heard[heard.length - 1].company_name).toBe("Ac");
-        expect(heard[heard.length - 1].company_id).toBe("");
-        expect(heard[heard.length - 1].company_id_source).toBe("");
-        expect(component.companyId).toBe("");
-      } finally {
-        window.removeEventListener("shipping-company-selected", listener);
-      }
+      // The edit is still recorded — silence is what round 2 got wrong.
+      expect(pairs.length).toBeGreaterThan(0);
+      // Every one of them carries a coherent pair, and the last is the new
+      // name with NO identifier. The dropped number and the new name arrive as
+      // two notifications, so "the last one is right" is not enough on its own:
+      // the stale number must never be paired with the new name.
+      expect(
+        pairs.some((pair) => pair.company_name === "Ac" && pair.company_id),
+      ).toBe(false);
+      expect(pairs[pairs.length - 1]).toEqual({
+        company_name: "Ac",
+        company_id: "",
+        company_id_source: "",
+      });
+      expect(component.companyId).toBe("");
+      expect(storedSelection().company_id).toBe("");
     });
 
     test("init() restores a stored pick WITHOUT reconciling it against the field", () => {

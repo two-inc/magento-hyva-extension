@@ -86,9 +86,9 @@ $quoteDetailsJson = json_encode(
      * consumers order-independent instead of two-of-three-happen-to-be-fine.
      *
      * The fallback matters because these call sites sit inside the `alpine:init`
-     * / `DOMContentLoaded` handlers that also register the pickers and start the
-     * payment-form observer: a bare call on a page without the publisher would
-     * throw BEFORE those registrations and leave a dead checkout step.
+     * / `DOMContentLoaded` handlers that also register the pickers: a bare call
+     * on a page without the publisher would throw BEFORE those registrations and
+     * leave a dead checkout step.
      * Degrading to "no carry-over between steps" is survivable; that is not.
      *
      * Uniquely named per template because these share one global lexical scope,
@@ -101,13 +101,19 @@ $quoteDetailsJson = json_encode(
      * leaves the real tag unsigned and the enforced checkout CSP refuses the
      * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
      */
-    const twoAddressReadSelection = function() {
-        return (window.twoGatewayReadCompanySelection
-            || function() { return {}; })();
+    /*
+     * PER ROLE, because a panel that shared a record with the other one would
+     * carry a pick across to it on the next re-render's restore.
+     */
+    const twoAddressReadSelection = function(role) {
+        return role === 'billing'
+            ? (window.twoGatewayReadBillingCompany || function() { return {}; })()
+            : (window.twoGatewayReadCompanySelection || function() { return {}; })();
     };
-    const twoAddressWriteSelection = function(patch) {
-        return (window.twoGatewayWriteCompanySelection
-            || function() { return {}; })(patch);
+    const twoAddressWriteSelection = function(role, patch) {
+        return role === 'billing'
+            ? (window.twoGatewayWriteBillingCompany || function() { return {}; })(patch)
+            : (window.twoGatewayWriteCompanySelection || function() { return {}; })(patch);
     };
 
 function <?= $gwBase ?>CompanySearchField() {
@@ -141,7 +147,6 @@ function <?= $gwBase ?>CompanySearchField() {
         restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
         checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
         soleTraderErrorMessage: '<?= $escaper->escapeJs($soleTraderErrorMessage) ?>',
-        isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
         // The address step is where a manually typed name can still be given a
         // registry number later, so this is the surface that offers the chip.
         manualEntryOffered: true,
@@ -163,10 +168,11 @@ function <?= $gwBase ?>CompanySearchField() {
         // tile's own formula does not carry.
         editableCompanyIdExtraUnlock: function () { return !this.isCompanySearchEnabled; },
         countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
-        selectEventName: 'shipping-company-selected',
         getQuote: function () { return this.quoteData; },
-        readSelection: function () { return twoAddressReadSelection(); },
-        writeSelection: function (patch) { return twoAddressWriteSelection(patch); },
+        readSelection: function () { return twoAddressReadSelection(this.captureRole()); },
+        writeSelection: function (patch) {
+            return twoAddressWriteSelection(this.captureRole(), patch);
+        },
         // Traverse up levels from the control root to find the container with
         // all the address inputs — still 4 parentElement hops, and the control
         // root is still this component's own `$root`, because on this surface
@@ -181,6 +187,9 @@ function <?= $gwBase ?>CompanySearchField() {
         addressContainerWarning: 'Could not find address container',
     }), {
         quoteData: <?= $quoteDetailsJson ?>,
+        // Component state, not just a mixin option: the phone-autofill gate
+        // reads `this.isAddressAutopopulationEnabled`.
+        isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
 
         init() {
             /*
@@ -204,33 +213,22 @@ function <?= $gwBase ?>CompanySearchField() {
              * pick. Nothing can contradict this key either — it holds the
              * shipping company alone.
              */
-            const data = twoAddressReadSelection();
-            const identity = window.twoGatewayCompanyIdentity();
-            if (identity) {
-                // A sole-trader signup is live across rebuilds and its handshake
-                // bails unless the mode is still `soletrader`, so the stored
-                // mode — which that flow never writes — must not overwrite it.
-                if (!identity.isSoleTrader()) {
-                    // Seed, never displace: this factory mounts on the delivery
-                    // form AND the invoice form, so only the surface holding the
-                    // claim may replace a capture the other one made.
-                    const hostsControl = this.ownsCaptureField();
-                    // The MODE is under the same gate as the pair. A tile adopting
-                    // another surface's mode opened on a live-looking search box
-                    // whose every keystroke returned early at the manual-mode
-                    // guard, with no way out.
-                    if (hostsControl || !identity.companyName()) {
-                        identity.captureMode(data.manual_mode ? 'manual' : 'registered');
-                        identity.write(
-                            {
-                                companyName: data.company_name || '',
-                                companyId: data.company_id || '',
-                                companyIdSource: data.company_id_source || ''
-                            },
-                            { authoritative: hostsControl }
-                        );
-                    }
-                }
+            const role = this.captureRole();
+            const data = twoAddressReadSelection(role);
+            const identity = window.twoGatewayCompanyIdentity(role);
+            // A sole-trader signup is live across rebuilds and its handshake
+            // bails unless the mode is still `soletrader`, so the stored mode —
+            // which that flow never writes — must not overwrite it.
+            if (identity && !identity.isSoleTrader()) {
+                identity.captureMode(data.manual_mode ? 'manual' : 'registered');
+                identity.write(
+                    {
+                        companyName: data.company_name || '',
+                        companyId: data.company_id || '',
+                        companyIdSource: data.company_id_source || ''
+                    },
+                    { authoritative: true }
+                );
             }
 
             this.mountCompanyPopover();
@@ -246,10 +244,7 @@ function <?= $gwBase ?>CompanySearchField() {
          * shared selection blob, on the chance a future revision of this
          * surface (or a branded overlay) re-adds a binding for it.
          *
-         * Debounced by whichever template binds it. Writes through the
-         * store-view-keyed accessor and re-announces the pair on the same
-         * event a registry pick uses, so the payment step sees a hand-typed
-         * identifier by exactly the route it already sees a searched one.
+         * Debounced by whichever template binds it.
          */
         onCompanyIdInput() {
             const value = this.$el.value;
@@ -257,16 +252,10 @@ function <?= $gwBase ?>CompanySearchField() {
 
             this.companyId = value;
             this.companyIdSource = 'manual';
-            const companyData = twoAddressWriteSelection({
+            twoAddressWriteSelection(this.captureRole(), {
                 company_id: value,
                 company_id_source: 'manual'
             });
-
-            // Explicit, so both routes onto this event carry the key and an
-            // absent one is never read as "the buyer chose this".
-            window.dispatchEvent(new CustomEvent("shipping-company-selected", {
-                detail: Object.assign({ restored: false }, companyData)
-            }));
         },
     });
 }

@@ -86,6 +86,8 @@ use Magento\Framework\Escaper;
     <div
         <?= /* @noEscape */ $twoControlAlpineData ?>
         data-two-capture-host="<?= $escaper->escapeHtmlAttr($twoControlCaptureHost) ?>"
+        <?php /* Stamped by mountCompanyPopover() — the role is a live DOM read. */ ?>
+        data-two-capture-role=""
         class="two-company-search relative w-full"
     >
         <?php

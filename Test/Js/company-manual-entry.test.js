@@ -114,7 +114,11 @@ describe("address-step manual entry", () => {
   describe("the route is offered here and withheld where it dead-ends", () => {
     test.each([
       ["registered", true, "the registry lookup is always available"],
-      ["manual", true, "the address step still has a lookup to supply a number later"],
+      [
+        "manual",
+        true,
+        "the address step still has a lookup to supply a number later",
+      ],
     ])("the %s chip is offered: %p (%s)", (mode, offered) => {
       expect(panel().options.isChipVisible(mode)).toBe(offered);
     });
@@ -127,10 +131,11 @@ describe("address-step manual entry", () => {
       (offered, expected) => {
         // The one value this checkout hands the shared controller to decide the
         // chip. Rebuilt rather than read off the mounted one: the controller is
-        // cached per page, so the second case needs the cache cleared.
-        delete window.twoGatewayCompanyCaptureInstance;
+        // memoized per role, so the second case needs that entry cleared.
+        delete window.twoGatewayCompanyCaptureInstances.shipping;
 
         const capture = window.twoGatewayCompanyCapture({
+          role: "shipping",
           restBaseUrl: "",
           checkoutApiUrl: "https://api.test.invalid",
           checkoutPageUrl: "/checkout",
@@ -161,11 +166,11 @@ describe("address-step manual entry", () => {
       // The row this replaced sat outside the popover, where the dropdown drew
       // over it. Passing them in is what puts them inside.
       expect(typeof panel().options.getChips).toBe("function");
-      expect(panel().options.getChips().map((entry) => entry.mode)).toEqual([
-        "registered",
-        "soletrader",
-        "manual",
-      ]);
+      expect(
+        panel()
+          .options.getChips()
+          .map((entry) => entry.mode),
+      ).toEqual(["registered", "soletrader", "manual"]);
     });
   });
 

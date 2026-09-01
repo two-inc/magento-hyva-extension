@@ -19,14 +19,10 @@
  * key carries it, and a test asserting on such a field would be asserting on
  * dead weight.
  *
- * A second bug used to keep the leak permanent: the payment step's restore path
- * rewrote the blob as a two-key object, dropping `quote_id` — and both clearers
- * require both quote ids to be non-empty, so one page load through there
- * disarmed the new-order clear for the rest of the quote. Every writer now
- * MERGES, through window.twoGatewayWriteCompanySelection().
- *
- * Test/Js/README.md previously listed initShippingCompanyStorage()'s
- * new-session detection as out of scope. This file is that scope.
+ * Both clearers require both quote ids to be non-empty, so a writer that
+ * rebuilt the blob instead of merging into it would drop `quote_id` and disarm
+ * the new-order clear for the rest of the quote. Every writer MERGES, through
+ * window.twoGatewayWriteCompanySelection().
  *
  * Every test here uses the same CURRENT quote id, `test-quote-1`.
  * `initShippingCompanyStorage()` registers an `alpine:init` listener the harness
@@ -55,15 +51,11 @@ describe("company-selection storage scoping", () => {
   const CURRENT_QUOTE = "test-quote-1";
 
   beforeEach(() => {
-    // The payment template's second DOMContentLoaded listener polls for
-    // Magewire on a 100ms setTimeout; fake timers keep that off the clock.
-    jest.useFakeTimers();
     env = H.installHyvaEnvironment();
   });
 
   afterEach(() => {
     env.restore();
-    jest.useRealTimers();
     document.body.innerHTML = "";
   });
 
@@ -265,8 +257,8 @@ describe("company-selection storage scoping", () => {
 
         run();
 
-        // Removed, not blanked: the tile's fallback-to-shipping keys on the
-        // record being absent, so a blank one would suppress it all checkout.
+        // Dropped whole rather than blanked, so nothing of the previous order
+        // survives under this key.
         expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
       });
 
@@ -301,47 +293,6 @@ describe("company-selection storage scoping", () => {
         run();
 
         expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
-      });
-    });
-
-    describe("restoring a backend-persisted shipping company", () => {
-      beforeEach(() => {
-        // Publisher before the DOM, and that order is load-bearing. Each
-        // preceding test in this describe left a MutationObserver watching
-        // `document.body` — the template installs one and nothing can remove
-        // it — and those stale observers fire on the very next mutation, which
-        // is this line. They call the accessor by name off `window`, so with the
-        // globals still torn down by the previous test's `restore()` they throw
-        // out of an observer callback, failing this test for something that has
-        // nothing to do with it.
-        H.loadSharedHelpers();
-        document.body.innerHTML = [
-          '<input type="hidden" id="shipping-company" value="Example Trading Ltd" />',
-          '<input type="hidden" id="shipping-company_id" value="12345678" />',
-          '<div x-data="stub">',
-          '  <input type="text" data-name="company_name" value="" />',
-          '  <input type="text" data-name="company_id" value="" />',
-          "</div>",
-        ].join("\n");
-      });
-
-      test("keeps the quote id the clearers depend on, and the mode", () => {
-        // No company in storage, so the restore path runs off the hidden fields
-        // the backend rendered. It used to substitute a two-key object for the
-        // whole blob: that dropped `quote_id`, disarming the new-quote clear for
-        // the rest of the quote, and dropped `manual_mode`, throwing a buyer
-        // mid-manual-entry on the ADDRESS form back into search mode on reload.
-        seed({
-          quote_id: CURRENT_QUOTE,
-          manual_mode: true,
-        });
-
-        run();
-
-        expect(stored().company_name).toBe("Example Trading Ltd");
-        expect(stored().company_id).toBe("12345678");
-        expect(stored().quote_id).toBe(CURRENT_QUOTE);
-        expect(stored().manual_mode).toBe(true);
       });
     });
   });
@@ -398,8 +349,8 @@ describe("company-selection storage scoping", () => {
         '<div id="scope-root">',
         '  <input type="text" id="company_name" value="" />',
         '  <input type="text" id="company_id" value="" disabled />',
-        '  <input type="hidden" id="shipping-company" value="" />',
-        '  <input type="hidden" id="shipping-company_id" value="" />',
+        '  <input type="hidden" name="shipping-company" value="" />',
+        '  <input type="hidden" name="shipping-company_id" value="" />',
         "</div>",
       ].join("\n");
       // Mounting a capture surface probes the registry for sole-trader
@@ -434,7 +385,9 @@ describe("company-selection storage scoping", () => {
       expect(billing.quote_id).toBe(CURRENT_QUOTE);
       expect(billing.company_name).toBe("Example Trading Ltd");
       // And the shipping slot is byte-for-byte untouched by a tile write.
-      expect(env.browserStorage.getItem(CURRENT_STORE_KEY)).toBe(shippingBefore);
+      expect(env.browserStorage.getItem(CURRENT_STORE_KEY)).toBe(
+        shippingBefore,
+      );
     });
 
     test("the address picker merges rather than rebuilds", () => {
@@ -459,9 +412,12 @@ describe("company-selection storage scoping", () => {
 
       expect(stored().quote_id).toBe(CURRENT_QUOTE);
       expect(stored().company_name).toBe("Example Trading Ltd");
-      expect(document.getElementById("shipping-company").value).toBe(
-        "Example Trading Ltd",
-      );
+      // Addressed by name: the mirrors carry no id, so they cannot shadow
+      // Hyvä's own `shipping-company` field.
+      expect(
+        document.querySelector('input[type="hidden"][name="shipping-company"]')
+          .value,
+      ).toBe("Example Trading Ltd");
     });
 
     test("and a selection stays inside this store view's key", () => {
@@ -495,7 +451,7 @@ describe("company-selection storage scoping", () => {
       // a surface whose `$root` is the whole form.
       document.body.innerHTML = [
         '<div id="tile-root">',
-        '  <div class="two-company-search" data-two-capture-host="tile">',
+        '  <div class="two-company-search" data-two-capture-host="tile" data-two-capture-role="billing">',
         '    <input type="text" id="company_name" data-two-capture-field value="" />',
         "  </div>",
         '  <input type="text" id="company_id" value="" disabled />',

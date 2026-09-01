@@ -189,45 +189,6 @@ describe("template renderer contract", () => {
     });
   });
 
-  test("the Magewire stub answers the event bus the bridge polls for", () => {
-    // Given the bridge booted; when its poll finds `Magewire.on`; then it
-    // registers instead of re-arming a 100ms retry that nothing ever drains.
-    jest.useFakeTimers();
-    const env = H.installHyvaEnvironment();
-    try {
-      document.body.innerHTML = [
-        '<div id="payment-root" x-data="twoGatewayHyvaPaymentMethodBase">',
-        '  <input type="text" data-name="company_name" value="" />',
-        '  <input type="text" data-name="company_id" value="" />',
-        "</div>",
-      ].join("\n");
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Example Trading Ltd",
-          company_id: "12345678",
-        }),
-      );
-      H.loadSharedHelpers();
-      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
-      document.dispatchEvent(new Event("DOMContentLoaded"));
-
-      expect(
-        env.fireMagewireEvent("billing_as_shipping_address_updated", {
-          billingAsShipping: true,
-        }),
-      ).toBe(1);
-      expect(document.querySelector('[data-name="company_id"]').value).toBe(
-        "12345678",
-      );
-      expect(jest.getTimerCount()).toBe(0);
-    } finally {
-      env.restore();
-      jest.useRealTimers();
-    }
-  });
-
   test("the shared helpers are asserted to exist after loading, not assumed", () => {
     const env = H.installHyvaEnvironment();
     try {

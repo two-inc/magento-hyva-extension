@@ -202,16 +202,9 @@ a time, never carried forward from an earlier revision:
 | `getItems()` recompute always `true` (blanket unlock)                           | 1                                                                                |
 | `getItems()` recompute always `false` (blanket lock)                            | 6                                                                                |
 | Hoist the `getItems()` recompute above its `isSelecting` early return           | 1                                                                                |
-| Require the identifier in the `billing_as_shipping_address_updated` gate        | 2                                                                                |
-| Drop `companyIdInput.value = companyId` from `updatePaymentFields()`            | 8                                                                                |
-| Restore the imperative `disabled = true` + grey in `company-name-payment.phtml` | 2                                                                                |
-| Require the identifier before syncing shipping → payment                        | 4                                                                                |
-| Drop the editability recompute from the `update-company-data` listener          | 2                                                                                |
 | `identifierOf` back to a truthiness test (so `id: 0` reads as absent)           | 1                                                                                |
-| Drop the empty-identifier term from the sync's order-intent gate                | 1                                                                                |
 | `manualMode` watcher back to assigning `!value` inline                          | 1                                                                                |
 | `companyIdDisabled` declared `false` instead of `true`                          | 1                                                                                |
-| Sync a selection with an empty company NAME too                                 | 1                                                                                |
 | `fillCompanyData()` bails on an empty id again                                  | 4                                                                                |
 | `selectItem()` stops deriving `companyIdEntryRequired`                          | 6                                                                                |
 | `initialize()` stops deriving it at all (forced `false`)                        | 5                                                                                |
@@ -220,25 +213,26 @@ a time, never carried forward from an earlier revision:
 | Drop the `x-for :key` fallback                                                  | 1                                                                                |
 | Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
 | `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
-| Drop the `company_id_source` argument from the on-load initialisation           | 1                                                                                |
-| `update-company-data`'s entry-required gated on `Boolean(companyName)`          | 1                                                                                |
-| Drop `companyIdSource` from the `update-company-data` listener                   | 1                                                                                |
-| Drop `on()` from the harness's Magewire stub                                     | 1                                                                                |
 
-The dual-mount and shared-identity guards were mutation-checked the same way, against the
-shipped templates, one revert at a time:
+The per-role isolation guards (`panel-role-isolation.test.js`, and the surviving dual-mount
+cases in `capture-identity-watchers.test.js`) were mutation-checked the same way, against the
+shipped templates, one revert at a time. Each row below is a route back to the reported
+oscillation — one company appearing in the delivery panel, blanking in the invoice panel, and
+flipping back on the next `element.updated` sweep, with no timer anywhere:
 
 | Mutation                                                                     | Tests failing |
 | ---------------------------------------------------------------------------- | ------------- |
 | A same-root re-mount adds a second subscription instead of replacing it      | 1             |
 | The search text is remembered rather than discarded with the company         | 1             |
-| A surface holding no claim writes the shared identity unconditionally        | 3             |
-| A surface holding no claim writes it authoritatively                         | 1             |
-| The submit-field clear runs before the ownership guard                       | 1             |
-| Ownership captured when the subscription opens, not re-read per notification | 1             |
-| Querying ownership grants it when no claim is standing                       | 2             |
-| The stored capture MODE is adopted with no ownership gate                    | 1             |
-| `update-company-data` writes authoritatively from a tile hosting nothing     | 1             |
+| One identity for the whole page instead of one per address role               | 19            |
+| One capture controller for the whole page instead of one per role            | 6             |
+| The controller's field selectors dropped back to host-only, unscoped by role | 3             |
+| `watchCountryChanges` fires for any `*country_id`, whatever panel it is in   | 2             |
+| A panel's storage record resolved without its role                           | 2             |
+| Sole-trader autofill writes the invoice-role form rather than its own         | 5             |
+| A tile rendering no capture field mounts anyway, taking the role's controller | 1             |
+| A tile rendering no capture field seeds its role's identity                   | 1             |
+| A tile rendering no capture field restores from its own record                | 1             |
 | Watcher teardown left to the next mount's sweep instead of the re-render     | 1             |
 | A number recovered from the shipping form's own fields claimed as `registry` | 1             |
 
@@ -317,8 +311,7 @@ name and id always describing the same company, the id field left empty but **ed
 (empty and disabled is an unfillable required field), the locked state derived in one place
 from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-lock a field
 still to be filled, selecting an identified company afterwards re-locking it, the same
-state arriving from the shipping step's `update-company-data` event and restored from
-browser storage, no order intent dispatched for an empty id, and the dropdown's
+state restored from browser storage, no order intent dispatched for an empty id, and the dropdown's
 `x-for :key` staying unique when two hits in one response both lack an identifier (it was
 bound to `companyId`, and Alpine renders one row per distinct key, so a collision on `''`
 silently cost the buyer a company that matched; both surfaces bind a getter with a positional
@@ -426,30 +419,6 @@ imperatively elsewhere and never re-enabled, so the suite passed with the requir
 permanently uneditable — the exact condition the fix exists to prevent. Deleting the
 `:disabled` attribute from the template now fails the whole file at load. A test that cannot
 fail for the reason the fix exists is not a test of the fix.
-
-`payment-fields-shipping-sync.test.js` — `company-name-payment.phtml`, the bridge that
-copies the shipping step's company onto the payment tile. It gated on name **and**
-identifier, so an identifier-less selection was skipped entirely and the tile kept the
-previous company's name and number: place-order submitted company A for a buyer who had
-selected company B, with nothing prompting a re-entry. It also disabled `#company_id` on
-every sync and never reversed it. Covered: an identifier-less company syncing, overwriting
-the previous one rather than being skipped, the field never being disabled or greyed
-imperatively, an empty NAME still being skipped, and the order intent firing for an
-identified company but not for an identifier-less one.
-
-The `shipping-company-selected` path and the `billing_as_shipping_address_updated` Magewire
-path are both driven, because the same gate was relaxed in both and only the first had
-coverage — reverting the second to `shippingCompany && shippingCompanyId` left the suite
-fully green. The Magewire handler registers inside a `DOMContentLoaded` callback behind a
-poll for the `Magewire` global, so the test installs a `Magewire` stub **first** (the else
-branch arms a 100ms `setTimeout` retry loop that would otherwise never stop) and then
-dispatches `DOMContentLoaded` by hand — jsdom fired the real one long before the template
-was evaluated. It throws rather than skips if no handler gets registered.
-
-The two "does not touch the field imperatively" tests assert the synced **value** as well
-as `disabled` / `style`. That is load-bearing: the fixture starts undisabled with an empty
-`style`, so a sync that did nothing whatsoever would satisfy those expectations on its own,
-and the tests would have been green by construction.
 
 Its own file because the template registers unremovable top-level `window` listeners — see
 the known-leak note below.
@@ -746,17 +715,14 @@ exit. The three that assert on the dispatch — `payment-company-selection.test.
 `payment-form-composition.test.js` and, since TWO-25345, `payment-company-tile-label.test.js` —
 do so with a listener of their own that they remove.
 
-`company-name-payment.phtml` has the same shape — anonymous top-level `window` listeners for
-`shipping-company-selected` and `checkout:payment:method-activate`. `payment-fields-shipping-sync.test.js`
-drives those listeners directly, so it evaluates that template **once**, in `beforeAll`, and
-resets the DOM and browser storage per test instead. A per-test load there would run one
-handler per preceding test on every dispatch.
-
-`payment-method-code.test.js` also drives those listeners — it dispatches
-`checkout:payment:method-activate` with that template loaded per test — so handlers accumulate
-there too. WHY that has never surfaced is a question about `company-name-payment.phtml`'s own
-handlers rather than about anything TWO-25332 touches, and it is deliberately not characterised
-here: two attempts to describe it, in review rounds 5 and 6 of PR #93, were both wrong.
+`company-name-payment.phtml` has the same shape — one anonymous top-level `window` listener
+for `checkout:payment:method-activate`. `payment-method-code.test.js` drives it with that
+template loaded per test, so handlers accumulate there too; it asserts whether an intent was
+dispatched at all rather than how many, which is what makes it independent of the
+accumulation. WHY that has never surfaced otherwise is a question about that template's own
+handlers rather than about anything TWO-25332 touches, and it is deliberately not
+characterised here: two attempts to describe it, in review rounds 5 and 6 of PR #93, were
+both wrong.
 Elsewhere the leak is inert for a simpler reason: nothing drives the listeners at all, and each
 handler only arms the debounce when it fires. A new test that dispatches one belongs in its own
 file for the same reason — or have the production template guard its registration the
