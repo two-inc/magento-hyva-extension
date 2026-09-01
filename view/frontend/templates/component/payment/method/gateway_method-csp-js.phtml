@@ -2066,6 +2066,27 @@ $quoteDetails = json_encode(
     }
 
     /**
+     * The one page-level identity every surface reads/writes, memoized the
+     * same way twoGatewayCompanyCapture() below memoizes the controller.
+     *
+     * `company-identity.js` (base plugin) is a FACTORY, not a ready object —
+     * every call site here used to read `window.TwoCompanyIdentity` directly
+     * as the identity itself; each now goes through this instead, so the
+     * several call sites across this file keep sharing the SAME instance
+     * rather than each minting its own on every invocation.
+     *
+     * @returns {?Object} null when the base module failed to load
+     */
+    window.twoGatewayCompanyIdentity = window.twoGatewayCompanyIdentity || function () {
+        if (window.twoGatewayCompanyIdentityInstance) {
+            return window.twoGatewayCompanyIdentityInstance;
+        }
+        if (typeof window.TwoCompanyIdentity !== 'function') return null;
+        window.twoGatewayCompanyIdentityInstance = window.TwoCompanyIdentity();
+        return window.twoGatewayCompanyIdentityInstance;
+    };
+
+    /**
      * The company-capture controller for this page, built on first use.
      *
      * @param {Object} settings the surface's own config — the same values it
@@ -2077,7 +2098,7 @@ $quoteDetails = json_encode(
             return window.twoGatewayCompanyCaptureInstance;
         }
         const Controller = window.TwoCompanyCaptureComponent;
-        const identity = window.TwoCompanyIdentity;
+        const identity = window.twoGatewayCompanyIdentity();
         const Panel = window.TwoCompanySearchPanel;
         const SoleTraderFlow = window.TwoSoleTrader;
         // A CSP or deploy failure on the base module must degrade the company
@@ -2598,7 +2619,7 @@ $quoteDetails = json_encode(
              * that one notification.
              */
             followCapturedIdentity() {
-                const identity = window.TwoCompanyIdentity;
+                const identity = window.twoGatewayCompanyIdentity();
                 // A CSP or deploy failure on the base module degrades this field
                 // to a plain input; the mirror must not be what throws.
                 if (!identity) return;
@@ -3380,7 +3401,7 @@ $quoteDetails = json_encode(
                  * keystroke returned early at the manual-mode guard, with no way
                  * out because the exit is bound on the address form.
                  */
-                const identity = window.TwoCompanyIdentity;
+                const identity = window.twoGatewayCompanyIdentity();
                 // Not while a signup is live: that flow never writes the blob, so
                 // the stored pair is the registered company that preceded it and
                 // restoring it puts that company under sole-trader mode.
@@ -3458,7 +3479,7 @@ $quoteDetails = json_encode(
                     const companyIdSource = companyId
                         ? (detail.companyIdSource || 'registry')
                         : '';
-                    const shared = window.TwoCompanyIdentity;
+                    const shared = window.twoGatewayCompanyIdentity();
                     // Seed, never displace — the same rule as initialize(). This
                     // sync reaches the tile whether or not it hosts the control,
                     // and an authoritative write from a tile hosting nothing
