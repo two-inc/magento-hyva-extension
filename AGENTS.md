@@ -481,6 +481,14 @@ own surface:
   of host.** One renderer mounts the company field on both address forms, so one
   key per kind of host is one key shared between two live surfaces, and the
   second mount tears down the first's subscription.
+- **The re-render sweep restores CONTENT as well as structure.** A morph rewrites
+  the company input from the server's value, which is empty for a company picked
+  since the last roundtrip, and it can do that without touching the popover's
+  wrapper. Every other repaint is gated on a change that has not happened — the
+  mirror on the component's own state, the popover's rebind on its wrapper being
+  gone — so `mountCompanyPopover()` ends by repainting the captured pair
+  (`repaintCapturedNameFields()`), idempotently and with no event, which is what
+  stops the buyer's company vanishing a few seconds after they pick it.
 - **A surface's subscription is disposed by the re-render that removed it.** The
   `element.updated` hook reaps every watcher whose root has left the document,
   because a teardown that waits for the next mount never runs on a page with one

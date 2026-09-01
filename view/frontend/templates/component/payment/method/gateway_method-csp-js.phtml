@@ -2404,6 +2404,10 @@ $quoteDetails = json_encode(
                 capture.refreshMount();
                 capture.refreshSoleTraderAvailability();
                 this.watchCompanyPopoverForMorphs();
+                // Last: the popover's own rebind repaints the field when the
+                // morph took its wrapper, and this is the case it cannot see —
+                // a morph that patched only the input's value.
+                this.repaintCapturedNameFields();
             },
 
             /**
@@ -2527,6 +2531,40 @@ $quoteDetails = json_encode(
                 if (nameField && nameField !== field) nameField.value = '';
                 const idField = document.getElementById('company_id');
                 if (idField) idField.value = '';
+            },
+
+            /**
+             * Put the captured company back in this surface's own fields.
+             *
+             * A re-render rewrites the company input from the SERVER's value —
+             * empty for a company picked since the last roundtrip — and every
+             * other repaint is gated on something that did not change: the
+             * mirror on the component's own state, the popover's rebind on its
+             * wrapper having been removed. A morph that patched only the input
+             * leaves both satisfied and the field blank.
+             *
+             * Fires no event: the popover reads `input` on this field as typing,
+             * and a host that posts on `change` re-enters this sweep. Skipped in
+             * manual entry, where the committed name lags what is being typed.
+             */
+            repaintCapturedNameFields() {
+                if (this.manualMode) return;
+                const identity = window.twoGatewayCompanyIdentity(this.captureRole());
+                if (!identity) return;
+                const name = identity.companyName();
+                if (!name) return;
+                const field = this.companyNameField();
+                if (field && field.value !== name) field.value = name;
+                if (!this.isTileSurface()) return;
+                // The tile's pair is what submits, so a morph blanking it loses
+                // the company from the order and not merely from the screen.
+                const nameField = document.getElementById('company_name');
+                if (nameField && nameField !== field && nameField.value !== name) {
+                    nameField.value = name;
+                }
+                const id = identity.companyId();
+                const idField = document.getElementById('company_id');
+                if (id && idField && idField.value !== id) idField.value = id;
             },
 
             writeCapturedSelection() {
