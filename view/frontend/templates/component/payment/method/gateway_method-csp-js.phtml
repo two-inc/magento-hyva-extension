@@ -3344,49 +3344,48 @@ $quoteDetails = json_encode(
                 twoPaymentComponentInstance = this;
 
                 /*
-                 * Restore from the BILLING record first (TWO-25326 review
-                 * round 3), falling back to the shipping one only when the
-                 * billing address is NOT pinned AND the buyer has billing set to
-                 * the shipping address.
+                 * Restore from the BILLING record first, falling back to the
+                 * shipping one only when billing does not itself present a
+                 * company NUMBER (TWO-25554 — "pick from shipping unless
+                 * billing is different, in which case pick from billing
+                 * first, falling back to shipping only if billing doesn't
+                 * present a company number"). Reading billing first is what
+                 * stops a company the buyer named here being overwritten by
+                 * the shipping company on the next re-render.
                  *
-                 * Both terms are load-bearing. Reading billing first is what
-                 * stops a company the buyer named here being overwritten by the
-                 * shipping company on the next re-render. Gating the fallback
-                 * on `twoGatewayIsBillingAsShipping()` is what stops the
-                 * shipping company being adopted as the billing company after
-                 * the buyer has explicitly said the two differ — which, before
-                 * the split, is precisely why unticking the box left the WRONG
-                 * company showing as a read-only captured label.
+                 * This is deliberately NOT gated on twoGatewayIsBillingAsShipping()
+                 * or twoGatewayIsBillingAddressPinned() any more. Those two answer
+                 * a DIFFERENT question — whether the address-field MIRROR may
+                 * overwrite billing's address form — and conflating that with
+                 * "which company number the order carries" is what left this
+                 * fallback never firing for a real, distinct billing address
+                 * that simply has no company of its own yet: unticking "same
+                 * as shipping" made `twoGatewayIsBillingAsShipping()` false,
+                 * which shut the fallback off regardless of whether billing
+                 * had anything to offer.
                  *
-                 * WHICH QUESTION SELECTS THE FALLBACK CHANGED (TWO-25461 §2.3).
-                 * It used to be whether a billing RECORD EXISTED, which latched:
-                 * the first write to that key — including the `{quote_id}` stamp
-                 * and the blanked pair forgetStaleCompanyId() leaves — stopped
-                 * the sync for the rest of the checkout with nothing that could
-                 * restart it. It is now whether the billing address's own fields
-                 * still MATCH what the mirror would write
-                 * (twoGatewayIsBillingAddressPinned), recomputed here on every
-                 * re-render rather than latched once. A buyer who has edited
-                 * that address keeps it; one whose two addresses agree again —
-                 * having collapsed to one and reopened it — is synced again,
-                 * with no resume control to find (§2.4).
-                 *
-                 * The record is still what gets RESTORED once the address is
-                 * pinned. Only the decision moved.
+                 * `billingCompanySelectionData.company_id` is the number
+                 * check: a company picked or adopted (sole trader) on billing
+                 * always carries one; manual entry never does (TWO-25554's
+                 * own capture-mode rule, ported unchanged). This does not
+                 * reintroduce the older bug the previous gating fixed — that
+                 * bug adopted shipping's company onto billing UNCONDITIONALLY
+                 * once unpinned, with no check that billing had captured
+                 * anything of its own; this fallback only ever fires when
+                 * billing genuinely has no number to present.
                  */
                 const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
                 const storedShippingSelection = window.twoGatewayReadCompanySelection();
                 /*
-                 * The third term is "never replace a company with nothing", not
-                 * part of the pin. With company search mounted in this TILE the
-                 * shipping key is never written, so a nameless shipping record
-                 * is that configuration's normal state and adopting it would
-                 * discard the only company the buyer ever named — leaving a
-                 * locked, empty, required number field behind it.
+                 * The second term is "never replace a company with nothing":
+                 * with company search mounted in this TILE the shipping key is
+                 * never written, so a nameless shipping record is that
+                 * configuration's normal state and adopting it would discard
+                 * the only company the buyer ever named — leaving a locked,
+                 * empty, required number field behind it.
                  */
                 const shippingCompanySelectionData =
-                    (!window.twoGatewayIsBillingAddressPinned()
-                        && window.twoGatewayIsBillingAsShipping()
+                    (!billingCompanySelectionData.company_id
                         && storedShippingSelection.company_name)
                         ? storedShippingSelection
                         : billingCompanySelectionData;

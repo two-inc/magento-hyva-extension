@@ -983,19 +983,32 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(fresh.companyId).toBe("99999999");
     });
 
-    test("does NOT fall back to shipping once the buyer unticks the box", () => {
-      // The bug the withdrawn Magewire bridge was trying to paper over: with
-      // billing declared different from shipping, adopting the shipping company
-      // shows the buyer a company they have explicitly said does not apply —
-      // and, being captured, it renders as a read-only label.
+    test("falls back to shipping even with the box unticked, when billing has no number of its own (TWO-25554)", () => {
+      // Superseded rule, kept as history: this used to assert NO fallback
+      // once the buyer unticks the box, on the reasoning that adopting
+      // shipping's company here shows the buyer a company they said does not
+      // apply. TWO-25554 rules the other way: "pick from shipping unless
+      // billing is different, in which case pick from billing first, falling
+      // back to shipping only if billing doesn't present a company number" —
+      // an untouched, numberless billing address is exactly that case.
       seed(H.COMPANY_SELECTION_KEY, SHIPPING);
 
       const fresh = remount(false);
 
-      expect(fresh.companyName).toBe("");
-      expect(fresh.companyId).toBe("");
-      expect(fresh[LABEL_SHOW_BINDING]).toBe(false);
-      // And the capture route is available, which is the whole point.
+      expect(fresh.companyName).toBe("Shipping Company Ltd");
+      expect(fresh.companyId).toBe("99999999");
+    });
+
+    test("does NOT fall back to shipping once billing has captured its own company", () => {
+      // The distinction TWO-25554 actually turns on: billing presents a
+      // number of its own, so it wins regardless of the checkbox.
+      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
+      seed(H.BILLING_COMPANY_KEY, BILLING);
+
+      const fresh = remount(false);
+
+      expect(fresh.companyName).toBe("Billing Company Ltd");
+      expect(fresh.companyId).toBe("11112222");
     });
 
     test("falls back when the toggle does not exist at all", () => {
