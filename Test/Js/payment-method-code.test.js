@@ -2,19 +2,23 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25259. company-name-payment.phtml compares against the BRAND's payment
- * method code, not the literal `two_payment`.
+ * TWO-25259 / TWO-25326. `company-name-payment.phtml`'s order-intent re-arm:
+ * it compares against the BRAND's payment method code, and it resolves the
+ * company from the BILLING record alone.
  *
- * The literal was harmless only for as long as every brand shipped its own fork
- * of this template. Once the overlay was de-forked onto the vanilla file, a
+ * The method-code half: the literal `two_payment` was harmless only for as long
+ * as every brand shipped its own fork of this template. On the de-forked file a
  * branded store's checkout selects its own method code, the comparison never
- * matched, and the order intent was simply never dispatched — silently, because
- * nothing errors when a company is available and no intent goes out.
+ * matches, and the order intent is silently never dispatched. The harness
+ * substitutes `getMethodCode()` with `two_payment` by default — exactly what a
+ * hardcoded literal would give — so these tests render with a DIFFERENT brand
+ * code, which is the only way to tell "reads the view model" from "happens to
+ * say two_payment".
  *
- * The harness substitutes `getMethodCode()` with `two_payment` by default, which
- * is exactly the value a hardcoded literal would have, so these tests render the
- * template with a DIFFERENT brand code via `extraRules`. That is the only way to
- * tell "reads the view model" from "happens to say two_payment".
+ * The record half: the tile's company is the invoice-role one, so the shipping
+ * step's selection is not a candidate here. A shipping record is seeded
+ * throughout, and every case that must not dispatch is a case a shipping
+ * fallback would have dispatched for.
  */
 
 "use strict";
@@ -29,14 +33,14 @@ const BRAND_RULES = [
   [/^\$methodCode$/, BRAND_METHOD],
 ];
 
-describe("payment-fields template method code", () => {
+const CURRENT_QUOTE = "test-quote-1";
+
+describe("payment-fields template order-intent re-arm", () => {
   let env;
   let intents;
   let onIntent;
 
   beforeEach(() => {
-    // The template's Magewire poll is a 100ms setTimeout chain.
-    jest.useFakeTimers();
     env = H.installHyvaEnvironment();
 
     intents = [];
@@ -45,13 +49,13 @@ describe("payment-fields template method code", () => {
     };
     window.addEventListener("dispatch-order-intent", onIntent);
 
-    // A company already chosen in the current quote, so the stale-data clearer
-    // leaves it alone and the order-intent path is reachable.
+    // A shipping-step company, in the current quote so the stale-data clearer
+    // leaves it alone. Nothing here may resolve it.
     env.browserStorage.setItem(
       H.COMPANY_SELECTION_KEY,
       JSON.stringify({
-        quote_id: "test-quote-1",
-        company_name: "Example Trading Ltd",
+        quote_id: CURRENT_QUOTE,
+        company_name: "Shipping Step Ltd",
         company_id: "12345678",
         manual_mode: false,
       }),
@@ -61,335 +65,131 @@ describe("payment-fields template method code", () => {
   afterEach(() => {
     window.removeEventListener("dispatch-order-intent", onIntent);
     env.restore();
-    jest.useRealTimers();
     document.body.innerHTML = "";
   });
 
   /**
-   * The payment form as the checkout renders it, with one method radio checked.
+   * Load publisher then template, and fire the DOMContentLoaded jsdom has
+   * already dispatched by the time the template is evaluated.
    *
-   * @param {string} checkedMethod
+   * The publisher FIRST: the billing record is reached only through
+   * `window.twoGatewayReadBillingCompany`, behind a `function(){ return {}; }`
+   * fallback so a page without the publisher degrades instead of throwing.
+   * Without it every negative case below would pass against a template that
+   * never read a record at all.
+   *
+   * @param {Object} [billingRecord] seeded before boot, so the new-order clear sees it
    * @returns {void}
    */
-  function renderPaymentForm(checkedMethod) {
-    document.body.innerHTML = [
-      '<input type="radio" name="payment-method-option" value="' +
-        checkedMethod +
-        '" checked />',
-      '<div x-data="stub">',
-      // As the tile renders them. `data-name` is both the readiness signal the
-      // MutationObserver waits for and what the sync writes through; the ids are
-      // here because they are what the template emits, and the assertions read
-      // them rather than depending on the selector the writer happens to use.
-      '  <input type="text" id="company_name" data-name="company_name" value="" />',
-      '  <input type="text" id="company_id" data-name="company_id" value="" />',
-      "</div>",
-    ].join("\n");
-  }
-
-  /**
-   * @param {Array<[RegExp, string]>} [extraRules]
-   * @returns {void}
-   */
-  function run(extraRules) {
-    // The publisher FIRST, then the consumer. The company selection is reached
-    // only through `window.twoGatewayReadCompanySelection`, which this template
-    // resolves into a local behind a `function(){ return {}; }` fallback so a
-    // page without the publisher degrades instead of throwing. Without the
-    // publisher loaded here that fallback returns `{}`, no company is ever
-    // found, and the order-intent path these tests are about is unreachable —
-    // a suite that passes its negative cases while testing nothing.
+  function run(billingRecord) {
+    if (billingRecord) {
+      env.browserStorage.setItem(
+        H.BILLING_COMPANY_KEY,
+        JSON.stringify(billingRecord),
+      );
+    }
     H.loadSharedHelpers();
-    H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE, extraRules);
+    H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE, BRAND_RULES);
     document.dispatchEvent(new Event("DOMContentLoaded"));
   }
 
-  describe("on page load, with a company already selected", () => {
-    test("dispatches the order intent for the BRAND's method code", () => {
-      renderPaymentForm(BRAND_METHOD);
+  /**
+   * @param {string} method
+   * @returns {void}
+   */
+  function activate(method) {
+    window.dispatchEvent(
+      new CustomEvent("checkout:payment:method-activate", {
+        detail: { method: method },
+      }),
+    );
+  }
 
-      run(BRAND_RULES);
+  const CAPTURED = {
+    quote_id: CURRENT_QUOTE,
+    company_name: "Tile Captured Ltd",
+    company_id: "87654321",
+    company_id_source: "registry",
+  };
 
-      expect(intents.length).toBeGreaterThan(0);
-    });
+  /*
+   * Asserted as "any intent" rather than a count: the activation listener is
+   * anonymous and on `window`, so each template load in this file leaves one
+   * more handler firing on every dispatch.
+   */
+  test.each([
+    {
+      method: BRAND_METHOD,
+      expected: true,
+      description: "the brand's own method code re-arms the intent",
+    },
+    {
+      method: "two_payment",
+      expected: false,
+      description:
+        "another brand's method code, which a hardcoded literal would match, does not",
+    },
+  ])("$description", ({ method, expected }) => {
+    run(CAPTURED);
 
-    test("does not dispatch for a method that is not this brand's", () => {
-      renderPaymentForm("two_payment");
+    activate(method);
 
-      run(BRAND_RULES);
-
-      // The mirror image of the bug: a hardcoded `two_payment` would fire here
-      // and stay silent above, which is precisely backwards on a branded store.
-      expect(intents).toEqual([]);
-    });
+    expect(intents.length > 0).toBe(expected);
   });
 
-  describe("on checkout:payment:method-activate", () => {
-    test("acts on the brand's method code", () => {
-      renderPaymentForm(BRAND_METHOD);
-      run(BRAND_RULES);
-      intents.length = 0;
+  /*
+   * A billing record can be non-empty while naming no company:
+   * `{manual_mode}`, the `{quote_id}` stamp clearStaleBillingCompanyIfNeeded
+   * leaves behind, and the blanked pair forgetStaleCompanyId writes are all of
+   * that shape. Both halves of the pair are required, because the intent
+   * request carries the identifier.
+   */
+  test.each([
+    {
+      billing: CAPTURED,
+      expected: true,
+      description: "a billing company with an identifier dispatches",
+    },
+    {
+      billing: { quote_id: CURRENT_QUOTE },
+      expected: false,
+      description: "the new-order quote-id stamp alone dispatches nothing",
+    },
+    {
+      billing: { quote_id: CURRENT_QUOTE, manual_mode: true },
+      expected: false,
+      description: "a mode flag alone dispatches nothing",
+    },
+    {
+      billing: { quote_id: CURRENT_QUOTE, company_name: "Half Captured Ltd" },
+      expected: false,
+      description:
+        "a billing company with no identifier yet dispatches nothing",
+    },
+    {
+      billing: {
+        quote_id: CURRENT_QUOTE,
+        company_id: "87654321",
+        company_id_source: "",
+      },
+      expected: false,
+      description: "an identifier naming no company dispatches nothing",
+    },
+    {
+      billing: null,
+      expected: false,
+      description:
+        "no billing record dispatches nothing, shipping company or not",
+    },
+  ])("$description", ({ billing: billingRecord, expected }) => {
+    run(billingRecord);
 
-      window.dispatchEvent(
-        new CustomEvent("checkout:payment:method-activate", {
-          detail: { method: BRAND_METHOD },
-        }),
-      );
+    // Page load itself arms nothing — the re-arm is the activation event's.
+    expect(intents.length).toBe(0);
 
-      expect(intents.length).toBeGreaterThan(0);
-      expect(document.getElementById("company_name").value).toBe(
-        "Example Trading Ltd",
-      );
-    });
+    activate(BRAND_METHOD);
 
-    test("ignores another brand's method code", () => {
-      renderPaymentForm(BRAND_METHOD);
-      run(BRAND_RULES);
-      intents.length = 0;
-
-      window.dispatchEvent(
-        new CustomEvent("checkout:payment:method-activate", {
-          detail: { method: "two_payment" },
-        }),
-      );
-
-      expect(intents).toEqual([]);
-    });
-
-    /**
-     * TWO-25326 tile bugfix batch, bug 3.
-     *
-     * A company picked IN THE PAYMENT TILE is written to the BILLING storage
-     * key (window.twoGatewayWriteBillingCompany), never the shipping one — see
-     * TWO-25326 review round 3's key split. This listener is the deferred
-     * retry for a pick made before Two became the active payment method (the
-     * initial dispatch-order-intent, fired from fillCompanyData() at pick
-     * time, is dropped while a different method is active, by design). Before
-     * the fix it read ONLY the shipping key, so a tile-mode pick's retry
-     * always found nothing and the buyer's order intent never fired at all.
-     */
-    test("fires the deferred order intent for a company captured in the TILE (billing key)", () => {
-      // No SHIPPING record at all — only the billing one the tile itself
-      // writes. `beforeEach` already seeded the shipping key; this test is
-      // specifically about the case where the buyer has NO shipping-step pick
-      // and picked their company in the tile instead, so it overwrites that
-      // seed with an empty record. Seeded BEFORE `run()`: the template's own
-      // page-load path (`initializePaymentFieldsFromShipping()`) also reads
-      // storage and fills the field synchronously on `DOMContentLoaded`, and
-      // `updatePaymentFields()` only ever writes an EMPTY field — seeding
-      // after `run()` would leave the page-load path's (stale) value in place
-      // and mask the very fallback this test is about.
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({ quote_id: "test-quote-1" }),
-      );
-      env.browserStorage.setItem(
-        H.BILLING_COMPANY_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Tile Captured Ltd",
-          company_id: "87654321",
-          company_id_source: "registry",
-        }),
-      );
-
-      renderPaymentForm(BRAND_METHOD);
-      run(BRAND_RULES);
-      intents.length = 0;
-      // The page-load path (gated on `activePaymentMethod.value === method
-      // code`) may already have populated and fired for the billing record —
-      // reset the field to isolate the method-activate listener's OWN fallback.
-      document.getElementById("company_name").value = "";
-      document.getElementById("company_id").value = "";
-      intents.length = 0;
-
-      window.dispatchEvent(
-        new CustomEvent("checkout:payment:method-activate", {
-          detail: { method: BRAND_METHOD },
-        }),
-      );
-
-      expect(intents.length).toBeGreaterThan(0);
-      expect(document.getElementById("company_name").value).toBe(
-        "Tile Captured Ltd",
-      );
-      expect(document.getElementById("company_id").value).toBe("87654321");
-    });
-
-    test("prefers the BILLING record over the shipping one when both exist", () => {
-      // Mirrors the identical billing-first fallback the tile's own
-      // initialize() uses (gateway_method-csp-js.phtml) — two surfaces
-      // answering "which company is this?" differently is how a buyer ends up
-      // with the wrong one on the order.
-      renderPaymentForm(BRAND_METHOD);
-      run(BRAND_RULES);
-      intents.length = 0;
-
-      env.browserStorage.setItem(
-        H.BILLING_COMPANY_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Billing Wins Ltd",
-          company_id: "11112222",
-          company_id_source: "registry",
-        }),
-      );
-      // The page-load path already filled the field from the SHIPPING record
-      // `beforeEach` seeds — reset it so the assertion below is isolated to
-      // what THIS event's own fallback resolves, not a value an earlier path
-      // already wrote and the `!companyNameInput.value` guard then preserved.
-      document.getElementById("company_name").value = "";
-      document.getElementById("company_id").value = "";
-
-      window.dispatchEvent(
-        new CustomEvent("checkout:payment:method-activate", {
-          detail: { method: BRAND_METHOD },
-        }),
-      );
-
-      expect(document.getElementById("company_name").value).toBe(
-        "Billing Wins Ltd",
-      );
-    });
-
-    /**
-     * TWO-25326 tile bugfix batch, bug 3 follow-up.
-     *
-     * "Prefer the billing record" was implemented as "prefer the billing record
-     * if it has any keys at all", and a billing record can be non-empty while
-     * naming no company whatsoever: `{manual_mode}`, the `{quote_id}` stamp
-     * clearStaleBillingCompanyIfNeeded leaves behind, and the blanked
-     * `company_id`/`company_id_source` pair forgetStaleCompanyId writes are all
-     * of that shape. Each of them shadowed a perfectly good shipping fallback,
-     * silently reinstating the very "no order intent ever fired" bug the
-     * billing-first preference was added to fix.
-     */
-    describe("a billing record that names no company", () => {
-      /**
-       * @param {Object} billingRecord the company-less billing record
-       * @returns {void}
-       */
-      function activateWithBillingRecord(billingRecord) {
-        env.browserStorage.setItem(
-          H.BILLING_COMPANY_KEY,
-          JSON.stringify(billingRecord),
-        );
-
-        renderPaymentForm(BRAND_METHOD);
-        run(BRAND_RULES);
-        // Isolate this event's own fallback from the page-load path's write,
-        // exactly as the two tests above do.
-        document.getElementById("company_name").value = "";
-        document.getElementById("company_id").value = "";
-        intents.length = 0;
-
-        window.dispatchEvent(
-          new CustomEvent("checkout:payment:method-activate", {
-            detail: { method: BRAND_METHOD },
-          }),
-        );
-      }
-
-      test("does not shadow the shipping fallback when it only carries a quote id", () => {
-        // The stamp clearStaleBillingCompanyIfNeeded leaves behind.
-        activateWithBillingRecord({ quote_id: "test-quote-1" });
-
-        expect(document.getElementById("company_name").value).toBe(
-          "Example Trading Ltd",
-        );
-        expect(document.getElementById("company_id").value).toBe("12345678");
-        expect(intents.length).toBeGreaterThan(0);
-      });
-
-      test("does not shadow the shipping fallback when it only carries manual_mode", () => {
-        activateWithBillingRecord({ manual_mode: true });
-
-        expect(document.getElementById("company_name").value).toBe(
-          "Example Trading Ltd",
-        );
-        expect(intents.length).toBeGreaterThan(0);
-      });
-
-      test("does not shadow the shipping fallback when its identifier has been blanked", () => {
-        // What forgetStaleCompanyId() writes when the buyer types over a
-        // captured company: present record, no company named.
-        activateWithBillingRecord({
-          quote_id: "test-quote-1",
-          company_id: "",
-          company_id_source: "",
-        });
-
-        expect(document.getElementById("company_name").value).toBe(
-          "Example Trading Ltd",
-        );
-        expect(intents.length).toBeGreaterThan(0);
-      });
-
-      /*
-       * REVERSED BY TWO-25461 §2.3, deliberately, and recorded rather than
-       * quietly edited.
-       *
-       * A record naming a company with no identifier is NOT company-less: the
-       * buyer typed that name for the billing role. It used to fall through to
-       * the shipping fallback on the reasoning that "half a company is not a
-       * company as far as this retry is concerned — the downstream guard
-       * requires both, so treating it as a hit would just mean no intent at
-       * all". True about the intent, and the wrong trade: the price of that
-       * intent was resolving the billing role to a company the buyer had
-       * replaced, and an intent fired for the wrong company is worse than no
-       * intent at all.
-       *
-       * Under the content-match pin a named billing company differing from the
-       * shipping one pins the address, so nothing is adopted and nothing is
-       * dispatched. The buyer's own company is still what the tile restores
-       * from that same record; this listener simply stops substituting a
-       * different one.
-       */
-      test("pins the address, and dispatches nothing, when it names a company with no identifier", () => {
-        activateWithBillingRecord({
-          quote_id: "test-quote-1",
-          company_name: "Half Captured Ltd",
-        });
-
-        // Not "Example Trading Ltd": the shipping company is not this buyer's
-        // billing company, and the field is left as the test blanked it rather
-        // than being filled with the wrong one.
-        expect(document.getElementById("company_name").value).toBe("");
-        expect(intents.length).toBe(0);
-      });
-    });
-
-    test("does not adopt the shipping company when billing-as-shipping is unticked", () => {
-      // The second half of the gate the tile's own initialize() uses, and the
-      // reason it is two terms rather than one: once the buyer has said the
-      // billing address differs from the shipping one, the shipping company is
-      // not theirs to adopt — and firing an order intent for it is worse than
-      // firing none.
-      //
-      // NO billing record at all, deliberately: with a company-less one present
-      // the pre-fix code declined to fall back for the wrong reason (any
-      // non-empty record won), and the test would pass while pinning nothing.
-      renderPaymentForm(BRAND_METHOD);
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.id = "billing-as-shipping";
-      checkbox.checked = false;
-      document.body.appendChild(checkbox);
-
-      run(BRAND_RULES);
-      document.getElementById("company_name").value = "";
-      document.getElementById("company_id").value = "";
-      intents.length = 0;
-
-      window.dispatchEvent(
-        new CustomEvent("checkout:payment:method-activate", {
-          detail: { method: BRAND_METHOD },
-        }),
-      );
-
-      expect(document.getElementById("company_name").value).toBe("");
-      expect(intents).toEqual([]);
-    });
+    expect(intents.length > 0).toBe(expected);
   });
 
   test("the template carries no hardcoded method code in its logic", () => {

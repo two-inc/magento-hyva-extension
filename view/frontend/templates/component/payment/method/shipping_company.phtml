@@ -55,8 +55,14 @@ $quoteDetailsJson = json_encode(
     | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
 ) ?: '{}';
 ?>
-<input type="hidden" class="shipping-company_id" name="shipping-company_id" id="shipping-company_id" value="">
-<input type="hidden" id="shipping-company" name="shipping-company" value="" autocomplete="off"/>
+<?php
+/*
+ * NO `id`: Hyvä's delivery form already names its own company field
+ * `shipping-company`, and getElementById() would answer with this hidden one.
+ */
+?>
+<input type="hidden" class="shipping-company_id" name="shipping-company_id" value="">
+<input type="hidden" class="shipping-company" name="shipping-company" value="" autocomplete="off"/>
 <script>
 document.addEventListener('alpine:init', () => {
 
@@ -72,9 +78,9 @@ document.addEventListener('alpine:init', () => {
      * consumers order-independent instead of two-of-three-happen-to-be-fine.
      *
      * The fallback matters because these call sites sit inside the `alpine:init`
-     * / `DOMContentLoaded` handlers that also register the pickers and start the
-     * payment-form observer: a bare call on a page without the publisher would
-     * throw BEFORE those registrations and leave a dead checkout step.
+     * / `DOMContentLoaded` handlers that also register the pickers: a bare call
+     * on a page without the publisher would throw BEFORE those registrations and
+     * leave a dead checkout step.
      * Degrading to "no carry-over between steps" is survivable; that is not.
      *
      * Uniquely named per template because these share one global lexical scope,
@@ -158,6 +164,17 @@ document.addEventListener('alpine:init', () => {
     // block is a SEPARATE CSP-signed script from this one, so a cspToken/CSP
     // failure there must degrade this surface, not throw a ReferenceError
     // out of it.
+    /**
+     * One of this surface's two hidden mirrors, BY NAME: they carry no id, so
+     * they cannot shadow Hyvä's own `shipping-company` field.
+     *
+     * @param {string} name
+     * @returns {?HTMLInputElement}
+     */
+    const twoShippingCompanyMirror = function(name) {
+        return document.querySelector('input[type="hidden"][name="' + name + '"]');
+    };
+
     const twoGatewayComposeLiveFn = window.twoGatewayComposeLive
         || function(target) { return target; };
     const twoGatewayCompanySearchEngineFn = window.twoGatewayCompanySearchEngine
@@ -187,16 +204,14 @@ document.addEventListener('alpine:init', () => {
             // toast is the ONLY signal a buyer gets, so unlike the address
             // step and the payment tile it dispatches one.
             dispatchSearchUnavailableToast: true,
-            selectEventName: 'shipping-company-selected',
             getQuote: function () { return this.quote; },
             readSelection: function () { return twoShippingReadSelection(); },
             writeSelection: function (patch) { return twoShippingWriteSelection(patch); },
-            resolveNameField: function () { return document.getElementById('shipping-company'); },
-            // The hidden `#shipping-company_id` mirror selectItem() used to
-            // write directly; the engine's own selectItem only resolves ONE
-            // name field, so the id pair's second element is synced here.
+            resolveNameField: function () { return twoShippingCompanyMirror('shipping-company'); },
+            // The engine's selectItem only resolves ONE name field, so the id
+            // pair's second element is synced here.
             onCompanyCommitted: function (companyName, companyId) {
-                const idEl = document.getElementById('shipping-company_id');
+                const idEl = twoShippingCompanyMirror('shipping-company_id');
                 if (idEl) idEl.value = companyId;
             },
             onLoaderStart: function () { window.dispatchEvent(new Event('magewire:loader:start')); },
@@ -218,7 +233,7 @@ document.addEventListener('alpine:init', () => {
             searchStillValid: function () { return Boolean(this.$el) && this.$el.isConnected; },
         }),
         {
-            search: document.getElementById('shipping-company') ? document.getElementById('shipping-company').value : '',
+            search: (twoShippingCompanyMirror('shipping-company') || {}).value || '',
             // Bare object literal, not a quoted JSON string. It is parsed below, and
             // JSON_HEX_QUOT only survives as far as the JS string layer — it
             // un-escapes back to a bare double quote, so a product named `24" Monitor`

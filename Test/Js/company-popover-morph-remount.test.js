@@ -91,14 +91,14 @@ describe("a Magewire re-render that morphs the popover away", () => {
   /**
    * What a morph does to this control: the wrapper is not in the server markup
    * so it goes, the field is put back where the server rendered it, and every
-   * attribute the server did not render goes with it — `data-two-capture-active`
-   * above all, which is the runtime claim the mount selector matches.
+   * attribute the server did not render goes with it — `data-two-capture-role`
+   * above all, which is what scopes the mount selector to this panel.
    */
   function morphServerMarkupOverControl() {
     const wrap = field.parentElement;
     root.insertBefore(field, wrap);
     wrap.remove();
-    field.removeAttribute("data-two-capture-active");
+    root.removeAttribute("data-two-capture-role");
   }
 
   test.each([
@@ -142,17 +142,19 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(env.companyPanels).toHaveLength(1);
   });
 
-  test("the field is addressable again, because the sweep re-claims it", () => {
-    // The mount selector matches a RUNTIME claim, which the morph strips along
-    // with everything else the server did not render. The sweep therefore has to
-    // go back through the surface's own mount, which re-claims — going straight
-    // to the controller's refreshMount() would leave it addressing nothing.
+  test("the field is addressable again, because the sweep re-stamps the role", () => {
+    // The mount selector is scoped on a RUNTIME role stamp, which the morph
+    // strips along with everything else the server did not render. The sweep
+    // therefore has to go back through the surface's own mount, which re-stamps
+    // — going straight to the controller's refreshMount() would leave it
+    // addressing nothing.
     morphServerMarkupOverControl();
 
     env.fireMagewireHook("element.updated");
 
     expect(panel().fieldSelector).toBe(
-      '[data-two-capture-host="address"] input[data-two-capture-active]',
+      '[data-two-capture-host="address"][data-two-capture-role="shipping"]' +
+        " input[data-two-capture-field]",
     );
     expect(document.querySelectorAll(panel().fieldSelector)).toHaveLength(1);
     expect(panel().getField()[0]).toBe(field);
@@ -163,7 +165,9 @@ describe("a Magewire re-render that morphs the popover away", () => {
     // renders it only when the field is released.
     chip("manual").onActivate();
     morphServerMarkupOverControl();
-    const before = panel().calls.filter((call) => call === "releaseField").length;
+    const before = panel().calls.filter(
+      (call) => call === "releaseField",
+    ).length;
 
     env.fireMagewireHook("element.updated");
 

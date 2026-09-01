@@ -640,153 +640,10 @@ describe("payment component company selection", () => {
    * `getItems()` for it to guard, and the flag is deleted.
    */
 
-  describe("synced from the shipping step", () => {
-    /**
-     * Fire the event company-name-payment.phtml's updatePaymentFields()
-     * dispatches at the component root.
-     *
-     * @param {string} companyName
-     * @param {string} companyId
-     * @param {string} [companyIdSource] omitted where the sync carries none
-     * @returns {void}
-     */
-    function syncFromShipping(companyName, companyId, companyIdSource) {
-      document.getElementById("payment-root").dispatchEvent(
-        new CustomEvent("update-company-data", {
-          detail: {
-            companyName: companyName,
-            companyId: companyId,
-            companyIdSource: companyIdSource,
-          },
-        }),
-      );
-      syncCompanyIdField(component);
-      syncCompanyTileLabel(component);
-    }
-
-    test("cannot displace a capture the tile hosts no control for", () => {
-      // Where the ADDRESS step owns the control this tile claims nothing, and
-      // this sync still reaches it. An authoritative write from here replaces
-      // both halves of the live capture with this event's pair — which on this
-      // route is routinely the company that preceded it.
-      const claimHolder = document.createElement("input");
-      claimHolder.setAttribute("data-two-capture-active", "");
-      document.body.appendChild(claimHolder);
-      document
-        .getElementById("company_name")
-        .removeAttribute("data-two-capture-active");
-      env.identity.write(
-        {
-          companyName: "Address Step Ltd",
-          companyId: "88888888",
-          companyIdSource: "registry",
-        },
-        { authoritative: true },
-      );
-
-      syncFromShipping("Older Ltd", "11111111", "registry");
-
-      expect(env.identity.companyName()).toBe("Address Step Ltd");
-      expect(env.identity.companyId()).toBe("88888888");
-    });
-
-    test("an identifier-less shipping company unlocks the field", () => {
-      // The shipping step can now hand over an empty identifier for the same
-      // reason selectItem() can. Without recomputing the editability from what
-      // arrived, the buyer's pick lands in a field still locked from the
-      // previous one.
-      syncFromShipping("Example Trading Ltd", "12345678");
-      expect(companyIdInput().disabled).toBe(true);
-
-      syncFromShipping("Other Example Ltd", "");
-
-      expect(component.companyName).toBe("Other Example Ltd");
-      expect(component.companyId).toBe("");
-      expect(component.companyIdEntryRequired).toBe(true);
-      expect(companyIdInput().disabled).toBe(false);
-      // The exact case companyNameHintText's own doc comment calls out: a
-      // shipping sync can hand over a company with no identifier, and the
-      // name hint must drop with the number hint rather than keep showing
-      // the PREVIOUS locked company's name.
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
-    });
-
-    test("an identified shipping company re-locks it", () => {
-      syncFromShipping("Example Trading Ltd", "");
-      expect(companyIdInput().disabled).toBe(false);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("");
-
-      syncFromShipping("Other Example Ltd", "12345678");
-
-      expect(component.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
-      expect(component[COMPANY_CAPTURE_GATE_BINDING]).toBe("hidden");
-      expect(component[COMPANY_TILE_LABEL_TEXT_BINDING]).toContain(
-        "Other Example Ltd",
-      );
-    });
-
-    test.each([
-      [
-        "12345678",
-        "manual",
-        "manual",
-        true,
-        false,
-        "the buyer typed it, so it stays theirs to correct",
-      ],
-      [
-        "12345678",
-        "registry",
-        "registry",
-        false,
-        true,
-        "the registry vouched for it",
-      ],
-      [
-        "12345678",
-        undefined,
-        "registry",
-        false,
-        true,
-        "no provenance can only be a lookup's",
-      ],
-      [
-        "",
-        undefined,
-        "",
-        true,
-        false,
-        "a cleared company must not leave a locked empty required field",
-      ],
-    ])(
-      "a number arriving as %p sourced %s leaves source %p, entry-required %s and locked %s — %s",
-      (companyId, source, storedSource, required, locked) => {
-        syncFromShipping(companyId ? "Example Trading Ltd" : "", companyId, source);
-
-        expect(component.companyIdSource).toBe(storedSource);
-        expect(component.companyIdEntryRequired).toBe(required);
-        expect(companyIdInput().disabled).toBe(locked);
-      },
-    );
-
-    test("tracks the provenance with no shared identity on the page", () => {
-      // With the base plugin's identity store absent, the listener's own
-      // assignment is the only carrier; with it present either alone passes.
-      delete window.TwoCompanyIdentity;
-
-      syncFromShipping("Example Trading Ltd", "12345678", "registry");
-
-      expect(component.companyIdSource).toBe("registry");
-      expect(component.companyIdEntryRequired).toBe(false);
-      expect(companyIdInput().disabled).toBe(true);
-    });
-  });
-
   describe("restored from browser storage", () => {
     test("a stored name with no id comes back editable", () => {
       env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
+        H.BILLING_COMPANY_KEY,
         JSON.stringify({
           quote_id: "test-quote-1",
           company_name: "Example Trading Ltd",
@@ -807,7 +664,13 @@ describe("payment component company selection", () => {
 
     test.each([
       ["registry", false, true, "hidden", "a registry pick stays untypeable"],
-      ["manual", true, false, "", "a hand-typed number stays the buyer's to correct"],
+      [
+        "manual",
+        true,
+        false,
+        "",
+        "a hand-typed number stays the buyer's to correct",
+      ],
     ])(
       "a stored id sourced %s comes back locked: %p (%s)",
       (source, entryRequired, disabled, gate) => {
@@ -815,7 +678,7 @@ describe("payment component company selection", () => {
         // kinds land under the same key, and an unqualified test re-locked the
         // field over the buyer's own value.
         env.browserStorage.setItem(
-          H.COMPANY_SELECTION_KEY,
+          H.BILLING_COMPANY_KEY,
           JSON.stringify({
             quote_id: "test-quote-1",
             company_name: "Example Trading Ltd",

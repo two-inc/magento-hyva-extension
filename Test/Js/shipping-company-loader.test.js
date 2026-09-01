@@ -30,11 +30,22 @@ describe("shipping-company picker", () => {
   let component;
   let field;
 
+  /**
+   * One of the picker's hidden mirrors. BY NAME: they carry no id, because
+   * Hyvä's delivery form already names its own field `shipping-company`.
+   *
+   * @param {string} name
+   * @returns {?HTMLInputElement}
+   */
+  function mirror(name) {
+    return document.querySelector('input[type="hidden"][name="' + name + '"]');
+  }
+
   beforeEach(() => {
     document.body.innerHTML = [
       "<form>",
-      '  <input type="hidden" id="shipping-company_id" value="" />',
-      '  <input type="hidden" id="shipping-company" value="" />',
+      '  <input type="hidden" name="shipping-company_id" value="" />',
+      '  <input type="hidden" name="shipping-company" value="" />',
       '  <input type="text" id="company-search" value="" />',
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
@@ -198,10 +209,8 @@ describe("shipping-company picker", () => {
 
     expect(env.loaderEvents).toEqual(["start", "done"]);
     expect(overlayIsUp()).toBe(false);
-    expect(document.getElementById("shipping-company").value).toBe(
-      "Acme Widgets",
-    );
-    expect(document.getElementById("shipping-company_id").value).toBe("111");
+    expect(mirror("shipping-company").value).toBe("Acme Widgets");
+    expect(mirror("shipping-company_id").value).toBe("111");
   });
 
   test("tabbing out of the field releases the overlay", async () => {

@@ -5,10 +5,10 @@
  * TWO-25259. Browser storage being unusable must not kill the checkout step.
  *
  * The company-selection accessors run inside the `alpine:init` and
- * `DOMContentLoaded` handlers that go on to call `Alpine.data()` and to start the
- * payment-form MutationObserver. Anything that throws in them takes those
- * registrations with it, and the buyer is left with a checkout step that renders
- * and does nothing — the same shape as an inline block the CSP refuses.
+ * `DOMContentLoaded` handlers that go on to call `Alpine.data()`. Anything that
+ * throws in them takes those registrations with it, and the buyer is left with a
+ * checkout step that renders and does nothing — the same shape as an inline
+ * block the CSP refuses.
  *
  * This is not hypothetical. An earlier revision of the read accessor guarded only
  * its `JSON.parse`, leaving `getBrowserStorage()`, `getItem` and `removeItem`
@@ -98,62 +98,44 @@ describe("company selection when storage is unusable", () => {
     expect(pickerRegistered()).toBe(true);
   });
 
-  describe("the payment step's DOMContentLoaded handler", () => {
-    /**
-     * Boot the payment-fields template the way the page does.
-     *
-     * @returns {void}
-     */
-    function bootPaymentStep() {
-      H.loadSharedHelpers();
-      H.loadTemplate(H.PAYMENT_FIELDS_TEMPLATE);
-      document.dispatchEvent(new Event("DOMContentLoaded"));
-    }
+  /*
+   * The accessors themselves, called the way the payment step's new-order
+   * clears and its order-intent re-arm call them. A throw here propagates out
+   * of whichever handler is running: the DOMContentLoaded clears, or the
+   * activation listener that decides whether an intent goes out.
+   */
+  describe("the accessors under a throwing storage", () => {
+    const ACCESSORS = [
+      "twoGatewayReadCompanySelection",
+      "twoGatewayWriteCompanySelection",
+      "twoGatewayReadBillingCompany",
+      "twoGatewayWriteBillingCompany",
+      "twoGatewayClearBillingCompany",
+    ];
 
-    test("starts the payment-form observer even when storage throws", () => {
-      // The handler used to touch a second storage key here — a write-only
-      // "already saved" marker whose only reader assigned it to two variables
-      // nothing used. It was unguarded, sitting between the clearer and
-      // observeForPaymentForm(), so a throwing storage stopped the observer from
-      // ever starting and the tile never synced the company. The key is deleted
-      // rather than guarded; this case is what proves the handler survives.
-      // The observer starting is asserted through its effect: a company-name
-      // input added AFTER boot gets populated from the stored selection.
-      document.body.innerHTML = "";
-      let live = true;
+    test.each(ACCESSORS)("%s answers rather than throwing", (accessor) => {
+      H.loadSharedHelpers();
       env.hyva.getBrowserStorage = function () {
-        if (live) throw new Error("storage is disabled");
-        return env.browserStorage;
+        throw new Error("storage is disabled");
       };
 
-      expect(bootPaymentStep).not.toThrow();
+      expect(() =>
+        window[accessor]({ company_name: "Example Ltd" }),
+      ).not.toThrow();
+    });
 
-      // Storage comes back and a selection exists; the observer must still be
-      // watching for the payment form to appear.
-      live = false;
-      env.browserStorage.setItem(
-        H.COMPANY_SELECTION_KEY,
-        JSON.stringify({
-          quote_id: "test-quote-1",
-          company_name: "Example Trading Ltd",
-          company_id: "12345678",
-        }),
-      );
-      document.body.innerHTML = [
-        '<div x-data="stub">',
-        '  <input type="text" id="company_name" data-name="company_name" value="" />',
-        '  <input type="text" id="company_id" data-name="company_id" value="" />',
-        "</div>",
-      ].join("\n");
+    test.each([
+      "twoGatewayReadCompanySelection",
+      "twoGatewayReadBillingCompany",
+    ])("%s reads empty rather than undefined", (accessor) => {
+      // Every caller destructures the answer, so an unusable storage has to
+      // produce the same empty record as an unwritten one.
+      H.loadSharedHelpers();
+      env.hyva.getBrowserStorage = function () {
+        throw new Error("storage is disabled");
+      };
 
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          expect(document.getElementById("company_name").value).toBe(
-            "Example Trading Ltd",
-          );
-          resolve();
-        }, 0);
-      });
+      expect(window[accessor]()).toEqual({});
     });
   });
 

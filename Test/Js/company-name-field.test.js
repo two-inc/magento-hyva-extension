@@ -258,7 +258,9 @@ describe("company-name field picker", () => {
       const { pending } = await startSearch("acme");
       expect(component.isSearching).toBe(true);
 
-      fetchStub.lastSearch().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [apiItem("Acme Widgets", "111")] });
       await pending;
 
       expect(component.items).toHaveLength(1);
@@ -310,7 +312,10 @@ describe("company-name field picker", () => {
     test.each([
       [(call) => call.respondWithStatus(503), "a non-2xx"],
       [(call) => call.networkError(), "a network error"],
-      [(call) => call.respondProxy({ degraded: true, items: [] }), "a degraded 200"],
+      [
+        (call) => call.respondProxy({ degraded: true, items: [] }),
+        "a degraded 200",
+      ],
     ])(
       '%#: is flagged unavailable, not as "no companies found" (%s)',
       async (settle) => {
@@ -343,7 +348,9 @@ describe("company-name field picker", () => {
 
       staleRequest.respondProxy({ items: [apiItem("Stale Result", "999")] });
       await first;
-      fetchStub.lastSearch().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [apiItem("Acme Widgets", "111")] });
       await second;
 
       expect(component.items).toHaveLength(1);
@@ -354,7 +361,9 @@ describe("company-name field picker", () => {
       const { pending } = await startSearch("acme");
 
       capture().manualEntryMode();
-      fetchStub.lastSearch().respondProxy({ items: [apiItem("Acme Widgets", "111")] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [apiItem("Acme Widgets", "111")] });
       await pending;
 
       // Writing items here would leave a stale result list ready to appear the
@@ -393,11 +402,7 @@ describe("company-name field picker", () => {
       lookupId: "lookup-111",
     };
 
-    test("the chosen company is written to the field, storage and an event", async () => {
-      const seen = [];
-      window.addEventListener("shipping-company-selected", (event) =>
-        seen.push(event.detail),
-      );
+    test("the chosen company is written to the field and storage", async () => {
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
         JSON.stringify({ quote_id: "test-quote-1" }),
@@ -411,19 +416,17 @@ describe("company-name field picker", () => {
       expect(component.manualMode).toBe(false);
       expect(component.query).toBe("");
 
-      const stored = JSON.parse(
-        env.browserStorage.getItem(H.COMPANY_SELECTION_KEY),
-      );
       // A pick is the only writer allowed to claim registry provenance, and the
       // restore path locks the number field on exactly that claim.
-      expect(stored).toEqual({
+      expect(
+        JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY)),
+      ).toEqual({
         quote_id: "test-quote-1",
         company_name: "Acme Widgets",
         company_id: "111",
         company_id_source: "registry",
         manual_mode: false,
       });
-      expect(seen).toEqual([stored]);
     });
 
     test("a selection aborts the search still on the wire", async () => {
@@ -441,7 +444,9 @@ describe("company-name field picker", () => {
       component.selectItem(chosen);
 
       expect(fetchStub.lastSearch().url).toContain("/rest/V1/two/company");
-      expect(fetchStub.lastSearch().jsonBody()).toEqual({ lookupId: "lookup-111" });
+      expect(fetchStub.lastSearch().jsonBody()).toEqual({
+        lookupId: "lookup-111",
+      });
       fetchStub.lastSearch().respondProxy({
         addresses: [
           {
@@ -643,7 +648,9 @@ describe("company-name field picker", () => {
       // Magewire-bound address field — so the guard is in the engine.
       root.remove();
 
-      fetchStub.lastSearch().respondProxy({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items).toEqual([]);
@@ -661,7 +668,9 @@ describe("company-name field picker", () => {
       // which is how it shipped the first time.
       component.$root = undefined;
 
-      fetchStub.lastSearch().respondProxy({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items).toEqual([]);
@@ -672,7 +681,9 @@ describe("company-name field picker", () => {
     test("a component still in the document is written to as normal", async () => {
       const started = await startSearch("example");
 
-      fetchStub.lastSearch().respondProxy({ items: [{ name: "Example Trading Ltd" }] });
+      fetchStub
+        .lastSearch()
+        .respondProxy({ items: [{ name: "Example Trading Ltd" }] });
       await started.pending;
 
       expect(component.items.length).toBe(1);

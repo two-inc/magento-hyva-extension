@@ -275,11 +275,9 @@ $quoteDetails = json_encode(
     /**
      * Drop the BILLING company record entirely.
      *
-     * A removal, not a write of empty strings. An empty-but-present blob is
+     * A removal, not a write of empty strings: an empty-but-present blob is
      * indistinguishable from "the buyer deliberately cleared the billing
-     * company", and the tile's fallback-to-shipping rule keys on the record
-     * being ABSENT — so writing blanks here would permanently suppress the
-     * fallback for the rest of the checkout.
+     * company".
      *
      * @returns {void}
      */
@@ -563,170 +561,18 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * Every field the default→non-default mirror can write, for ONE address role.
+     * Which address role a form belongs to.
      *
-     * TWO-25461 §2.5. The set is not "the fields we happen to sync today": it is
-     * every field a mirrored write could land in, because the pin below asks
-     * whether the BUYER has edited this address and a buyer typing into address
-     * line 2 says that exactly as loudly as one retyping the company. The
-     * previous model tracked company name/id alone, so an address the buyer had
-     * genuinely made their own — different region, different second line — went
-     * on being overwritten from the default one.
+     * Hyvä namespaces an address form's own fields `<role>-<field>`, which is the
+     * only marker either panel carries.
      *
-     * Resolved by Hyvä's own `<role>-<field>` id convention, the same one
-     * `twoGatewayCountryFields()` reads `shipping-country_id` /
-     * `billing-country_id` by. `region` is two candidate fields, not one: an
-     * address format with a known region list renders a `region_id` select and
-     * one without renders a free-text `region`, and which of the two a country
-     * gets is the country's business.
-     *
-     * A key whose field is absent is OMITTED, not recorded empty — "this form
-     * has no such field" and "the buyer left it blank" are different facts and
-     * the pin treats them differently.
-     *
-     * Kept as five keys rather than trimmed to the two that matter most on
-     * today's checkouts. `company_name`/`company_id` are the ones that can
-     * ALWAYS produce a mismatch here — `twoGatewayIsBillingAddressPinned()`
-     * backfills both from stored selection when the DOM field is absent, so
-     * they compare even in the company-search-in-tile configuration where
-     * neither address form carries a company field at all. `country`/
-     * `street2`/`region` have no such backfill: they only compare when a
-     * separate billing address FORM is actually rendered (billing-as-shipping
-     * unticked) with Hyvä's own `<role>-<field>` ids, which this repo cannot
-     * independently verify — Hyvä Checkout's own address markup is
-     * closed-source and not installed anywhere testable from here. Dropping
-     * them to simplify would be betting on an unverified absence; keeping
-     * them costs nothing when they are absent and catches a real edit when
-     * they are not.
-     *
-     * @param {string} role 'shipping' or 'billing'
-     * @returns {Object} tracked key → current trimmed value
+     * @param {HTMLElement} [formNode]
+     * @returns {string} 'shipping' or 'billing'
      */
-    window.twoGatewayAddressMirrorFields = window.twoGatewayAddressMirrorFields || function(role) {
-        const snapshot = {};
-        const pick = function(key, ids) {
-            for (let i = 0; i < ids.length; i++) {
-                const el = document.getElementById(role + '-' + ids[i]);
-                if (!el) continue;
-                /*
-                 * A field the buyer could not have reached cannot be evidence
-                 * that they edited it, and this is the question
-                 * twoGatewayCountryFieldUsable() already answers — disabled
-                 * anywhere up the tree, or hidden by any of the three idioms
-                 * this checkout uses. Reused rather than reimplemented.
-                 *
-                 * This is NOT the rule that says the two known country ids are
-                 * read unfiltered. That rule is about the country RESOLVER's
-                 * priority list, where filtering a hidden step's form would
-                 * lose a country the buyer really did choose. Here the filter
-                 * is the load-bearing part: it is what makes collapsing to one
-                 * address resume the sync (§2.4), because a billing form the
-                 * checkout has hidden stops holding the buyer's edits against
-                 * them.
-                 */
-                if (!window.twoGatewayCountryFieldUsable(el)) continue;
-                snapshot[key] = String(el.value || '').trim();
-                return;
-            }
-        };
-        pick('country', ['country_id']);
-        pick('company_name', ['company']);
-        pick('company_id', ['company_id']);
-        // Line 2 only. Line 1 is not a mirrored field: nothing propagates a
-        // street address between the two forms, so it cannot pin.
-        pick('street2', ['street1']);
-        pick('region', ['region_id', 'region']);
-        return snapshot;
-    };
-
-    /**
-     * Has the buyer made the BILLING address their own — i.e. is it pinned?
-     *
-     * TWO-25461 §2.3/§2.4. This replaces a record-existence test (was: "a
-     * billing company record exists at all"), and the difference is the whole
-     * point. Record existence latched: the first billing write ever made
-     * stopped the sync for the rest of the checkout, with nothing that could
-     * ever restart it. This is a pure CONTENT MATCH, recomputed at every read,
-     * so it un-pins by itself the moment the two addresses agree again —
-     * which is what makes "collapse to one address and reopen" resume the sync
-     * with no resume control to press (§2.4 rejected building one).
-     *
-     * Two rules that look like details and are not:
-     *
-     * WHOLE-ADDRESS GRANULARITY. One field differing pins the WHOLE address,
-     * including the fields the buyer never touched. Explicit ruling, not an
-     * approximation of a per-field pin: a buyer who has corrected the region on
-     * their billing address is telling us this address is theirs, and
-     * overwriting its company from the shipping one because *that* field still
-     * matched is the bug, not the safe half of it.
-     *
-     * AN EMPTY TARGET FIELD IS NOT A MISMATCH. It is a field waiting to be
-     * filled, and the mirror filling it is the propagation §2.2 asks for.
-     * Counting blank-vs-populated as a difference would pin every freshly
-     * opened billing form on the spot and mean nothing ever propagated at all.
-     * The cost is that a field the buyer deliberately CLEARED reads as
-     * unedited; that is the safe direction, and the direction the whole-address
-     * rule mostly covers anyway, since clearing one field of an address they
-     * are working in rarely leaves the other four matching.
-     *
-     * Trimmed and case-insensitive, per §2.3 — the buyer retyping their own
-     * company with different capitalisation has not made a different address.
-     *
-     * @returns {boolean} true when the billing address must not be overwritten
-     */
-    window.twoGatewayIsBillingAddressPinned = window.twoGatewayIsBillingAddressPinned || function() {
-        const source = window.twoGatewayAddressMirrorFields('shipping');
-        const target = window.twoGatewayAddressMirrorFields('billing');
-
-        /*
-         * The shipping ADDRESS FORM does not always carry the company pair:
-         * with company search mounted in the payment tile it has no company
-         * field at all. The mirror still has a company to write in that
-         * configuration — it writes the stored shipping selection — so the
-         * comparison has to see the same value the mirror would use, or a
-         * billing company the buyer typed would be compared against nothing
-         * and read as unedited.
-         *
-         * Filled only where the form left a gap. A rendered field is the
-         * fresher of the two by definition: it is what the buyer is looking at.
-         */
-        const fillCompanyGaps = function(snapshot, record) {
-            ['company_name', 'company_id'].forEach(function(key) {
-                if (Object.prototype.hasOwnProperty.call(snapshot, key)) return;
-                if (!record[key]) return;
-                snapshot[key] = String(record[key]).trim();
-            });
-        };
-        fillCompanyGaps(source, window.twoGatewayReadCompanySelection());
-        /*
-         * And the same substitution on the TARGET side, for the same reason and
-         * with more at stake. A company the buyer picked ON THE PAYMENT TILE is
-         * an edit of the billing role — the strongest one there is, since they
-         * named it while looking at the billing step — but it lands in the
-         * billing RECORD, not in an address-form field, and in the tile
-         * configuration there is no billing company field for it to land in.
-         * Reading only the form would make that pick invisible to the pin, and
-         * the shipping company would overwrite it on the next Magewire
-         * re-render. That precise bug is what the two-key split was introduced
-         * to fix; the pin has to keep it fixed.
-         *
-         * It is not a latch: the record is REMOVED when the buyer collapses
-         * back to one address (see the billing-as-shipping handler in
-         * company-name-payment.phtml), which is what leaves the pin nothing to
-         * hold and resumes the sync.
-         */
-        fillCompanyGaps(target, window.twoGatewayReadBillingCompany());
-        const normalise = function(value) {
-            return String(value === undefined ? '' : value).trim().toLowerCase();
-        };
-        return Object.keys(target).some(function(key) {
-            const current = normalise(target[key]);
-            // Nothing there to protect, and nothing to compare against: in
-            // either case the mirror may write.
-            if (!current) return false;
-            if (!Object.prototype.hasOwnProperty.call(source, key)) return false;
-            return current !== normalise(source[key]);
-        });
+    window.twoGatewayCaptureRoleForForm = window.twoGatewayCaptureRoleForForm || function(formNode) {
+        if (!formNode || typeof formNode.querySelector !== 'function') return 'shipping';
+        if (String(formNode.id || '').indexOf('billing-') === 0) return 'billing';
+        return formNode.querySelector('[id^="billing-"]') ? 'billing' : 'shipping';
     };
 
     /**
@@ -1248,8 +1094,6 @@ $quoteDetails = json_encode(
      *   component as `this`.
      * @param {Function} options.readSelection `() => storedBlob`
      * @param {Function} options.writeSelection `(patch) => mergedBlob`
-     * @param {string} [options.selectEventName] custom event name dispatched
-     *   after a pick or a manual commit, `detail` = the merged storage blob.
      * @param {Function} [options.resolveNameField] `() => HTMLInputElement|null`
      *   the field selectItem() and the manual commit read/write the
      *   captured name through. Defaults to `this.$el` (the field the search is bound to).
@@ -1318,12 +1162,6 @@ $quoteDetails = json_encode(
             // my own", which resolves through the document-wide, shipping-first
             // list exactly as every caller did before this option existed.
             resolveCountryContext: function () { return null; },
-            // null/'' disables the DOM CustomEvent dispatch entirely — the
-            // payment tile has never dispatched one from selectItem() (its
-            // own business logic runs off onCompanyCommitted instead), and
-            // adding one it never had is a new event nothing on the tile's
-            // surface is written to expect.
-            selectEventName: null,
             onCompanyCommitted: function () {},
             afterManualToggle: function () {},
             // Fired whenever the engine tears the dropdown state down
@@ -1700,18 +1538,12 @@ $quoteDetails = json_encode(
                     field.dispatchEvent(new Event('input', { bubbles: false }));
                 }
 
-                const selectionData = cfg.writeSelection.call(this, {
+                cfg.writeSelection.call(this, {
                     company_name: item.companyName,
                     company_id: item.companyId || '',
                     company_id_source: this.companyIdSource,
                     manual_mode: false,
                 });
-
-                if (cfg.selectEventName) {
-                    window.dispatchEvent(new CustomEvent(cfg.selectEventName, {
-                        detail: selectionData,
-                    }));
-                }
 
                 cfg.onCompanyCommitted.call(this, this.companyName, this.companyId, this.companyIdSource);
 
@@ -1739,12 +1571,7 @@ $quoteDetails = json_encode(
                 this.isCompanySelected = false;
                 this.applyCompanyIdEditability();
 
-                const selectionData = cfg.writeSelection.call(this, { company_name: name });
-                if (cfg.selectEventName) {
-                    window.dispatchEvent(new CustomEvent(cfg.selectEventName, {
-                        detail: selectionData,
-                    }));
-                }
+                cfg.writeSelection.call(this, { company_name: name });
                 cfg.onCompanyCommitted.call(this, name, this.companyId, this.companyIdSource);
             },
 
@@ -2045,60 +1872,65 @@ $quoteDetails = json_encode(
      * with the identity, the sole-trader flow and the popover it drives.
      * What follows is the Alpine-shaped half those four ask for by name.
      *
-     * One controller per PAGE, held on `window` rather than in an Alpine
+     * One controller per ADDRESS ROLE, held on `window` rather than in an Alpine
      * component: Magewire rebuilds the surface on every totals, address and term
      * change, and a controller living inside one would take the buyer's captured
      * company, their minted tokens and their open signup popup down with it.
      */
 
-    /** The live surface. Every host function reads it fresh: the component is
-     * replaced on every re-render while the controller is not. */
-    window.twoGatewayCaptureSurfaceCurrent = window.twoGatewayCaptureSurfaceCurrent || null;
-
-    function twoGatewayCaptureSurface() {
-        return window.twoGatewayCaptureSurfaceCurrent;
-    }
-
-    function twoGatewayOnSurface(member, args, fallback) {
-        const surface = twoGatewayCaptureSurface();
-        if (!surface || typeof surface[member] !== 'function') return fallback;
-        return surface[member].apply(surface, args || []);
+    /** @returns {boolean} whether `role` is an address role at all */
+    function twoGatewayIsCaptureRole(role) {
+        return role === 'shipping' || role === 'billing';
     }
 
     /**
-     * The one page-level identity every surface reads/writes, memoized the
-     * same way twoGatewayCompanyCapture() below memoizes the controller.
+     * The identity of the company captured for ONE address role.
      *
-     * `company-identity.js` (base plugin) is a FACTORY, not a ready object —
-     * every call site here used to read `window.TwoCompanyIdentity` directly
-     * as the identity itself; each now goes through this instead, so the
-     * several call sites across this file keep sharing the SAME instance
-     * rather than each minting its own on every invocation.
+     * Keyed by the role STRING, not by a root node: a Magewire morph replaces
+     * roots, and the captured company has to survive that.
      *
+     * @param {string} role 'shipping' or 'billing'
      * @returns {?Object} null when the base module failed to load
      */
-    window.twoGatewayCompanyIdentity = window.twoGatewayCompanyIdentity || function () {
-        if (window.twoGatewayCompanyIdentityInstance) {
-            return window.twoGatewayCompanyIdentityInstance;
+    window.twoGatewayCompanyIdentityInstances = window.twoGatewayCompanyIdentityInstances || {};
+    window.twoGatewayCompanyIdentity = window.twoGatewayCompanyIdentity || function (role) {
+        if (!twoGatewayIsCaptureRole(role)) {
+            console.error('Two: twoGatewayCompanyIdentity() needs an address role');
+            return null;
         }
+        const instances = window.twoGatewayCompanyIdentityInstances;
+        if (instances[role]) return instances[role];
         if (typeof window.TwoCompanyIdentity !== 'function') return null;
-        window.twoGatewayCompanyIdentityInstance = window.TwoCompanyIdentity();
-        return window.twoGatewayCompanyIdentityInstance;
+        instances[role] = window.TwoCompanyIdentity();
+        return instances[role];
     };
 
     /**
-     * The company-capture controller for this page, built on first use.
+     * The company-capture controller for ONE address role, built on first use.
      *
      * @param {Object} settings the surface's own config — the same values it
-     *        passes the engine, plus which of the two hosts it is.
+     *        passes the engine, plus `role`.
      * @returns {Object} the shared `CompanyCaptureComponent`
      */
+    window.twoGatewayCompanyCaptureInstances = window.twoGatewayCompanyCaptureInstances || {};
     window.twoGatewayCompanyCapture = window.twoGatewayCompanyCapture || function(settings) {
-        if (window.twoGatewayCompanyCaptureInstance) {
-            return window.twoGatewayCompanyCaptureInstance;
+        const role = settings && settings.role;
+        if (!twoGatewayIsCaptureRole(role)) {
+            console.error('Two: twoGatewayCompanyCapture() needs an address role');
+            return null;
         }
+        if (window.twoGatewayCompanyCaptureInstances[role]) {
+            return window.twoGatewayCompanyCaptureInstances[role];
+        }
+        /* The live surface of THIS role. Read fresh by every host function: the
+         * component is replaced on every re-render while the controller is not. */
+        let currentSurface = null;
+        const twoGatewayOnSurface = function (member, args, fallback) {
+            if (!currentSurface || typeof currentSurface[member] !== 'function') return fallback;
+            return currentSurface[member].apply(currentSurface, args || []);
+        };
         const Controller = window.TwoCompanyCaptureComponent;
-        const identity = window.twoGatewayCompanyIdentity();
+        const identity = window.twoGatewayCompanyIdentity(role);
         const Panel = window.TwoCompanySearchPanel;
         const SoleTraderFlow = window.TwoSoleTrader;
         // A CSP or deploy failure on the base module must degrade the company
@@ -2165,13 +1997,13 @@ $quoteDetails = json_encode(
             // instead, which Magewire re-runs on every rebuild.
             observe: null,
 
-            // `data-two-capture-active`, not `data-two-capture-field`: the
-            // address-step field renderer is registered globally and mounts on
-            // the delivery form AND the invoice form, so a page can hold two
-            // address hosts while the controller owns exactly one popover.
-            // claimCaptureField() decides which one carries the attribute.
-            addressFieldSelector: '[data-two-capture-host="address"] input[data-two-capture-active]',
-            tileFieldSelector: '[data-two-capture-host="tile"] input[data-two-capture-active]',
+            // Role-scoped: the address-step field renderer is registered
+            // globally and mounts on the delivery form AND the invoice form, and
+            // each of those panels has a controller of its own.
+            addressFieldSelector: '[data-two-capture-host="address"][data-two-capture-role="'
+                + role + '"] input[data-two-capture-field]',
+            tileFieldSelector: '[data-two-capture-host="tile"][data-two-capture-role="'
+                + role + '"] input[data-two-capture-field]',
             fieldExists(selector) {
                 return !!document.querySelector(selector);
             },
@@ -2199,13 +2031,19 @@ $quoteDetails = json_encode(
                 // freely and a listener bound to one would not survive.
                 document.addEventListener('change', function (event) {
                     const target = event.target;
-                    // NAME as well as id, for the reason twoGatewayResolveCountry()
+                    // NAME as well as id, for the reason twoGatewayCountryFields()
                     // gives: an address form rendered under any other namespace —
                     // a modal, an address-book form, a brand's own component —
                     // carries the same field under a different id.
                     if (!target) return;
                     const key = target.id || target.name || '';
                     if (!/country_id$/.test(key)) return;
+                    if (target.id !== role + '-country_id'
+                        && window.twoGatewayCaptureRoleForForm(
+                            window.twoGatewayCountryFieldScope(target)
+                        ) !== role) {
+                        return;
+                    }
                     onChange(String(target.value || '').toLowerCase());
                 }, true);
             },
@@ -2271,7 +2109,10 @@ $quoteDetails = json_encode(
         controller.retrySignup = function () {
             retrySignup();
         };
-        window.twoGatewayCompanyCaptureInstance = controller;
+        controller.pointAtSurface = function (surface) {
+            currentSurface = surface;
+        };
+        window.twoGatewayCompanyCaptureInstances[role] = controller;
         return controller;
     };
 
@@ -2295,6 +2136,15 @@ $quoteDetails = json_encode(
         const surfaceCountryContext = typeof opts.resolveCountryContext === 'function'
             ? opts.resolveCountryContext
             : function () { return this.controlRoot(); };
+        // Default: the panel this surface is rendered inside. The tile is in no
+        // panel and names its role itself.
+        const surfaceRole = typeof opts.resolveCaptureRole === 'function'
+            ? opts.resolveCaptureRole
+            : function () {
+                return window.twoGatewayCaptureRoleForForm(
+                    window.twoGatewayCountryFieldScope(this.controlRoot())
+                );
+            };
 
         const engineOptions = Object.assign({}, opts, {
             resolveCountryContext: surfaceCountryContext,
@@ -2435,7 +2285,7 @@ $quoteDetails = json_encode(
                 this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
             },
             captureApplyBuyerAddress(source) {
-                this.setAddressData(source, window.twoGatewayInvoiceRoleAddressForm());
+                this.setAddressData(source, this.resolveCaptureAddressContainer());
             },
             /**
              * A phone number is not part of the address the buyer is being shown
@@ -2445,7 +2295,7 @@ $quoteDetails = json_encode(
             captureApplyTelephone(phoneNumber) {
                 const phone = String(phoneNumber || '').trim();
                 if (!phone || !this.isAddressAutopopulationEnabled) return;
-                const container = window.twoGatewayInvoiceRoleAddressForm();
+                const container = this.resolveCaptureAddressContainer();
                 const field = container && container.querySelector('input[name="telephone"]');
                 if (!field) return;
                 field.value = phone;
@@ -2496,10 +2346,26 @@ $quoteDetails = json_encode(
                     : null;
             },
 
+            /** @returns {string} the address role this surface captures for */
+            captureRole() {
+                return surfaceRole.call(this);
+            },
+
+            /** @returns {?Object} this role's capture controller, if one is built */
+            captureController() {
+                return window.twoGatewayCompanyCaptureInstances[this.captureRole()] || null;
+            },
+
+            /** @returns {boolean} whether this surface is the payment tile */
+            isTileSurface() {
+                const root = this.controlRoot();
+                return Boolean(root && root.dataset && root.dataset.twoCaptureHost === 'tile');
+            },
+
             /**
-             * Point the one page-level controller at this surface. Called from
-             * each surface's init(), which Magewire re-runs on every rebuild, so
-             * this re-points rather than building a second controller.
+             * Point this role's controller at this surface. Called from each
+             * surface's init(), which Magewire re-runs on every rebuild, so this
+             * re-points rather than building a second controller.
              */
             mountCompanyPopover() {
                 // NO POPOVER AT ALL where the lookup is switched off. The field
@@ -2508,20 +2374,20 @@ $quoteDetails = json_encode(
                 // query box whose searches can never run, and the way out is shut
                 // too because the manual chip is withheld for the same reason.
                 if (!this.isCompanySearchEnabled) return;
-                // The tile's `isCompanySearchEnabled` is a constant, so where
-                // the address step owns the control the CLAIM is the only thing
-                // stopping the tile pointing every host function at itself.
-                const owns = this.claimCaptureField();
-                // Mirrored either way. Where the ADDRESS step owns the control
-                // this tile still paints from the identity — the sole-trader
-                // progress row, the "select a different sole trader" link and the
-                // order-intent verdict all read state only the mirror writes.
-                // After the claim, never before: the mirror re-reads ownership on
-                // every notification and the claim is what answers it.
+                // A surface rendering no capture field still mirrors — the tile
+                // paints its intent verdict from that — but mounts nothing.
+                if (!this.companyNameField()) {
+                    this.followCapturedIdentity();
+                    return;
+                }
+                const role = this.captureRole();
+                // Stamped before the mount: the controller's field selectors are
+                // scoped on it, and a morph reinstates server markup without it.
+                const root = this.controlRoot();
+                if (root) root.setAttribute('data-two-capture-role', role);
                 this.followCapturedIdentity();
-                if (!owns) return;
-                window.twoGatewayCaptureSurfaceCurrent = this;
                 const capture = window.twoGatewayCompanyCapture({
+                    role: role,
                     restBaseUrl: opts.restBaseUrl,
                     checkoutApiUrl: this.checkoutApiUrl,
                     checkoutPageUrl: opts.checkoutPageUrl,
@@ -2532,56 +2398,12 @@ $quoteDetails = json_encode(
                     firewallToken: this.firewallToken
                 });
                 if (!capture) return;
+                capture.pointAtSurface(this);
                 capture.start();
                 capture.onCountryChanged();
                 capture.refreshMount();
                 capture.refreshSoleTraderAvailability();
                 this.watchCompanyPopoverForMorphs();
-            },
-
-            /**
-             * Take ownership of the one popover.
-             *
-             * Two address hosts can render at once — the delivery form and the
-             * invoice form — and the buyer is billed as the company on the
-             * INVOICE one (TWO-25461 §1(a.3)). Any other surface defers, unless
-             * no invoice-role form resolves at all.
-             *
-             * @param {boolean} claim stamp the claim, rather than only report it
-             * @returns {boolean} whether this surface owns the popover
-             */
-            resolveCaptureOwnership(claim) {
-                const field = this.companyNameField();
-                if (!field) return false;
-                if (field.hasAttribute('data-two-capture-active')) return true;
-                // The ATTRIBUTE is the claim, so a surface not carrying it does
-                // not own the control. Answering the question could otherwise
-                // grant ownership by itself whenever no claim was standing —
-                // which is every morph, because a morph reinstates server markup
-                // that carries no claim, and that is the window in which "seed,
-                // never displace" has to hold.
-                if (!claim) return false;
-
-                const claimed = document.querySelector('input[data-two-capture-active]');
-                if (claimed && claimed.isConnected) {
-                    const invoiceForm = window.twoGatewayInvoiceRoleAddressForm();
-                    // The standing claim is the invoice-role one, or there is no
-                    // invoice-role form to prefer: leave it alone.
-                    if (!invoiceForm || !invoiceForm.contains(field)) return false;
-                    if (invoiceForm.contains(claimed)) return false;
-                    if (claim) claimed.removeAttribute('data-two-capture-active');
-                }
-                if (claim) field.setAttribute('data-two-capture-active', '');
-                return true;
-            },
-
-            claimCaptureField() {
-                return this.resolveCaptureOwnership(true);
-            },
-
-            /** Whether this surface already holds the claim. Takes nothing. */
-            ownsCaptureField() {
-                return this.resolveCaptureOwnership(false);
             },
 
             /**
@@ -2605,8 +2427,8 @@ $quoteDetails = json_encode(
                     root: root,
                     // Through the surface's mount, not the controller's
                     // refreshMount(): a morph reinstates the server markup, which
-                    // carries no `data-two-capture-active`, so the selector
-                    // matches nothing until this surface has claimed again.
+                    // carries no `data-two-capture-role`, so the selector matches
+                    // nothing until this surface has stamped it again.
                     remount: function () {
                         self.mountCompanyPopover();
                     }
@@ -2614,12 +2436,12 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Mirror the shared identity onto this surface, and persist it.
+             * Mirror this role's identity onto this surface, and persist it.
              * Everything this checkout does with a captured company hangs off
              * that one notification.
              */
             followCapturedIdentity() {
-                const identity = window.twoGatewayCompanyIdentity();
+                const identity = window.twoGatewayCompanyIdentity(this.captureRole());
                 // A CSP or deploy failure on the base module degrades this field
                 // to a plain input; the mirror must not be what throws.
                 if (!identity) return;
@@ -2669,33 +2491,14 @@ $quoteDetails = json_encode(
                     self.isCompanySelected = Boolean(self.companyId);
                     self.companyIdEntryRequired = !identity.hasVouchedNumber();
                     self.applyCompanyIdEditability();
-                    // Read FRESH, never captured at subscribe time: the claim
-                    // transfers at runtime — an invoice-role form mounting after
-                    // the delivery one displaces it — and an ex-owner holding a
-                    // stale `true` announced, persisted and raised an order
-                    // intent alongside the real owner.
-                    if (!changed || !self.ownsCaptureField()) return;
+                    if (!changed) return;
                     // A discarded company has to leave the FIELD too. The commit
                     // hook writes the name it is given and returns early on an
                     // empty one, so nothing else blanks what a discarded sole
-                    // trader left in `payment[company_name]`. Behind the
-                    // ownership gate: `#company_name`/`#company_id` are the
-                    // tile's submit fields, and a non-hosting surface blanking
-                    // them wipes a company the tile still holds.
+                    // trader left in the name field.
                     if (!self.companyName) self.clearCapturedNameFields();
-                    const selectionData = self.writeCapturedSelection();
-                    // The cross-step announcement is about the COMPANY, so a
-                    // mode flip persists without making the other step re-read a
-                    // pair that has not moved.
+                    self.writeCapturedSelection();
                     if (!pairChanged) return;
-                    if (opts.selectEventName) {
-                        // `restored` travels with it: the other step still syncs
-                        // (it may read a different storage record) but must not
-                        // answer a restore with an order intent.
-                        window.dispatchEvent(new CustomEvent(opts.selectEventName, {
-                            detail: Object.assign({ restored: restoring }, selectionData)
-                        }));
-                    }
                     surfaceCommitted.call(
                         self,
                         self.companyName,
@@ -2715,13 +2518,13 @@ $quoteDetails = json_encode(
                 restoring = false;
             },
 
-            /** Blank both name inputs: the control's own, and the one that submits. */
+            /** Blank this surface's own name field, and — on the tile — the pair that submits. */
             clearCapturedNameFields() {
-                [this.companyNameField(), document.getElementById('company_name')]
-                    .forEach(function (field, index, fields) {
-                        if (!field || fields.indexOf(field) !== index) return;
-                        field.value = '';
-                    });
+                const field = this.companyNameField();
+                if (field) field.value = '';
+                if (!this.isTileSurface()) return;
+                const nameField = document.getElementById('company_name');
+                if (nameField && nameField !== field) nameField.value = '';
                 const idField = document.getElementById('company_id');
                 if (idField) idField.value = '';
             },
@@ -2739,7 +2542,7 @@ $quoteDetails = json_encode(
 
             /** @returns {?Object} the popover, for tests that drive it */
             companyPopover() {
-                const capture = window.twoGatewayCompanyCaptureInstance;
+                const capture = this.captureController();
                 return capture ? capture.panel() : null;
             },
 
@@ -2766,7 +2569,7 @@ $quoteDetails = json_encode(
                 const field = this.companyNameField();
                 this.search = field ? field.value : '';
                 if (!this.manualMode && Boolean(this.isCompanySearchEnabled)) return;
-                const capture = window.twoGatewayCompanyCaptureInstance;
+                const capture = this.captureController();
                 if (capture) capture.commitManualCompany(this.search);
             },
 
@@ -2793,11 +2596,11 @@ $quoteDetails = json_encode(
                 return this.showSoleTrader && Boolean(this.companyName);
             },
             openSoleTraderSignupFromLink() {
-                const capture = window.twoGatewayCompanyCaptureInstance;
+                const capture = this.captureController();
                 if (capture) capture.retrySignup();
             },
             selectDifferentSoleTrader() {
-                const capture = window.twoGatewayCompanyCaptureInstance;
+                const capture = this.captureController();
                 if (capture) capture.soleTrader().selectDifferentSoleTrader();
             },
 
@@ -3090,6 +2893,11 @@ $quoteDetails = json_encode(
              * the shipping country whatever the buyer's billing address said.
              */
             resolveCountryContext: function () { return window.twoGatewayInvoiceRoleCountryField(); },
+            // The tile is no panel, and with "billing same as shipping" ticked
+            // there is no billing panel for it to belong to.
+            resolveCaptureRole: function () {
+                return window.twoGatewayIsBillingAsShipping() ? 'shipping' : 'billing';
+            },
             readSelection: function () { return window.twoGatewayReadBillingCompany(); },
             writeSelection: function (patch) { return window.twoGatewayWriteBillingCompany(patch); },
             /*
@@ -3343,82 +3151,20 @@ $quoteDetails = json_encode(
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
 
-                /*
-                 * Restore from the BILLING record first, falling back to the
-                 * shipping one only when billing does not itself present a
-                 * company NUMBER (TWO-25554 — "pick from shipping unless
-                 * billing is different, in which case pick from billing
-                 * first, falling back to shipping only if billing doesn't
-                 * present a company number"). Reading billing first is what
-                 * stops a company the buyer named here being overwritten by
-                 * the shipping company on the next re-render.
-                 *
-                 * This is deliberately NOT gated on twoGatewayIsBillingAsShipping()
-                 * or twoGatewayIsBillingAddressPinned() any more. Those two answer
-                 * a DIFFERENT question — whether the address-field MIRROR may
-                 * overwrite billing's address form — and conflating that with
-                 * "which company number the order carries" is what left this
-                 * fallback never firing for a real, distinct billing address
-                 * that simply has no company of its own yet: unticking "same
-                 * as shipping" made `twoGatewayIsBillingAsShipping()` false,
-                 * which shut the fallback off regardless of whether billing
-                 * had anything to offer.
-                 *
-                 * `billingCompanySelectionData.company_id` is the number
-                 * check: a company picked or adopted (sole trader) on billing
-                 * always carries one; manual entry never does (TWO-25554's
-                 * own capture-mode rule, ported unchanged). This does not
-                 * reintroduce the older bug the previous gating fixed — that
-                 * bug adopted shipping's company onto billing UNCONDITIONALLY
-                 * once unpinned, with no check that billing had captured
-                 * anything of its own; this fallback only ever fires when
-                 * billing genuinely has no number to present.
-                 */
+                // The tile is the invoice-role submit surface: its own record,
+                // its own role's identity, nothing else.
                 const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
-                const storedShippingSelection = window.twoGatewayReadCompanySelection();
-                /*
-                 * The second term is "never replace a company with nothing":
-                 * with company search mounted in this TILE the shipping key is
-                 * never written, so a nameless shipping record is that
-                 * configuration's normal state and adopting it would discard
-                 * the only company the buyer ever named — leaving a locked,
-                 * empty, required number field behind it.
-                 */
-                const shippingCompanySelectionData =
-                    (!billingCompanySelectionData.company_id
-                        && storedShippingSelection.company_name)
-                        ? storedShippingSelection
-                        : billingCompanySelectionData;
-                /*
-                 * `manual_mode` is deliberately NOT restored here.
-                 *
-                 * The flag records a choice made on the ADDRESS form, whose
-                 * company field has its own manual/search mode — and which
-                 * writes it into the selection blob this tile also reads.
-                 * Adopting another surface's mode as this tile's opening state
-                 * left it showing a live-looking search box whose every
-                 * keystroke returned early at the manual-mode guard, with no way
-                 * out because the exit is bound on the address form.
-                 */
-                const identity = window.twoGatewayCompanyIdentity();
-                // Not while a signup is live: that flow never writes the blob, so
-                // the stored pair is the registered company that preceded it and
-                // restoring it puts that company under sole-trader mode.
-                //
-                // A surface that hosts no control may SEED an identity nobody has
-                // captured into, never displace one: an authoritative write
-                // replaces both halves, and such a tile's stored pair is
-                // routinely empty or a quote older than the live capture.
-                const hostsControl = this.ownsCaptureField();
-                if (identity && !identity.isSoleTrader()
-                    && (hostsControl || !identity.companyName())) {
+                const identity = window.twoGatewayCompanyIdentity(this.captureRole());
+                // A tile hosting no control made no capture, and a live signup
+                // never writes the record — so neither may seed from it.
+                if (identity && !identity.isSoleTrader() && this.companyNameField()) {
                     identity.write(
                         {
-                            companyName: shippingCompanySelectionData.company_name || '',
-                            companyId: shippingCompanySelectionData.company_id || '',
-                            companyIdSource: shippingCompanySelectionData.company_id_source || ''
+                            companyName: billingCompanySelectionData.company_name || '',
+                            companyId: billingCompanySelectionData.company_id || '',
+                            companyIdSource: billingCompanySelectionData.company_id_source || ''
                         },
-                        { authoritative: hostsControl }
+                        { authoritative: true }
                     );
                 }
 
@@ -3464,57 +3210,11 @@ $quoteDetails = json_encode(
                     this.applyCompanyIdEditability();
                 });
 
-                // The shipping step's sync (company-name-payment.phtml's
-                // updatePaymentFields) arrives here. It can carry an EMPTY
-                // identifier now, for the same reason selectItem() can, so the
-                // editability has to be recomputed from what arrived — without
-                // this the buyer's shipping pick of an identifier-less company
-                // would land in a field still locked from the previous pick.
-                this.$el.addEventListener('update-company-data', (event) => {
-                    const detail = event.detail || {};
-                    const companyName = detail.companyName || '';
-                    const companyId = detail.companyId || '';
-                    // A number with no provenance came from a lookup.
-                    const companyIdSource = companyId
-                        ? (detail.companyIdSource || 'registry')
-                        : '';
-                    const shared = window.twoGatewayCompanyIdentity();
-                    // Seed, never displace — the same rule as initialize(). This
-                    // sync reaches the tile whether or not it hosts the control,
-                    // and an authoritative write from a tile hosting nothing
-                    // replaces both halves of whatever the address step has just
-                    // captured with this event's older pair.
-                    const hostsControl = this.ownsCaptureField();
-                    if (shared && (hostsControl || !shared.companyName())) {
-                        shared.write(
-                            { companyName, companyId, companyIdSource },
-                            { authoritative: hostsControl }
-                        );
-                    }
-                    /*
-                     * The visible field has to be written too: the shared
-                     * control's field is a plain, imperatively written input, so
-                     * a sync that only touched state would leave the buyer
-                     * looking at the previous company's name.
-                     */
-                    const nameField = this.companyNameField();
-                    if (nameField) nameField.value = companyName;
-                    // And this tile's own state. Where the ADDRESS step owns the
-                    // control this tile claims nothing, so it carries no identity
-                    // mirror — and its order-intent verdict, its label and its
-                    // supersede guard all read `companyId`.
-                    this.search = companyName;
-                    this.companyName = companyName;
-                    this.companyId = companyId;
-                    this.companyIdSource = companyIdSource;
-                    // The engine's formula, not a second one: a hand-typed
-                    // number stays the buyer's to correct.
-                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-                    this.applyCompanyIdEditability();
-                });
-
                 this.$nextTick(() => {
-                    const restored = shippingCompanySelectionData.company_name || '';
+                    // A tile hosting no control reads its role's identity
+                    // instead; its record describes a capture it did not make.
+                    if (!this.companyNameField()) return;
+                    const restored = billingCompanySelectionData.company_name || '';
                     if (!restored) {
                         // A checkout that server-rendered a company nobody has
                         // captured yet: adopt what is in the field so the popover
@@ -3527,7 +3227,7 @@ $quoteDetails = json_encode(
                     // and the per-company dedup record is emptied by the same
                     // rebuild that caused it.
                     this.fillCompanyData(
-                        shippingCompanySelectionData.company_id || '',
+                        billingCompanySelectionData.company_id || '',
                         restored,
                         false
                     );
@@ -3904,6 +3604,11 @@ $quoteDetails = json_encode(
                 // BEFORE getting here.
                 const companyIdInput = document.getElementById("company_id");
                 if (companyIdInput) companyIdInput.value = companyId;
+
+                // A hand-typed number stays the buyer's to correct, so the lock
+                // is re-derived from what was just committed.
+                this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+                this.applyCompanyIdEditability();
 
                 // Only trigger order intent if the company ID CHANGED — and
                 // only when there IS one. An intent for an empty company id is a

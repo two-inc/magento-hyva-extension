@@ -208,19 +208,15 @@ be up alongside nothing. All four are one box style in one place. The rules that
   that is present and malformed, which it degrades to a silent box for rather
   than throwing — and that case needs the fallback just as much. Gate a fallback
   on there being nothing to say, never on any narrower proxy for it.
-- **The company pair is resolved by `data-name`, on BOTH markup modes.**
-  `company-name-payment.phtml` finds the payment step's company pair with
-  `[data-name="company_name"]` / `[data-name="company_id"]`, and every path that
-  WRITES the pair bails out silently when either input is missing — the
-  address-step pick sync, the on-load initialisation, and `updatePaymentFields()`
-  itself, which is also where those paths' `dispatch-order-intent` lives. Its
-  one dispatch that does NOT depend on the pair is the
-  `checkout:payment:method-activate` re-arm, which fires from the stored
-  selection alone. So the symptom
-  of a missing `data-name` is not "no intents ever": it is no intent on a PICK,
-  with the activation re-arm still firing — which is worse to diagnose than
-  total silence, because the feature looks alive. Address-area mode's two inputs
-  are `type="hidden"` and carry the attribute for exactly this reason.
+- **The `dispatch-order-intent` re-arm reads the BILLING record and nothing
+  else.** `company-name-payment.phtml`'s `checkout:payment:method-activate`
+  handler exists because a company picked in the tile before Two became the
+  active payment method never got its intent fired — the global listener drops a
+  dispatch while another method is active. The tile's company is the
+  invoice-role company, so its own record is the only one that answers; there is
+  no shipping fallback and the handler writes no field. Both markup modes keep
+  `data-name` on the company pair so a surface that is not the payment form can
+  resolve it without a document-wide id lookup.
 
 ### Magewire Components
 
@@ -237,12 +233,27 @@ be up alongside nothing. All four are one box style in one place. The rules that
 
 ### Company search: ONE popover, and it is not in this repo
 
-There is **exactly one** company-capture popover across Magento's checkouts, it
-ships in the BASE plugin, and this module mounts it. Never add a second one, and
-never patch a surface by copying part of it — that duplication is what produced
-a batch of "three independent cosmetic bugs" on the payment tile that turned out
-to be one bug, and later what left this checkout's mode chips outside the panel
-while Luma's were inside it.
+There is **exactly one company-capture popover IMPLEMENTATION** across Magento's
+checkouts, it ships in the BASE plugin, and this module mounts it. Never add a
+second implementation, and never patch a surface by copying part of it — that
+duplication is what produced a batch of "three independent cosmetic bugs" on the
+payment tile that turned out to be one bug, and later what left this checkout's
+mode chips outside the panel while Luma's were inside it.
+
+**ONE IDENTITY AND ONE CONTROLLER PER ADDRESS ROLE.** The checkout can hold two
+companies at once — the delivery panel's and the invoice panel's — so
+`twoGatewayCompanyIdentity(role)` and `twoGatewayCompanyCapture({role, …})` are
+memoized per role in `twoGatewayCompanyIdentityInstances` /
+`twoGatewayCompanyCaptureInstances`. Keyed by the role STRING, never by a root
+node: a Magewire morph replaces roots, and the captured company has to survive
+the re-render. A call with no role is a bug and answers `null` rather than
+sharing.
+
+**There is NO propagation between the two panels, of any kind.** Not a mirror,
+not a pin, not an event, not a shared field write. A pick in one panel is
+invisible to the other. The one thing that reads both is the
+ORDER-INTENT/PLACEMENT resolver, which reads the captured identities to decide
+which company the API is told about; it never writes and never has a UI effect.
 
 Three layers, innermost first:
 
@@ -250,7 +261,7 @@ Three layers, innermost first:
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Popover — the shared company-search panel     | **the base plugin**, whose script this checkout's layout loads and which the mounts reach through the browser global it registers itself under                                                                          | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
 | Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
-| Adapter — `twoGatewayCompanySearchControl()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
+| Adapter — `twoGatewayCaptureSurfaceMixin()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
 
 **Registry and order-intent calls go through the base module's own REST routes**
 (`rest/V1/two/company-search`, `.../company`, `.../order-intent`), never straight
@@ -351,11 +362,20 @@ Which of the first two renders is decided by the core module's
 `CheckoutConfig::getIsCompanySearchInPaymentTile()`.
 
 Each mount builds its panel from its own `init()`/`initialize()`, and
-`mountCompanyPopover()` re-points an existing panel rather than building a second
-one. It stamps its own `data-two-company-panel` attribute on the field and
-selects on that, because the address-step field renderer is registered globally
-and mounts on the delivery form AND the invoice form, so a document-wide selector
-would give both mounts the first field.
+`mountCompanyPopover()` re-points its role's existing panel rather than building
+a second one. It stamps `data-two-capture-role` on its control root and the
+controller's field selectors are scoped on it alongside
+`data-two-capture-host` — the address-step field renderer is registered globally
+and mounts on the delivery form AND the invoice form, so a document-wide
+selector would give both mounts the first field.
+
+**A surface's role is a live DOM read, resolved fresh, never cached.** An
+address panel's is `twoGatewayCaptureRoleForForm()` over the panel that owns its
+country field: `billing` where that panel carries a `billing-`prefixed field id,
+Hyvä's own `<role>-<field>` convention, else `shipping`. The payment TILE is not
+a panel — it is the invoice-role submit surface — so its role is `shipping` while
+`#billing-as-shipping` is ticked and `billing` once it is not. The address-book
+modal is shipping-role.
 
 **A Magewire re-render does NOT re-run `init()`.** It MORPHS the server markup
 over the live DOM: the popover's `span.two-company-field-wrap` is built at
@@ -364,7 +384,8 @@ the mount attribute with it — while KEEPING the element carrying the component
 `x-data`, so Alpine keeps the component and never re-initialises it. Every mount
 therefore registers itself in `window.twoGatewayCompanyMounts`, and one
 page-level `element.updated` hook remounts any control whose panel reports
-`isBound()` false. That is also the answer to "why does a shipping-method change
+`isBound()` false — each entry through its own root's surface, so one role's
+remount can never write the other's state. That is also the answer to "why does a shipping-method change
 survive": its re-render never touches this form.
 
 **The panel instance lives in a closure, never in Alpine state.** Alpine wraps
@@ -427,77 +448,42 @@ Things that bite:
   screen; the helper answers `''` for one, which is the same case as "no number",
   so surrounding parentheses drop with it.
 
-### Two addresses: editable, mirrored, and pinned by CONTENT
+### Two addresses, and NOTHING passes between them
 
 The checkout can hold two addresses — shipping, and a separate billing one once
-"billing same as shipping" is unticked — and the second one **stays fully
-editable, always**. Making its company or country read-only was evaluated and
-rejected: a company with a branch in a neighbouring country is one legal entity
-with two genuinely different valid local pairings.
+"billing same as shipping" is unticked — and both stay fully editable, always.
+Making a company or country read-only was evaluated and rejected: a company with
+a branch in a neighbouring country is one legal entity with two genuinely
+different valid local pairings.
 
-The shipping (default) address's company propagates onto the billing one, and
-what stops that propagation is a **pure content match**, not a flag:
+**The two panels do not interact.** Each has its own identity, its own capture
+controller, its own storage record and its own popover, and each writes ONLY its
+own surface:
 
-- Before a mirrored value is written, the tracked fields of the billing address
-  are compared against what the mirror would write, **trimmed and
-  case-insensitive**. Still matching → still synced, overwrite freely.
-- **One** field differing pins the **whole address**, including the fields the
-  buyer never touched. Explicit ruling — do not scope the pin per field.
-- **There is no resume control, and none should be built.** The match is
-  recomputed on every read, so it releases by itself. Ticking "billing same as
-  shipping" drops the billing company record and mirrors the shipping company
-  across in the same handler, which is what leaves the pin nothing to hold.
-- The tracked set is **five** fields: country, company name, company id, address
-  line 2, region. A buyer typing into address line 2 is exactly as strong a
-  signal of independent editing as one retyping the company.
+- Role-scoped selectors, never document-wide ones. A surface resolves its own
+  fields under its own control root; `data-two-capture-role` is what makes the
+  controller's `addressFieldSelector` / `tileFieldSelector` answer for one panel.
+- `watchCountryChanges` fires for a country field of the watching role only, by
+  id prefix or by which panel contains it. A document-level listener on any
+  `*country_id` is a cross-panel write.
+- Sole-trader autofill (`captureApplyBuyerAddress`, `captureApplyTelephone`)
+  writes the surface's OWN form. A surface with no form of its own — the tile —
+  writes nothing, deliberately: filling a form the buyer is not looking at is
+  forbidden.
+- The identity mirror writes its own surface's state, its own storage record and,
+  on the TILE only, the `#company_name` / `#company_id` pair that submits.
 - **Per-surface state is keyed on the surface's own root node, never on the kind
   of host.** One renderer mounts the company field on both address forms, so one
   key per kind of host is one key shared between two live surfaces, and the
   second mount tears down the first's subscription.
-- **The `data-two-capture-active` attribute IS the capture claim.** A surface
-  holding it hosts the control; a surface without it hosts nothing, may SEED an
-  identity nobody has captured into, and may never displace one — the pair, the
-  mode and the tile's `#company_name`/`#company_id` submit fields alike.
-  `claimCaptureField()` is the only thing that stamps it; `ownsCaptureField()`
-  reports on it and takes nothing, so asking the question in the window a morph
-  opens (server markup carries no claim) cannot itself grant ownership.
-- **Ownership is re-read on every notification, never captured when a
-  subscription is opened.** The claim transfers at runtime — an invoice-role form
-  mounting after the delivery one displaces it — and an ex-owner holding a stale
-  answer persisted the blob, announced the pick and raised an order intent
-  alongside the real owner.
 - **A surface's subscription is disposed by the re-render that removed it.** The
   `element.updated` hook reaps every watcher whose root has left the document,
   because a teardown that waits for the next mount never runs on a page with one
   control.
 
-`twoGatewayIsBillingAddressPinned()` is the one answer to this question and
-every surface asks it — the tile's `initialize()` and the bridge's
-`checkout:payment:method-activate` resolution and its two shipping-mirror paths.
-Two surfaces answering it differently is how the tile came to adopt a company
-the buyer had said does not apply, twice.
-
-Three things that bite:
-
-- **The pin gates PROPAGATION, never a RESTORE.** It is checked at the call
-  sites that push the shipping company across, and deliberately not inside
-  `updatePaymentFields()` — which is also how a company resolved _for_ the
-  billing role, including one read back out of the billing record, reaches the
-  tile. A pin there blocks the buyer's own billing company from being restored,
-  which is the exact opposite of protecting it.
-- **A blank target field is not a mismatch.** It is a field waiting to be
-  filled, and filling it is the propagation. Counting blank-vs-populated as a
-  difference pins every freshly opened billing form on the spot and nothing ever
-  propagates at all.
-- **"Never replace a company with nothing" is a separate term, not part of the
-  pin.** With company search mounted in the payment tile the shipping storage
-  key is never written, so a nameless shipping record is that configuration's
-  normal state; adopting it discards the only company the buyer ever named and
-  leaves a locked, empty, required number field behind it.
-
 Whichever address plays the **billing/invoice role** is the one that requires a
 company and org number — never a shipping-only address, and the role is resolved
-once rather than re-derived per surface.
+fresh from the DOM rather than remembered.
 
 ### Writing an address from an external payload
 

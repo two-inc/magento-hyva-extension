@@ -67,7 +67,6 @@ const LABEL_TEXT_BINDING = H.readAlpineBinding(
   "x-text",
 );
 
-
 /**
  * The gate on the whole Company Number block, caption included. UNCHANGED by
  * the 2026-08-05 ruling: this block still hides once a registry number is
@@ -912,17 +911,19 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
   });
 
-  describe("the billing/shipping key split (TWO-25326 review round 3)", () => {
+  describe("the tile restores its own record and no other", () => {
     /**
-     * Mount a FRESH tile against whatever is currently in storage.
+     * Mount a FRESH tile against whatever is currently in storage, recording
+     * every company `initialize()` restores into it.
      *
      * The suite's own `beforeEach` has already mounted one with empty storage,
-     * and `initialize()` is what reads the records — so a restore test has to
+     * and `initialize()` is what reads the record — so a restore test has to
      * build its own instance after seeding.
      *
      * @param {boolean} [billingAsShipping] renders the checkbox in that state;
      *   omit to leave it absent, which is the "no such toggle" default
-     * @returns {Object} the mounted component
+     * @returns {{component: Object, restored: Array<string>}} each distinct
+     *   company reached, as `name (number)`
      */
     function remount(billingAsShipping) {
       const existing = document.getElementById("billing-as-shipping");
@@ -940,8 +941,16 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
         root: root,
       });
       fresh.$watch = function () {};
+      // The restore is re-announced by the identity mirror it seeds, so the
+      // question is WHICH companies reached the tile, not how many times.
+      const restored = new Set();
+      const fill = fresh.fillCompanyData.bind(fresh);
+      fresh.fillCompanyData = function (companyId, companyName, trigger) {
+        if (companyName) restored.add(companyName + " (" + companyId + ")");
+        return fill(companyId, companyName, trigger);
+      };
       fresh.initialize(JSON.parse(H.QUOTE_JSON));
-      return fresh;
+      return { component: fresh, restored: Array.from(restored) };
     }
 
     /** @param {string} key @param {Object} data */
@@ -962,69 +971,47 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       company_id_source: "registry",
     };
 
-    test("the BILLING record wins over the shipping one", () => {
-      // The corruption this split removes: before it, one blob held both, so
-      // whichever surface wrote last decided what the order carried.
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-      seed(H.BILLING_COMPANY_KEY, BILLING);
+    // Every toggle state, because the checkbox decides the tile's capture ROLE
+    // and must not reach the record it restores from: the shipping company is
+    // the delivery panel's, and this surface never adopts it.
+    const TOGGLE_STATES = [
+      [true, "ticked"],
+      [false, "unticked"],
+      [undefined, "absent"],
+    ];
 
-      const fresh = remount(true);
+    test.each(
+      TOGGLE_STATES.flatMap(([state, toggle]) => [
+        {
+          toggle: toggle,
+          state: state,
+          seeds: [SHIPPING, BILLING],
+          expected: ["Billing Company Ltd (11112222)"],
+          label: "its own billing record is restored",
+        },
+        {
+          toggle: toggle,
+          state: state,
+          seeds: [SHIPPING],
+          expected: [],
+          label: "a page holding only a shipping company restores nothing",
+        },
+      ]),
+    )("billing-as-shipping $toggle: $label", ({ state, seeds, expected }) => {
+      seeds.forEach((record) =>
+        seed(
+          record === BILLING ? H.BILLING_COMPANY_KEY : H.COMPANY_SELECTION_KEY,
+          record,
+        ),
+      );
 
-      expect(fresh.companyName).toBe("Billing Company Ltd");
-      expect(fresh.companyId).toBe("11112222");
-    });
-
-    test("falls back to shipping when there is no billing record AND the box is ticked", () => {
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-
-      const fresh = remount(true);
-
-      expect(fresh.companyName).toBe("Shipping Company Ltd");
-      expect(fresh.companyId).toBe("99999999");
-    });
-
-    test("falls back to shipping even with the box unticked, when billing has no number of its own (TWO-25554)", () => {
-      // Superseded rule, kept as history: this used to assert NO fallback
-      // once the buyer unticks the box, on the reasoning that adopting
-      // shipping's company here shows the buyer a company they said does not
-      // apply. TWO-25554 rules the other way: "pick from shipping unless
-      // billing is different, in which case pick from billing first, falling
-      // back to shipping only if billing doesn't present a company number" —
-      // an untouched, numberless billing address is exactly that case.
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-
-      const fresh = remount(false);
-
-      expect(fresh.companyName).toBe("Shipping Company Ltd");
-      expect(fresh.companyId).toBe("99999999");
-    });
-
-    test("does NOT fall back to shipping once billing has captured its own company", () => {
-      // The distinction TWO-25554 actually turns on: billing presents a
-      // number of its own, so it wins regardless of the checkbox.
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-      seed(H.BILLING_COMPANY_KEY, BILLING);
-
-      const fresh = remount(false);
-
-      expect(fresh.companyName).toBe("Billing Company Ltd");
-      expect(fresh.companyId).toBe("11112222");
-    });
-
-    test("falls back when the toggle does not exist at all", () => {
-      // A checkout with no such control has one address, so the shipping
-      // company IS the billing company. Absent must not read as unticked.
-      seed(H.COMPANY_SELECTION_KEY, SHIPPING);
-
-      const fresh = remount();
-
-      expect(fresh.companyName).toBe("Shipping Company Ltd");
+      expect(remount(state).restored).toEqual(expected);
     });
 
     test("isBillingAsShipping is published as a shared window helper", () => {
-      // Hoisted so the tile and company-name-payment.phtml cannot answer it
-      // differently — two surfaces disagreeing is how the tile adopts a company
-      // the buyer has ruled out.
+      // Hoisted because the tile's capture ROLE and the invoice-role country
+      // field both hang off it, and two answers would split one surface's
+      // company across two identities.
       expect(typeof window.twoGatewayIsBillingAsShipping).toBe("function");
 
       const box = document.createElement("input");
@@ -1042,7 +1029,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("the two keys are separately store-scoped", () => {
-      expect(window.TWO_GATEWAY_BILLING_COMPANY_KEY).toBe(H.BILLING_COMPANY_KEY);
+      expect(window.TWO_GATEWAY_BILLING_COMPANY_KEY).toBe(
+        H.BILLING_COMPANY_KEY,
+      );
       expect(window.TWO_GATEWAY_BILLING_COMPANY_KEY).not.toBe(
         window.TWO_GATEWAY_COMPANY_SELECTION_KEY,
       );
