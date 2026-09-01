@@ -481,14 +481,30 @@ own surface:
   of host.** One renderer mounts the company field on both address forms, so one
   key per kind of host is one key shared between two live surfaces, and the
   second mount tears down the first's subscription.
-- **The re-render sweep restores CONTENT as well as structure.** A morph rewrites
-  the company input from the server's value, which is empty for a company picked
-  since the last roundtrip, and it can do that without touching the popover's
-  wrapper. Every other repaint is gated on a change that has not happened — the
-  mirror on the component's own state, the popover's rebind on its wrapper being
-  gone — so `mountCompanyPopover()` ends by repainting the captured pair
-  (`repaintCapturedNameFields()`), idempotently and with no event, which is what
-  stops the buyer's company vanishing a few seconds after they pick it.
+- **A CAPTURED COMPANY MUST BE ANNOUNCED TO THE MAGEWIRE MODEL, and only this
+  host can do it.** The popover announces a pick by writing the field and firing
+  `change`; it fires no `input`, and this checkout's company input is
+  `wire:model.defer`, whose text-input updates come from `input`. So the
+  server-side model never learned the pick, and the next address-form roundtrip
+  re-hydrated the input from that model and wrote `null` over the buyer's
+  company — measured live at +5.59s after the pick, which is the reported
+  "the name disappears after 3 to 4 seconds". The autofilled city/postcode/street
+  survive the same roundtrip precisely because the engine's own write DOES fire
+  `input` on them. `announceCapturedCompanyToModel()` says it through
+  `Magewire.find(...).set(model, name, true)` — deferred, so it costs no request
+  — reading the model name off the field, because which model the input binds to
+  is the checkout's decision and differs per form. It must NOT be said by
+  dispatching the missing `input`: the popover binds `input` on that field and
+  reads whatever arrives as the buyer typing, so a synthetic one reopens the
+  popover on the name it just captured.
+- **The re-render sweep restores CONTENT as well as structure.** Second line of
+  defence for the same invariant: a morph can rewrite the company input without
+  touching the popover's wrapper, and every other repaint is gated on a change
+  that has not happened then — the mirror on the component's own state, the
+  popover's rebind on its wrapper being gone. So `mountCompanyPopover()` ends by
+  reconciling the captured pair (`repaintCapturedNameFields()`), both directions
+  (an empty identity clears the field, because the server's value can equally be
+  a company the buyer has since discarded), idempotently and with no event.
 - **A surface's subscription is disposed by the re-render that removed it.** The
   `element.updated` hook reaps every watcher whose root has left the document,
   because a teardown that waits for the next mount never runs on a page with one

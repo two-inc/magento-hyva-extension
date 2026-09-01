@@ -2503,6 +2503,9 @@ $quoteDetails = json_encode(
                     if (!self.companyName) self.clearCapturedNameFields();
                     self.writeCapturedSelection();
                     if (!pairChanged) return;
+                    if (!self.manualMode) {
+                        self.announceCapturedCompanyToModel(self.companyName);
+                    }
                     surfaceCommitted.call(
                         self,
                         self.companyName,
@@ -2547,6 +2550,41 @@ $quoteDetails = json_encode(
              * and a host that posts on `change` re-enters this sweep. Skipped in
              * manual entry, where the committed name lags what is being typed.
              */
+            /**
+             * Tell this panel's Magewire component what was captured.
+             *
+             * THE bug behind the vanishing company. The popover announces a
+             * pick with `change` and fires no `input`, and this input is
+             * `wire:model.defer` — so the server-side model never learned the
+             * pick, and the next address-form roundtrip re-hydrated the field
+             * from that model and wrote null over the buyer's company. The
+             * autofilled address fields survive the same roundtrip precisely
+             * because the engine's own write does fire `input` on them.
+             *
+             * Said through the framework rather than by dispatching that
+             * missing `input`: the popover binds `input` on this field and
+             * reads whatever arrives as the buyer typing, so a synthetic one
+             * reopens the popover on the name it just captured.
+             *
+             * @param {string} name the captured company name
+             */
+            announceCapturedCompanyToModel(name) {
+                const field = this.companyNameField();
+                if (!field || !window.Magewire || typeof window.Magewire.find !== 'function') return;
+                // Read off the field rather than named here: which model this
+                // input binds to is the checkout's decision, not ours, and it
+                // differs between the delivery and invoice forms.
+                const model = field.getAttribute('wire:model.defer')
+                    || field.getAttribute('wire:model');
+                const host = field.closest('[wire\\:id]');
+                if (!model || !host) return;
+                const component = window.Magewire.find(host.getAttribute('wire:id'));
+                if (!component || typeof component.set !== 'function') return;
+                // Deferred: staged for the next roundtrip, so this costs no
+                // request of its own and cannot race the one in flight.
+                component.set(model, name, true);
+            },
+
             repaintCapturedNameFields() {
                 if (this.manualMode) return;
                 const identity = window.twoGatewayCompanyIdentity(this.captureRole());
@@ -2561,6 +2599,7 @@ $quoteDetails = json_encode(
                 }
                 const field = this.companyNameField();
                 if (field && field.value !== name) field.value = name;
+                this.announceCapturedCompanyToModel(name);
                 if (!this.isTileSurface()) return;
                 // The tile's pair is what submits, so a morph blanking it loses
                 // the company from the order and not merely from the screen.

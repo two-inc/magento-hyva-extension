@@ -1599,12 +1599,32 @@ function installHyvaEnvironment() {
    */
   const magewireHooks = {};
   const magewireEvents = {};
+  /*
+   * Components Magewire hands out by `wire:id`, and every `set()` made on them.
+   * Recording, not inert: what the checkout tells the server-side model about a
+   * captured company is the thing a test has to be able to assert, and a
+   * component double that swallowed the call would make that assertion vacuous.
+   */
+  const magewireComponents = {};
   window.Magewire = {
     hook: function (name, handler) {
       (magewireHooks[name] = magewireHooks[name] || []).push(handler);
     },
     on: function (name, handler) {
       (magewireEvents[name] = magewireEvents[name] || []).push(handler);
+    },
+    find: function (id) {
+      if (!id) return null;
+      if (!magewireComponents[id]) {
+        magewireComponents[id] = {
+          id: id,
+          sets: [],
+          set: function (name, value, deferred) {
+            this.sets.push({ name: name, value: value, deferred: deferred });
+          },
+        };
+      }
+      return magewireComponents[id];
     },
   };
 
@@ -1619,6 +1639,16 @@ function installHyvaEnvironment() {
     loaderEvents: loaderEvents,
     /** Panels the code under test built, newest last. */
     companyPanels: companyPanel.instances,
+    /**
+     * Every `set()` the code under test made on the Magewire component with
+     * this `wire:id`, oldest first.
+     *
+     * @param {string} id
+     * @returns {Array<{name: string, value: *, deferred: *}>}
+     */
+    magewireSets: function (id) {
+      return magewireComponents[id] ? magewireComponents[id].sets : [];
+    },
     /**
      * The identity a single-surface test means. The first one built, or one
      * reserved for the first surface that asks — never a second role's.

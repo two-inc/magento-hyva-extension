@@ -38,7 +38,11 @@ describe("a captured company survives the morph that blanks its field", () => {
    */
   function addressPanel(role) {
     return [
-      '<form id="' + role + '-form">',
+      '<form id="' +
+        role +
+        '-form" wire:id="' +
+        role +
+        '-details.address-form">',
       '  <select id="' + role + '-country_id" name="' + role + '[country_id]">',
       '    <option value="GB" selected>x</option>',
       "  </select>",
@@ -49,7 +53,8 @@ describe("a captured company survives the morph that blanks its field", () => {
         ' data-two-capture-host="address" data-two-capture-role="">',
       '    <input type="text" id="' +
         role +
-        '-company-field" data-two-capture-field value="" />',
+        '-company-field" data-two-capture-field value=""' +
+        ' wire:model.defer="address.company" />',
       "  </div>",
       "  </div></div></div>",
       "</form>",
@@ -178,6 +183,30 @@ describe("a captured company survives the morph that blanks its field", () => {
 
       expect(nameField(other).value).toBe("");
       expect(panels[other].companyName).toBe("");
+    });
+
+    test("tells its own Magewire component what was captured", () => {
+      // The popover announces a pick with `change` and no `input`, which a
+      // `wire:model.defer` binding does not read — so without this the
+      // server-side model never learns the pick and the next roundtrip
+      // re-hydrates the field from it, writing null over the buyer's company.
+      const sets = env.magewireSets(role + "-details.address-form");
+
+      expect(sets).toEqual(
+        expect.arrayContaining([
+          {
+            name: "address.company",
+            value: COMPANIES[role].companyName,
+            deferred: true,
+          },
+        ]),
+      );
+    });
+
+    test("tells the other panel's component nothing", () => {
+      const other = role === "shipping" ? "billing" : "shipping";
+
+      expect(env.magewireSets(other + "-details.address-form")).toEqual([]);
     });
 
     test("does not reinstate a company the buyer has discarded", () => {
