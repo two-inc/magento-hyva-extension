@@ -373,9 +373,14 @@ selector would give both mounts the first field.
 address panel's is `twoGatewayCaptureRoleForForm()` over the panel that owns its
 country field: `billing` where that panel carries a `billing-`prefixed field id,
 Hyvä's own `<role>-<field>` convention, else `shipping`. The payment TILE is not
-a panel — it is the invoice-role submit surface — so its role is `shipping` while
-`#billing-as-shipping` is ticked and `billing` once it is not. The address-book
-modal is shipping-role.
+a panel — it is the invoice-role submit surface — and its role is `billing`
+unconditionally: it reads and writes the billing record either way, so a role
+following `#billing-as-shipping` would seed one role's identity from the other's
+record. Its COUNTRY context does follow the checkbox
+(`twoGatewayInvoiceRoleCountryField()`), because with one address on the page the
+shipping form's country field is the invoice address's country field; identity and
+country are resolved separately and only the latter moves. The address-book modal
+is shipping-role.
 
 **A Magewire re-render does NOT re-run `init()`.** It MORPHS the server markup
 over the live DOM: the popover's `span.two-company-field-wrap` is built at

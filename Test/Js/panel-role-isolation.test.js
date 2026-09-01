@@ -379,6 +379,89 @@ describe("address panels are isolated by role", () => {
   });
 });
 
+describe("the payment tile's role does not follow #billing-as-shipping", () => {
+  const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+
+  let env;
+  let fetchStub;
+
+  /**
+   * The tile, with both role country fields present so its country context
+   * resolves in either checkbox state.
+   *
+   * @param {boolean} ticked whether `#billing-as-shipping` is on
+   * @returns {Object} the mounted tile surface
+   */
+  function mountTile(ticked) {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input type="checkbox" id="billing-as-shipping"' +
+        (ticked ? " checked" : "") +
+        " />",
+      '<input id="shipping-country_id" value="NO" />',
+      '<input id="billing-country_id" value="GB" />',
+      '<form id="tile-form">',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" data-two-capture-field />',
+      "  </div>",
+      '  <input id="company_id" />',
+      "</form>",
+    ].join("\n");
+
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    H.loadSharedHelpers();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+
+    const component = H.mountComponent(env.alpineComponents[TILE_COMPONENT], {
+      el: document.getElementById("company_name"),
+      root: document.getElementById("tile-form"),
+    });
+    // The harness deliberately withholds `$watch`; the tile installs its own.
+    component.$watch = function () {};
+    component.initialize({ quote_id: "1", billing_country_id: "GB" });
+    return component;
+  }
+
+  afterEach(() => {
+    fetchStub.restore();
+    env.restore();
+    jest.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  test.each([
+    [true, "ticked"],
+    [false, "unticked"],
+  ])("is billing with the checkbox %s (%s)", (ticked) => {
+    expect(mountTile(ticked).captureRole()).toBe("billing");
+  });
+
+  test.each([
+    [true, "ticked"],
+    [false, "unticked"],
+  ])(
+    "keeps the tile off a shipping-role write with the checkbox %s (%s)",
+    (ticked) => {
+      const tile = mountTile(ticked);
+
+      env
+        .identityFor("shipping")
+        .write(
+          Object.assign({ companyIdSource: "registry" }, SHIPPING_COMPANY),
+          {
+            authoritative: true,
+          },
+        );
+
+      expect(tile.companyName).toBe("");
+      expect(tile.companyId).toBe("");
+    },
+  );
+});
+
 describe("the shipping mirrors do not shadow Hyvä's own field ids", () => {
   /*
    * Hyvä's delivery form names its own company field `shipping-company` under

@@ -2893,11 +2893,12 @@ $quoteDetails = json_encode(
              * the shipping country whatever the buyer's billing address said.
              */
             resolveCountryContext: function () { return window.twoGatewayInvoiceRoleCountryField(); },
-            // The tile is no panel, and with "billing same as shipping" ticked
-            // there is no billing panel for it to belong to.
-            resolveCaptureRole: function () {
-                return window.twoGatewayIsBillingAsShipping() ? 'shipping' : 'billing';
-            },
+            // Invariant, unlike the country context above: the tile submits the
+            // invoice-role company and reads the billing record either way, so a
+            // role following `#billing-as-shipping` would seed one role's
+            // identity from the other's record and move the tile's company
+            // between two identities when the buyer ticks the box.
+            resolveCaptureRole: function () { return 'billing'; },
             readSelection: function () { return window.twoGatewayReadBillingCompany(); },
             writeSelection: function (patch) { return window.twoGatewayWriteBillingCompany(patch); },
             /*
