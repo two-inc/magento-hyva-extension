@@ -12,6 +12,7 @@ require __DIR__ . '/Stubs/MagentoConfigFormField.php';
 require __DIR__ . '/Stubs/MagentoTranslate.php';
 require __DIR__ . '/Stubs/MagentoBlockArgumentInterface.php';
 require __DIR__ . '/Stubs/TermStillAvailablePlugin.php';
+require __DIR__ . '/Stubs/SurchargeDisplay.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';
