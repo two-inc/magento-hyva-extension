@@ -15,7 +15,7 @@ use Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod;
  * summary's two rows there) — see resolveDisplayAmount()'s docblock.
  *
  * Regression coverage for the chip silently staying net in "incl" mode
- * (magento-hyva-extension#129 follow-up): nothing previously exercised
+ * (magento-hyva-extension PR #129 follow-up): nothing previously exercised
  * GatewayMethod's mode resolution at all.
  */
 class GatewayMethodChipDisplayTest extends TestCase
