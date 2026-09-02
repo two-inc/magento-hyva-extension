@@ -18,7 +18,8 @@ use Magewirephp\Magewire\Component;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
-use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\SurchargeDisplay;
+use Two\Gateway\Service\Order\TermSurchargePreview;
 
 /**
  * GatewayMethod - Hyvä Checkout
@@ -39,7 +40,13 @@ class GatewayMethod extends Component
 
     public int $selectedTerm = 0;
 
-    /** @var array<int, float> days => net surcharge */
+    /**
+     * days => displayed surcharge amount (net or gross, per tax/cart_display/price
+     * — same excl/incl resolution as the order-summary segment; "both" stays net,
+     * matching magento-plugin's own chip-vs-summary split for that mode)
+     *
+     * @var array<int, float>
+     */
     public array $termSurcharges = [];
 
     public string $surchargeDescription = '';
@@ -83,7 +90,7 @@ class GatewayMethod extends Component
         private CartRepositoryInterface $quoteRepository,
         private CartTotalRepositoryInterface $cartTotalRepository,
         private ConfigRepository $configRepository,
-        private SurchargeCalculator $surchargeCalculator,
+        private TermSurchargePreview $termSurchargePreview,
         private LogRepository $logRepository,
         private LocaleResolver $localeResolver,
         private string $methodCode = 'two_payment',
@@ -238,6 +245,12 @@ class GatewayMethod extends Component
      * persisted grand_total minus the surcharge segment we just wrote.
      * That excludes our own contribution so chip-to-chip switches don't
      * compound.
+     *
+     * Delegates net/gross/tax-rate resolution to TermSurchargePreview — the
+     * same service the Surcharges/TermSelection webapi endpoints use for
+     * Luma's chip — so a surcharge tax class configured via
+     * SurchargeTaxCalculator is honoured here too, not just the flat legacy
+     * percentage.
      */
     private function computeAllTermSurcharges(\Magento\Quote\Model\Quote $quote, array $terms): array
     {
@@ -251,28 +264,42 @@ class GatewayMethod extends Component
         $currency = $quote->getQuoteCurrencyCode() ?: $quote->getStore()->getBaseCurrencyCode();
         $country = $this->resolveCountry($quote);
 
+        $mode = $this->termSurchargePreview->taxDisplay($quote);
+        $preview = $this->termSurchargePreview->build(
+            $quote,
+            $basis,
+            $terms,
+            $country,
+            $currency,
+            $storeId,
+            'Hyva chip'
+        );
+
         $surcharges = [];
-        foreach ($terms as $days) {
-            try {
-                $result = $this->surchargeCalculator->calculate($basis, $days, $country, $currency, $storeId);
-                $surcharges[$days] = (float) $result['amount'];
-            } catch (\Exception $e) {
-                $this->logRepository->addErrorLog(
-                    sprintf('Hyva chip: term %d calc failed', $days),
-                    $e->getMessage()
-                );
-                $surcharges[$days] = 0.0;
-            }
+        foreach ($preview as $entry) {
+            $surcharges[$entry['days']] = $this->resolveDisplayAmount($mode, $entry['net'], $entry['gross']);
         }
 
         return $surcharges;
     }
 
     /**
+     * Same excl/incl split as the order-summary segment
+     * (Two\Gateway\Service\Order\SurchargeDisplay::pick()), except "both":
+     * the summary shows both rows there, but the chip shows one value and
+     * Doug's call is that value stays net — a deliberate divergence, not
+     * an oversight.
+     */
+    private function resolveDisplayAmount(string $mode, float $net, float $gross): float
+    {
+        return $mode === SurchargeDisplay::INCL ? $gross : $net;
+    }
+
+    /**
      * Resolve buyer country in precedence order: billing, shipping, store
      * default (`general/country/default`). Returns empty string if none
-     * are set — caller's try/catch around SurchargeCalculator zeros the
-     * preview fee for that term rather than guessing a region.
+     * are set — TermSurchargePreview::build() zeros the preview fee for
+     * that term rather than guessing a region.
      */
     private function resolveCountry(\Magento\Quote\Model\Quote $quote): string
     {

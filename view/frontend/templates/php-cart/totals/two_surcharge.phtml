@@ -11,11 +11,15 @@ declare(strict_types=1);
  * Rendered inside the x-for segment loop in Hyvä's
  * Magento_Checkout::php-cart/totals.phtml. Each totals child template
  * gates itself on the loop's `segment.code`, so this row only appears
- * when the `two_surcharge` segment is present. The base module's surcharge
- * total collector only emits that segment when the Two payment method and
- * a term are active on the quote, so its presence is itself the signal
- * that the surcharge applies — the cart page has no payment-method
- * selector to gate on.
+ * when a `two_surcharge`/`two_surcharge_incl` segment is present. The base
+ * module's surcharge total collector only emits those codes when the Two
+ * payment method and a term are active on the quote, so their presence is
+ * itself the signal that the surcharge applies — the cart page has no
+ * payment-method selector to gate on. In "both" display mode the collector
+ * emits both codes (excl-tax and incl-tax rows); otherwise only
+ * `two_surcharge`, carrying whichever value the merchant's setting picked.
+ * `segment.title` already carries the "(Excl. Tax)"/"(Incl. Tax)" suffix in
+ * both mode, so this template composes no label of its own.
  *
  * Mirrors the sibling core totals (discount.phtml / shipping.phtml):
  * `segment.title` carries the surcharge description (or "Payment terms
@@ -29,7 +33,7 @@ declare(strict_types=1);
  * — identical output, no HTML-injection surface.
  */
 ?>
-<template x-if="segment.code === 'two_surcharge'">
+<template x-if="segment.code === 'two_surcharge' || segment.code === 'two_surcharge_incl'">
     <div class="flex pb-2 my-2 border-b text-md lg:text-sm md:grid md:grid-cols-2 md:w-full border-container two-surcharge-segment">
         <div class="w-7/12 text-left md:w-auto"
              x-text="segment.title"
