@@ -90,7 +90,7 @@ const PHP_VALUE_RULES = [
   // sole-trader-flow.test.js overrides it to cover the header(s) reaching
   // SoleTrader.fetchBuyer().
   [
-    /^json_encode\(\s*\$customHeaders[\s\S]*?\)$/,
+    /^json_encode\(\s*\$customHeaders[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     "{}",
   ],
   // proxy-capability-fallback.test.js overrides this to `false`.

@@ -268,7 +268,7 @@ describe("the host adapter the shared flow is given", () => {
       tile = mountTile({
         extraRules: [
           [
-            /^json_encode\(\s*\$customHeaders[\s\S]*?\)$/,
+            /^json_encode\(\s*\$customHeaders[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
             configuredJson,
           ],
         ],
