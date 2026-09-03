@@ -86,6 +86,13 @@ const PHP_VALUE_RULES = [
   [/^\$isAddressAutopopulationEnabled$/, "false"],
   // Production's default; sole-trader-flow.test.js overrides it to cover the header.
   [/^\$firewallToken$/, ""],
+  // Generalized replacement for firewallToken above. Same '{}' default;
+  // sole-trader-flow.test.js overrides it to cover the header(s) reaching
+  // SoleTrader.fetchBuyer().
+  [
+    /^json_encode\(\s*\$customHeaders[\s\S]*?\)$/,
+    "{}",
+  ],
   // proxy-capability-fallback.test.js overrides this to `false`.
   [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
   [/^\$clientName$/, "magento-hyva"],

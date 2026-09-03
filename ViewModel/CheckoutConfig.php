@@ -233,6 +233,22 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * The generalized replacement for getFirewallToken() above: arbitrary
+     * merchant-configured headers for `/autofill/v1/buyer/current`, the one
+     * browser-side call that cannot be proxied (see AGENTS.md). Same
+     * degradation guard as getFirewallToken() — a base predating the method
+     * answers no headers rather than fatal.
+     */
+    public function getCustomHeaders(): array
+    {
+        if (!method_exists($this->configRepository, "getBrowserCustomHeaders")) {
+            return [];
+        }
+
+        return $this->configRepository->getBrowserCustomHeaders();
+    }
+
+    /**
      * Whether the base exposes the proxy routes; false falls back to the direct call.
      * Runtime check, not composer's ^2.3.0 floor — a version is not proof the code
      * shipped. True proves autoload, not route registration (a stale route cache 404s

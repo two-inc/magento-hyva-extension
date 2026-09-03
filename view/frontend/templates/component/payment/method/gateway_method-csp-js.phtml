@@ -31,6 +31,7 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $firewallToken = $configModel->getFirewallToken();
+$customHeaders = $configModel->getCustomHeaders();
 $isProxyAvailable = $configModel->getIsProxyAvailable();
 $companySearchLimit = $configModel->getCompanySearchLimit();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -1961,7 +1962,10 @@ $quoteDetails = json_encode(
                 // proxied — it is authenticated by the buyer's own cookie on the
                 // API's domain — so it carries this instead, and only where a
                 // merchant enabled it for the browser.
-                firewallToken: settings.firewallToken
+                firewallToken: settings.firewallToken,
+                // Generalized replacement for firewallToken above — see
+                // AGENTS.md's autofill exception. Threaded the same way.
+                customHeaders: settings.customHeaders
             },
             Panel: Panel,
             SoleTraderFlow: SoleTraderFlow,
@@ -2395,7 +2399,8 @@ $quoteDetails = json_encode(
                     brandVersion: opts.brandVersion,
                     soleTraderErrorMessage: opts.soleTraderErrorMessage,
                     manualEntryOffered: !!opts.manualEntryOffered,
-                    firewallToken: this.firewallToken
+                    firewallToken: this.firewallToken,
+                    customHeaders: this.customHeaders
                 });
                 if (!capture) return;
                 capture.pointAtSurface(this);
@@ -3089,6 +3094,15 @@ $quoteDetails = json_encode(
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
             firewallToken: '<?= $escaper->escapeJs($firewallToken) ?>',
+            // Generalized replacement for firewallToken above (base-plugin
+            // ConfigRepository::getBrowserCustomHeaders()) — arbitrary
+            // merchant-configured headers, only ever read by
+            // SoleTrader.fetchBuyer() in the shared sole-trader.js.
+            customHeaders: <?= /* @noEscape */ json_encode(
+                $customHeaders,
+                JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+            ) ?>,
             // The one threshold for this repo, emitted from PHP
             // (CheckoutConfig::COMPANY_SEARCH_MIN_CHARS) rather than written as
             // a literal in each guard (TWO-25288). Cast to an int, NOT quoted

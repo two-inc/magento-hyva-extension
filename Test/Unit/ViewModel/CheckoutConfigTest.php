@@ -410,6 +410,69 @@ class CheckoutConfigTest extends TestCase
         ];
     }
 
+    /**
+     * @dataProvider customHeadersCases
+     */
+    public function testCustomHeadersAreThreadedFromTheConfigRepository(
+        array $configuredHeaders,
+        array $expected,
+        string $case
+    ): void {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class ($configuredHeaders) {
+            /** @var array */
+            private $headers;
+
+            public function __construct(array $headers)
+            {
+                $this->headers = $headers;
+            }
+
+            public function getBrowserCustomHeaders(): array
+            {
+                return $this->headers;
+            }
+        };
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+
+        $this->assertSame($expected, $viewModel->getCustomHeaders(), $case);
+    }
+
+    /**
+     * @return array<int, array{0:array, 1:array, 2:string}>
+     */
+    public static function customHeadersCases(): array
+    {
+        return [
+            [[], [], 'nothing configured: empty array'],
+            [['X-WAF-TOKEN' => 'tok-abc'], ['X-WAF-TOKEN' => 'tok-abc'], 'configured header: relayed'],
+        ];
+    }
+
+    /**
+     * A base predating getBrowserCustomHeaders() must answer no headers, not
+     * fatal — same degradation contract as getFirewallToken().
+     */
+    public function testCustomHeadersDegradesOnABaseWithoutTheConfigMethod(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class {
+            public function getApiKey(): string
+            {
+                return 'key';
+            }
+        };
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+
+        $this->assertSame([], $viewModel->getCustomHeaders());
+    }
+
     /** No brand opinion means the platform default copy, not a fatal. */
     public function testNoticeSurvivesABrandRegistryWithoutTheDeclarationMethods(): void
     {
