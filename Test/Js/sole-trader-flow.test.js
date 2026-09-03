@@ -250,6 +250,33 @@ describe("the host adapter the shared flow is given", () => {
       expect(tile.capture.config().firewallToken).toBe(expected);
     },
   );
+
+  test.each([
+    [
+      '{"X-WAF-TOKEN": "waf-abc123"}',
+      { "X-WAF-TOKEN": "waf-abc123" },
+      "configured headers are relayed",
+    ],
+    ["{}", {}, "the default carries no headers at all"],
+  ])(
+    "custom headers %p reach the flow's own config (%s)",
+    (configuredJson, expected) => {
+      // Generalized replacement for firewallToken above — same untestable
+      // buyer-cookie fetch behind it, so this only pins that the value
+      // reaches the flow's config, same as firewallToken.
+      tile.restore();
+      tile = mountTile({
+        extraRules: [
+          [
+            /^json_encode\(\s*\$customHeaders[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
+            configuredJson,
+          ],
+        ],
+      });
+
+      expect(tile.capture.config().customHeaders).toEqual(expected);
+    },
+  );
 });
 
 describe("sole-trader availability", () => {

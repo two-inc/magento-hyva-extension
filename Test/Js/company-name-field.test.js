@@ -136,6 +136,13 @@ describe("company-name field picker", () => {
     return env.captureControllers[env.captureControllers.length - 1];
   }
 
+  test("custom headers reach the address-step surface's own capture config", () => {
+    // Never wired before now — see AGENTS.md's autofill exception. Default
+    // harness value is '{}'; the header itself is only ever read by the
+    // shared sole-trader.js this repo does not test.
+    expect(capture().config().customHeaders).toEqual({});
+  });
+
   test("the picker registers itself under the branded Alpine name", () => {
     // The name carries the brand prefix (`getAlpineFnPrefix()`), which is
     // how an overlay ships its own component alongside the vanilla one.

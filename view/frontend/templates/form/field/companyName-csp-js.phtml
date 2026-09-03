@@ -42,6 +42,9 @@ $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $soleTraderErrorMessage = (string) $configModel->getSoleTraderErrorMessage();
+// Never wired into this surface before now — see AGENTS.md's autofill
+// exception for why the address step needs it too.
+$customHeaders = $configModel->getCustomHeaders();
 $isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnabled()
     ? "true"
     : "false";
@@ -190,6 +193,17 @@ function <?= $gwBase ?>CompanySearchField() {
         // Component state, not just a mixin option: the phone-autofill gate
         // reads `this.isAddressAutopopulationEnabled`.
         isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
+        // Component state, not a mixin option: mountCompanyPopover() (the
+        // shared engine) reads `this.customHeaders`, same as `this.firewallToken`
+        // does on the payment tile's own component. The one browser-side call
+        // needing headers is the sole-trader buyer read
+        // (SoleTrader.fetchBuyer() in the shared sole-trader.js) — see
+        // gateway_method-csp-js.phtml for why it can't be proxied.
+        customHeaders: <?= /* @noEscape */ json_encode(
+            $customHeaders,
+            JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+            | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+        ) ?: '{}' ?>,
 
         init() {
             /*
