@@ -2052,6 +2052,9 @@ $quoteDetails = json_encode(
                 return restBaseUrl + '/rest/V1/two/supported-company-types/'
                     + encodeURIComponent(country);
             },
+            supportedCountriesUrl() {
+                return restBaseUrl + '/rest/V1/two/supported-countries';
+            },
             applyCompanyAddress(selectedItem) {
                 twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
             },
