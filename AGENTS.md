@@ -1,5 +1,19 @@
 # Magento Hyva Extension
 
+## Price summary: unclaimed totals fallback
+
+Hyva Checkout only renders a total segment that has its own explicit block
+under `price-summary.total-segments` — there is no generic fallback the way
+Luma's `totals-default` component covers any collected total automatically
+(confirmed against docs.hyva.io's own example for adding a custom total,
+which is exactly that per-code registration). A third-party fee extension
+with no Hyva-compat module (or a broken one — e.g. a missing
+`amasty/module-extrafee-hyva-checkout` install) therefore shows nothing here
+while Luma renders it correctly from the same quote.
+`Block/Checkout/PriceSummary/OtherTotals.php`, registered last in
+`hyva_checkout_components.xml`, is the fallback: it renders every quote total
+not already covered by a core code or a sibling block's alias.
+
 ## Project Overview
 
 Hyvä theme extension for Two's Magento plugin, providing modern frontend components using Alpine.js and Tailwind CSS.
