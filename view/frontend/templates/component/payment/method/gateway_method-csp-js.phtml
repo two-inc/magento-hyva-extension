@@ -30,7 +30,6 @@ $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
-$firewallToken = $configModel->getFirewallToken();
 $customHeaders = $configModel->getCustomHeaders();
 $isProxyAvailable = $configModel->getIsProxyAvailable();
 $companySearchLimit = $configModel->getCompanySearchLimit();
@@ -1960,11 +1959,8 @@ $quoteDetails = json_encode(
                 isCompanySearchEnabled: !!settings.manualEntryOffered,
                 // The sole-trader buyer read is the one call that cannot be
                 // proxied — it is authenticated by the buyer's own cookie on the
-                // API's domain — so it carries this instead, and only where a
-                // merchant enabled it for the browser.
-                firewallToken: settings.firewallToken,
-                // Generalized replacement for firewallToken above — see
-                // AGENTS.md's autofill exception. Threaded the same way.
+                // API's domain — so it carries these, merchant-configured, headers
+                // (see AGENTS.md's autofill exception).
                 customHeaders: settings.customHeaders
             },
             Panel: Panel,
@@ -2399,7 +2395,6 @@ $quoteDetails = json_encode(
                     brandVersion: opts.brandVersion,
                     soleTraderErrorMessage: opts.soleTraderErrorMessage,
                     manualEntryOffered: !!opts.manualEntryOffered,
-                    firewallToken: this.firewallToken,
                     customHeaders: this.customHeaders
                 });
                 if (!capture) return;
@@ -3093,10 +3088,8 @@ $quoteDetails = json_encode(
             isPONumberFieldEnabled: '<?= $configModel->getIsPONumberFieldEnabled() ?>',
             isPaymentTermsEnabled: '<?= $configModel->getIsPaymentTermsEnabled() ?>',
             isInvoiceEmailsEnabled: '<?= $configModel->getIsInvoiceEmailsEnabled() ?>',
-            firewallToken: '<?= $escaper->escapeJs($firewallToken) ?>',
-            // Generalized replacement for firewallToken above (base-plugin
-            // ConfigRepository::getBrowserCustomHeaders()) — arbitrary
-            // merchant-configured headers, only ever read by
+            // Arbitrary merchant-configured headers (base-plugin
+            // ConfigRepository::getBrowserCustomHeaders()), only ever read by
             // SoleTrader.fetchBuyer() in the shared sole-trader.js.
             customHeaders: <?= /* @noEscape */ json_encode(
                 $customHeaders,

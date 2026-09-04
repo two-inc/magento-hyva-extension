@@ -194,9 +194,9 @@ function <?= $gwBase ?>CompanySearchField() {
         // reads `this.isAddressAutopopulationEnabled`.
         isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
         // Component state, not a mixin option: mountCompanyPopover() (the
-        // shared engine) reads `this.customHeaders`, same as `this.firewallToken`
-        // does on the payment tile's own component. The one browser-side call
-        // needing headers is the sole-trader buyer read
+        // shared engine) reads `this.customHeaders`, same as it does on the
+        // payment tile's own component. The one browser-side call needing
+        // headers is the sole-trader buyer read
         // (SoleTrader.fetchBuyer() in the shared sole-trader.js) — see
         // gateway_method-csp-js.phtml for why it can't be proxied.
         customHeaders: <?= /* @noEscape */ json_encode(

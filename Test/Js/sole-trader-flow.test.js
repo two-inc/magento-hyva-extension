@@ -234,24 +234,6 @@ describe("the host adapter the shared flow is given", () => {
   });
 
   test.each([
-    ["waf-abc123", "waf-abc123", "a configured token is relayed"],
-    ["", "", "the default carries no token at all"],
-  ])(
-    "firewall token %p reaches the flow's own config (%s)",
-    (configured, expected) => {
-      // The buyer-cookie read behind this config is the shared flow's own
-      // fetch — untestable here (see file header) — so this only pins that
-      // the value reaches it, the same way checkoutApiUrl and brand do.
-      tile.restore();
-      tile = mountTile({
-        extraRules: [[/^\$firewallToken$/, configured]],
-      });
-
-      expect(tile.capture.config().firewallToken).toBe(expected);
-    },
-  );
-
-  test.each([
     [
       '{"X-WAF-TOKEN": "waf-abc123"}',
       { "X-WAF-TOKEN": "waf-abc123" },
@@ -261,9 +243,9 @@ describe("the host adapter the shared flow is given", () => {
   ])(
     "custom headers %p reach the flow's own config (%s)",
     (configuredJson, expected) => {
-      // Generalized replacement for firewallToken above — same untestable
-      // buyer-cookie fetch behind it, so this only pins that the value
-      // reaches the flow's config, same as firewallToken.
+      // The buyer-cookie read behind this config is the shared flow's own
+      // fetch — untestable here (see file header) — so this only pins that
+      // the value reaches it, the same way checkoutApiUrl and brand do.
       tile.restore();
       tile = mountTile({
         extraRules: [

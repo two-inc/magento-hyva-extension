@@ -292,59 +292,6 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * @dataProvider firewallTokenCases
-     */
-    public function testFirewallTokenIsGatedOnTheBrowserToggle(
-        bool $sentFromBrowser,
-        string $configuredToken,
-        string $expected,
-        string $case
-    ): void {
-        $reflection = new ReflectionClass(CheckoutConfig::class);
-        $viewModel = $reflection->newInstanceWithoutConstructor();
-
-        $configRepository = new class ($sentFromBrowser, $configuredToken) {
-            /** @var bool */
-            private $sentFromBrowser;
-
-            /** @var string */
-            private $token;
-
-            public function __construct(bool $sentFromBrowser, string $token)
-            {
-                $this->sentFromBrowser = $sentFromBrowser;
-                $this->token = $token;
-            }
-
-            public function isFirewallTokenSentFromBrowser(): bool
-            {
-                return $this->sentFromBrowser;
-            }
-
-            public function getFirewallToken(): string
-            {
-                return $this->token;
-            }
-        };
-
-        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
-
-        $this->assertSame($expected, $viewModel->getFirewallToken(), $case);
-    }
-
-    /**
-     * @return array<int, array{0:bool, 1:string, 2:string, 3:string}>
-     */
-    public static function firewallTokenCases(): array
-    {
-        return [
-            [false, 'tok-abc', '', 'toggle off, token configured: absent'],
-            [true, 'tok-abc', 'tok-abc', 'toggle on, token configured: present'],
-            [true, '', '', 'toggle on, nothing configured: absent'],
-        ];
-    }
-
-    /**
      * The interface is declared mid-test because both states have to be observed;
      * declaring it is irreversible within a process, hence the separate one.
      *
@@ -363,51 +310,6 @@ class CheckoutConfigTest extends TestCase
 
         eval('namespace Two\Gateway\Api\Webapi; interface CompanyLookupInterface {}');
         $this->assertTrue($viewModel->getIsProxyAvailable(), 'interface present');
-    }
-
-    /**
-     * The getter guards on the toggle method alone. A base carrying one config
-     * method but not the other is unreachable — one base commit declares both.
-     *
-     * @dataProvider firewallTokenAbsentMethodCases
-     */
-    public function testFirewallTokenDegradesOnABaseWithoutTheConfigMethods(
-        object $configRepository,
-        string $case
-    ): void {
-        $reflection = new ReflectionClass(CheckoutConfig::class);
-        $viewModel = $reflection->newInstanceWithoutConstructor();
-
-        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
-
-        $this->assertSame('', $viewModel->getFirewallToken(), $case);
-    }
-
-    /**
-     * @return array<int, array{0:object, 1:string}>
-     */
-    public static function firewallTokenAbsentMethodCases(): array
-    {
-        return [
-            [
-                new class {
-                    public function getApiKey(): string
-                    {
-                        return 'key';
-                    }
-                },
-                'neither method: the guard is what stops the fatal',
-            ],
-            [
-                new class {
-                    public function isFirewallTokenSentFromBrowser(): bool
-                    {
-                        return false;
-                    }
-                },
-                'toggle off and no token getter: returns before reaching it',
-            ],
-        ];
     }
 
     /**
@@ -453,8 +355,7 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * A base predating getBrowserCustomHeaders() must answer no headers, not
-     * fatal — same degradation contract as getFirewallToken().
+     * A base predating getBrowserCustomHeaders() must answer no headers, not fatal.
      */
     public function testCustomHeadersDegradesOnABaseWithoutTheConfigMethod(): void
     {
