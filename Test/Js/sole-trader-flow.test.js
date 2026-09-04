@@ -200,6 +200,12 @@ describe("the host adapter the shared flow is given", () => {
       REST_BASE + "/rest/V1/two/supported-company-types/no",
       "the registry relay",
     ],
+    [
+      "supportedCountriesUrl",
+      [],
+      REST_BASE + "/rest/V1/two/supported-countries",
+      "the registry's supported-countries relay",
+    ],
   ])("%s builds the store's own REST URL (%s)", (member, args, expected) => {
     // The plugin's server-side relay, never the API direct: the merchant API
     // key must not reach the browser.
