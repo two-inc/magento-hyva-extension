@@ -66,6 +66,12 @@ class UnclaimedTotalSegmentsTest extends TestCase
                 [],
                 'nothing to reconcile if the fee resolved to zero on this quote',
             ],
+            'a negative-value total is still shown' => [
+                array_merge($core, ['amasty_extrafee' => new FakeTotal(-5.99, 'Amasty Extra Fee')]),
+                [],
+                [['code' => 'amasty_extrafee', 'title' => 'Amasty Extra Fee', 'value' => -5.99]],
+                'a credit-like total is a real line Luma would still render, unlike an exact zero',
+            ],
         ];
     }
 

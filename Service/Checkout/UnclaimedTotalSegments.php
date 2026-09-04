@@ -34,8 +34,11 @@ class UnclaimedTotalSegments
                 continue;
             }
 
+            // Only a true zero is nothing to reconcile — a negative total
+            // (e.g. a fee extension surfacing a credit as a negative
+            // amount) is a real line Luma would still render.
             $value = (float) $total->getValue();
-            if ($value <= 0) {
+            if ($value === 0.0) {
                 continue;
             }
 
