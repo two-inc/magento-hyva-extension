@@ -218,26 +218,11 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * "" unless the merchant opted in, so its presence in tile config is defence
-     * in depth, not a leak. Guarded — the tile calls it ahead of every proxy branch.
-     */
-    public function getFirewallToken(): string
-    {
-        if (!method_exists($this->configRepository, "isFirewallTokenSentFromBrowser")) {
-            return "";
-        }
-
-        return $this->configRepository->isFirewallTokenSentFromBrowser()
-            ? $this->configRepository->getFirewallToken()
-            : "";
-    }
-
-    /**
-     * The generalized replacement for getFirewallToken() above: arbitrary
-     * merchant-configured headers for `/autofill/v1/buyer/current`, the one
-     * browser-side call that cannot be proxied (see AGENTS.md). Same
-     * degradation guard as getFirewallToken() — a base predating the method
-     * answers no headers rather than fatal.
+     * Arbitrary merchant-configured headers for `/autofill/v1/buyer/current`,
+     * the one browser-side call that cannot be proxied (see AGENTS.md). "" ...
+     * empty array unless the merchant opted in, so its presence in tile config
+     * is defence in depth, not a leak. A base predating the method answers no
+     * headers rather than fatal.
      */
     public function getCustomHeaders(): array
     {
