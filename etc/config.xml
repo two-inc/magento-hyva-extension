@@ -24,13 +24,16 @@
             accepted, so both can't sit between 39 and 40). In "both"
             display mode the collector emits both codes; otherwise only
             two_surcharge, so two_surcharge_incl's entry is inert but
-            harmless. Ignored by the Luma theme, which orders totals via
-            jsLayout sortOrder.
+            harmless. two_other_totals (any quote total with no dedicated
+            block, e.g. an unregistered fee extension) sorts at 90, after
+            tax and before grand_total. Ignored by the Luma theme, which
+            orders totals via jsLayout sortOrder.
         -->
         <sales>
             <totals_sort>
                 <two_surcharge>38</two_surcharge>
                 <two_surcharge_incl>39</two_surcharge_incl>
+                <two_other_totals>90</two_other_totals>
             </totals_sort>
         </sales>
     </default>

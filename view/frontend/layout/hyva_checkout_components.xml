@@ -60,6 +60,13 @@
             <block name="price-summary.total-segment.two_surcharge_incl"
                    as="two_surcharge_incl"
                    template="Two_GatewayHyva::checkout/price-summary/total-segments/two_surcharge.phtml"/>
+            <!-- Fallback for any quote total with no dedicated block here —
+                 e.g. a fee extension whose own Hyva-compat module isn't
+                 installed. -->
+            <block name="price-summary.total-segment.two_other_totals"
+                   as="two_other_totals"
+                   class="Two\GatewayHyva\Block\Checkout\PriceSummary\OtherTotals"
+                   template="Two_GatewayHyva::checkout/price-summary/total-segments/two_other_totals.phtml"/>
         </referenceBlock>
     </body>
 </page>

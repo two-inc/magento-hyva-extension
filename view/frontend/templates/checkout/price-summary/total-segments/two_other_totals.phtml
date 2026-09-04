@@ -1,0 +1,29 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
+use Hyva\Checkout\ViewModel\Checkout\Formatter as FormatterViewModel;
+use Hyva\Theme\Model\ViewModelRegistry;
+use Magento\Framework\Escaper;
+use Two\GatewayHyva\Block\Checkout\PriceSummary\OtherTotals;
+
+/** @var OtherTotals $block */
+/** @var ViewModelRegistry $viewModels */
+/** @var Escaper $escaper */
+
+$formatterViewModel = $viewModels->require(FormatterViewModel::class);
+$segments = $block->getUnclaimedSegments();
+?>
+<?php foreach ($segments as $segment): ?>
+    <div class="flex gap-4 justify-between two-other-total-segment">
+        <span class="label min-w-0 break-words wrap-break-word">
+            <?= $escaper->escapeHtml($segment['title']) ?>
+        </span>
+        <span class="value">
+            <?= /* @noEscape */ $formatterViewModel->currency($segment['value']) ?>
+        </span>
+    </div>
+<?php endforeach; ?>
