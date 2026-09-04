@@ -219,10 +219,10 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Arbitrary merchant-configured headers for `/autofill/v1/buyer/current`,
-     * the one browser-side call that cannot be proxied (see AGENTS.md). "" ...
-     * empty array unless the merchant opted in, so its presence in tile config
-     * is defence in depth, not a leak. A base predating the method answers no
-     * headers rather than fatal.
+     * the one browser-side call that cannot be proxied (see AGENTS.md). Empty
+     * unless the merchant opted in, so its presence in tile config is defence
+     * in depth, not a leak. A base predating the method answers no headers
+     * rather than fatal.
      */
     public function getCustomHeaders(): array
     {

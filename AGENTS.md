@@ -295,8 +295,9 @@ safe.
 
 The one exception is `/autofill/v1/buyer/current`, which is authenticated by
 the buyer's own cookie on the API's domain and so cannot be proxied at all; it
-carries the merchant's configured custom headers instead (`CheckoutConfig::getCustomHeaders()`,
-e.g. `X-WAF-TOKEN`), and only where a merchant enabled them for the browser. A rejection of that call is reported
+carries the merchant's configured custom headers instead
+(`CheckoutConfig::getCustomHeaders()`, e.g. `X-WAF-TOKEN`), and only where a
+merchant enabled them for the browser. A rejection of that call is reported
 rather than swallowed: 404 is its documented "no buyer" answer, so any OTHER
 status is logged, which is what keeps an appliance rejecting a tokenless
 request distinguishable from a buyer who simply has no account.
