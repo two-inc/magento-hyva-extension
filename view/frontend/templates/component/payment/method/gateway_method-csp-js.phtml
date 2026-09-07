@@ -2992,13 +2992,11 @@ $quoteDetails = json_encode(
                                 return false;
                             }
 
-                            // TWO-25657: a declined pre-check refuses placement,
-                            // read per company so a stale decline cannot block a
-                            // newly approved one.
+                            // TWO-25657: read per company, so a stale decline
+                            // cannot block a newly approved company.
                             const intentRecord = this.orderIntentRecordForCurrentCompany();
                             if (intentRecord && intentRecord.kind === 'decision' && !intentRecord.approved) {
-                                // Toasted despite the standing one-verdict rule: a
-                                // refusal at click time needs a signal at click time.
+                                // Toasted beside the standing box: a refusal at click time needs a signal then.
                                 if (typeof window.dispatchMessages === 'function') {
                                     window.dispatchMessages([{
                                         type: 'error',
