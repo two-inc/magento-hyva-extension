@@ -508,6 +508,11 @@ class CheckoutConfigTest extends TestCase
                 'name="company"',
                 'uppercase attribute names',
             ],
+            [
+                'title="type=\'x\'" name="c" type="text"',
+                'title="type=\'x\'" name="c"',
+                'stripped name appearing inside another attribute\'s value',
+            ],
         ];
     }
 }
