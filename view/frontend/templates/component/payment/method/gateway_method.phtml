@@ -278,7 +278,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             ?>
             <p x-cloak x-show="selectDifferentSoleTraderVisible">
                 <button type="button"
-                        class="two-soletrader-link"
+                        class="two-soletrader-link two-field-action-link"
                         data-name="select_different_soletrader"
                         @click="selectDifferentSoleTrader">
                     <?= $escaper->escapeHtml(__('Select a different sole trader')) ?>
