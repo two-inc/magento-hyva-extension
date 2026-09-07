@@ -513,6 +513,31 @@ class CheckoutConfigTest extends TestCase
                 'title="type=\'x\'" name="c"',
                 'stripped name appearing inside another attribute\'s value',
             ],
+            [
+                'title="a type=\'x\'" name="c" type="text"',
+                'title="a type=\'x\'" name="c"',
+                'embedded occurrence preceded by a space inside a value',
+            ],
+            [
+                'type=text name="c"',
+                'name="c"',
+                'unquoted value',
+            ],
+            [
+                "autocomplete='off' name=\"c\"",
+                'name="c"',
+                'single-quoted value',
+            ],
+            [
+                'required type="text" name="c"',
+                'required name="c"',
+                'valueless attribute preserved',
+            ],
+            [
+                'name="c" title="unclosed',
+                'name="c" title ="unclosed',
+                'malformed tail preserved rather than truncated',
+            ],
         ];
     }
 }

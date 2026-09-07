@@ -374,17 +374,41 @@ class CheckoutConfig implements ArgumentInterface
         return self::COMPANY_SEARCH_MIN_CHARS;
     }
 
-    /**
-     * Duplicate HTML attributes resolve FIRST-occurrence-wins, so an entity
-     * field's own type/autocomplete must go or they beat the template's.
-     */
+    /** Duplicate HTML attributes are first-occurrence-wins, so the entity field's own type/autocomplete must go. */
     public function stripDuplicatedFieldAttributes(string $renderedAttributes): string
     {
-        return trim(preg_replace(
-            '/(^|\s+)(?:type|autocomplete)=(["\'])[^"\']*?\2/i',
-            '',
-            $renderedAttributes,
-        ));
+        $kept = [];
+        $offset = 0;
+        $length = strlen($renderedAttributes);
+
+        while ($offset < $length) {
+            $matched = preg_match(
+                '/\G\s*([^\s=\/>"\']+)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+))?/',
+                $renderedAttributes,
+                $token,
+                0,
+                $offset
+            );
+
+            if ($matched !== 1) {
+                break;
+            }
+
+            $offset += strlen($token[0]);
+
+            if (!in_array(strtolower($token[1]), ['type', 'autocomplete'], true)) {
+                $kept[] = isset($token[2]) && $token[2] !== ''
+                    ? $token[1] . '=' . $token[2]
+                    : $token[1];
+            }
+        }
+
+        $remainder = trim(substr($renderedAttributes, $offset));
+        if ($remainder !== '') {
+            $kept[] = $remainder;
+        }
+
+        return implode(' ', $kept);
     }
 
     public function getSupportedCountryCodes()
