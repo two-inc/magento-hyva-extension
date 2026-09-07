@@ -2,12 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25554. WHICH of the two captured companies the order is placed for:
- * billing when it presents a company number, else shipping.
- *
- * The default checkout path is the one that was broken — `#billing-as-shipping`
- * ticked, the company picked in the DELIVERY form — because the tile seeded
- * only from its own billing record and the pair that submits stayed blank.
+ * TWO-25554. WHICH of the two captured companies the order is placed for —
+ * billing when it presents a company number, else shipping — and the pair that
+ * carries it to the server, in both of the tile's markup modes.
  */
 
 "use strict";
@@ -157,56 +154,87 @@ describe("the invoice-company resolver", () => {
     document.body.innerHTML = "";
   });
 
-  test.each([
-    [BILLING, SHIPPING, "billing", BILLING, true, "billing presents a number"],
-    [NOTHING, SHIPPING, "shipping", SHIPPING, true, "only shipping has one"],
-    [
-      NAME_ONLY,
-      SHIPPING,
-      "shipping",
-      SHIPPING,
-      true,
-      "billing has a name but no number",
-    ],
-    [NOTHING, NOTHING, "", NOTHING, false, "neither presents one"],
-    [BILLING, NOTHING, "billing", BILLING, true, "only billing has one"],
-  ])(
-    "billing %s with shipping %s resolves to the %s role, submits %s," +
-      " placement allowed=%s (%s)",
-    async (billing, shipping, role, expected, allowed, description) => {
-      capture("billing", billing);
-      capture("shipping", shipping);
+  describe.each([
+    [false, "the hidden pair"],
+    [true, "the tile's own control"],
+  ])("with %s (%s)", (tileControl, mode) => {
+    test.each([
+      [
+        BILLING,
+        SHIPPING,
+        "billing",
+        BILLING,
+        true,
+        "billing presents a number",
+      ],
+      [NOTHING, SHIPPING, "shipping", SHIPPING, true, "only shipping has one"],
+      [
+        NAME_ONLY,
+        SHIPPING,
+        "shipping",
+        SHIPPING,
+        true,
+        "billing has a name but no number",
+      ],
+      [NOTHING, NOTHING, "", NOTHING, false, "neither presents one"],
+      [BILLING, NOTHING, "billing", BILLING, true, "only billing has one"],
+    ])(
+      "billing %s with shipping %s resolves to the %s role, submits %s," +
+        " placement allowed=%s (%s)",
+      async (billing, shipping, role, expected, allowed, row) => {
+        const description = mode + ": " + row;
+        render(tileControl);
+        // The tile's own control restores its billing company from the record.
+        if (tileControl) {
+          env.browserStorage.setItem(
+            H.BILLING_COMPANY_KEY,
+            JSON.stringify({
+              company_name: billing.companyName,
+              company_id: billing.companyId,
+              company_id_source: billing.companyId ? "registry" : "",
+            }),
+          );
+        } else {
+          capture("billing", billing);
+        }
+        capture("shipping", shipping);
 
-      const tile = mountTile();
+        const tile = mountTile();
 
-      expect([description, window.twoGatewayResolveInvoiceCompany()]).toEqual([
-        description,
-        {
-          companyName: expected.companyName,
-          companyId: expected.companyId,
-          companyIdSource: expected.companyId ? "registry" : "",
-          role: role,
-        },
-      ]);
-      expect([description, submittedPair()]).toEqual([
-        description,
-        { name: expected.companyName, id: expected.companyId },
-      ]);
-      expect([
-        description,
-        tile.buildOrderIntentRequestBody(JSON.parse(H.QUOTE_JSON)).buyer
-          .company,
-      ]).toEqual([
-        description,
-        {
-          organization_number: expected.companyId,
-          company_name: expected.companyName,
-          country_prefix: "GB",
-        },
-      ]);
-      expect([description, await placeOrder()]).toEqual([description, allowed]);
-    },
-  );
+        expect([description, window.twoGatewayResolveInvoiceCompany()]).toEqual(
+          [
+            description,
+            {
+              companyName: expected.companyName,
+              companyId: expected.companyId,
+              companyIdSource: expected.companyId ? "registry" : "",
+              role: role,
+            },
+          ],
+        );
+        expect([description, submittedPair()]).toEqual([
+          description,
+          { name: expected.companyName, id: expected.companyId },
+        ]);
+        expect([
+          description,
+          tile.buildOrderIntentRequestBody(JSON.parse(H.QUOTE_JSON)).buyer
+            .company,
+        ]).toEqual([
+          description,
+          {
+            organization_number: expected.companyId,
+            company_name: expected.companyName,
+            country_prefix: "GB",
+          },
+        ]);
+        expect([description, await placeOrder()]).toEqual([
+          description,
+          allowed,
+        ]);
+      },
+    );
+  });
 
   test("a pick in the delivery panel after the tile mounted reaches the pair", () => {
     // Given the payment step mounted, when a delivery capture lands, then the pair follows.
@@ -268,7 +296,7 @@ describe("the invoice-company resolver", () => {
     expect(dispatched).toEqual(["intent"]);
   });
 
-  test("a delivery company the buyer discards leaves the pair with it", () => {
+  test("a delivery company the buyer discards takes the pair with it", () => {
     capture("shipping", SHIPPING);
     mountTile();
 
@@ -278,8 +306,7 @@ describe("the invoice-company resolver", () => {
   });
 
   test("a fresh page with no delivery form still submits the stored company", () => {
-    // A reload onto the payment step: nothing has hydrated the delivery
-    // identity, so the tile hydrates its own roles from their own records.
+    // A reload onto the payment step, with no delivery form to hydrate its identity.
     env.browserStorage.setItem(
       H.COMPANY_SELECTION_KEY,
       JSON.stringify({

@@ -147,7 +147,7 @@ $methodCode = $brandedViewModel->getMethodCode();
 
         /** Check if the selected payment method is this brand's Two method */
         if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
-            // TWO-25554 re-arm for a company picked before Two was active: the resolver, else the record for a page whose identities are not seeded, and neither helper is certain to be published yet.
+            // TWO-25554: the record answers for a page whose identities are not seeded.
             const invoiceCompany = (window.twoGatewayResolveInvoiceCompany
                 || function () { return { companyId: "" }; })();
             if (invoiceCompany.companyId) {

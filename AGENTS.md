@@ -208,7 +208,7 @@ be up alongside nothing. All four are one box style in one place. The rules that
   that is present and malformed, which it degrades to a silent box for rather
   than throwing — and that case needs the fallback just as much. Gate a fallback
   on there being nothing to say, never on any narrower proxy for it.
-- **Every order-intent gate asks `twoGatewayResolveInvoiceCompany()`** (TWO-25554)
+- **Every order-intent gate asks `twoGatewayInvoiceCompany()`** (TWO-25554)
   — the dispatch trigger, the per-company dedup and verdict records, the notice
   copy and the tile label alike, so a company picked in the DELIVERY form gets the
   same client-side pre-check as one picked in the invoice form. The tile's own
@@ -260,10 +260,15 @@ ORDER-INTENT/PLACEMENT resolver, which reads the captured identities to decide
 which company the API is told about; it never writes and never has a UI effect.
 That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
 identity when it presents a company number, else the shipping one, else nothing.
-`twoGatewayApplyInvoiceCompanyFields()` is the one writer of the
-`payment[company_name]` / `payment[company_id]` pair that submits, and every
-place the API is told the company or the order is gated on it reads the resolver
-rather than a panel's own record.
+What the surfaces ask is `twoGatewayInvoiceCompany()`, which puts a number typed
+into the tile's own field FIRST — no identity holds it — then that resolver, then
+the tile's own capture. `twoGatewayApplyInvoiceCompanyFields()` is the ONLY
+writer of the `payment[company_name]` / `payment[company_id]` pair that submits:
+it writes each field from that answer and blanks neither while it holds a value
+the writer did not put there, which is why the surface mirrors' clear and repaint
+call it instead of blanking the pair themselves. The tile hydrates each role's
+identity from that role's OWN record at mount, the delivery form not always
+being on the page to hydrate its own.
 
 Three layers, innermost first:
 

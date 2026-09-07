@@ -1933,10 +1933,8 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * THE ONLY writer of the `payment[company_name]` / `payment[company_id]`
-     * pair that submits. Each field is written from the company being placed
-     * for; neither is blanked while it holds a value this helper did not write,
-     * and a number typed into the tile's own field owns the pair outright.
+     * THE ONLY writer of the pair that submits; it blanks neither field while it
+     * holds a value the writer did not put there.
      *
      * @param {Object} [surface] the tile asking; the live instance otherwise
      * @returns {Object} the company written, as twoGatewayInvoiceCompany()
@@ -1962,8 +1960,8 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * The company being placed for: the resolver's answer, else the tile's own
-     * capture, else a number typed into its field, which no identity holds.
+     * The company being placed for: a hand-typed number, else the resolver, else
+     * the tile's own capture.
      *
      * @param {Object} [surface] the tile asking; the live instance otherwise
      * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for
@@ -2690,8 +2688,7 @@ $quoteDetails = json_encode(
                     this.clearCapturedNameFields();
                     return;
                 }
-                // The tile's pair is what submits, so a morph blanking it loses the
-                // company from the order and not merely from the screen.
+                // A morph blanking the pair loses the company from the ORDER, not the screen.
                 if (this.isTileSurface()) {
                     window.twoGatewayApplyInvoiceCompanyFields(this);
                     this.announceCapturedCompanyToModel(name);
@@ -3353,8 +3350,7 @@ $quoteDetails = json_encode(
                     );
                 }
 
-                // Each role's identity is hydrated from its OWN record, and the
-                // delivery form is not always on the page to hydrate its own.
+                // Its own record per role: the delivery form is not always on the page.
                 const shipping = window.twoGatewayCompanyIdentity('shipping');
                 if (shipping
                     && !shipping.isSoleTrader()
@@ -3373,9 +3369,7 @@ $quoteDetails = json_encode(
                     }
                 }
 
-                // Keyed on this tile's own root and reaped with the mirrors, so a
-                // re-render that destroys the tile disposes it rather than the next
-                // initialize() eventually noticing.
+                // Keyed on this root and reaped with the mirrors, so a destroy disposes it.
                 const invoiceWatchers = window.twoGatewayInvoiceCompanyWatchers instanceof Map
                     ? window.twoGatewayInvoiceCompanyWatchers
                     : (window.twoGatewayInvoiceCompanyWatchers = new Map());
