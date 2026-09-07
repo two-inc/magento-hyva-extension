@@ -3349,14 +3349,33 @@ $quoteDetails = json_encode(
                     );
                 }
 
+                // Each role's identity is hydrated from its OWN record, and the
+                // delivery form is not always on the page to hydrate its own.
+                const shipping = window.twoGatewayCompanyIdentity('shipping');
+                if (shipping
+                    && !shipping.isSoleTrader()
+                    && !shipping.companyName()
+                    && !shipping.companyId()) {
+                    const shippingSelection = window.twoGatewayReadCompanySelection();
+                    if (shippingSelection.company_name || shippingSelection.company_id) {
+                        shipping.write(
+                            {
+                                companyName: shippingSelection.company_name || '',
+                                companyId: shippingSelection.company_id || '',
+                                companyIdSource: shippingSelection.company_id_source || ''
+                            },
+                            { authoritative: true }
+                        );
+                    }
+                }
+
                 // Disposed first — Magewire re-runs initialize() and a dead subscription writes on.
                 if (window.twoGatewayInvoiceCompanyWatcher) {
                     window.twoGatewayInvoiceCompanyWatcher.dispose();
                     window.twoGatewayInvoiceCompanyWatcher = null;
                 }
-                const shippingIdentity = window.twoGatewayCompanyIdentity('shipping');
-                if (shippingIdentity) {
-                    window.twoGatewayInvoiceCompanyWatcher = shippingIdentity.subscribe(() => {
+                if (shipping) {
+                    window.twoGatewayInvoiceCompanyWatcher = shipping.subscribe(() => {
                         this.fillCompanyData('', '', true);
                     });
                 }

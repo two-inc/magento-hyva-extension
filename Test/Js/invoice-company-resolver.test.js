@@ -277,6 +277,51 @@ describe("the invoice-company resolver", () => {
     expect(submittedPair()).toEqual({ name: "", id: "" });
   });
 
+  test("a fresh page with no delivery form still submits the stored company", () => {
+    // A reload onto the payment step: nothing has hydrated the delivery
+    // identity, so the tile hydrates its own roles from their own records.
+    env.browserStorage.setItem(
+      H.COMPANY_SELECTION_KEY,
+      JSON.stringify({
+        company_name: SHIPPING.companyName,
+        company_id: SHIPPING.companyId,
+        company_id_source: "registry",
+      }),
+    );
+
+    const tile = mountTile();
+
+    expect(env.identityFor("shipping").companyId()).toBe(SHIPPING.companyId);
+    expect(tile.invoiceCompany().role).toBe("shipping");
+    expect(submittedPair()).toEqual({
+      name: SHIPPING.companyName,
+      id: SHIPPING.companyId,
+    });
+  });
+
+  test("a sole trader adopted in the delivery form submits and places", async () => {
+    const tile = mountTile();
+    const shipping = env.identityFor("shipping");
+
+    shipping.captureMode("soletrader");
+    shipping.write(
+      {
+        companyName: "Sole Trader Ltd",
+        companyId: "TWO:ST:abc123",
+        companyIdSource: "registry",
+      },
+      { authoritative: true },
+    );
+    shipping.soleTraderAdopted(true);
+
+    expect(tile.invoiceCompany().role).toBe("shipping");
+    expect(submittedPair()).toEqual({
+      name: "Sole Trader Ltd",
+      id: "TWO:ST:abc123",
+    });
+    expect(await placeOrder()).toBe(true);
+  });
+
   test("reading shipping writes nothing back to the billing panel", () => {
     capture("shipping", SHIPPING);
 
