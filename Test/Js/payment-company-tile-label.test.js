@@ -896,7 +896,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       //
       // fillCompanyData()'s gate, before it dispatches:
       expect(js).toContain(
-        "!this.hasOrderIntentDecisionFor(companyId, companyName)",
+        "!this.hasOrderIntentDecisionFor(invoiceCompany.companyId, invoiceCompany.companyName)",
       );
       // and the top-level listener's own "already processed" gate — read via
       // a local alias (`component`) rather than the global directly, because
@@ -904,7 +904,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // but it is still the SAME global instance under that name:
       expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(
-        "component.hasOrderIntentDecisionFor(currentCompanyId, component.companyName)",
+        "component.hasOrderIntentDecisionFor(currentCompanyId, invoiceCompany.companyName)",
       );
       // And the slot they used to read is gone, not merely unused.
       expect(js).not.toContain("lastOrderIntentCompanyId");

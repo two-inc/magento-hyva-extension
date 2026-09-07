@@ -1814,12 +1814,16 @@ $quoteDetails = json_encode(
      * removes a surface — not by the next surface's mount.
      */
     function twoGatewayReapCaptureIdentityWatchers() {
-        const registry = window.twoGatewayCaptureIdentityWatchers;
-        if (!(registry instanceof Map)) return;
-        registry.forEach(function (watcher, node) {
-            if (!node || node.isConnected !== false) return;
-            watcher.dispose();
-            registry.delete(node);
+        [
+            window.twoGatewayCaptureIdentityWatchers,
+            window.twoGatewayInvoiceCompanyWatchers
+        ].forEach(function (registry) {
+            if (!(registry instanceof Map)) return;
+            registry.forEach(function (watcher, node) {
+                if (!node || node.isConnected !== false) return;
+                watcher.dispose();
+                registry.delete(node);
+            });
         });
     }
 
@@ -1903,6 +1907,88 @@ $quoteDetails = json_encode(
         if (typeof window.TwoCompanyIdentity !== 'function') return null;
         instances[role] = window.TwoCompanyIdentity();
         return instances[role];
+    };
+
+    /**
+     * TWO-25554: billing when it presents a company number, else shipping.
+     *
+     * @returns {{companyName: string, companyId: string, companyIdSource: string, role: string}}
+     */
+    window.twoGatewayResolveInvoiceCompany = window.twoGatewayResolveInvoiceCompany || function () {
+        const captured = function (role) {
+            const identity = window.twoGatewayCompanyIdentity(role);
+            if (!identity) return null;
+            const companyId = String(identity.companyId() || '').trim();
+            if (!companyId) return null;
+            return {
+                companyName: String(identity.companyName() || ''),
+                companyId: companyId,
+                companyIdSource: String(identity.companyIdSource() || ''),
+                role: role
+            };
+        };
+        return captured('billing')
+            || captured('shipping')
+            || { companyName: '', companyId: '', companyIdSource: '', role: '' };
+    };
+
+    /**
+     * THE ONLY writer of the pair that submits; it never blanks what it did not write.
+     *
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {Object} the company written, as twoGatewayInvoiceCompany()
+     */
+    window.twoGatewayApplyInvoiceCompanyFields = window.twoGatewayApplyInvoiceCompanyFields || function (surface) {
+        const placing = window.twoGatewayInvoiceCompany(surface);
+        const nameField = document.getElementById('company_name');
+        const idField = document.getElementById('company_id');
+        const written = window.twoGatewayInvoiceCompanyWritten
+            || { companyName: null, companyId: null };
+        if (idField && idField.value && idField.value !== written.companyId) return placing;
+        const applyField = function (field, value, last) {
+            if (!field) return last;
+            if (!value && field.value !== last) return last;
+            field.value = value;
+            return value;
+        };
+        window.twoGatewayInvoiceCompanyWritten = {
+            companyName: applyField(nameField, placing.companyName, written.companyName),
+            companyId: applyField(idField, placing.companyId, written.companyId)
+        };
+        return placing;
+    };
+
+    /**
+     * The company being placed for: a hand-typed number, else the resolver, else the tile's capture.
+     *
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for a hand-entered number
+     */
+    window.twoGatewayInvoiceCompany = window.twoGatewayInvoiceCompany || function (surface) {
+        const tile = surface || twoPaymentComponentInstance;
+        const tileName = tile ? tile.companyName : '';
+        const written = window.twoGatewayInvoiceCompanyWritten || {};
+        const field = document.getElementById('company_id');
+        // A value the writer put there itself is a captured company coming back.
+        const typed = field && field.value && field.value !== written.companyId
+            ? field.value
+            : '';
+        if (typed) {
+            return {
+                companyName: tileName,
+                companyId: typed,
+                companyIdSource: 'manual',
+                role: 'typed'
+            };
+        }
+        const resolved = window.twoGatewayResolveInvoiceCompany();
+        if (resolved.companyId) return resolved;
+        return {
+            companyName: tileName,
+            companyId: tile ? tile.companyId : '',
+            companyIdSource: tile ? tile.companyIdSource : '',
+            role: tile && tile.companyId ? 'billing' : resolved.role
+        };
     };
 
     /**
@@ -2528,15 +2614,14 @@ $quoteDetails = json_encode(
                 restoring = false;
             },
 
-            /** Blank this surface's own name field, and — on the tile — the pair that submits. */
+            /** Blank this surface's own name field; on the tile, re-derive the pair instead. */
             clearCapturedNameFields() {
+                if (this.isTileSurface()) {
+                    window.twoGatewayApplyInvoiceCompanyFields(this);
+                    return;
+                }
                 const field = this.companyNameField();
                 if (field) field.value = '';
-                if (!this.isTileSurface()) return;
-                const nameField = document.getElementById('company_name');
-                if (nameField && nameField !== field) nameField.value = '';
-                const idField = document.getElementById('company_id');
-                if (idField) idField.value = '';
             },
 
             /**
@@ -2600,19 +2685,15 @@ $quoteDetails = json_encode(
                     this.clearCapturedNameFields();
                     return;
                 }
+                // A morph blanking the pair loses the company from the ORDER, not the screen.
+                if (this.isTileSurface()) {
+                    window.twoGatewayApplyInvoiceCompanyFields(this);
+                    this.announceCapturedCompanyToModel(name);
+                    return;
+                }
                 const field = this.companyNameField();
                 if (field && field.value !== name) field.value = name;
                 this.announceCapturedCompanyToModel(name);
-                if (!this.isTileSurface()) return;
-                // The tile's pair is what submits, so a morph blanking it loses
-                // the company from the order and not merely from the screen.
-                const nameField = document.getElementById('company_name');
-                if (nameField && nameField !== field && nameField.value !== name) {
-                    nameField.value = name;
-                }
-                const id = identity.companyId();
-                const idField = document.getElementById('company_id');
-                if (id && idField && idField.value !== id) idField.value = id;
             },
 
             writeCapturedSelection() {
@@ -2785,6 +2866,8 @@ $quoteDetails = json_encode(
 
                                         const checkAndProceed = () => {
                                             try {
+                                                window.twoGatewayApplyInvoiceCompanyFields();
+
                                                 const formElements = [
                                                     'department',
                                                     'project',
@@ -2885,6 +2968,8 @@ $quoteDetails = json_encode(
                             } catch (error) {
                                 isFormValid = false;
                             }
+
+                            window.twoGatewayApplyInvoiceCompanyFields();
 
                             // Not left to the field's own `required`: in the
                             // default markup mode the company pair is hidden
@@ -3262,6 +3347,41 @@ $quoteDetails = json_encode(
                     );
                 }
 
+                // Its own record per role: the delivery form is not always on the page.
+                const shipping = window.twoGatewayCompanyIdentity('shipping');
+                if (shipping
+                    && !shipping.isSoleTrader()
+                    && !shipping.companyName()
+                    && !shipping.companyId()) {
+                    const shippingSelection = window.twoGatewayReadCompanySelection();
+                    if (shippingSelection.company_name || shippingSelection.company_id) {
+                        shipping.write(
+                            {
+                                companyName: shippingSelection.company_name || '',
+                                companyId: shippingSelection.company_id || '',
+                                companyIdSource: shippingSelection.company_id_source || ''
+                            },
+                            { authoritative: true }
+                        );
+                    }
+                }
+
+                // Keyed on this root and reaped with the mirrors, so a destroy disposes it.
+                const invoiceWatchers = window.twoGatewayInvoiceCompanyWatchers instanceof Map
+                    ? window.twoGatewayInvoiceCompanyWatchers
+                    : (window.twoGatewayInvoiceCompanyWatchers = new Map());
+                twoGatewayReapCaptureIdentityWatchers();
+                if (shipping && this.$root) {
+                    if (invoiceWatchers.has(this.$root)) {
+                        invoiceWatchers.get(this.$root).dispose();
+                    }
+                    invoiceWatchers.set(this.$root, shipping.subscribe(() => {
+                        this.fillCompanyData('', '', true);
+                    }));
+                }
+                // No dispatch: a rebuild restores an earlier pick and empties the dedup records.
+                this.fillCompanyData('', '', false);
+
                 // The intent-approved notice is persistent — it survives
                 // checkout re-renders and failed place-order validation, which
                 // is the point of it being an inline element rather than a
@@ -3491,6 +3611,11 @@ $quoteDetails = json_encode(
                 }
             },
 
+            /** @returns {Object} the company being placed for, as twoGatewayInvoiceCompany() */
+            invoiceCompany() {
+                return window.twoGatewayInvoiceCompany(this);
+            },
+
             /**
              * @param {string} companyId
              * @param {string} companyName
@@ -3527,16 +3652,17 @@ $quoteDetails = json_encode(
              *   matches the name on screen.
              */
             orderIntentRecordForCurrentCompany() {
-                const companyId = this.companyId;
+                const invoiceCompany = this.invoiceCompany();
+                const companyId = invoiceCompany.companyId;
                 if (!companyId) return null;
 
                 const failure = this.orderIntentFailures[companyId];
-                if (failure && failure.name === this.companyName) {
+                if (failure && failure.name === invoiceCompany.companyName) {
                     return { kind: 'failure' };
                 }
 
                 const decision = this.orderIntentDecisions[companyId];
-                if (decision && decision.name === this.companyName) {
+                if (decision && decision.name === invoiceCompany.companyName) {
                     return { kind: 'decision', approved: decision.approved };
                 }
 
@@ -3643,7 +3769,8 @@ $quoteDetails = json_encode(
             // " (12345678)". Same shape as the sibling platforms' single-line
             // builders: no name at all means no label text.
             get companyTileLabelText() {
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) return '';
 
                 // `twoGatewayDisplayCompanyNumber()`, not the raw value: an
@@ -3651,7 +3778,7 @@ $quoteDetails = json_encode(
                 // shown to a buyer, and it answers '' for one — which is the
                 // same case as "no number", so the BRACKETS disappear with it
                 // rather than leaving `Example Ltd ()`.
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
@@ -3670,39 +3797,17 @@ $quoteDetails = json_encode(
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
-                /*
-                 * The NAME is what makes this call meaningful; the id is
-                 * allowed to be empty, because the search response is allowed
-                 * to omit the national identifier.
-                 *
-                 * It used to bail on an empty id, which left the buyer looking
-                 * at the newly selected company's name beside the PREVIOUS
-                 * company's id — in a disabled field they could not correct,
-                 * and read straight back out by buildOrderIntentRequestBody()
-                 * and by the checkout's own `payment[company_id]`. Writing both
-                 * fields unconditionally is what keeps name and id describing
-                 * the same company.
-                 */
-                if (!companyName) return;
+                // No name is a call with no capture to commit; an id may be empty alone.
+                if (companyName) {
+                    this.companyName = companyName;
+                    this.companyId = companyId;
+                    // A hand-typed number stays the buyer's to correct, so the lock
+                    // is re-derived from what was just committed.
+                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+                    this.applyCompanyIdEditability();
+                }
 
-                this.companyName = companyName;
-                this.companyId = companyId;
-
-                const companyNameInput = document.getElementById("company_name");
-                if (companyNameInput) companyNameInput.value = companyName;
-
-                // Value only. The locked state is `companyIdDisabled`, which
-                // the field's `:disabled` is bound to and which
-                // applyCompanyIdEditability() is the sole writer of — the
-                // callers above set `companyIdEntryRequired` and call it
-                // BEFORE getting here.
-                const companyIdInput = document.getElementById("company_id");
-                if (companyIdInput) companyIdInput.value = companyId;
-
-                // A hand-typed number stays the buyer's to correct, so the lock
-                // is re-derived from what was just committed.
-                this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-                this.applyCompanyIdEditability();
+                const invoiceCompany = window.twoGatewayApplyInvoiceCompanyFields(this);
 
                 // Only trigger order intent if the company ID CHANGED — and
                 // only when there IS one. An intent for an empty company id is a
@@ -3716,8 +3821,8 @@ $quoteDetails = json_encode(
                 // for that exact company and name (see
                 // processOrderIntentSuccessResponse), so picking a different
                 // company, or renaming this one, always passes the gate.
-                if (this.isOrderIntentEnabled && triggerOrderIntent && companyId
-                    && !this.hasOrderIntentDecisionFor(companyId, companyName)) {
+                if (this.isOrderIntentEnabled && triggerOrderIntent && invoiceCompany.companyId
+                    && !this.hasOrderIntentDecisionFor(invoiceCompany.companyId, invoiceCompany.companyName)) {
                     // Bug 5: the tile-local spinner goes up HERE rather than
                     // when the request leaves, because the listener debounces
                     // 500ms and half a second of a tile that has visibly not
@@ -3805,18 +3910,13 @@ $quoteDetails = json_encode(
             },
 
             shouldSkipOrderIntent(quoteData) {
-                // Check both component state and DOM for manual entry support
-                const companyIdInput = document.getElementById("company_id");
-                const companyId = this.companyId || companyIdInput?.value || '';
-                return !companyId.trim();
+                return !this.invoiceCompany().companyId.trim();
             },
 
             buildOrderIntentRequestBody(quoteData) {
-                // Read from DOM to support manual entry (component state only set for dropdown selection)
-                const companyNameInput = document.getElementById("company_name");
-                const companyIdInput = document.getElementById("company_id");
-                const companyName = this.companyName || companyNameInput?.value || "";
-                const companyId = this.companyId || companyIdInput?.value || "";
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = invoiceCompany.companyName;
+                const companyId = invoiceCompany.companyId;
 
                 let lineItems = quoteData.items?.map(item => ({
                     name: item.name,
@@ -3901,7 +4001,8 @@ $quoteDetails = json_encode(
                 const copy = this.orderIntentApprovedNoticeCopy;
                 if (!copy) return '';
 
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) {
                     return typeof copy.withoutCompany === 'string' ? copy.withoutCompany : '';
                 }
@@ -3919,7 +4020,7 @@ $quoteDetails = json_encode(
                 // '' for an absent number AND for an internal placeholder one
                 // (`TWO:` prefix), which must never reach a buyer — see
                 // twoGatewayDisplayCompanyNumber().
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 const text = copy.withCompany
                     .replace(copy.companyNameToken, () => companyName)
                     .replace(copy.companyNumberToken, () => companyId);
@@ -3943,7 +4044,8 @@ $quoteDetails = json_encode(
                 const copy = this.orderIntentNotAvailableCopy;
                 if (!copy) return '';
 
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) {
                     return typeof copy.withoutCompany === 'string' ? copy.withoutCompany : '';
                 }
@@ -3961,7 +4063,7 @@ $quoteDetails = json_encode(
                 // '' for an absent number AND for an internal placeholder one
                 // (`TWO:` prefix), which must never reach a buyer — see
                 // twoGatewayDisplayCompanyNumber().
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 const text = copy.withCompany
                     .replace(copy.companyNameToken, () => companyName)
                     .replace(copy.companyNumberToken, () => companyId);
@@ -3994,10 +4096,11 @@ $quoteDetails = json_encode(
             processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName) {
                 if (!response) return;
 
+                const invoiceCompany = this.invoiceCompany();
                 const decidedCompanyId = typeof requestedCompanyId === 'string'
                     && requestedCompanyId
                     ? requestedCompanyId
-                    : this.companyId;
+                    : invoiceCompany.companyId;
 
                 // Recorded UNCONDITIONALLY, even if the reply arrives after the
                 // buyer has moved on: this record is the dedup gate's memory as
@@ -4041,7 +4144,7 @@ $quoteDetails = json_encode(
                 // about.
                 const recordedName = typeof requestedCompanyName === 'string'
                     ? requestedCompanyName
-                    : (decidedCompanyId === this.companyId ? this.companyName : null);
+                    : (decidedCompanyId === invoiceCompany.companyId ? invoiceCompany.companyName : null);
 
                 if (!decidedCompanyId) return;
                 this.orderIntentDecisions[decidedCompanyId] = {
@@ -4070,7 +4173,7 @@ $quoteDetails = json_encode(
                  * showing the buyer a company/verdict pair that never happened
                  * together.
                  */
-                if (decidedCompanyId !== this.companyId) return;
+                if (decidedCompanyId !== invoiceCompany.companyId) return;
 
                 // Past the guard, and only past it. This bit says whether THE
                 // ORDER may be placed, and the order is for the company on
@@ -4170,8 +4273,9 @@ $quoteDetails = json_encode(
              *   actually ran for, rather than one edited by hand since.
              */
             processOrderIntentErrorResponse(response, requestedCompanyId, requestedCompanyName) {
+                const invoiceCompany = this.invoiceCompany();
                 if (typeof requestedCompanyId === 'string' && requestedCompanyId
-                    && requestedCompanyId !== this.companyId) {
+                    && requestedCompanyId !== invoiceCompany.companyId) {
                     return;
                 }
                 this.placeOrderIntentFlag = false;
@@ -4241,17 +4345,17 @@ $quoteDetails = json_encode(
                 // `generalErrorMessage` itself.
                 const isReportable = Boolean(message && this.generalErrorMessage);
 
-                if (isReportable && this.companyId) {
+                if (isReportable && invoiceCompany.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
                     // stays retryable.
-                    this.orderIntentFailures[this.companyId] = {
+                    this.orderIntentFailures[invoiceCompany.companyId] = {
                         // The name the check actually RAN for, not whatever the
                         // field holds now: the guard above pins the id, but a name
                         // hand-edited while the request was out would otherwise
                         // file the failure under a name it was never about.
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
-                            : this.companyName,
+                            : invoiceCompany.companyName,
                     };
                 }
 
@@ -4533,13 +4637,12 @@ $quoteDetails = json_encode(
                     return true;
                 }
 
-                // Get the current company ID from the component
-                const currentCompanyId = component.companyId
-                    || document.getElementById("company_id")?.value || '';
+                const invoiceCompany = component.invoiceCompany();
+                const currentCompanyId = invoiceCompany.companyId;
 
                 // Nothing to check, or already decided for exactly this company.
                 if (!currentCompanyId.trim()
-                    || component.hasOrderIntentDecisionFor(currentCompanyId, component.companyName)) {
+                    || component.hasOrderIntentDecisionFor(currentCompanyId, invoiceCompany.companyName)) {
                     component.setOrderIntentChecking(false);
                     return true;
                 }
@@ -4577,7 +4680,7 @@ $quoteDetails = json_encode(
                 // WOULD match. For a reply about the company still on screen both
                 // end up recording '' — that company is simply nameless, and the
                 // gate then treats it as decided while it stays that way.
-                const requestedCompanyName = component.companyName || undefined;
+                const requestedCompanyName = invoiceCompany.companyName || undefined;
                 component.setOrderIntentChecking(true);
 
                 /*
