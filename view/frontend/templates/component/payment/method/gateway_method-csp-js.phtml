@@ -2992,8 +2992,7 @@ $quoteDetails = json_encode(
                                 return false;
                             }
 
-                            // TWO-25657: read per company, so a stale decline
-                            // cannot block a newly approved company.
+                            // TWO-25657: per company, so a stale decline cannot block an approved one.
                             const intentRecord = this.orderIntentRecordForCurrentCompany();
                             if (intentRecord && intentRecord.kind === 'decision' && !intentRecord.approved) {
                                 // Toasted beside the standing box: a refusal at click time needs a signal then.

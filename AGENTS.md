@@ -221,16 +221,10 @@ be up alongside nothing. All four are one box style in one place. The rules that
   field either way. Both markup modes keep
   `data-name` on the company pair so a surface that is not the payment form can
   resolve it without a document-wide id lookup.
-- **A DECLINE REFUSES PLACEMENT** (TWO-25657). The payment form's
-  `hyvaCheckout.validation` callback reads the same per-company decision record
-  the box paints from and returns false for a recorded `approved: false`,
-  toasting the declined message — a refusal the buyer triggered needs its signal
-  at that moment, which is the one place a toast beside the standing box is
-  right. It fails OPEN for everything that is not a recorded decline: no record
-  at all (a check unanswered, or never made) and a recorded FAILURE both place
-  normally, because "we do not know" must never read as "you were declined".
-  `placeOrderIntentFlag` is not the gate and still has no reader — a single bit
-  cannot say which company it decided.
+- **A DECLINE REFUSES PLACEMENT** (TWO-25657). The `hyvaCheckout.validation` callback
+  returns false for a recorded `approved: false` on the company being placed for; no
+  record and a recorded FAILURE both place normally. The declined message is toasted
+  because a click-time refusal needs a click-time signal.
 
 ### Magewire Components
 
