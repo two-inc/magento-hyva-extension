@@ -453,4 +453,91 @@ class CheckoutConfigTest extends TestCase
             }
         };
     }
+
+    /**
+     * @dataProvider duplicatedFieldAttributeCases
+     */
+    public function testStripDuplicatedFieldAttributes(
+        string $rendered,
+        string $expected,
+        string $case
+    ): void {
+        $viewModel = (new ReflectionClass(CheckoutConfig::class))->newInstanceWithoutConstructor();
+
+        $this->assertSame($expected, $viewModel->stripDuplicatedFieldAttributes($rendered), $case);
+    }
+
+    /**
+     * @return array<array{0:string,1:string,2:string}>
+     */
+    public static function duplicatedFieldAttributeCases(): array
+    {
+        return [
+            [
+                'type="text" name="company"',
+                'name="company"',
+                'type in the first position',
+            ],
+            [
+                'name="company" autocomplete="organization" id="company"',
+                'name="company" id="company"',
+                'autocomplete between other attributes',
+            ],
+            [
+                'type="text" name="company" autocomplete="organization"',
+                'name="company"',
+                'both present',
+            ],
+            [
+                'name="company" id="company"',
+                'name="company" id="company"',
+                'neither present',
+            ],
+            [
+                'data-type="x" name="company" data-autocomplete="y"',
+                'data-type="x" name="company" data-autocomplete="y"',
+                'attributes merely ending in the stripped names',
+            ],
+            [
+                "type='text' name=\"company\" autocomplete='organization'",
+                'name="company"',
+                'single-quoted values',
+            ],
+            [
+                'TYPE="text" name="company" AutoComplete="organization"',
+                'name="company"',
+                'uppercase attribute names',
+            ],
+            [
+                'title="type=\'x\'" name="c" type="text"',
+                'title="type=\'x\'" name="c"',
+                'stripped name appearing inside another attribute\'s value',
+            ],
+            [
+                'title="a type=\'x\'" name="c" type="text"',
+                'title="a type=\'x\'" name="c"',
+                'embedded occurrence preceded by a space inside a value',
+            ],
+            [
+                'type=text name="c"',
+                'name="c"',
+                'unquoted value',
+            ],
+            [
+                "autocomplete='off' name=\"c\"",
+                'name="c"',
+                'single-quoted value',
+            ],
+            [
+                'required type="text" name="c"',
+                'required name="c"',
+                'valueless attribute preserved',
+            ],
+            [
+                'name="c" title="unclosed',
+                'name="c" title ="unclosed',
+                'malformed tail preserved rather than truncated',
+            ],
+        ];
+    }
 }

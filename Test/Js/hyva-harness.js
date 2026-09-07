@@ -162,7 +162,10 @@ const PHP_VALUE_RULES = [
   // the chained call across lines, so the spaces are optional in the pattern.
   [/^\$element ?->getRenderer\(\) ?->render(Tooltip|After)\(\$element\)$/, ""],
   [/^\$element->renderClass\([\s\S]*\)$/, "form-input"],
-  [/^\$element->renderAttributes\(\$escaper\)$/, 'name="company"'],
+  [
+    /^\$configModel->stripDuplicatedFieldAttributes\(\$element->renderAttributes\(\$escaper\)\)$/,
+    'name="company"',
+  ],
   // form/field/company-search-control.phtml's contract (TWO-25326, 2026-08-05):
   // the ONE company-search control, included by BOTH the address step and the
   // payment tile. Its three parameters are the only thing that differs between

@@ -74,8 +74,9 @@ $form = $block->getData("form");
     $twoControlInputClass = $escaper->escapeHtmlAttr(
         $element->renderClass(["block w-full form-input grow renderer-text"]),
     );
-    $twoControlInputAttributes = ($element->hasAttributes() ? $element->renderAttributes($escaper) : '')
-        . ($element->isRequired() ? ' required data-validate=\'{"required":true}\'' : '');
+    $twoControlInputAttributes = $configModel->stripDuplicatedFieldAttributes(
+        $element->hasAttributes() ? $element->renderAttributes($escaper) : '',
+    ) . ($element->isRequired() ? ' required data-validate=\'{"required":true}\'' : '');
     include $block->getTemplateFile('Two_GatewayHyva::form/field/company-search-control.phtml');
     ?>
     <?php else: ?>
@@ -104,7 +105,7 @@ $form = $block->getData("form");
                     $element->renderClass(["block w-full form-input grow renderer-text"]),
                 ) ?>"
                 <?php if ($element->hasAttributes()): ?>
-                    <?= /* @noEscape */ $element->renderAttributes($escaper) ?>
+                    <?= /* @noEscape */ $configModel->stripDuplicatedFieldAttributes($element->renderAttributes($escaper)) ?>
                 <?php endif; ?>
                 <?php if ($element->isRequired()): ?>
                     required
@@ -120,13 +121,4 @@ $form = $block->getData("form");
                 ->renderTooltip($element) ?>
     <?php endif; ?>
 </div>
-<?php
-/*
- * Outside the field wrapper, as before. The wrapper's own closing tag used to
- * be emitted twice on the plain-field branch and once on the search branch —
- * one `</div>` did double duty as the search control's group closer — which
- * left the plain-field rendering with one unbalanced tag. Both branches now
- * close exactly what they open.
- */
-?>
 <?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>
