@@ -1906,6 +1906,56 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * WHICH company the order is placed for (TWO-25554): billing when it
+     * presents a company number, else shipping. The one thing that reads both
+     * identities — it writes neither, so no panel sees the other's pick.
+     *
+     * @returns {{companyName: string, companyId: string, companyIdSource: string, role: string}}
+     */
+    window.twoGatewayResolveInvoiceCompany = window.twoGatewayResolveInvoiceCompany || function () {
+        const captured = function (role) {
+            const identity = window.twoGatewayCompanyIdentity(role);
+            if (!identity) return null;
+            const companyId = String(identity.companyId() || '').trim();
+            if (!companyId) return null;
+            return {
+                companyName: String(identity.companyName() || ''),
+                companyId: companyId,
+                companyIdSource: String(identity.companyIdSource() || ''),
+                role: role
+            };
+        };
+        return captured('billing')
+            || captured('shipping')
+            || { companyName: '', companyId: '', companyIdSource: '', role: '' };
+    };
+
+    /**
+     * Put the resolved invoice company into the pair that submits. Blanks that
+     * pair only where it still holds what this helper last wrote — a number the
+     * buyer typed into the tile's own field is not the resolver's to destroy.
+     *
+     * @returns {Object} the resolved company, as twoGatewayResolveInvoiceCompany()
+     */
+    window.twoGatewayApplyInvoiceCompanyFields = window.twoGatewayApplyInvoiceCompanyFields || function () {
+        const resolved = window.twoGatewayResolveInvoiceCompany();
+        const nameField = document.getElementById('company_name');
+        const idField = document.getElementById('company_id');
+        const written = window.twoGatewayInvoiceCompanyWritten;
+        const holdsOwnWrite = Boolean(written)
+            && (!nameField || nameField.value === written.companyName)
+            && (!idField || idField.value === written.companyId);
+        if (!resolved.companyId && !holdsOwnWrite) return resolved;
+        if (nameField) nameField.value = resolved.companyName;
+        if (idField) idField.value = resolved.companyId;
+        window.twoGatewayInvoiceCompanyWritten = {
+            companyName: resolved.companyName,
+            companyId: resolved.companyId
+        };
+        return resolved;
+    };
+
+    /**
      * The company-capture controller for ONE address role, built on first use.
      *
      * @param {Object} settings the surface's own config — the same values it
@@ -2785,6 +2835,9 @@ $quoteDetails = json_encode(
 
                                         const checkAndProceed = () => {
                                             try {
+                                                // TWO-25554: the pair read below is the resolved invoice company's.
+                                                window.twoGatewayApplyInvoiceCompanyFields();
+
                                                 const formElements = [
                                                     'department',
                                                     'project',
@@ -2885,6 +2938,9 @@ $quoteDetails = json_encode(
                             } catch (error) {
                                 isFormValid = false;
                             }
+
+                            // TWO-25554: brought up to the resolved invoice company before judging it.
+                            window.twoGatewayApplyInvoiceCompanyFields();
 
                             // Not left to the field's own `required`: in the
                             // default markup mode the company pair is hidden
@@ -3261,6 +3317,21 @@ $quoteDetails = json_encode(
                         { authoritative: true }
                     );
                 }
+
+                // TWO-25554: the pair that submits follows BOTH identities, this role's
+                // own mirror covering the other. Disposed first: Magewire re-runs
+                // initialize() on every rebuild and each dead subscription would go on writing.
+                if (window.twoGatewayInvoiceCompanyWatcher) {
+                    window.twoGatewayInvoiceCompanyWatcher.dispose();
+                    window.twoGatewayInvoiceCompanyWatcher = null;
+                }
+                const shippingIdentity = window.twoGatewayCompanyIdentity('shipping');
+                if (shippingIdentity) {
+                    window.twoGatewayInvoiceCompanyWatcher = shippingIdentity.subscribe(() => {
+                        this.fillCompanyData();
+                    });
+                }
+                this.fillCompanyData();
 
                 // The intent-approved notice is persistent — it survives
                 // checkout re-renders and failed place-order validation, which
@@ -3683,7 +3754,11 @@ $quoteDetails = json_encode(
                  * fields unconditionally is what keeps name and id describing
                  * the same company.
                  */
-                if (!companyName) return;
+                // TWO-25554: nothing to commit — how the mount and either identity's change call in.
+                if (!companyName) {
+                    window.twoGatewayApplyInvoiceCompanyFields();
+                    return;
+                }
 
                 this.companyName = companyName;
                 this.companyId = companyId;
@@ -3698,6 +3773,9 @@ $quoteDetails = json_encode(
                 // BEFORE getting here.
                 const companyIdInput = document.getElementById("company_id");
                 if (companyIdInput) companyIdInput.value = companyId;
+
+                // TWO-25554: the resolver has the last word, this role's own capture included.
+                window.twoGatewayApplyInvoiceCompanyFields();
 
                 // A hand-typed number stays the buyer's to correct, so the lock
                 // is re-derived from what was just committed.
@@ -3805,18 +3883,21 @@ $quoteDetails = json_encode(
             },
 
             shouldSkipOrderIntent(quoteData) {
-                // Check both component state and DOM for manual entry support
+                // The DOM behind the resolver carries a number typed by hand, which no identity holds.
                 const companyIdInput = document.getElementById("company_id");
-                const companyId = this.companyId || companyIdInput?.value || '';
+                const companyId = window.twoGatewayResolveInvoiceCompany().companyId
+                    || companyIdInput?.value || '';
                 return !companyId.trim();
             },
 
             buildOrderIntentRequestBody(quoteData) {
-                // Read from DOM to support manual entry (component state only set for dropdown selection)
+                // TWO-25554: the API is told the resolved invoice company; the DOM
+                // behind it carries manual entry, which no identity holds.
+                const invoiceCompany = window.twoGatewayResolveInvoiceCompany();
                 const companyNameInput = document.getElementById("company_name");
                 const companyIdInput = document.getElementById("company_id");
-                const companyName = this.companyName || companyNameInput?.value || "";
-                const companyId = this.companyId || companyIdInput?.value || "";
+                const companyName = invoiceCompany.companyName || companyNameInput?.value || "";
+                const companyId = invoiceCompany.companyId || companyIdInput?.value || "";
 
                 let lineItems = quoteData.items?.map(item => ({
                     name: item.name,

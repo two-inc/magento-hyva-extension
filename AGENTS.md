@@ -254,6 +254,12 @@ not a pin, not an event, not a shared field write. A pick in one panel is
 invisible to the other. The one thing that reads both is the
 ORDER-INTENT/PLACEMENT resolver, which reads the captured identities to decide
 which company the API is told about; it never writes and never has a UI effect.
+That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
+identity when it presents a company number, else the shipping one, else nothing.
+`twoGatewayApplyInvoiceCompanyFields()` is the one writer of the
+`payment[company_name]` / `payment[company_id]` pair that submits, and every
+place the API is told the company or the order is gated on it reads the resolver
+rather than a panel's own record.
 
 Three layers, innermost first:
 
