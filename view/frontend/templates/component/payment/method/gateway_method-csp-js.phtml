@@ -3711,6 +3711,9 @@ $quoteDetails = json_encode(
              * in one and repainting in another.
              */
             refreshOrderIntentVerdict() {
+                // Above the paint guards below: the button follows the record, not what the box may show.
+                this.applyOrderIntentPlacementGate();
+
                 this.clearOrderIntentNotices();
 
                 /*
@@ -3767,6 +3770,35 @@ $quoteDetails = json_encode(
                     this.orderIntentApprovedNotice = text;
                 } else {
                     this.orderIntentNotAvailableNotice = text;
+                }
+            },
+
+            // TWO-25657: Place Order follows the current company's recorded decision.
+            applyOrderIntentPlacementGate() {
+                const record = this.orderIntentRecordForCurrentCompany();
+                const declined = Boolean(record) && record.kind === 'decision' && !record.approved;
+                const navigation = (window.hyvaCheckout || {}).navigation || {};
+                const button = document.querySelector('[x-bind="buttonPlaceOrder"], .btn-place-order');
+
+                if (declined) {
+                    if (typeof navigation.disableButtonPlaceOrder === 'function') {
+                        navigation.disableButtonPlaceOrder();
+                    }
+                    // Hyvä 1.3.13 still exposes those two but ships no listener for the events they fire.
+                    if (button) {
+                        button.setAttribute('disabled', '');
+                        button.dataset.twoIntentDeclined = '';
+                    }
+                    return;
+                }
+
+                if (typeof navigation.enableButtonPlaceOrder === 'function') {
+                    navigation.enableButtonPlaceOrder();
+                }
+                // Only our own decline is lifted — Hyvä disables the same button itself while an order is in flight.
+                if (button && 'twoIntentDeclined' in button.dataset) {
+                    button.removeAttribute('disabled');
+                    delete button.dataset.twoIntentDeclined;
                 }
             },
 

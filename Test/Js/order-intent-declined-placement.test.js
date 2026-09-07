@@ -38,6 +38,8 @@ describe("placement after an order-intent decline", () => {
         company.id +
         '" />',
       "</form>",
+      // Hyva's own place-order button, which carries no disabled binding of its own.
+      '<button type="button" x-bind="buttonPlaceOrder">Place Order</button>',
     ].join("\n");
   }
 
@@ -49,7 +51,11 @@ describe("placement after an order-intent decline", () => {
 
     validators = [];
     window.hyvaCheckout = {
-      navigation: { addTask: function () {} },
+      navigation: {
+        addTask: function () {},
+        disableButtonPlaceOrder: jest.fn(),
+        enableButtonPlaceOrder: jest.fn(),
+      },
       validation: {
         register: function (name, callback) {
           validators.push(callback);
@@ -77,6 +83,18 @@ describe("placement after an order-intent decline", () => {
    * @returns {Promise<boolean>}
    */
   function placeOrder(company, decisions) {
+    const form = mountForm();
+    showCompany(form, company, decisions);
+
+    expect(validators.length).toBe(1);
+
+    return validators[0]();
+  }
+
+  /**
+   * @returns {Object} the mounted form component
+   */
+  function mountForm() {
     const root = document.getElementById("two_payment_form");
     const form = H.mountComponent(env.alpineComponents[FORM_COMPONENT], {
       el: root,
@@ -85,13 +103,22 @@ describe("placement after an order-intent decline", () => {
     });
     form.$watch = function () {};
     form.init();
+    form.orderIntentDeclinedMessage = DECLINED_MESSAGE;
+    return form;
+  }
+
+  /**
+   * Put one company and one set of verdict records on screen.
+   *
+   * @param {Object} form the mounted form component
+   * @param {Object} company the company the tile submits
+   * @param {Object} decisions `orderIntentDecisions`, keyed by company id
+   */
+  function showCompany(form, company, decisions) {
+    document.getElementById("company_name").value = company.name;
+    document.getElementById("company_id").value = company.id;
     form.companyName = company.name;
     form.orderIntentDecisions = decisions;
-    form.orderIntentDeclinedMessage = DECLINED_MESSAGE;
-
-    expect(validators.length).toBe(1);
-
-    return validators[0]();
   }
 
   test.each([
@@ -157,5 +184,63 @@ describe("placement after an order-intent decline", () => {
       .filter((message) => message.text === DECLINED_MESSAGE);
 
     expect(dispatched.map((message) => message.type)).toEqual(["error"]);
+  });
+
+  const DECLINED_A = { [COMPANY_A.id]: { name: COMPANY_A.name, approved: false } };
+  const APPROVED_A = { [COMPANY_A.id]: { name: COMPANY_A.name, approved: true } };
+
+  /**
+   * Apply a sequence of on-screen states, re-deriving after each.
+   *
+   * @param {Array<Array>} steps `[company, decisions]` pairs, in order
+   * @returns {Element} Hyva's Place Order button
+   */
+  function applySteps(steps) {
+    render(steps[0][0]);
+    const form = mountForm();
+
+    steps.forEach(([company, decisions]) => {
+      showCompany(form, company, decisions);
+      form.refreshOrderIntentVerdict();
+    });
+
+    return document.querySelector('[x-bind="buttonPlaceOrder"]');
+  }
+
+  test.each([
+    [[[COMPANY_A, {}]], false, "no decision yet — placement is untouched"],
+    [[[COMPANY_A, APPROVED_A]], false, "approved"],
+    [[[COMPANY_A, DECLINED_A]], true, "declined"],
+    [
+      [
+        [COMPANY_A, DECLINED_A],
+        [COMPANY_A, APPROVED_A],
+      ],
+      false,
+      "approved after a decline re-enables",
+    ],
+    [
+      [
+        [COMPANY_A, DECLINED_A],
+        [COMPANY_B, DECLINED_A],
+      ],
+      false,
+      "a company change clears the decline",
+    ],
+  ])("place order disabled case %#", (steps, disabled, description) => {
+    const button = applySteps(steps);
+
+    expect([description, button.hasAttribute("disabled")]) //
+      .toEqual([description, disabled]);
+  });
+
+  test("the decline is signalled through Hyva's own navigation API", () => {
+    applySteps([[COMPANY_A, DECLINED_A]]);
+
+    expect(window.hyvaCheckout.navigation.disableButtonPlaceOrder).toHaveBeenCalled();
+
+    applySteps([[COMPANY_A, APPROVED_A]]);
+
+    expect(window.hyvaCheckout.navigation.enableButtonPlaceOrder).toHaveBeenCalled();
   });
 });
