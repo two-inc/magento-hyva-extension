@@ -453,4 +453,57 @@ class CheckoutConfigTest extends TestCase
             }
         };
     }
+
+    /**
+     * companyName.phtml emits its own type/autocomplete after the entity
+     * field's rendered attributes, and duplicates resolve
+     * first-occurrence-wins — so a rendered one left in place silently beats
+     * the template's, including from the FIRST position, where there is no
+     * leading whitespace to anchor a strip on.
+     *
+     * @dataProvider duplicatedFieldAttributeCases
+     */
+    public function testStripDuplicatedFieldAttributes(
+        string $rendered,
+        string $expected,
+        string $case
+    ): void {
+        $viewModel = (new ReflectionClass(CheckoutConfig::class))->newInstanceWithoutConstructor();
+
+        $this->assertSame($expected, $viewModel->stripDuplicatedFieldAttributes($rendered), $case);
+    }
+
+    /**
+     * @return array<array{0:string,1:string,2:string}>
+     */
+    public static function duplicatedFieldAttributeCases(): array
+    {
+        return [
+            [
+                'type="text" name="company"',
+                'name="company"',
+                'type in the first position',
+            ],
+            [
+                'name="company" autocomplete="organization" id="company"',
+                'name="company" id="company"',
+                'autocomplete between other attributes',
+            ],
+            [
+                'type="text" name="company" autocomplete="organization"',
+                'name="company"',
+                'both present',
+            ],
+            [
+                'name="company" id="company"',
+                'name="company" id="company"',
+                'neither present',
+            ],
+            [
+                'data-type="x" name="company" data-autocomplete="y"',
+                'data-type="x" name="company" data-autocomplete="y"',
+                'attributes merely ending in the stripped names',
+            ],
+        ];
+    }
 }

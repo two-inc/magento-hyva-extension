@@ -29,20 +29,6 @@ $element = $block->getData("element");
 $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
 
-/*
- * F005: `renderAttributes()` reflects the entity-field's own declared
- * `type`/`autocomplete` (Magento's core company-name field ships
- * `autocomplete="organization"`), but both branches below deliberately fix
- * their own `type="text"` and `autocomplete="off"` — the latter to keep the
- * browser's native autofill from competing with this field's own live
- * search dropdown. Emitting both left two of each attribute on the same
- * tag, relying on HTML's silent last-wins parsing to get the right one —
- * correct output, but by accident of source order rather than by design.
- * Stripped here so there is exactly one of each, unambiguously.
- */
-$stripDuplicatedAttrs = function (string $rendered): string {
-    return trim(preg_replace('/\s+(type|autocomplete)="[^"]*"/', '', $rendered));
-};
 $form = $block->getData("form");
 ?>
 <div class="<?= $escaper->escapeHtmlAttr(
@@ -89,7 +75,7 @@ $form = $block->getData("form");
     $twoControlInputClass = $escaper->escapeHtmlAttr(
         $element->renderClass(["block w-full form-input grow renderer-text"]),
     );
-    $twoControlInputAttributes = $stripDuplicatedAttrs(
+    $twoControlInputAttributes = $configModel->stripDuplicatedFieldAttributes(
         $element->hasAttributes() ? $element->renderAttributes($escaper) : '',
     ) . ($element->isRequired() ? ' required data-validate=\'{"required":true}\'' : '');
     include $block->getTemplateFile('Two_GatewayHyva::form/field/company-search-control.phtml');
@@ -120,7 +106,7 @@ $form = $block->getData("form");
                     $element->renderClass(["block w-full form-input grow renderer-text"]),
                 ) ?>"
                 <?php if ($element->hasAttributes()): ?>
-                    <?= /* @noEscape */ $stripDuplicatedAttrs($element->renderAttributes($escaper)) ?>
+                    <?= /* @noEscape */ $configModel->stripDuplicatedFieldAttributes($element->renderAttributes($escaper)) ?>
                 <?php endif; ?>
                 <?php if ($element->isRequired()): ?>
                     required

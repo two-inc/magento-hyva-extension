@@ -374,6 +374,19 @@ class CheckoutConfig implements ArgumentInterface
         return self::COMPANY_SEARCH_MIN_CHARS;
     }
 
+    /**
+     * Duplicate HTML attributes resolve FIRST-occurrence-wins, so an entity
+     * field's own type/autocomplete must go or they beat the template's.
+     */
+    public function stripDuplicatedFieldAttributes(string $renderedAttributes): string
+    {
+        return trim(preg_replace(
+            '/\s*(?<![-\w])(?:type|autocomplete)="[^"]*"/',
+            '',
+            $renderedAttributes,
+        ));
+    }
+
     public function getSupportedCountryCodes()
     {
         $countries = ["no", "gb", "se", "nl"];
