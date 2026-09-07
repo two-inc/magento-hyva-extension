@@ -3792,11 +3792,11 @@ $quoteDetails = json_encode(
                     return;
                 }
 
-                if (typeof navigation.enableButtonPlaceOrder === 'function') {
-                    navigation.enableButtonPlaceOrder();
-                }
                 // Only our own decline is lifted — Hyvä disables the same button itself while an order is in flight.
                 if (button && 'twoIntentDeclined' in button.dataset) {
+                    if (typeof navigation.enableButtonPlaceOrder === 'function') {
+                        navigation.enableButtonPlaceOrder();
+                    }
                     button.removeAttribute('disabled');
                     delete button.dataset.twoIntentDeclined;
                 }

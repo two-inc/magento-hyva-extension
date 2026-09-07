@@ -235,12 +235,17 @@ describe("placement after an order-intent decline", () => {
   });
 
   test("the decline is signalled through Hyva's own navigation API", () => {
-    applySteps([[COMPANY_A, DECLINED_A]]);
-
-    expect(window.hyvaCheckout.navigation.disableButtonPlaceOrder).toHaveBeenCalled();
-
     applySteps([[COMPANY_A, APPROVED_A]]);
 
+    // Never toggled for a button this gate did not disable.
+    expect(window.hyvaCheckout.navigation.enableButtonPlaceOrder).not.toHaveBeenCalled();
+
+    applySteps([
+      [COMPANY_A, DECLINED_A],
+      [COMPANY_A, APPROVED_A],
+    ]);
+
+    expect(window.hyvaCheckout.navigation.disableButtonPlaceOrder).toHaveBeenCalled();
     expect(window.hyvaCheckout.navigation.enableButtonPlaceOrder).toHaveBeenCalled();
   });
 });
