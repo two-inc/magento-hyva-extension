@@ -2,9 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25554. WHICH of the two captured companies the order is placed for —
- * billing when it presents a company number, else shipping — and the pair that
- * carries it to the server, in both of the tile's markup modes.
+ * TWO-25554. Which captured company the order is placed for — billing when it has
+ * a number, else shipping — and the pair carrying it, in both tile markup modes.
  */
 
 "use strict";

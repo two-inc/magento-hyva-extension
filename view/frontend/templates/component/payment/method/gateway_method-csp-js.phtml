@@ -1933,8 +1933,7 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * THE ONLY writer of the pair that submits; it blanks neither field while it
-     * holds a value the writer did not put there.
+     * THE ONLY writer of the pair that submits; it never blanks what it did not write.
      *
      * @param {Object} [surface] the tile asking; the live instance otherwise
      * @returns {Object} the company written, as twoGatewayInvoiceCompany()
@@ -1960,12 +1959,10 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * The company being placed for: a hand-typed number, else the resolver, else
-     * the tile's own capture.
+     * The company being placed for: a hand-typed number, else the resolver, else the tile's capture.
      *
      * @param {Object} [surface] the tile asking; the live instance otherwise
-     * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for
-     *          a hand-entered number
+     * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for a hand-entered number
      */
     window.twoGatewayInvoiceCompany = window.twoGatewayInvoiceCompany || function (surface) {
         const tile = surface || twoPaymentComponentInstance;
