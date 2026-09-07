@@ -224,7 +224,11 @@ be up alongside nothing. All four are one box style in one place. The rules that
 - **A DECLINE REFUSES PLACEMENT** (TWO-25657). The `hyvaCheckout.validation` callback
   returns false for a recorded `approved: false` on the company being placed for; no
   record and a recorded FAILURE both place normally. The declined message is toasted
-  because a click-time refusal needs a click-time signal.
+  because a click-time refusal needs a click-time signal. The BUTTON is disabled as
+  well, from the same record — `applyOrderIntentPlacementGate()`, which calls Hyvä's
+  own `navigation.disableButtonPlaceOrder()`/`enableButtonPlaceOrder()` and sets the
+  `disabled` attribute those events no longer reach in Hyvä Checkout 1.3.13, lifting
+  only its own decline so a placement already in flight stays blocked.
 
 ### Magewire Components
 
