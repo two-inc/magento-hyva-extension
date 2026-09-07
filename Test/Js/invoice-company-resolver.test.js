@@ -11,6 +11,7 @@
 const H = require("./hyva-harness");
 
 const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+const DELIVERY_COMPONENT = "twoGatewayHyvaCompanySearchField";
 const FORM_COMPONENT = "twoGatewayHyvaPaymentFormWithValidation";
 const METHOD_CODE = "two_payment";
 
@@ -18,6 +19,14 @@ const BILLING = { companyName: "Invoice GmbH", companyId: "11111111" };
 const SHIPPING = { companyName: "Delivery Ltd", companyId: "22222222" };
 const NAME_ONLY = { companyName: "Unnumbered Ltd", companyId: "" };
 const NOTHING = { companyName: "", companyId: "" };
+
+/** A buyer record as `/autofill/v1/buyer/current` returns one. */
+const BUYER = {
+  email: "sole@trader.test",
+  company_name: "Sole Trader Ltd",
+  organization_number: "998877",
+  phone_number: "+44 7700 900000",
+};
 
 describe("the invoice-company resolver", () => {
   let env;
@@ -57,6 +66,33 @@ describe("the invoice-company resolver", () => {
       .concat(pair)
       .concat(["</div>", "</form>"])
       .join("\n");
+  }
+
+  /**
+   * The delivery form's own capture surface, and the controller behind it.
+   *
+   * @returns {Object} the shipping-role capture controller
+   */
+  function mountDeliveryCapture() {
+    const form = document.createElement("form");
+    form.id = "shipping-form";
+    form.innerHTML = [
+      '<select id="shipping-country_id" name="shipping[country_id]">',
+      '  <option value="GB" selected>x</option>',
+      "</select>",
+      '<div id="shipping-company-root" class="two-company-search"',
+      '     data-two-capture-host="address" data-two-capture-role="">',
+      '  <input type="text" id="shipping-company-field" data-two-capture-field value="" />',
+      "</div>",
+    ].join("\n");
+    document.body.appendChild(form);
+
+    const surface = H.mountComponent(env.alpineComponents[DELIVERY_COMPONENT], {
+      el: document.getElementById("shipping-company-field"),
+      root: document.getElementById("shipping-company-root"),
+    });
+    surface.init();
+    return window.twoGatewayCompanyCaptureInstances.shipping;
   }
 
   /**
@@ -140,6 +176,7 @@ describe("the invoice-company resolver", () => {
 
     render(false);
     H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    H.loadTemplate(H.COMPANY_NAME_TEMPLATE);
     env.fireAlpineInit();
   });
 
@@ -326,26 +363,39 @@ describe("the invoice-company resolver", () => {
   });
 
   test("a sole trader adopted in the delivery form submits and places", async () => {
+    const capture = mountDeliveryCapture();
     const tile = mountTile();
-    const shipping = env.identityFor("shipping");
 
-    shipping.captureMode("soletrader");
-    shipping.write(
-      {
-        companyName: "Sole Trader Ltd",
-        companyId: "TWO:ST:abc123",
-        companyIdSource: "registry",
-      },
-      { authoritative: true },
-    );
-    shipping.soleTraderAdopted(true);
+    capture.soleTraderMode();
+    capture.adoptSoleTrader(BUYER);
 
+    expect(env.identityFor("shipping").soleTraderAdopted()).toBe(true);
     expect(tile.invoiceCompany().role).toBe("shipping");
     expect(submittedPair()).toEqual({
-      name: "Sole Trader Ltd",
-      id: "TWO:ST:abc123",
+      name: BUYER.company_name,
+      id: BUYER.organization_number,
     });
     expect(await placeOrder()).toBe(true);
+  });
+
+  test("a live sole-trader flow is not overwritten by the stored company", () => {
+    const capture = mountDeliveryCapture();
+    capture.soleTraderMode();
+    // The address-book picker also writes this record, signup in flight or not.
+    env.browserStorage.setItem(
+      H.COMPANY_SELECTION_KEY,
+      JSON.stringify({
+        company_name: SHIPPING.companyName,
+        company_id: SHIPPING.companyId,
+        company_id_source: "registry",
+      }),
+    );
+
+    const tile = mountTile();
+
+    expect(env.identityFor("shipping").companyId()).toBe("");
+    expect(tile.invoiceCompany().companyId).toBe("");
+    expect(submittedPair()).toEqual({ name: "", id: "" });
   });
 
   test("the delivery watcher is disposed by the re-render that destroys the tile", () => {
@@ -447,6 +497,17 @@ describe("the invoice-company resolver", () => {
       description,
       { name: SHIPPING.companyName, id: SHIPPING.companyId },
     ]);
+  });
+
+  test("a name the buyer typed with nothing captured is left alone", () => {
+    render(true);
+    const tile = mountTile();
+
+    document.getElementById("company_name").value = "Typed Trading Co";
+    window.twoGatewayApplyInvoiceCompanyFields(tile);
+
+    expect(document.getElementById("company_name").value) //
+      .toBe("Typed Trading Co");
   });
 
   test("the writer blanks a pair it wrote itself when the capture goes", () => {
