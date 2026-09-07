@@ -1906,9 +1906,7 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * WHICH company the order is placed for (TWO-25554): billing when it
-     * presents a company number, else shipping. The one thing that reads both
-     * identities — it writes neither, so no panel sees the other's pick.
+     * TWO-25554: billing when it presents a company number, else shipping.
      *
      * @returns {{companyName: string, companyId: string, companyIdSource: string, role: string}}
      */
@@ -1931,9 +1929,8 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * Put the resolved invoice company into the pair that submits. Blanks that
-     * pair only where it still holds what this helper last wrote — a number the
-     * buyer typed into the tile's own field is not the resolver's to destroy.
+     * Writes the pair that submits; blanks it only where it still holds this
+     * helper's own last write, a hand-typed number being nobody else's to destroy.
      *
      * @returns {Object} the resolved company, as twoGatewayResolveInvoiceCompany()
      */
@@ -2835,7 +2832,6 @@ $quoteDetails = json_encode(
 
                                         const checkAndProceed = () => {
                                             try {
-                                                // TWO-25554: the pair read below is the resolved invoice company's.
                                                 window.twoGatewayApplyInvoiceCompanyFields();
 
                                                 const formElements = [
@@ -2939,7 +2935,6 @@ $quoteDetails = json_encode(
                                 isFormValid = false;
                             }
 
-                            // TWO-25554: brought up to the resolved invoice company before judging it.
                             window.twoGatewayApplyInvoiceCompanyFields();
 
                             // Not left to the field's own `required`: in the
@@ -3318,9 +3313,7 @@ $quoteDetails = json_encode(
                     );
                 }
 
-                // TWO-25554: the pair that submits follows BOTH identities, this role's
-                // own mirror covering the other. Disposed first: Magewire re-runs
-                // initialize() on every rebuild and each dead subscription would go on writing.
+                // Disposed first — Magewire re-runs initialize() and a dead subscription writes on.
                 if (window.twoGatewayInvoiceCompanyWatcher) {
                     window.twoGatewayInvoiceCompanyWatcher.dispose();
                     window.twoGatewayInvoiceCompanyWatcher = null;
@@ -3328,10 +3321,11 @@ $quoteDetails = json_encode(
                 const shippingIdentity = window.twoGatewayCompanyIdentity('shipping');
                 if (shippingIdentity) {
                     window.twoGatewayInvoiceCompanyWatcher = shippingIdentity.subscribe(() => {
-                        this.fillCompanyData();
+                        this.fillCompanyData('', '', true);
                     });
                 }
-                this.fillCompanyData();
+                // No dispatch: a rebuild restores an earlier pick and empties the dedup records.
+                this.fillCompanyData('', '', false);
 
                 // The intent-approved notice is persistent — it survives
                 // checkout re-renders and failed place-order validation, which
@@ -3563,6 +3557,24 @@ $quoteDetails = json_encode(
             },
 
             /**
+             * The resolver's answer whole, else this tile's own capture, down to
+             * the field where a hand-typed number lives and no identity does.
+             *
+             * @returns {Object} as twoGatewayResolveInvoiceCompany()
+             */
+            invoiceCompany() {
+                const resolved = window.twoGatewayResolveInvoiceCompany();
+                if (resolved.companyId) return resolved;
+                return {
+                    companyName: this.companyName,
+                    companyId: this.companyId
+                        || String(document.getElementById('company_id')?.value || ''),
+                    companyIdSource: this.companyIdSource,
+                    role: 'billing'
+                };
+            },
+
+            /**
              * @param {string} companyId
              * @param {string} companyName
              * @returns {boolean} whether this exact company already has a
@@ -3598,16 +3610,17 @@ $quoteDetails = json_encode(
              *   matches the name on screen.
              */
             orderIntentRecordForCurrentCompany() {
-                const companyId = this.companyId;
+                const invoiceCompany = this.invoiceCompany();
+                const companyId = invoiceCompany.companyId;
                 if (!companyId) return null;
 
                 const failure = this.orderIntentFailures[companyId];
-                if (failure && failure.name === this.companyName) {
+                if (failure && failure.name === invoiceCompany.companyName) {
                     return { kind: 'failure' };
                 }
 
                 const decision = this.orderIntentDecisions[companyId];
-                if (decision && decision.name === this.companyName) {
+                if (decision && decision.name === invoiceCompany.companyName) {
                     return { kind: 'decision', approved: decision.approved };
                 }
 
@@ -3714,7 +3727,8 @@ $quoteDetails = json_encode(
             // " (12345678)". Same shape as the sibling platforms' single-line
             // builders: no name at all means no label text.
             get companyTileLabelText() {
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) return '';
 
                 // `twoGatewayDisplayCompanyNumber()`, not the raw value: an
@@ -3722,7 +3736,7 @@ $quoteDetails = json_encode(
                 // shown to a buyer, and it answers '' for one — which is the
                 // same case as "no number", so the BRACKETS disappear with it
                 // rather than leaving `Example Ltd ()`.
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
@@ -3741,46 +3755,33 @@ $quoteDetails = json_encode(
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
-                /*
-                 * The NAME is what makes this call meaningful; the id is
-                 * allowed to be empty, because the search response is allowed
-                 * to omit the national identifier.
-                 *
-                 * It used to bail on an empty id, which left the buyer looking
-                 * at the newly selected company's name beside the PREVIOUS
-                 * company's id — in a disabled field they could not correct,
-                 * and read straight back out by buildOrderIntentRequestBody()
-                 * and by the checkout's own `payment[company_id]`. Writing both
-                 * fields unconditionally is what keeps name and id describing
-                 * the same company.
-                 */
-                // TWO-25554: nothing to commit — how the mount and either identity's change call in.
-                if (!companyName) {
-                    window.twoGatewayApplyInvoiceCompanyFields();
-                    return;
+                // No name is a call with no capture to commit; an id may be empty alone.
+                if (companyName) {
+                    this.companyName = companyName;
+                    this.companyId = companyId;
+
+                    const companyNameInput = document.getElementById("company_name");
+                    if (companyNameInput) companyNameInput.value = companyName;
+
+                    // Value only. The locked state is `companyIdDisabled`, which
+                    // the field's `:disabled` is bound to and which
+                    // applyCompanyIdEditability() is the sole writer of — the
+                    // callers above set `companyIdEntryRequired` and call it
+                    // BEFORE getting here.
+                    const companyIdInput = document.getElementById("company_id");
+                    if (companyIdInput) companyIdInput.value = companyId;
                 }
 
-                this.companyName = companyName;
-                this.companyId = companyId;
-
-                const companyNameInput = document.getElementById("company_name");
-                if (companyNameInput) companyNameInput.value = companyName;
-
-                // Value only. The locked state is `companyIdDisabled`, which
-                // the field's `:disabled` is bound to and which
-                // applyCompanyIdEditability() is the sole writer of — the
-                // callers above set `companyIdEntryRequired` and call it
-                // BEFORE getting here.
-                const companyIdInput = document.getElementById("company_id");
-                if (companyIdInput) companyIdInput.value = companyId;
-
-                // TWO-25554: the resolver has the last word, this role's own capture included.
+                // The resolver has the last word, this role's own capture included.
                 window.twoGatewayApplyInvoiceCompanyFields();
+                const invoiceCompany = this.invoiceCompany();
 
-                // A hand-typed number stays the buyer's to correct, so the lock
-                // is re-derived from what was just committed.
-                this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-                this.applyCompanyIdEditability();
+                if (companyName) {
+                    // A hand-typed number stays the buyer's to correct, so the lock
+                    // is re-derived from what was just committed.
+                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
+                    this.applyCompanyIdEditability();
+                }
 
                 // Only trigger order intent if the company ID CHANGED — and
                 // only when there IS one. An intent for an empty company id is a
@@ -3794,8 +3795,8 @@ $quoteDetails = json_encode(
                 // for that exact company and name (see
                 // processOrderIntentSuccessResponse), so picking a different
                 // company, or renaming this one, always passes the gate.
-                if (this.isOrderIntentEnabled && triggerOrderIntent && companyId
-                    && !this.hasOrderIntentDecisionFor(companyId, companyName)) {
+                if (this.isOrderIntentEnabled && triggerOrderIntent && invoiceCompany.companyId
+                    && !this.hasOrderIntentDecisionFor(invoiceCompany.companyId, invoiceCompany.companyName)) {
                     // Bug 5: the tile-local spinner goes up HERE rather than
                     // when the request leaves, because the listener debounces
                     // 500ms and half a second of a tile that has visibly not
@@ -3883,21 +3884,14 @@ $quoteDetails = json_encode(
             },
 
             shouldSkipOrderIntent(quoteData) {
-                // The DOM behind the resolver carries a number typed by hand, which no identity holds.
-                const companyIdInput = document.getElementById("company_id");
-                const companyId = window.twoGatewayResolveInvoiceCompany().companyId
-                    || companyIdInput?.value || '';
-                return !companyId.trim();
+                return !this.invoiceCompany().companyId.trim();
             },
 
             buildOrderIntentRequestBody(quoteData) {
-                // TWO-25554: the API is told the resolved invoice company; the DOM
-                // behind it carries manual entry, which no identity holds.
-                const invoiceCompany = window.twoGatewayResolveInvoiceCompany();
+                const invoiceCompany = this.invoiceCompany();
                 const companyNameInput = document.getElementById("company_name");
-                const companyIdInput = document.getElementById("company_id");
                 const companyName = invoiceCompany.companyName || companyNameInput?.value || "";
-                const companyId = invoiceCompany.companyId || companyIdInput?.value || "";
+                const companyId = invoiceCompany.companyId;
 
                 let lineItems = quoteData.items?.map(item => ({
                     name: item.name,
@@ -3982,7 +3976,8 @@ $quoteDetails = json_encode(
                 const copy = this.orderIntentApprovedNoticeCopy;
                 if (!copy) return '';
 
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) {
                     return typeof copy.withoutCompany === 'string' ? copy.withoutCompany : '';
                 }
@@ -4000,7 +3995,7 @@ $quoteDetails = json_encode(
                 // '' for an absent number AND for an internal placeholder one
                 // (`TWO:` prefix), which must never reach a buyer — see
                 // twoGatewayDisplayCompanyNumber().
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 const text = copy.withCompany
                     .replace(copy.companyNameToken, () => companyName)
                     .replace(copy.companyNumberToken, () => companyId);
@@ -4024,7 +4019,8 @@ $quoteDetails = json_encode(
                 const copy = this.orderIntentNotAvailableCopy;
                 if (!copy) return '';
 
-                const companyName = (this.companyName || '').trim();
+                const invoiceCompany = this.invoiceCompany();
+                const companyName = (invoiceCompany.companyName || '').trim();
                 if (!companyName) {
                     return typeof copy.withoutCompany === 'string' ? copy.withoutCompany : '';
                 }
@@ -4042,7 +4038,7 @@ $quoteDetails = json_encode(
                 // '' for an absent number AND for an internal placeholder one
                 // (`TWO:` prefix), which must never reach a buyer — see
                 // twoGatewayDisplayCompanyNumber().
-                const companyId = window.twoGatewayDisplayCompanyNumber(this.companyId);
+                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
                 const text = copy.withCompany
                     .replace(copy.companyNameToken, () => companyName)
                     .replace(copy.companyNumberToken, () => companyId);
@@ -4075,10 +4071,11 @@ $quoteDetails = json_encode(
             processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName) {
                 if (!response) return;
 
+                const invoiceCompany = this.invoiceCompany();
                 const decidedCompanyId = typeof requestedCompanyId === 'string'
                     && requestedCompanyId
                     ? requestedCompanyId
-                    : this.companyId;
+                    : invoiceCompany.companyId;
 
                 // Recorded UNCONDITIONALLY, even if the reply arrives after the
                 // buyer has moved on: this record is the dedup gate's memory as
@@ -4122,7 +4119,7 @@ $quoteDetails = json_encode(
                 // about.
                 const recordedName = typeof requestedCompanyName === 'string'
                     ? requestedCompanyName
-                    : (decidedCompanyId === this.companyId ? this.companyName : null);
+                    : (decidedCompanyId === invoiceCompany.companyId ? invoiceCompany.companyName : null);
 
                 if (!decidedCompanyId) return;
                 this.orderIntentDecisions[decidedCompanyId] = {
@@ -4151,7 +4148,7 @@ $quoteDetails = json_encode(
                  * showing the buyer a company/verdict pair that never happened
                  * together.
                  */
-                if (decidedCompanyId !== this.companyId) return;
+                if (decidedCompanyId !== invoiceCompany.companyId) return;
 
                 // Past the guard, and only past it. This bit says whether THE
                 // ORDER may be placed, and the order is for the company on
@@ -4251,8 +4248,9 @@ $quoteDetails = json_encode(
              *   actually ran for, rather than one edited by hand since.
              */
             processOrderIntentErrorResponse(response, requestedCompanyId, requestedCompanyName) {
+                const invoiceCompany = this.invoiceCompany();
                 if (typeof requestedCompanyId === 'string' && requestedCompanyId
-                    && requestedCompanyId !== this.companyId) {
+                    && requestedCompanyId !== invoiceCompany.companyId) {
                     return;
                 }
                 this.placeOrderIntentFlag = false;
@@ -4322,17 +4320,17 @@ $quoteDetails = json_encode(
                 // `generalErrorMessage` itself.
                 const isReportable = Boolean(message && this.generalErrorMessage);
 
-                if (isReportable && this.companyId) {
+                if (isReportable && invoiceCompany.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
                     // stays retryable.
-                    this.orderIntentFailures[this.companyId] = {
+                    this.orderIntentFailures[invoiceCompany.companyId] = {
                         // The name the check actually RAN for, not whatever the
                         // field holds now: the guard above pins the id, but a name
                         // hand-edited while the request was out would otherwise
                         // file the failure under a name it was never about.
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
-                            : this.companyName,
+                            : invoiceCompany.companyName,
                     };
                 }
 
@@ -4614,13 +4612,12 @@ $quoteDetails = json_encode(
                     return true;
                 }
 
-                // Get the current company ID from the component
-                const currentCompanyId = component.companyId
-                    || document.getElementById("company_id")?.value || '';
+                const invoiceCompany = component.invoiceCompany();
+                const currentCompanyId = invoiceCompany.companyId;
 
                 // Nothing to check, or already decided for exactly this company.
                 if (!currentCompanyId.trim()
-                    || component.hasOrderIntentDecisionFor(currentCompanyId, component.companyName)) {
+                    || component.hasOrderIntentDecisionFor(currentCompanyId, invoiceCompany.companyName)) {
                     component.setOrderIntentChecking(false);
                     return true;
                 }
@@ -4658,7 +4655,7 @@ $quoteDetails = json_encode(
                 // WOULD match. For a reply about the company still on screen both
                 // end up recording '' — that company is simply nameless, and the
                 // gate then treats it as decided while it stays that way.
-                const requestedCompanyName = component.companyName || undefined;
+                const requestedCompanyName = invoiceCompany.companyName || undefined;
                 component.setOrderIntentChecking(true);
 
                 /*

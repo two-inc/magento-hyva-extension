@@ -29,9 +29,8 @@ describe("the invoice-company resolver", () => {
   let validators;
 
   /**
-   * @param {boolean} withTileControl whether the tile hosts the company
-   *        control — the non-default markup mode, in which the pair the buyer
-   *        submits is the visible field they can also type into
+   * @param {boolean} withTileControl the non-default markup mode, whose pair is
+   *        the visible field the buyer can also type into
    */
   function render(withTileControl) {
     const pair = withTileControl
@@ -65,8 +64,7 @@ describe("the invoice-company resolver", () => {
   }
 
   /**
-   * Capture a company for one address role, the way each panel's own
-   * controller does.
+   * Capture a company for one address role, as that panel's controller does.
    *
    * @param {string} role 'shipping' or 'billing'
    * @param {{companyName: string, companyId: string}} company
@@ -211,8 +209,7 @@ describe("the invoice-company resolver", () => {
   );
 
   test("a pick in the delivery panel after the tile mounted reaches the pair", () => {
-    // Given the payment step already mounted, when the buyer captures a
-    // company in the delivery form, then the pair that submits follows it.
+    // Given the payment step mounted, when a delivery capture lands, then the pair follows.
     mountTile();
     expect(submittedPair()).toEqual({ name: "", id: "" });
 
@@ -222,6 +219,53 @@ describe("the invoice-company resolver", () => {
       name: SHIPPING.companyName,
       id: SHIPPING.companyId,
     });
+  });
+
+  test.each([
+    [false, ["intent"], "a delivery-panel pick dispatches the pre-check"],
+    [true, [], "the resolved company's decision on record dispatches nothing"],
+  ])(
+    "order intent: decided=%s dispatches %s (%s)",
+    (decided, expected, description) => {
+      const tile = mountTile();
+      if (decided) {
+        tile.orderIntentDecisions[SHIPPING.companyId] = {
+          name: SHIPPING.companyName,
+          approved: true,
+        };
+      }
+
+      const dispatched = [];
+      const listener = () => dispatched.push("intent");
+      window.addEventListener("dispatch-order-intent", listener);
+      try {
+        capture("shipping", SHIPPING);
+      } finally {
+        window.removeEventListener("dispatch-order-intent", listener);
+      }
+
+      expect([description, dispatched]).toEqual([description, expected]);
+    },
+  );
+
+  test("a pick in the tile itself still dispatches its own pre-check", () => {
+    render(true);
+    mountTile();
+
+    const dispatched = [];
+    const listener = () => dispatched.push("intent");
+    window.addEventListener("dispatch-order-intent", listener);
+    try {
+      panel().options.onSelect({
+        text: BILLING.companyName,
+        companyId: BILLING.companyId,
+        lookupId: "lookup-billing",
+      });
+    } finally {
+      window.removeEventListener("dispatch-order-intent", listener);
+    }
+
+    expect(dispatched).toEqual(["intent"]);
   });
 
   test("a delivery company the buyer discards leaves the pair with it", () => {
@@ -263,8 +307,7 @@ describe("the invoice-company resolver", () => {
   });
 
   test("a number typed into the tile's own field is not overwritten", () => {
-    // The identities hold no number, so there is nothing to resolve — and the
-    // buyer's own entry is the only company there is.
+    // Nothing to resolve, so the buyer's own entry is the only company there is.
     render(true);
     capture("billing", NAME_ONLY);
     mountTile();

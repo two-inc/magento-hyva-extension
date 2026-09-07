@@ -147,21 +147,19 @@ $methodCode = $brandedViewModel->getMethodCode();
 
         /** Check if the selected payment method is this brand's Two method */
         if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
-            /*
-             * ORDER-INTENT RESOLUTION. The tile's company is the invoice-role
-             * one, so its own BILLING record is the only record read here — a
-             * company picked in the tile before Two became the active payment
-             * method never got its intent fired, and this handler is the retry.
-             *
-             * Guarded on the helper existing: this template can run before
-             * gateway_method-csp-js.phtml has published it.
-             */
+            // TWO-25554 re-arm for a company picked before Two was active: the resolver, else the record for a page whose identities are not seeded, and neither helper is certain to be published yet.
+            const invoiceCompany = (window.twoGatewayResolveInvoiceCompany
+                || function () { return { companyId: "" }; })();
+            if (invoiceCompany.companyId) {
+                window.dispatchEvent(new Event("dispatch-order-intent"));
+                return;
+            }
+
             const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
                 || function () { return {}; })();
             const capturedCompany = billingCompanySelectionData.company_name || "";
             const capturedCompanyId = billingCompanySelectionData.company_id || "";
 
-            // Trigger order intent if we have company data
             if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
             }

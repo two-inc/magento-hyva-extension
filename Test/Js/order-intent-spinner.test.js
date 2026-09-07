@@ -451,10 +451,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         "utf8",
       );
       expect(jsSource).toContain(
-        "const requestedCompanyName = component.companyName || undefined;",
+        "const requestedCompanyName = invoiceCompany.companyName || undefined;",
       );
       expect(jsSource).not.toContain(
-        "const requestedCompanyName = component.companyName || '';",
+        "const requestedCompanyName = invoiceCompany.companyName || '';",
       );
     });
 

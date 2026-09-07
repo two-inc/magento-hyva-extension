@@ -208,13 +208,17 @@ be up alongside nothing. All four are one box style in one place. The rules that
   that is present and malformed, which it degrades to a silent box for rather
   than throwing — and that case needs the fallback just as much. Gate a fallback
   on there being nothing to say, never on any narrower proxy for it.
-- **The `dispatch-order-intent` re-arm reads the BILLING record and nothing
-  else.** `company-name-payment.phtml`'s `checkout:payment:method-activate`
-  handler exists because a company picked in the tile before Two became the
-  active payment method never got its intent fired — the global listener drops a
-  dispatch while another method is active. The tile's company is the
-  invoice-role company, so its own record is the only one that answers; there is
-  no shipping fallback and the handler writes no field. Both markup modes keep
+- **Every order-intent gate asks `twoGatewayResolveInvoiceCompany()`** (TWO-25554)
+  — the dispatch trigger, the per-company dedup and verdict records, the notice
+  copy and the tile label alike, so a company picked in the DELIVERY form gets the
+  same client-side pre-check as one picked in the invoice form. The tile's own
+  state stays its own role's mirror; only the reads move.
+  `company-name-payment.phtml`'s `checkout:payment:method-activate` handler
+  exists because a company picked before Two became the active payment method
+  never got its intent fired — the global listener drops a dispatch while another
+  method is active. That re-arm asks the resolver first and falls back to the
+  BILLING record for a page whose identities are not seeded yet; it writes no
+  field either way. Both markup modes keep
   `data-name` on the company pair so a surface that is not the payment form can
   resolve it without a document-wide id lookup.
 
