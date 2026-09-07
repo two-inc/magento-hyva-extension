@@ -257,7 +257,10 @@ sharing.
 not a pin, not an event, not a shared field write. A pick in one panel is
 invisible to the other. The one thing that reads both is the
 ORDER-INTENT/PLACEMENT resolver, which reads the captured identities to decide
-which company the API is told about; it never writes and never has a UI effect.
+which company the API is told about; it writes no identity. Its one deliberate
+UI effect is the carve-out from that rule: the payment tile's label and its
+order-intent notices name the company the resolver answers, so a delivery-panel
+pick IS visible there — a notice naming the company the check ran for is required.
 That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
 identity when it presents a company number, else the shipping one, else nothing.
 What the surfaces ask is `twoGatewayInvoiceCompany()`, which puts a number typed
