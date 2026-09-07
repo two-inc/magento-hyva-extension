@@ -1929,27 +1929,67 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * Writes the pair that submits; blanks it only where it still holds this
-     * helper's own last write, a hand-typed number being nobody else's to destroy.
+     * THE ONLY writer of the `payment[company_name]` / `payment[company_id]`
+     * pair that submits. Each field is written from the company being placed
+     * for; neither is blanked while it holds a value this helper did not write,
+     * and a number typed into the tile's own field owns the pair outright.
      *
-     * @returns {Object} the resolved company, as twoGatewayResolveInvoiceCompany()
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {Object} the company written, as twoGatewayInvoiceCompany()
      */
-    window.twoGatewayApplyInvoiceCompanyFields = window.twoGatewayApplyInvoiceCompanyFields || function () {
-        const resolved = window.twoGatewayResolveInvoiceCompany();
+    window.twoGatewayApplyInvoiceCompanyFields = window.twoGatewayApplyInvoiceCompanyFields || function (surface) {
+        const placing = window.twoGatewayInvoiceCompany(surface);
         const nameField = document.getElementById('company_name');
         const idField = document.getElementById('company_id');
-        const written = window.twoGatewayInvoiceCompanyWritten;
-        const holdsOwnWrite = Boolean(written)
-            && (!nameField || nameField.value === written.companyName)
-            && (!idField || idField.value === written.companyId);
-        if (!resolved.companyId && !holdsOwnWrite) return resolved;
-        if (nameField) nameField.value = resolved.companyName;
-        if (idField) idField.value = resolved.companyId;
-        window.twoGatewayInvoiceCompanyWritten = {
-            companyName: resolved.companyName,
-            companyId: resolved.companyId
+        const written = window.twoGatewayInvoiceCompanyWritten
+            || { companyName: null, companyId: null };
+        if (idField && idField.value && idField.value !== written.companyId) return placing;
+        const applyField = function (field, value, last) {
+            if (!field) return last;
+            if (!value && field.value !== last) return last;
+            field.value = value;
+            return value;
         };
-        return resolved;
+        window.twoGatewayInvoiceCompanyWritten = {
+            companyName: applyField(nameField, placing.companyName, written.companyName),
+            companyId: applyField(idField, placing.companyId, written.companyId)
+        };
+        return placing;
+    };
+
+    /**
+     * The company being placed for: the resolver's answer, else the tile's own
+     * capture, else a number typed into its field, which no identity holds.
+     *
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for
+     *          a hand-entered number
+     */
+    window.twoGatewayInvoiceCompany = window.twoGatewayInvoiceCompany || function (surface) {
+        const tile = surface || twoPaymentComponentInstance;
+        const tileName = tile ? tile.companyName : '';
+        const written = window.twoGatewayInvoiceCompanyWritten || {};
+        const field = document.getElementById('company_id');
+        // A value the writer put there itself is a captured company coming back.
+        const typed = field && field.value && field.value !== written.companyId
+            ? field.value
+            : '';
+        if (typed) {
+            return {
+                companyName: tileName,
+                companyId: typed,
+                companyIdSource: 'manual',
+                role: 'typed'
+            };
+        }
+        const resolved = window.twoGatewayResolveInvoiceCompany();
+        if (resolved.companyId) return resolved;
+        return {
+            companyName: tileName,
+            companyId: tile ? tile.companyId : '',
+            companyIdSource: tile ? tile.companyIdSource : '',
+            role: tile && tile.companyId ? 'billing' : resolved.role
+        };
     };
 
     /**
@@ -2575,15 +2615,14 @@ $quoteDetails = json_encode(
                 restoring = false;
             },
 
-            /** Blank this surface's own name field, and — on the tile — the pair that submits. */
+            /** Blank this surface's own name field; on the tile, re-derive the pair instead. */
             clearCapturedNameFields() {
+                if (this.isTileSurface()) {
+                    window.twoGatewayApplyInvoiceCompanyFields(this);
+                    return;
+                }
                 const field = this.companyNameField();
                 if (field) field.value = '';
-                if (!this.isTileSurface()) return;
-                const nameField = document.getElementById('company_name');
-                if (nameField && nameField !== field) nameField.value = '';
-                const idField = document.getElementById('company_id');
-                if (idField) idField.value = '';
             },
 
             /**
@@ -2647,19 +2686,16 @@ $quoteDetails = json_encode(
                     this.clearCapturedNameFields();
                     return;
                 }
+                // The tile's pair is what submits, so a morph blanking it loses the
+                // company from the order and not merely from the screen.
+                if (this.isTileSurface()) {
+                    window.twoGatewayApplyInvoiceCompanyFields(this);
+                    this.announceCapturedCompanyToModel(name);
+                    return;
+                }
                 const field = this.companyNameField();
                 if (field && field.value !== name) field.value = name;
                 this.announceCapturedCompanyToModel(name);
-                if (!this.isTileSurface()) return;
-                // The tile's pair is what submits, so a morph blanking it loses
-                // the company from the order and not merely from the screen.
-                const nameField = document.getElementById('company_name');
-                if (nameField && nameField !== field && nameField.value !== name) {
-                    nameField.value = name;
-                }
-                const id = identity.companyId();
-                const idField = document.getElementById('company_id');
-                if (id && idField && idField.value !== id) idField.value = id;
             },
 
             writeCapturedSelection() {
@@ -3556,22 +3592,9 @@ $quoteDetails = json_encode(
                 }
             },
 
-            /**
-             * The resolver's answer whole, else this tile's own capture, down to
-             * the field where a hand-typed number lives and no identity does.
-             *
-             * @returns {Object} as twoGatewayResolveInvoiceCompany()
-             */
+            /** @returns {Object} the company being placed for, as twoGatewayInvoiceCompany() */
             invoiceCompany() {
-                const resolved = window.twoGatewayResolveInvoiceCompany();
-                if (resolved.companyId) return resolved;
-                return {
-                    companyName: this.companyName,
-                    companyId: this.companyId
-                        || String(document.getElementById('company_id')?.value || ''),
-                    companyIdSource: this.companyIdSource,
-                    role: 'billing'
-                };
+                return window.twoGatewayInvoiceCompany(this);
             },
 
             /**
@@ -3759,29 +3782,13 @@ $quoteDetails = json_encode(
                 if (companyName) {
                     this.companyName = companyName;
                     this.companyId = companyId;
-
-                    const companyNameInput = document.getElementById("company_name");
-                    if (companyNameInput) companyNameInput.value = companyName;
-
-                    // Value only. The locked state is `companyIdDisabled`, which
-                    // the field's `:disabled` is bound to and which
-                    // applyCompanyIdEditability() is the sole writer of — the
-                    // callers above set `companyIdEntryRequired` and call it
-                    // BEFORE getting here.
-                    const companyIdInput = document.getElementById("company_id");
-                    if (companyIdInput) companyIdInput.value = companyId;
-                }
-
-                // The resolver has the last word, this role's own capture included.
-                window.twoGatewayApplyInvoiceCompanyFields();
-                const invoiceCompany = this.invoiceCompany();
-
-                if (companyName) {
                     // A hand-typed number stays the buyer's to correct, so the lock
                     // is re-derived from what was just committed.
                     this.companyIdEntryRequired = !this.hasVouchedCompanyId();
                     this.applyCompanyIdEditability();
                 }
+
+                const invoiceCompany = window.twoGatewayApplyInvoiceCompanyFields(this);
 
                 // Only trigger order intent if the company ID CHANGED — and
                 // only when there IS one. An intent for an empty company id is a
@@ -3889,8 +3896,7 @@ $quoteDetails = json_encode(
 
             buildOrderIntentRequestBody(quoteData) {
                 const invoiceCompany = this.invoiceCompany();
-                const companyNameInput = document.getElementById("company_name");
-                const companyName = invoiceCompany.companyName || companyNameInput?.value || "";
+                const companyName = invoiceCompany.companyName;
                 const companyId = invoiceCompany.companyId;
 
                 let lineItems = quoteData.items?.map(item => ({

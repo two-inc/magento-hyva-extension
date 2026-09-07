@@ -709,6 +709,13 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayCountryFieldScope",
   "twoGatewayInvoiceRoleCountryField",
   "twoGatewayInvoiceRoleAddressForm",
+  // TWO-25554's placement trio — which company the order is placed for, and the
+  // one writer of the pair that submits. Same idiom, same reset reason, and one
+  // sharper: the surviving closure holds the previous eval's tile instance, so a
+  // stale component answers the next file's placement.
+  "twoGatewayResolveInvoiceCompany",
+  "twoGatewayInvoiceCompany",
+  "twoGatewayApplyInvoiceCompanyFields",
 ];
 
 /**
@@ -1741,6 +1748,8 @@ function installHyvaEnvironment() {
       delete window.twoGatewayCompanyMorphDeferred;
       // Same reason: created on first mount, and keyed on DOM roots.
       delete window.twoGatewayCaptureIdentityWatchers;
+      delete window.twoGatewayInvoiceCompanyWatchers;
+      delete window.twoGatewayInvoiceCompanyWritten;
       SHARED_HELPER_GLOBALS.forEach(function (name) {
         delete window[name];
         delete global[name];

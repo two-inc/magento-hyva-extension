@@ -306,15 +306,79 @@ describe("the invoice-company resolver", () => {
     });
   });
 
-  test("a number typed into the tile's own field is not overwritten", () => {
-    // Nothing to resolve, so the buyer's own entry is the only company there is.
+  test.each([
+    [NOTHING, "nothing captured anywhere"],
+    [SHIPPING, "a delivery company captured as well"],
+  ])(
+    "a number typed into the tile's own field outranks %s (%s)",
+    (shipping, description) => {
+      render(true);
+      capture("shipping", shipping);
+      const tile = mountTile();
+
+      document.getElementById("company_id").value = "99999999";
+      window.twoGatewayApplyInvoiceCompanyFields(tile);
+
+      expect([description, document.getElementById("company_id").value]) //
+        .toEqual([description, "99999999"]);
+      expect([description, tile.invoiceCompany()]).toEqual([
+        description,
+        {
+          companyName: "",
+          companyId: "99999999",
+          companyIdSource: "manual",
+          role: "typed",
+        },
+      ]);
+    },
+  );
+
+  test.each([
+    [
+      "a re-render finding no tile capture",
+      (tile) => {
+        tile.mountCompanyPopover();
+      },
+    ],
+    [
+      "a tile capture the buyer discards",
+      (tile, environment) => {
+        environment.identityFor("billing").write(
+          {
+            companyName: BILLING.companyName,
+            companyId: BILLING.companyId,
+            companyIdSource: "registry",
+          },
+          { authoritative: true },
+        );
+        environment.identityFor("billing").clear();
+      },
+    ],
+  ])("%s leaves the delivery company submitting", (description, act) => {
     render(true);
-    capture("billing", NAME_ONLY);
-    mountTile();
+    capture("shipping", SHIPPING);
+    const tile = mountTile();
 
-    document.getElementById("company_id").value = "99999999";
+    act(tile, env);
 
-    expect(window.twoGatewayApplyInvoiceCompanyFields().companyId).toBe("");
-    expect(document.getElementById("company_id").value).toBe("99999999");
+    expect([description, submittedPair()]).toEqual([
+      description,
+      { name: SHIPPING.companyName, id: SHIPPING.companyId },
+    ]);
+  });
+
+  test("the writer blanks a pair it wrote itself when the capture goes", () => {
+    // The other half of the rule above: what the writer put there is its to take back.
+    capture("shipping", SHIPPING);
+    const tile = mountTile();
+    expect(submittedPair()).toEqual({
+      name: SHIPPING.companyName,
+      id: SHIPPING.companyId,
+    });
+
+    env.identityFor("shipping").clear();
+    window.twoGatewayApplyInvoiceCompanyFields(tile);
+
+    expect(submittedPair()).toEqual({ name: "", id: "" });
   });
 });
