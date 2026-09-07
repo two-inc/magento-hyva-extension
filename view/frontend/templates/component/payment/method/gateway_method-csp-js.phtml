@@ -1814,12 +1814,16 @@ $quoteDetails = json_encode(
      * removes a surface — not by the next surface's mount.
      */
     function twoGatewayReapCaptureIdentityWatchers() {
-        const registry = window.twoGatewayCaptureIdentityWatchers;
-        if (!(registry instanceof Map)) return;
-        registry.forEach(function (watcher, node) {
-            if (!node || node.isConnected !== false) return;
-            watcher.dispose();
-            registry.delete(node);
+        [
+            window.twoGatewayCaptureIdentityWatchers,
+            window.twoGatewayInvoiceCompanyWatchers
+        ].forEach(function (registry) {
+            if (!(registry instanceof Map)) return;
+            registry.forEach(function (watcher, node) {
+                if (!node || node.isConnected !== false) return;
+                watcher.dispose();
+                registry.delete(node);
+            });
         });
     }
 
@@ -3369,15 +3373,20 @@ $quoteDetails = json_encode(
                     }
                 }
 
-                // Disposed first — Magewire re-runs initialize() and a dead subscription writes on.
-                if (window.twoGatewayInvoiceCompanyWatcher) {
-                    window.twoGatewayInvoiceCompanyWatcher.dispose();
-                    window.twoGatewayInvoiceCompanyWatcher = null;
-                }
-                if (shipping) {
-                    window.twoGatewayInvoiceCompanyWatcher = shipping.subscribe(() => {
+                // Keyed on this tile's own root and reaped with the mirrors, so a
+                // re-render that destroys the tile disposes it rather than the next
+                // initialize() eventually noticing.
+                const invoiceWatchers = window.twoGatewayInvoiceCompanyWatchers instanceof Map
+                    ? window.twoGatewayInvoiceCompanyWatchers
+                    : (window.twoGatewayInvoiceCompanyWatchers = new Map());
+                twoGatewayReapCaptureIdentityWatchers();
+                if (shipping && this.$root) {
+                    if (invoiceWatchers.has(this.$root)) {
+                        invoiceWatchers.get(this.$root).dispose();
+                    }
+                    invoiceWatchers.set(this.$root, shipping.subscribe(() => {
                         this.fillCompanyData('', '', true);
-                    });
+                    }));
                 }
                 // No dispatch: a rebuild restores an earlier pick and empties the dedup records.
                 this.fillCompanyData('', '', false);

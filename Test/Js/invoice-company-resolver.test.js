@@ -150,7 +150,7 @@ describe("the invoice-company resolver", () => {
   afterEach(() => {
     delete window.hyvaCheckout;
     delete window.twoGatewayInvoiceCompanyWritten;
-    delete window.twoGatewayInvoiceCompanyWatcher;
+    delete window.twoGatewayInvoiceCompanyWatchers;
     fetchStub.restore();
     env.restore();
     jest.useRealTimers();
@@ -320,6 +320,17 @@ describe("the invoice-company resolver", () => {
       id: "TWO:ST:abc123",
     });
     expect(await placeOrder()).toBe(true);
+  });
+
+  test("the delivery watcher is disposed by the re-render that destroys the tile", () => {
+    const tile = mountTile();
+    const registry = window.twoGatewayInvoiceCompanyWatchers;
+    expect(registry.has(tile.$root)).toBe(true);
+
+    document.body.innerHTML = "";
+    window.twoGatewayReapCaptureIdentityWatchers();
+
+    expect(registry.size).toBe(0);
   });
 
   test("reading shipping writes nothing back to the billing panel", () => {
