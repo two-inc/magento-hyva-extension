@@ -221,6 +221,10 @@ be up alongside nothing. All four are one box style in one place. The rules that
   field either way. Both markup modes keep
   `data-name` on the company pair so a surface that is not the payment form can
   resolve it without a document-wide id lookup.
+- **A DECLINE REFUSES PLACEMENT** (TWO-25657). The `hyvaCheckout.validation` callback
+  returns false for a recorded `approved: false` on the company being placed for; no
+  record and a recorded FAILURE both place normally. The declined message is toasted
+  because a click-time refusal needs a click-time signal.
 
 ### Magewire Components
 
