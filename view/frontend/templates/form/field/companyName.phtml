@@ -28,7 +28,6 @@ $configModel = $viewModels->require(CheckoutConfig::class);
 $element = $block->getData("element");
 $attributes = $element->getAttributes();
 $renderer = $element->getRenderer();
-
 $form = $block->getData("form");
 ?>
 <div class="<?= $escaper->escapeHtmlAttr(
@@ -122,13 +121,4 @@ $form = $block->getData("form");
                 ->renderTooltip($element) ?>
     <?php endif; ?>
 </div>
-<?php
-/*
- * Outside the field wrapper, as before. The wrapper's own closing tag used to
- * be emitted twice on the plain-field branch and once on the search branch —
- * one `</div>` did double duty as the search control's group closer — which
- * left the plain-field rendering with one unbalanced tag. Both branches now
- * close exactly what they open.
- */
-?>
 <?= /* @noEscape */ $element->getRenderer()->renderAfter($element) ?>

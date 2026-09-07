@@ -162,11 +162,8 @@ const PHP_VALUE_RULES = [
   // the chained call across lines, so the spaces are optional in the pattern.
   [/^\$element ?->getRenderer\(\) ?->render(Tooltip|After)\(\$element\)$/, ""],
   [/^\$element->renderClass\([\s\S]*\)$/, "form-input"],
-  // The fixture carries neither `type` nor `autocomplete`, so the strip the
-  // template wraps this in is a no-op here; the regex itself is covered by
-  // Test/Unit/ViewModel/CheckoutConfigTest.php.
   [
-    /^\$element->renderAttributes\(\$escaper\)$|^\$configModel->stripDuplicatedFieldAttributes\(\$element->renderAttributes\(\$escaper\)\)$/,
+    /^\$configModel->stripDuplicatedFieldAttributes\(\$element->renderAttributes\(\$escaper\)\)$/,
     'name="company"',
   ],
   // form/field/company-search-control.phtml's contract (TWO-25326, 2026-08-05):

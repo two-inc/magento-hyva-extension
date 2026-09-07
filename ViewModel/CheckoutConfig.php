@@ -381,7 +381,7 @@ class CheckoutConfig implements ArgumentInterface
     public function stripDuplicatedFieldAttributes(string $renderedAttributes): string
     {
         return trim(preg_replace(
-            '/\s*(?<![-\w])(?:type|autocomplete)="[^"]*"/',
+            '/\s*(?<![-\w])(?:type|autocomplete)=(["\']).*?\1/i',
             '',
             $renderedAttributes,
         ));

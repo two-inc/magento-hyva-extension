@@ -455,12 +455,6 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * companyName.phtml emits its own type/autocomplete after the entity
-     * field's rendered attributes, and duplicates resolve
-     * first-occurrence-wins — so a rendered one left in place silently beats
-     * the template's, including from the FIRST position, where there is no
-     * leading whitespace to anchor a strip on.
-     *
      * @dataProvider duplicatedFieldAttributeCases
      */
     public function testStripDuplicatedFieldAttributes(
@@ -503,6 +497,16 @@ class CheckoutConfigTest extends TestCase
                 'data-type="x" name="company" data-autocomplete="y"',
                 'data-type="x" name="company" data-autocomplete="y"',
                 'attributes merely ending in the stripped names',
+            ],
+            [
+                "type='text' name=\"company\" autocomplete='organization'",
+                'name="company"',
+                'single-quoted values',
+            ],
+            [
+                'TYPE="text" name="company" AutoComplete="organization"',
+                'name="company"',
+                'uppercase attribute names',
             ],
         ];
     }
