@@ -15,7 +15,7 @@ etc/                  # Module configuration
 view/frontend/        # Hyvä frontend templates and layouts
 ├── templates/        # .phtml template files
 ├── layout/           # XML layout files
-└── web/              # CSS/JS assets
+└── web/              # CSS only — no JavaScript ships from this module
 ViewModel/            # View models for templates
 Magewire/             # Magewire components (if applicable)
 ```
@@ -153,7 +153,27 @@ The payment tile's subtitle and the tooltip's explainer link come from the base
 module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
 hardcoded URL or a re-derivation of brand data here (ABN-496). A brand that
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
-never an empty element.
+never an empty element. Whether the intent-declined notice renders at all, and
+its wording, are the brand's own declarations read the same way (TWO-25326).
+
+`dev/base-tile-copy-parity.sh` pins that against the base module, and `ci.yml`
+invokes it as `bash dev/base-tile-copy-parity.sh`. **Any guard whose failure mode
+is "did not execute" is invoked through `bash`**: a script committed mode `100644`
+and run as `./script.sh` exits 126, which on a CI dashboard is indistinguishable
+from a check that ran and failed — the guard's own absence reads as its verdict.
+
+### This is a public repository
+
+- No partner or merchant name reaches file contents, a commit body, a branch name
+  or a PR title or body. Gate before pushing: a force-push afterwards does not
+  remove a commit from GitHub's history.
+- In comments, commit messages and PR bodies alike, cite a Linear ticket id and
+  nothing else: a section, question or ruling number belonging to an internal
+  review document means nothing to a reader outside the company, and neither does
+  a person named as the authority for a rule.
+- The base plugin's DOCUMENTED contract may be pointed at, as the sections below
+  do. Its source text, schema fragments and test identifiers may not be reproduced
+  here — describe behaviour in your own words.
 
 ### Order intent: one box, and a verdict that can be repainted
 
@@ -259,6 +279,16 @@ second implementation, and never patch a surface by copying part of it — that
 duplication is what produced a batch of "three independent cosmetic bugs" on the
 payment tile that turned out to be one bug, and later what left this checkout's
 mode chips outside the panel while Luma's were inside it.
+
+**This module ships NO JavaScript file at all** — `view/frontend/web/js` does not
+exist, and it must not come into being. Four base-plugin modules are loaded by
+`Two_Gateway::` reference from `view/frontend/layout/hyva_checkout_index_index.xml`
+— the panel, the identity, the sole-trader flow and the capture controller — each
+framework-free with a UMD tail that attaches a browser global the mounts then read.
+The Alpine and Magewire code in this repo's `.phtml` templates is the HOST ADAPTER
+those modules ask for, never a second implementation of what they do. A behaviour
+change belongs in the base plugin, where both checkouts get it; a new `.js` file
+here is the duplication this arrangement exists to prevent.
 
 **ONE IDENTITY AND ONE CONTROLLER PER ADDRESS ROLE.** The checkout can hold two
 companies at once — the delivery panel's and the invoice panel's — so
@@ -488,6 +518,32 @@ Things that bite:
   screen; the helper answers `''` for one, which is the same case as "no number",
   so surrounding parentheses drop with it.
 
+### What focus landing on the checkout does to an open signup popup
+
+The base plugin's sole-trader flow classifies every `focusin` while the hosted
+signup window is up, and this checkout inherits all three rules (TWO-25658):
+
+- **the role's own Sole trader chip is inert** — arrival moves the popup neither
+  way, and only an activation raises it, the browser delivering Enter and Space on
+  a focused chip as a click;
+- **any other target closes an open popup**;
+- **a target outside that role's popover closes the popover too**, with the company
+  field counted as INSIDE it: the field is the popover's own trigger and sits
+  outside the panel node, so treating it as outside tore down the results the buyer
+  was still typing against.
+
+A window or application switch lands on no control at all and settles nothing.
+None of this is implemented here; a mount that adds focus handling of its own to a
+chip or the company field is competing with it.
+
+### A popup window is in no tab listing
+
+`window.open` returns a window outside a browser extension's tab group, so a tab
+list can never answer "did the popup open" — nor can a hang. The authoritative
+check is the page's own retained handle and its `.closed`, which means wrapping
+`window.open` before the action that should raise one. Judging from a tab list
+yields a confident false "no window opened".
+
 ### Two addresses, and NOTHING passes between them
 
 The checkout can hold two addresses — shipping, and a separate billing one once
@@ -637,6 +693,17 @@ And the reason those two rules need writing down at all:
   authored together, the thing to hunt is the divergence that would make the
   test agree with a bug, and **the person to hunt it is not the author** — which
   is what the adversarial review round is for, not a formality before merge.
+
+### Keyboard behaviour is not verifiable in jsdom
+
+jsdom implements no sequential focus navigation: a dispatched `Tab` keydown moves
+focus nowhere, so no Jest suite here can observe a focus trap, a wrong tab order or
+a reverse-Tab dead end, however many cases it carries and however green it is. This
+is the same class of empty check as the two rules above — a suite that runs cleanly
+and proves nothing. Assert the observable proxies (the parts are one contiguous run
+in document order, a closed panel carries `hidden`, the handler leaves the `Tab`
+event undefaulted) and verify the keyboard behaviour itself in a real browser. Never
+present a jsdom Tab test as evidence that a trap is absent.
 
 ### Common Issues
 
