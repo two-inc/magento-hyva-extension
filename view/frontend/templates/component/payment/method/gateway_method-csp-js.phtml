@@ -4032,18 +4032,52 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Resolve the intent-approved notice text for the current buyer.
-             * Returns '' when the brand suppressed the notice, so callers can
-             * assign the result unconditionally.
+             * Remove a copy token along with the brackets it sits in, so a
+             * sentence with no number to substitute does not read
+             * "Example Ltd ()" — and one msgid per locale still covers both.
+             * Handles `(` and `[`, a token in no brackets at all (an override
+             * places its `%3` where it likes), and every occurrence.
              *
-             * The company name AND number are substituted here (TWO-25326
-             * §7.3) because both are only known client-side. A replacer
-             * *function* is used rather than a plain string so `$&` / `$1` in
-             * a company name or number are taken literally instead of as
-             * replacement patterns.
+             * @param {string} text notice template
+             * @param {string} token sentinel to remove
+             * @returns {string}
              */
-            resolveOrderIntentApprovedNotice() {
-                const copy = this.orderIntentApprovedNoticeCopy;
+            stripBracketedToken(text, token) {
+                if (!text) return '';
+                if (!token) return String(text);
+                const escaped = String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return String(text)
+                    .replace(new RegExp('[ \\t]*[([]\\s*' + escaped + '\\s*[)\\]]', 'g'), '')
+                    .replace(new RegExp(escaped, 'g'), '')
+                    .replace(/[ \t]{2,}/g, ' ')
+                    .trim();
+            },
+
+            /**
+             * Global, and null for an absent token — an empty pattern would
+             * match between every character.
+             *
+             * @param {?string} token
+             * @returns {?RegExp}
+             */
+            noticeTokenPattern(token) {
+                if (!token) return null;
+                return new RegExp(String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            },
+
+            /**
+             * Substitute the buyer's company name and number into a copy
+             * template — both are only known client-side (TWO-25326 §7.3).
+             * Shared by the approved and declined resolvers below, which
+             * differ only in which copy object they pass.
+             *
+             * A replacer *function*, so `$&` / `$1` in a company name or
+             * number are taken literally rather than as replacement patterns.
+             *
+             * @param {?Object} copy {withCompany, withoutCompany, companyNameToken, companyNumberToken}|null
+             * @returns {string}
+             */
+            resolveCompanyNotice(copy) {
                 if (!copy) return '';
 
                 const invoiceCompany = this.invoiceCompany();
@@ -4066,18 +4100,22 @@ $quoteDetails = json_encode(
                 // (`TWO:` prefix), which must never reach a buyer — see
                 // twoGatewayDisplayCompanyNumber().
                 const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
-                const text = copy.withCompany
-                    .replace(copy.companyNameToken, () => companyName)
-                    .replace(copy.companyNumberToken, () => companyId);
-                // With no number to substitute, the brackets the copy wraps the
-                // token in have to go too: "Example Ltd ()" reads as a rendering
-                // fault. Stripped from the RESULT rather than by keeping a
-                // second bracket-less copy string per locale, so the four
-                // translation catalogues carry one sentence each and cannot
-                // drift apart. The pattern is deliberately narrow — an empty
-                // bracket pair and the single space that precedes it, nothing
-                // else.
-                return companyId ? text : text.replace(/ ?\(\s*\)/g, '');
+                const numberPattern = this.noticeTokenPattern(copy.companyNumberToken);
+                const withNumber = companyId && numberPattern
+                    ? copy.withCompany.replace(numberPattern, () => companyId)
+                    : this.stripBracketedToken(copy.withCompany, copy.companyNumberToken);
+                // Name LAST, so brackets in a company name are not mistaken for the number's own.
+                const namePattern = this.noticeTokenPattern(copy.companyNameToken);
+                return namePattern ? withNumber.replace(namePattern, () => companyName) : withNumber;
+            },
+
+            /**
+             * Resolve the intent-approved notice text for the current buyer.
+             * Returns '' when the brand suppressed the notice, so callers can
+             * assign the result unconditionally.
+             */
+            resolveOrderIntentApprovedNotice() {
+                return this.resolveCompanyNotice(this.orderIntentApprovedNoticeCopy);
             },
 
             /**
@@ -4086,41 +4124,7 @@ $quoteDetails = json_encode(
              * empty-brand-switch and substitution contract.
              */
             resolveOrderIntentNotAvailableNotice() {
-                const copy = this.orderIntentNotAvailableCopy;
-                if (!copy) return '';
-
-                const invoiceCompany = this.invoiceCompany();
-                const companyName = (invoiceCompany.companyName || '').trim();
-                if (!companyName) {
-                    return typeof copy.withoutCompany === 'string' ? copy.withoutCompany : '';
-                }
-                /*
-                 * A copy object missing its `withCompany` sentence resolves to
-                 * NOTHING, rather than throwing. This is reached from the
-                 * dispatcher's `finally` now (the box is re-derived once a request
-                 * settles), and a throw there is an unhandled rejection that takes
-                 * the rest of that handler with it — including lowering the
-                 * progress row. A brand supplies this copy through config; the
-                 * tile must degrade to a silent box, not to a dead one.
-                 */
-                if (typeof copy.withCompany !== 'string') return '';
-
-                // '' for an absent number AND for an internal placeholder one
-                // (`TWO:` prefix), which must never reach a buyer — see
-                // twoGatewayDisplayCompanyNumber().
-                const companyId = window.twoGatewayDisplayCompanyNumber(invoiceCompany.companyId);
-                const text = copy.withCompany
-                    .replace(copy.companyNameToken, () => companyName)
-                    .replace(copy.companyNumberToken, () => companyId);
-                // With no number to substitute, the brackets the copy wraps the
-                // token in have to go too: "Example Ltd ()" reads as a rendering
-                // fault. Stripped from the RESULT rather than by keeping a
-                // second bracket-less copy string per locale, so the four
-                // translation catalogues carry one sentence each and cannot
-                // drift apart. The pattern is deliberately narrow — an empty
-                // bracket pair and the single space that precedes it, nothing
-                // else.
-                return companyId ? text : text.replace(/ ?\(\s*\)/g, '');
+                return this.resolveCompanyNotice(this.orderIntentNotAvailableCopy);
             },
 
             /**

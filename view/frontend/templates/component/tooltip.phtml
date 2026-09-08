@@ -1,14 +1,19 @@
 <?php
+use Hyva\Theme\Model\ViewModelRegistry;
 use Magento\Framework\View\Element\Template;
 use Magento\Framework\Escaper;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 
 /** @var Escaper $escaper */
 /** @var Template $block */
+/** @var ViewModelRegistry $viewModels */
 
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  */
+
+$aboutLinkUrl = $viewModels->require(CheckoutTileCopy::class)->getAboutLinkUrl();
 ?>
 <div class="two-tooltip-icon">
     <img width="20px" src="<?= $block->getViewFileUrl(
@@ -20,7 +25,9 @@ use Magento\Framework\Escaper;
         ) ?></p>
         <br>
         <p><strong><?= $escaper->escapeHtml(__("Buy now, receive your goods, pay your invoice later.")) ?></strong></p>
-        <br>
-        <p><a href="https://www.two.inc/what-is-two" target="_blank"><?= $escaper->escapeHtml(__("Find out more")) ?></a></p>
+        <?php if ($aboutLinkUrl !== ''): ?>
+            <br>
+            <p><a href="<?= $escaper->escapeUrl($aboutLinkUrl) ?>" target="_blank" rel="noopener"><?= $escaper->escapeHtml(__("Find out more")) ?></a></p>
+        <?php endif; ?>
     </div>
 </div>

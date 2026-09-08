@@ -31,6 +31,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./dev/matrix-script-parity.sh
 
+  base-tile-copy-parity:
+    name: Base tile-copy parity
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the base still declares the delegated methods
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Invoked through bash: a Windows-side edit of a WSL file strips the
+        # execute bit, and `./script` then exits 126 — a guard that never ran,
+        # indistinguishable on the dashboard from one that ran and failed.
+        run: bash dev/base-tile-copy-parity.sh
+
   # Discovers the current Magento support window from upstream so the
   # PHPStan / DI-compile / lint matrices track Adobe's lifecycle without
   # hand-maintenance. `dev/magento-support-matrix.sh` is the single

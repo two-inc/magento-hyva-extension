@@ -6,6 +6,7 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /**
@@ -29,6 +30,10 @@ class CheckoutConfigTest extends TestCase
 
     private const DEFAULT_NOT_AVAILABLE_WITH_COMPANY =
         'TestProduct is not available for this order by {{companyName}} ({{companyNumber}})';
+
+    // No trailing period — the catalogues are keyed on the base provider's literal.
+    private const DEFAULT_NOT_AVAILABLE_WITHOUT_COMPANY =
+        'TestProduct is not available for this order';
 
     public function testSwitchEnabledReturnsDefaultCopy(): void
     {
@@ -82,19 +87,165 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 §7.3: the "not available" notice shares the approved
-     * notice's on/off switch — no independent gate exists for it.
+     * @dataProvider notAvailableNoticeCases
      */
-    public function testNotAvailableNoticeFollowsTheSameSwitch(): void
+    public function testNotAvailableNoticeReadsTheDeclinedDeclarations(
+        object $brandRegistry,
+        ?string $expectedWithCompany,
+        string $case
+    ): void {
+        $notice = $this->notAvailableFor($brandRegistry);
+
+        if ($expectedWithCompany === null) {
+            $this->assertNull($notice, $case);
+            return;
+        }
+
+        $this->assertNotNull($notice, $case);
+        $this->assertSame($expectedWithCompany, $notice['withCompany'], $case);
+        $this->assertSame(
+            self::DEFAULT_NOT_AVAILABLE_WITHOUT_COMPANY,
+            $notice['withoutCompany'],
+            $case . ': an override words the company-known variant only'
+        );
+        $this->assertSame(CheckoutConfig::COMPANY_NAME_TOKEN, $notice['companyNameToken'], $case);
+        $this->assertSame(CheckoutConfig::COMPANY_NUMBER_TOKEN, $notice['companyNumberToken'], $case);
+    }
+
+    /**
+     * @return array<int, array{0:object, 1:?string, 2:string}>
+     */
+    public static function notAvailableNoticeCases(): array
     {
-        $notice = $this->notAvailableFor($this->registry(true, null));
+        return [
+            [
+                self::declinedRegistry(true, null, true),
+                self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY,
+                'switch on, no override: platform default copy',
+            ],
+            [
+                self::declinedRegistry(false, null, true),
+                null,
+                'switch off: suppressed even with the approved notice on',
+            ],
+            [
+                self::declinedRegistry(false, 'Declined: %1 cannot serve %2 (%3).', true),
+                null,
+                'switch off with an override: the switch decides',
+            ],
+            [
+                self::declinedRegistry(true, 'Declined: %1 cannot serve %2 (%3).', true),
+                'Declined: TestProduct cannot serve {{companyName}} ({{companyNumber}}).',
+                'override replaces the copy, placeholders filled',
+            ],
+            [
+                self::declinedRegistry(true, '', true),
+                self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY,
+                'empty override is inert, not an off switch',
+            ],
+            [
+                self::declinedRegistry(true, null, false),
+                self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY,
+                'approved notice off does not suppress this one',
+            ],
+            [
+                self::legacyRegistry(true),
+                self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY,
+                'base without the declined pair: approved switch on',
+            ],
+            [
+                self::legacyRegistry(false),
+                null,
+                'base without the declined pair: approved switch off still gates',
+            ],
+            [
+                new class {
+                    public function getProductName(): string
+                    {
+                        return 'TestProduct';
+                    }
+                },
+                self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY,
+                'base with no declaration methods at all: no brand opinion',
+            ],
+        ];
+    }
 
-        $this->assertNotNull($notice);
-        $this->assertSame(self::DEFAULT_NOT_AVAILABLE_WITH_COMPANY, $notice['withCompany']);
-        $this->assertSame(CheckoutConfig::COMPANY_NAME_TOKEN, $notice['companyNameToken']);
-        $this->assertSame(CheckoutConfig::COMPANY_NUMBER_TOKEN, $notice['companyNumberToken']);
+    private static function declinedRegistry(
+        bool $declinedEnabled,
+        ?string $declinedOverride,
+        bool $approvedEnabled
+    ): object {
+        return new class ($declinedEnabled, $declinedOverride, $approvedEnabled) {
+            /** @var bool */
+            private $declinedEnabled;
 
-        $this->assertNull($this->notAvailableFor($this->registry(false, null)));
+            /** @var string|null */
+            private $declinedOverride;
+
+            /** @var bool */
+            private $approvedEnabled;
+
+            public function __construct(bool $declinedEnabled, ?string $declinedOverride, bool $approvedEnabled)
+            {
+                $this->declinedEnabled = $declinedEnabled;
+                $this->declinedOverride = $declinedOverride;
+                $this->approvedEnabled = $approvedEnabled;
+            }
+
+            public function isIntentDeclinedNoticeEnabled(): bool
+            {
+                return $this->declinedEnabled;
+            }
+
+            public function getIntentDeclinedNotice(): ?string
+            {
+                return $this->declinedOverride;
+            }
+
+            public function isIntentApprovedNoticeEnabled(): bool
+            {
+                return $this->approvedEnabled;
+            }
+
+            public function getIntentApprovedNotice(): ?string
+            {
+                return null;
+            }
+
+            public function getProductName(): string
+            {
+                return 'TestProduct';
+            }
+        };
+    }
+
+    private static function legacyRegistry(bool $approvedEnabled): object
+    {
+        return new class ($approvedEnabled) {
+            /** @var bool */
+            private $approvedEnabled;
+
+            public function __construct(bool $approvedEnabled)
+            {
+                $this->approvedEnabled = $approvedEnabled;
+            }
+
+            public function isIntentApprovedNoticeEnabled(): bool
+            {
+                return $this->approvedEnabled;
+            }
+
+            public function getIntentApprovedNotice(): ?string
+            {
+                return null;
+            }
+
+            public function getProductName(): string
+            {
+                return 'TestProduct';
+            }
+        };
     }
 
     /**
@@ -539,5 +690,89 @@ class CheckoutConfigTest extends TestCase
                 'malformed tail preserved rather than truncated',
             ],
         ];
+    }
+
+    /**
+     * ABN-496: the explainer link and the subtitle are whatever the base
+     * module's CheckoutTileCopy answers — this checkout keeps no rule of its
+     * own, so the rows assert delegation rather than the rule.
+     *
+     * @dataProvider aboutLinkAndSubtitleProvider
+     */
+    public function testAboutLinkAndSubtitleComeFromTheBaseService(
+        bool $visible,
+        string $url,
+        string $subtitle,
+        string $description
+    ): void {
+        $viewModel = $this->viewModelWithTileCopy($visible, $url, $subtitle);
+
+        $this->assertSame($visible, $viewModel->getShowAboutLink(), $description);
+        $this->assertSame($url, $viewModel->getAboutLinkUrl(), $description);
+        $this->assertSame($subtitle, $viewModel->getCheckoutSubtitleHtml(), $description);
+    }
+
+    /**
+     * @return array<array{0:bool,1:string,2:string,3:string}>
+     */
+    public static function aboutLinkAndSubtitleProvider(): array
+    {
+        return [
+            [
+                true,
+                'https://example.test/explainer',
+                'Pay in 30 days',
+                'a visible link and a subtitle reach the template unaltered',
+            ],
+            [
+                false,
+                '',
+                '',
+                'a brand with no URL yields no link and no subtitle',
+            ],
+        ];
+    }
+
+    private function viewModelWithTileCopy(bool $visible, string $url, string $subtitle): CheckoutConfig
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $tileCopy = new class ($visible, $url, $subtitle) extends CheckoutTileCopy {
+            /** @var bool */
+            private $visible;
+
+            /** @var string */
+            private $url;
+
+            /** @var string */
+            private $subtitle;
+
+            public function __construct(bool $visible, string $url, string $subtitle)
+            {
+                $this->visible = $visible;
+                $this->url = $url;
+                $this->subtitle = $subtitle;
+            }
+
+            public function isAboutLinkVisible(): bool
+            {
+                return $this->visible;
+            }
+
+            public function getAboutLinkUrl(): string
+            {
+                return $this->url;
+            }
+
+            public function getSubtitleHtml(): string
+            {
+                return $this->subtitle;
+            }
+        };
+
+        $reflection->getProperty('checkoutTileCopy')->setValue($viewModel, $tileCopy);
+
+        return $viewModel;
     }
 }

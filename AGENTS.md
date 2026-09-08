@@ -147,6 +147,14 @@ shared class so the states cannot drift apart). Layout utilities that the theme
 certainly generates (`flex`, `w-full`, `min-w-0`, `space-y-4`) are fine to keep in
 the template.
 
+### Buyer-facing copy and links come from the base module
+
+The payment tile's subtitle and the tooltip's explainer link come from the base
+module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
+hardcoded URL or a re-derivation of brand data here (ABN-496). A brand that
+supplies no URL gets no anchor and no tagline at all — never an empty `href`,
+never an empty element.
+
 ### Order intent: one box, and a verdict that can be repainted
 
 The tile shows **at most one VERDICT** — available, not available, could not be

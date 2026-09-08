@@ -139,7 +139,7 @@ const PHP_VALUE_RULES = [
   // answers instead of relying on a default.
   [/^__\(.*\)$/, ESCAPED_STRING],
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
-  [/^\$configModel->getCheckoutSubtitleHtml\(\)$/, ""],
+  [/^\$subtitleHtml$/, ""],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
   // The sole-term chip's format string and day count get values of their own,
   // ahead of the shared group below. Folding them in with `$pluralLabel` and
