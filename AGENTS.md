@@ -629,10 +629,22 @@ an id the store does not have.
 
 ### Staging Cache Refresh (git-sync workflow)
 
+**`magento-dev` is the deployment that tracks this repo's `staging`**, through its
+`git-sync-hyva` container (`--ref=staging --period=60s`); each brand's own dev
+deployment git-syncs this repo alongside its overlay. `deploy/magento` — the shop at
+`magento.staging.two.inc` — has no git-sync container at all and serves the
+deployed image's code, which tracks `main`. So anything verifying `staging` code
+goes to the dev shop, and a check pointed at the other one silently reports on
+`main`. Confirm which code a shop has by reading the served asset itself:
+`pub/static/deployed_version.txt` answers with an HTML 404 page on these shops.
+
+The redeploy below is in-place, and the storefront 500s for roughly three minutes
+while it runs — warn testers before merging to `staging`.
+
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:
 
 ```bash
-kubectl exec deploy/magento -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
+kubectl exec deploy/magento-dev -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
 ```
 
 When developing with git-sync on staging, after pushing changes:
@@ -640,19 +652,19 @@ When developing with git-sync on staging, after pushing changes:
 1. Wait for git-sync to pull the latest commit:
 
 ```bash
-kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
+kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
 ```
 
 2. Clear cache and restart Apache:
 
 ```bash
-kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
 Or combined (wait 15s for sync then clear):
 
 ```bash
-sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+sleep 15 && kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
 ### Tests that read a file as TEXT, and mutants that check them
