@@ -552,38 +552,55 @@ class CheckoutConfig implements ArgumentInterface
      * intent" wording, shown persistently in the text-only tile (§7.2)
      * exactly where the approved notice would otherwise render.
      *
-     * On/off is gated on the SAME brand switch as the approved notice
-     * (`isIntentApprovedNoticeEnabled()`) rather than a second one: the
-     * ruling treats the pair as one intent-message concept with two
-     * outcomes, and a brand that suppressed one has suppressed the other.
-     * There is no brand-override hook for this copy yet — BrandRegistryInterface
-     * has no equivalent of getIntentApprovedNotice() for it — so a brand
-     * needing its own wording here (§7.4) needs that added to the base
-     * module first.
+     * Two independent brand declarations of its own (ruling 19.5), read
+     * exactly as getOrderIntentApprovedNotice() above reads the approved
+     * pair — the two outcomes are suppressed and worded separately:
+     *
+     *   isIntentDeclinedNoticeEnabled() — the switch, the only thing that
+     *       returns null here. Absent from brand.xml means the documented
+     *       default true.
+     *   getIntentDeclinedNotice()       — copy override only, and inert
+     *       when empty.
+     *
+     * A base declaring neither falls back to the approved switch, and one
+     * declaring no switch at all leaves the notice on.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     public function getOrderIntentNotAvailableNotice(): ?array
     {
-        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
-            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
-            : true;
+        if (method_exists($this->brandRegistry, "isIntentDeclinedNoticeEnabled")) {
+            $enabled = $this->brandRegistry->isIntentDeclinedNoticeEnabled();
+        } elseif (method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")) {
+            $enabled = $this->brandRegistry->isIntentApprovedNoticeEnabled();
+        } else {
+            $enabled = true;
+        }
 
         if (!$enabled) {
             return null;
         }
 
+        $override = method_exists($this->brandRegistry, "getIntentDeclinedNotice")
+            ? $this->brandRegistry->getIntentDeclinedNotice()
+            : null;
+
         $productName = $this->brandRegistry->getProductName();
 
-        return [
-            "withCompany" => (string) __(
+        // Literal default so i18n:collect-phrases still sees it; '' is no override, never an off switch.
+        $withCompany = ($override === null || $override === "")
+            ? __(
                 "%1 is not available for this order by %2 (%3)",
                 $productName,
                 self::COMPANY_NAME_TOKEN,
                 self::COMPANY_NUMBER_TOKEN,
-            ),
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+
+        return [
+            "withCompany" => (string) $withCompany,
             "withoutCompany" => (string) __(
-                "%1 is not available for this order.",
+                "%1 is not available for this order",
                 $productName,
             ),
             "companyNameToken" => self::COMPANY_NAME_TOKEN,
