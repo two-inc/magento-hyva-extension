@@ -6,6 +6,7 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /**
@@ -539,5 +540,89 @@ class CheckoutConfigTest extends TestCase
                 'malformed tail preserved rather than truncated',
             ],
         ];
+    }
+
+    /**
+     * ABN-496: the explainer link and the subtitle are whatever the base
+     * module's CheckoutTileCopy answers — this checkout keeps no rule of its
+     * own, so the rows assert delegation rather than the rule.
+     *
+     * @dataProvider aboutLinkAndSubtitleProvider
+     */
+    public function testAboutLinkAndSubtitleComeFromTheBaseService(
+        bool $visible,
+        string $url,
+        string $subtitle,
+        string $description
+    ): void {
+        $viewModel = $this->viewModelWithTileCopy($visible, $url, $subtitle);
+
+        $this->assertSame($visible, $viewModel->getShowAboutLink(), $description);
+        $this->assertSame($url, $viewModel->getAboutLinkUrl(), $description);
+        $this->assertSame($subtitle, $viewModel->getCheckoutSubtitleHtml(), $description);
+    }
+
+    /**
+     * @return array<array{0:bool,1:string,2:string,3:string}>
+     */
+    public static function aboutLinkAndSubtitleProvider(): array
+    {
+        return [
+            [
+                true,
+                'https://example.test/explainer',
+                'Pay in 30 days',
+                'a visible link and a subtitle reach the template unaltered',
+            ],
+            [
+                false,
+                '',
+                '',
+                'a brand with no URL yields no link and no subtitle',
+            ],
+        ];
+    }
+
+    private function viewModelWithTileCopy(bool $visible, string $url, string $subtitle): CheckoutConfig
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $tileCopy = new class ($visible, $url, $subtitle) extends CheckoutTileCopy {
+            /** @var bool */
+            private $visible;
+
+            /** @var string */
+            private $url;
+
+            /** @var string */
+            private $subtitle;
+
+            public function __construct(bool $visible, string $url, string $subtitle)
+            {
+                $this->visible = $visible;
+                $this->url = $url;
+                $this->subtitle = $subtitle;
+            }
+
+            public function isAboutLinkVisible(): bool
+            {
+                return $this->visible;
+            }
+
+            public function getAboutLinkUrl(): string
+            {
+                return $this->url;
+            }
+
+            public function getSubtitleHtml(): string
+            {
+                return $this->subtitle;
+            }
+        };
+
+        $reflection->getProperty('checkoutTileCopy')->setValue($viewModel, $tileCopy);
+
+        return $viewModel;
     }
 }

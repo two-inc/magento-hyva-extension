@@ -19,6 +19,7 @@ use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 class CheckoutConfig implements ArgumentInterface
@@ -99,6 +100,11 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $orderIntentConfig;
 
+    /**
+     * @var CheckoutTileCopy
+     */
+    private $checkoutTileCopy;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -108,6 +114,7 @@ class CheckoutConfig implements ArgumentInterface
         CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
         ApiKeyVerificationStatus $apiKeyVerificationStatus,
+        CheckoutTileCopy $checkoutTileCopy,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -117,6 +124,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
         $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
+        $this->checkoutTileCopy = $checkoutTileCopy;
     }
 
     /**
@@ -450,19 +458,21 @@ class CheckoutConfig implements ArgumentInterface
         return $redirectMessage;
     }
 
-    /**
-     * Brand-supplied checkout subtitle, rendered under the payment title.
-     *
-     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
-     * from brand.xml). The vanilla Two brand returns '' → no subtitle. Only
-     * a non-empty key is passed to the translator, so an unmapped locale
-     * falls back to the brand-owned source key rather than leaking a
-     * vanilla key. May contain HTML (e.g. a link) — render unescaped.
-     */
+    /** Escaped and assembled by the base module, may contain HTML — render unescaped. */
     public function getCheckoutSubtitleHtml(): string
     {
-        $key = $this->brandRegistry->getCheckoutSubtitle();
-        return $key === '' ? '' : (string)__($key);
+        return $this->checkoutTileCopy->getSubtitleHtml();
+    }
+
+    public function getShowAboutLink(): bool
+    {
+        return $this->checkoutTileCopy->isAboutLinkVisible();
+    }
+
+    /** '' whenever the link is not shown — never a dead href. */
+    public function getAboutLinkUrl(): string
+    {
+        return $this->checkoutTileCopy->getAboutLinkUrl();
     }
 
     /**
