@@ -190,6 +190,61 @@ describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
       expect(component.twoTileNotAvailableVisible).toBe(true);
     });
 
+    /**
+     * The token substitution is the base resolver's (`resolveCompanyNotice` /
+     * `stripBracketedToken`), so an override worded by a brand renders
+     * character-for-character the same sentence on both checkouts.
+     */
+    test.each([
+      [
+        "Two cannot serve {name} [{id}]",
+        "Ex Ltd",
+        "",
+        "Two cannot serve Ex Ltd",
+        "square brackets go with the number they hold",
+      ],
+      [
+        "Two cannot serve {name} ({id})",
+        "Ex Ltd",
+        "TWO:abc",
+        "Two cannot serve Ex Ltd",
+        "an internal placeholder number is treated as no number",
+      ],
+      [
+        "Two cannot serve {name}, org {id}, sorry",
+        "Ex Ltd",
+        "",
+        "Two cannot serve Ex Ltd, org , sorry",
+        "a token in no brackets is removed where it stands",
+      ],
+      [
+        "{name} declined. {name} may retry with {id}",
+        "Ex Ltd",
+        "123",
+        "Ex Ltd declined. Ex Ltd may retry with 123",
+        "a company named twice leaks no raw token",
+      ],
+      [
+        "Two cannot serve {name} ({id})",
+        "Ex () Ltd",
+        "",
+        "Two cannot serve Ex () Ltd",
+        "brackets in the name are not mistaken for the number's own",
+      ],
+    ])(
+      "copy %s with name %s and number %s reads %s — %s",
+      (withCompany, companyName, companyId, expected) => {
+        component.orderIntentNotAvailableCopy = {
+          ...NOT_AVAILABLE_COPY,
+          withCompany,
+        };
+        component.companyName = companyName;
+        component.companyId = companyId;
+
+        expect(component.resolveOrderIntentNotAvailableNotice()).toBe(expected);
+      },
+    );
+
     test("an approved intent clears any leftover not-available notice", () => {
       component.orderIntentNotAvailableCopy = NOT_AVAILABLE_COPY;
       component.orderIntentApprovedNoticeCopy = {
