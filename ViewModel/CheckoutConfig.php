@@ -15,6 +15,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
@@ -105,6 +106,14 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $checkoutTileCopy;
 
+    /**
+     * @var LogRepository
+     */
+    private $logRepository;
+
+    /** @var bool */
+    private $withholdLogged = false;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -115,6 +124,7 @@ class CheckoutConfig implements ArgumentInterface
         BrandedHyvaViewModelInterface $brandedViewModel,
         ApiKeyVerificationStatus $apiKeyVerificationStatus,
         CheckoutTileCopy $checkoutTileCopy,
+        LogRepository $logRepository,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -125,6 +135,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->brandedViewModel = $brandedViewModel;
         $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
         $this->checkoutTileCopy = $checkoutTileCopy;
+        $this->logRepository = $logRepository;
     }
 
     /**
@@ -297,8 +308,22 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getIsCompanySearchEnabled()
     {
-        return $this->configRepository->isCompanySearchEnabled()
-            && !$this->apiKeyVerificationStatus->isDefinitiveFailure();
+        if (!$this->configRepository->isCompanySearchEnabled()) {
+            return false;
+        }
+        if (!$this->apiKeyVerificationStatus->isDefinitiveFailure()) {
+            return true;
+        }
+        // Standing the control down is invisible to the merchant (ABN-518).
+        if (!$this->withholdLogged) {
+            $this->withholdLogged = true;
+            $this->logRepository->addDebugLog(
+                'Hyva company search withheld from checkout: API key rejected',
+                ['status' => $this->apiKeyVerificationStatus->getStatus()]
+            );
+        }
+
+        return false;
     }
 
     /**

@@ -1,0 +1,15 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+use Two\GatewayHyva\Block\Adminhtml\System\Config\Field\CompanySearchStatus;
+
+/**
+ * @var CompanySearchStatus $block
+ */
+
+$row = $block->getStatusRow();
+?>
+<span style="color:<?= $block->escapeHtml($block->getStatusColour($row)) ?>;"><?= $block->escapeHtml($row['value']) ?></span>

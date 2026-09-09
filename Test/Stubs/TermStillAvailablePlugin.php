@@ -82,6 +82,8 @@ namespace Two\Gateway\Api\Config {
         {
             /** @return int[] */
             public function getAllBuyerTerms(?int $storeId = null): array;
+
+            public function isCompanySearchEnabled(?int $storeId = null): bool;
         }
     }
 }

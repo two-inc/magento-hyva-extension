@@ -34,6 +34,11 @@ class TermStillAvailablePluginTest extends TestCase
             {
             }
 
+            public function isCompanySearchEnabled(?int $storeId = null): bool
+            {
+                return true;
+            }
+
             public function getAllBuyerTerms(?int $storeId = null): array
             {
                 return $this->offeredTerms;
