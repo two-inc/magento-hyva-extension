@@ -338,7 +338,7 @@ class ApiKeyVerificationStatusTest extends TestCase
                 return $this->apiKey;
             }
 
-            public function getMode(): string
+            public function getMode(?int $storeId = null): string
             {
                 return $this->mode;
             }
