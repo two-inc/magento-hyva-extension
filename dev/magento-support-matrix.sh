@@ -41,9 +41,9 @@
 #      lint / phpunit jobs use setup-php, not the Magento docker images.
 #
 # Replaces the hand-maintained EOL list AND the hand-maintained min-PHP map
-# with upstream discovery (Doug 2026-05-22, r5 #10). TWO-24998 additionally
-# retired the hand-maintained image-exclusion entries in favour of a docker
-# manifest probe (see intentionally_excluded + probe_image below).
+# with upstream discovery. TWO-24998 additionally retired the hand-maintained
+# image-exclusion entries in favour of a docker manifest probe (see
+# intentionally_excluded + probe_image below).
 
 set -euo pipefail
 
