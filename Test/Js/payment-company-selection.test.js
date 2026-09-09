@@ -70,23 +70,23 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
   ":class",
 );
 /**
- * TWO-25326 §7 replaced TWO-25288's two inline hint paragraphs
+ * TWO-25326 replaced TWO-25288's two inline hint paragraphs
  * (`company_name_hint` / `company_id_hint`) with ONE captured-company label at
  * the top of the payment fieldset, and this file's hint assertions moved onto it
  * wholesale.
  *
- * They have since moved OFF its `x-show` again. Since the 2026-08-03 ruling on
- * TWO-25326 the label's visibility follows the order-intent notice, not capture
- * — so it is no longer the observable consequence of the derivation this file
- * tests. `COMPANY_CAPTURE_GATE_BINDING` below is: the Company Number block's
+ * They have since moved OFF its `x-show` again. Under TWO-25326 the label's
+ * visibility follows the order-intent notice, not capture — so it is no longer
+ * the observable consequence of the derivation this file tests.
+ * `COMPANY_CAPTURE_GATE_BINDING` below is: the Company Number block's
  * `:class` gate, which is still exactly "a registry number is locked in", and
  * is what the capture assertions here now read.
  *
- * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the "Change
- * company" button this bound to before is REMOVED — the search control no
- * longer hides on capture, so there is nothing left for it to reveal. The
- * Company Number block's own capture gate is UNCHANGED by that ruling (it was
- * never part of the bug), so it remains this file's read on "is captured" —
+ * TWO-25326: the "Change company" button this bound
+ * to before is REMOVED — the search control no longer hides on capture, so
+ * there is nothing left for it to reveal. The Company Number block's own
+ * capture gate is UNCHANGED by that change (it was never part of the bug), so
+ * it remains this file's read on "is captured" —
  * a string ("hidden"/"") rather than the button's own boolean `x-show`.
  *
  * The label's own two bindings are still resolved, and still from the shipped
@@ -148,7 +148,7 @@ describe("payment component company selection", () => {
     // `#company_id` starts WITHOUT a `disabled` attribute: its locked state is
     // Alpine's to apply, and hardcoding it here is how the earlier version of
     // this fixture let the suite pass with the field permanently disabled.
-    // The captured-company label (TWO-25326 §7) starts with neither `hidden`
+    // The captured-company label (TWO-25326) starts with neither `hidden`
     // (on the input) nor a rendered value, for the same reason `#company_id`
     // starts without `disabled`: locked state is Alpine's to apply.
     // The two `data-two-capture-*` attributes are how the shared controller
@@ -254,7 +254,7 @@ describe("payment component company selection", () => {
   }
 
   /**
-   * Apply the template's `x-show` / `x-text` bindings for TWO-25326 §7's
+   * Apply the template's `x-show` / `x-text` bindings for TWO-25326's
    * captured-company label, the same by-hand way `syncCompanyIdHint()` applies
    * the input's `:class`.
    *
@@ -308,7 +308,7 @@ describe("payment component company selection", () => {
     syncCompanyTileLabel(component);
   }
 
-  /** @returns {HTMLElement} the TWO-25326 §7 captured-company label */
+  /** @returns {HTMLElement} the TWO-25326 captured-company label */
   function companyTileLabel() {
     return document.querySelector('[data-name="company_tile_label"]');
   }
@@ -611,7 +611,7 @@ describe("payment component company selection", () => {
    * the search box and `getItems()` recomputed editability from its text on every
    * keystroke.
    *
-   * Neither half is true any more (TWO-25326 §1 and the 2026-08-05
+   * Neither half is true any more (TWO-25326 and the 2026-08-05
    * consolidation). The search term lives in the panel's own query field, and
    * `getItems()` deliberately touches neither the captured pair nor its
    * editability in search mode — running a search is not evidence the buyer
@@ -829,7 +829,7 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the capture gate (TWO-25326 §7) and the hidden number input", () => {
+  describe("the capture gate (TWO-25326) and the hidden number input", () => {
     test("stays hidden with an empty class before any company is picked", () => {
       // `companyIdDisabled` defaults locked, but with nothing stored
       // `initialize()` derives it open (see the earlier "is open once the
@@ -1027,8 +1027,8 @@ describe("payment component company selection", () => {
       // editability combination rather than today's scenarios.
       //
       // Read off the Company Number block's own gate, not the label's — the
-      // label follows the order-intent notice since the 2026-08-03 ruling and
-      // would make this pass vacuously.
+      // label follows the order-intent notice (TWO-25326) and would make this
+      // pass vacuously.
       [
         [false, false, ""],
         [false, false, "12345678"],
@@ -1054,8 +1054,8 @@ describe("payment component company selection", () => {
   });
 
   /*
-   * DELETED 2026-08-05 — describe("the 'Enter details manually' link (TWO-25326
-   * tile bugfix batch, bug 1)"), all five tests.
+   * DELETED 2026-08-05 — the five tests covering the tile's own
+   * "Enter details manually" link.
    *
    * Every one of them asserted that the tile's own manual-entry link stayed
    * HIDDEN until the buyer had typed something, on the reasoning that the link
@@ -1082,14 +1082,14 @@ describe("payment component company selection", () => {
    * below-the-field copy and its gate are gone", and "the panel is still
    * reachable, and the row with it, before anything is typed".
    *
-   * DELETED with them — describe("the min-characters hint (TWO-25326 tile bugfix
-   * batch, bug 1)"), four of its five tests. They drove the hint through
+   * DELETED with them — four of the five tests covering the tile's own
+   * min-characters hint. They drove the hint through
    * `twoGatewayHyvaOnCompanySearchFocus()` (deleted) and measured it against
    * `search`, the company-name field's text. The shared control's hint measures
    * the PANEL'S QUERY instead and, like the row, deliberately shows from ZERO
    * characters — so "stays hidden before the buyer has typed anything" is now a
-   * statement of the defect rather than the fix. The behaviour is covered once, on
-   * the shared getter, in company-search-min-chars.test.js.
+   * statement of the defect rather than the fix. The behaviour is covered once,
+   * on the shared getter, in company-search-min-chars.test.js.
    *
    * The WIRE test is kept below, because that part is genuinely per-surface: it is
    * the tile's copy of the markup and the tile's component that have to agree.
@@ -1113,15 +1113,14 @@ describe("payment component company selection", () => {
   });
 
   /**
-   * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation) — was
-   * describe("typing over a captured company (TWO-25326 bug 5 follow-up)").
+   * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation).
    *
    * The requirement is unchanged and is the one the money rides on: an order must
    * never carry a company name and a registry number describing two different
    * companies. What changed is the MECHANISM, and every one of the eight tests
    * here drove the old one.
    *
-   * Bug 5 removed the "Change company" swap, leaving the search field visible and
+   * Removing the "Change company" swap left the search field visible and
    * apparently editable after a capture. The tile's answer was a pair of
    * tile-local handlers — `@blur` → `OnCompanySearchBlur` and
    * `ForgetCompanyIfNameDiverged` — that watched for the field's text diverging
@@ -1143,7 +1142,7 @@ describe("payment component company selection", () => {
    * `commitManualCompany()` → `forgetStaleCompanyId()` is the one writer. That is
    * what the tests below drive.
    */
-  describe("a captured company cannot be typed over (TWO-25326 bug 5 follow-up)", () => {
+  describe("a captured company cannot be typed over (TWO-25326)", () => {
     test("in search mode the field publishes nothing the buyer types", () => {
       /*
        * The field is deliberately NOT `readonly` any more. The shared popover

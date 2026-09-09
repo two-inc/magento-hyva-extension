@@ -13,8 +13,7 @@ use Magento\Framework\View\Element\Block\ArgumentInterface;
  * Overlay_GatewayHyva) override via etc/frontend/di.xml preference.
  *
  * Values returned MUST be install-stable across renders so that Hyva's
- * sha256-based inline-script CSP hashes remain valid — see
- * deployment-risk-review-2026-05-27.md §5 "CSP-safe" for the protocol.
+ * sha256-based inline-script CSP hashes remain valid.
  */
 interface BrandedHyvaViewModelInterface extends ArgumentInterface
 {

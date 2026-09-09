@@ -120,7 +120,7 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$orderIntentApprovedNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     '"Approved"',
   ],
-  // Sibling of the rule above (TWO-25326 §7.2/§7.3), defaulted to 'null'
+  // Sibling of the rule above (TWO-25326), defaulted to 'null'
   // (brand switched off) rather than a fake copy object: every pre-existing
   // suite in this directory predates this getter and exercises the APPROVED
   // path only, several by overriding `orderIntentApprovedNoticeCopy` directly
@@ -278,7 +278,7 @@ function normalizeExpression(raw) {
  * B] <?php endif ...?>` blocks, keeping only the winning branch's literal
  * markup and discarding the rest — BEFORE the naive "drop every `<?php ...
  * ?>` tag" pass below, which has no concept of a condition at all and would
- * otherwise render BOTH branches concatenated (TWO-25326 §7.1 introduced the
+ * otherwise render BOTH branches concatenated (TWO-25326 introduced the
  * first genuine either/or branches in these templates; every prior `<?php if
  * ?>` in this codebase has no competing `else`, so always-both-branches was
  * never visible before).
@@ -391,22 +391,22 @@ function renderTemplate(relPath, extraRules) {
 
   const rules = (extraRules || []).concat(PHP_VALUE_RULES);
 
-  // TWO-25326 §7.1: resolve the one flag this harness understands
+  // TWO-25326: resolve the one flag this harness understands
   // conditionally, and cut the losing branch of any block gated on it, BEFORE
   // the naive "every `<?php ?>` emits nothing" pass a few lines down — which
   // has no concept of true/false and would otherwise keep both branches.
   //
   // Default is PER-FILE, not one shared value, and that is deliberate rather
   // than an inconsistency: every pre-existing suite over EITHER template was
-  // written against the pre-ruling code, where both templates' rich controls
-  // existed unconditionally and simultaneously — companyName.phtml's suites
-  // assume the address-area control is the live one, gateway_method*.phtml's
-  // assume the tile's own is. Production's actual default (address-area) is
-  // exactly companyName.phtml's assumption, so that file needs no override at
-  // all; gateway_method*.phtml's suites are, after this ruling, exercising the
+  // written against the pre-TWO-25326 code, where both templates' rich existed
+  // unconditionally and simultaneously — companyName.phtml's suites assume the
+  // address-area control is the live one, gateway_method*.phtml's assume the
+  // tile's own is. Production's actual default (address-area) is exactly
+  // companyName.phtml's assumption, so that file needs no override at all;
+  // gateway_method*.phtml's suites are, under TWO-25326, exercising the
   // NON-default (payment_tile) configuration — a real, intentional trade so
-  // their large existing coverage of that control's own behaviour did not
-  // need rewriting. `extraRules` can still override either default per test.
+  // their large existing coverage of that control's own behaviour did not need
+  // rewriting. `extraRules` can still override either default per test.
   if (source.indexOf("$isCompanySearchInPaymentTile") !== -1) {
     const override = extraRules
       ? resolveExpression("$isCompanySearchInPaymentTile", extraRules)

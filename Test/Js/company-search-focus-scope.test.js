@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * Bug 4.1 (2026-07-28) — the shipping-address company-search field's focus
+ * TWO-25326 (2026-07-28) — the shipping-address company-search field's focus
  * ring must stay scoped to whichever input actually has DOM focus. Reported
  * live: focusing the search input painted a blue ring around BOTH it and the
  * Company Number field nested below it inside the same `.two-company-search`
@@ -16,11 +16,11 @@
  * gives the search input its own, scoped by the `>` combinator to exclude
  * anything nested deeper.
  *
- * Two later developments, both 2026-08-05 / TWO-25326, moved where this bug
- * lives and are pinned by the last four tests: §5 replaced the company-number
- * INPUT with a plain-text display, and the tile bugfix batch's bug 3 took
- * `.input-group` off the wrapper altogether — that class's own UNFOCUSED border
- * was the remaining artefact and no `:focus-within` override could reach it.
+ * Two later developments, both TWO-25326, moved where this bug lives and are
+ * pinned by the last four tests: the company-number INPUT was replaced with a
+ * plain-text display, and `.input-group` came off the wrapper altogether —
+ * that class's own UNFOCUSED border was the remaining artefact and no
+ * `:focus-within` override could reach it.
  *
  * jsdom (the version this repo's Jest runs on) does not implement
  * `:focus-within` matching for `getComputedStyle` — verified empirically, not
@@ -71,7 +71,7 @@ function ruleBody(selector) {
   return match === null ? null : match[1];
 }
 
-describe("company-search focus scope (bug 4.1)", () => {
+describe("company-search focus scope (TWO-25326)", () => {
   test("the wrapper's own focus-within ring is suppressed", () => {
     // Without this rule the reported bleed is exactly what the shared
     // field/input-group `:focus-within` behaviour produces: a ring framing
@@ -118,11 +118,11 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(body).not.toMatch(/129,\s*140,\s*248/);
   });
 
-  test("there is no company-number INPUT on the address step at all (TWO-25326 §5)", () => {
+  test("there is no company-number INPUT on the address step at all (TWO-25326)", () => {
     // Stronger than the claim this replaces. The number used to be a real,
     // permanently-visible input and the rule above only had to avoid ringing
-    // it; §5 removes it outright, so the guarantee is now that no such control
-    // exists — not before a selection, not in manual mode, not ever.
+    // it; TWO-25326 removes it outright, so the guarantee is now that no such
+    // control exists — not before a selection, not in manual mode, not ever.
     const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
     const doc = new DOMParser().parseFromString(markup, "text/html");
 
@@ -140,8 +140,8 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(display.querySelector("input")).toBeNull();
   });
 
-  test("the grandparent ring is suppressed on this module's OWN hook, not on input-group (TWO-25326 tile bugfix bug 3)", () => {
-    // REWRITTEN 2026-08-05 (TWO-25326 tile bugfix batch, bug 3). This test used
+  test("the grandparent ring is suppressed on this module's OWN hook, not on input-group (TWO-25326)", () => {
+    // REWRITTEN 2026-08-05 (TWO-25326). This test used
     // to demand a `.input-group.two-company-search-group:focus-within` rule,
     // because the control's wrapper carried Hyvä's `.input-group` class and that
     // class's `:focus-within` ring framed the name field and the number display
@@ -190,8 +190,8 @@ describe("company-search focus scope (bug 4.1)", () => {
    *    selector it named no longer ships. Its declaration-level half survives as
    *    the test above; its structural half (that `.input-group` is not emitted at
    *    all) is covered, for BOTH mount points rather than just this one, by
-   *    `company-search-one-control.test.js` → "the control is not an input-group
-   *    (bug 3)" → "no mount point emits the class".
+   *    `company-search-one-control.test.js` → "the control is not an
+   *    input-group (TWO-25326)" → "no mount point emits the class".
    *  - "the grandparent rule outranks the theme rule on specificity alone" — the
    *    specificity claim moved with the selector, and the same suite's "the
    *    focus-ring suppression matches the hook the control does emit" pins both

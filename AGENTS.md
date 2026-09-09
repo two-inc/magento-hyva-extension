@@ -228,7 +228,7 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the component. Acceptable — a decision is only as good as the quote it was made
   against — but it means the come-back-and-see-your-verdict property holds only
   until the next totals/address/term change.
-- **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (2026-08-06).
+- **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (TWO-25326).
   A decline used to raise both; the toast self-dismisses and lands at the top of
   the page rather than beside the company it is about, so it could only repeat
   what the box already says permanently. Two exceptions, each for its own

@@ -46,7 +46,7 @@ $form = $block->getData("form");
 
     <?php
     /*
-     * TWO-25326 §7.1 (2026-08-03 ruling): exactly ONE company-search control
+     * TWO-25326: exactly ONE company-search control
      * per platform. When the admin setting points that one control at the
      * payment tile instead, this surface must NOT also render it — it gets a
      * single plain field with no enhancement at all, in the `else` branch
@@ -58,7 +58,7 @@ $form = $block->getData("form");
     <?php
     /*
      * THE company-search control, included from the one file both mount
-     * points share (TWO-25326, 2026-08-05 ruling — see the doc comment in
+     * points share (TWO-25326 — see the doc comment in
      * form/field/company-search-control.phtml for why the tile no longer has
      * a second copy of its own).
      *
@@ -82,7 +82,7 @@ $form = $block->getData("form");
     <?php else: ?>
         <?php
         /*
-         * TWO-25326 §7.1: the one company-search control lives in the
+         * TWO-25326: the one company-search control lives in the
          * payment tile in this configuration, so the address step gets a
          * PLAIN field for the same underlying attribute — no search, no
          * dropdown, no Alpine component at all. `renderAttributes()` still
@@ -92,7 +92,7 @@ $form = $block->getData("form");
          * specific.
          *
          * No `input-group` class here, for the same reason the control itself
-         * does not carry one (TWO-25326 tile bugfix batch, bug 3): that class
+         * does not carry one (TWO-25326): that class
          * is Hyvä's shared styling for an input grouped with a real addon, and
          * this wrapper holds exactly ONE bare input and no addon at all.
          * `group`/`flex`/`gap-4` are layout-only and stay.

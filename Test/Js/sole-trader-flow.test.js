@@ -290,7 +290,7 @@ describe("sole-trader availability", () => {
   test("the lookup follows the INVOICE-ROLE address, the signup follows the quote", async () => {
     // Two different questions with two different authorities, and the fixture
     // makes them disagree. The registry answer is about the address the company
-    // is being captured for (TWO-25461 §1a.3); the signup country decides which
+    // is being captured for (TWO-25461); the signup country decides which
     // identity checks the buyer faces, so it is server-resolved and a DOM read
     // there would let them pick their own (PDEV-4669).
     tile = mountTile({ quote: { billing_country_id: "GB" } });

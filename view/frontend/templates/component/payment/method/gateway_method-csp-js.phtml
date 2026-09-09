@@ -38,9 +38,9 @@ $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
 // null ⇒ the active brand switched the notice off; the component's setter
 // then no-ops and gateway_method.phtml emits no element at all.
 $orderIntentApprovedNotice = $configModel->getOrderIntentApprovedNotice();
-// TWO-25326 §7.2/§7.3 (2026-08-03 ruling): the tile's persistent
-// "not approved / no intent" text, shown wherever the approved notice above
-// would otherwise render. Same null-means-brand-switched-it-off contract.
+// TWO-25326: the tile's persistent "not approved / no intent" text, shown
+// wherever the approved notice above would otherwise render. Same
+// null-means-brand-switched-it-off contract.
 $orderIntentNotAvailableNotice = $configModel->getOrderIntentNotAvailableNotice();
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
@@ -1068,7 +1068,7 @@ $quoteDetails = json_encode(
      *   rendered by Hyvä Checkout's own address-book form).
      * @param {boolean} [options.querySplit=false] set by
      *   `twoGatewayCaptureSurfaceMixin()`, so both surfaces that mount the
-     *   control get it (TWO-25326 §1): the visible name field and the panel's
+     *   control get it (TWO-25326): the visible name field and the panel's
      *   own query box are different state, so a keystroke in the panel never
      *   overwrites the captured name until a result is picked. Only the
      *   address-book modal, which composes this engine directly, leaves it off.
@@ -1626,7 +1626,7 @@ $quoteDetails = json_encode(
             /**
              * Write an address from an external payload into an address form.
              *
-             * TWO-25461 §2.6. The routing rules below are the same for every
+             * TWO-25461. The routing rules below are the same for every
              * payload this can receive — a registered-company search result, a
              * sole-trader autofill — deliberately, because special-casing the
              * source is how the two drift apart.
@@ -2379,7 +2379,7 @@ $quoteDetails = json_encode(
             /**
              * A phone number is not part of the address the buyer is being shown
              * a company for, so unlike the address itself this one field follows
-             * the merchant's autopopulation setting (TWO-25461 §5).
+             * the merchant's autopopulation setting (TWO-25461).
              */
             captureApplyTelephone(phoneNumber) {
                 const phone = String(phoneNumber || '').trim();
@@ -3032,7 +3032,7 @@ $quoteDetails = json_encode(
 
     function <?= $gwBase ?>PaymentMethodBase() {
         /*
-         * TWO-25326, 2026-08-05 ruling: this tile mounts THE company-search
+         * TWO-25326: this tile mounts THE company-search
          * controller (`twoGatewayCaptureSurfaceMixin`, defined above, over the
          * base plugin's shared `company-capture-component.js`) — the same
          * controller and the same markup the address step mounts. It used to carry
@@ -3137,10 +3137,10 @@ $quoteDetails = json_encode(
             orderNote: '',
             poNumber: '',
             isPaymentTermsAccepted: false,
-            // TWO-25326 tile bugfix batch, bug 5: true from the moment an
-            // order-intent request actually goes on the wire until the CURRENT
-            // one settles. Only the current one may clear it — see
-            // `orderIntentSeq` at the bottom of this file.
+            // TWO-25326: true from the moment an order-intent request actually
+            // goes on the wire until the CURRENT one settles. Only the current
+            // one may clear it — see `orderIntentSeq` at the bottom of this
+            // file.
             orderIntentChecking: false,
             // Whether the LAST applied decision allowed the order. Note it has
             // no reader anywhere in this repo, so it gates nothing client-side
@@ -3232,7 +3232,7 @@ $quoteDetails = json_encode(
             // suppressed the notice — an undefined property would make Alpine
             // throw on every x-show evaluation.
             orderIntentApprovedNotice: '',
-            // TWO-25326 §7.2/§7.3: sibling of orderIntentApprovedNoticeCopy for
+            // TWO-25326: sibling of orderIntentApprovedNoticeCopy for
             // the "not approved / no intent" wording. Same null-means-off and
             // '' live-text contract as the pair above.
             orderIntentNotAvailableCopy: <?= /* @noEscape */ json_encode(
@@ -3273,7 +3273,7 @@ $quoteDetails = json_encode(
             checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
 
             // Gates the sole-trader PHONE write only; the registered address it
-            // arrives with is written regardless (TWO-25461 §5).
+            // arrives with is written regardless (TWO-25461).
             isAddressAutopopulationEnabled: <?= /* @noEscape */ $isAddressAutopopulationEnabled ?>,
 
             // CSP-friendly event handlers (called from template)
@@ -3404,7 +3404,7 @@ $quoteDetails = json_encode(
                 // clear first and processOrderIntentSuccessResponse re-sets
                 // afterwards; a company edited by hand clears the notice and
                 // leaves it cleared, which is the correct fail-closed outcome.
-                // The not-available notice (TWO-25326 §7.2/§7.3) and the error
+                // The not-available notice (TWO-25326) and the error
                 // notice are the same persistent-inline-element shape and clear
                 // on the same two watchers, for the same reason: a
                 // declined/no-intent/failed verdict was for the PREVIOUS
@@ -3470,15 +3470,15 @@ $quoteDetails = json_encode(
             },
 
             /*
-             * Bug 5 (2026-08-05 ruling), kept as history rather than silently
-             * dropped: the search control's visibility is governed ONLY by the
-             * admin setting that decides WHERE it renders, never by capture
-             * state. Capturing a company used to hide the search block and the
-             * whole Company Number block and offer a "Change company" button as
-             * the only way back — found in live testing to read as a confusing
-             * hide-and-reshow rather than a stable control. The field is the
-             * buyer's route to a different company at every point now, exactly
-             * as it is before any company is captured, so
+             * The search-control rule, kept as history rather than silently
+             * dropped (TWO-25326): the search control's visibility is governed
+             * ONLY by the admin setting that decides WHERE it renders, never by
+             * capture state. Capturing a company used to hide the search block
+             * and the whole Company Number block and offer a "Change company"
+             * button as the only way back — found in live testing to read as a
+             * confusing hide-and-reshow rather than a stable control. The field
+             * is the buyer's route to a different company at every point now,
+             * exactly as it is before any company is captured, so
              * `clearCapturedCompany()` / `focusCompanySearchInput()` /
              * `OnChangeCompanyClick` / `companySearchBlockVisible` are all
              * removed rather than rewired.
@@ -3520,15 +3520,15 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // TWO-25326, ruling of 2026-08-03: the ONE gate for both the
-            // inline order-intent notice and the captured-company label beside
-            // it. The label is shown exactly when the notice is shown and
-            // hidden exactly when it is hidden, so both `x-show` bindings name
-            // THIS getter rather than each testing a condition of its own.
+            // TWO-25326: the ONE gate for both the inline order-intent notice
+            // and the captured-company label beside it. The label is shown
+            // exactly when the notice is shown and hidden exactly when it is
+            // hidden, so both `x-show` bindings name THIS getter rather than
+            // each testing a condition of its own.
             //
             // That is the whole reason it exists. A parallel "is a company
             // captured" check would agree with the notice most of the time and
-            // diverge precisely in the states the ruling asks about: a company
+            // diverge precisely in the states the ticket asks about: a company
             // captured with no intent dispatched yet, an intent that was
             // declined or errored, and a brand that suppressed the notice
             // (`orderIntentApprovedNoticeCopy` null, so
@@ -3540,8 +3540,8 @@ $quoteDetails = json_encode(
             // getter answers a boolean to a test that compares against one.
             //
             // READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two
-            // configurations mean the notice never fires at all, and so that the
-            // §7 label never renders either: order intent disabled for the
+            // configurations mean the notice never fires at all, and so that
+            // the label never renders either: order intent disabled for the
             // merchant (the `isOrderIntentEnabled` gate before dispatch), and a
             // Dutch buyer whose company is not a BV. Both are permanent rather
             // than transient, and on this surface the consequence is sharper
@@ -3549,7 +3549,7 @@ $quoteDetails = json_encode(
             // Company Number block, so those buyers see no company name
             // anywhere on the tile and a bare "Change company" button next to
             // nothing. That follows literally from "shown exactly when the
-            // notice is shown", so it is a consequence of the ruling rather
+            // notice is shown", so it is a consequence of that rule rather
             // than a defect here, but it is a product decision and not one to
             // paper over by widening this getter.
             //
@@ -3558,14 +3558,14 @@ $quoteDetails = json_encode(
             // PaymentFormWithValidation() composes with property descriptors
             // (TWO-25332). Composing it with object spread — as it did until
             // then — evaluated each getter once and copied the frozen result,
-            // which disabled the whole §7 label apparatus in production
+            // which disabled the whole label apparatus in production
             // without failing a single test. See that function's comment.
             get orderIntentMessageVisible() {
                 return Boolean(this.orderIntentApprovedNotice);
             },
 
             // Sibling of orderIntentMessageVisible for the "not available"
-            // text (TWO-25326 §7.2/§7.3). Named distinctly rather than folded
+            // text (TWO-25326). Named distinctly rather than folded
             // into one "any message visible" getter: the two texts are shown
             // in two DIFFERENT elements (styled approved-green vs
             // unavailable), so the template needs to ask which one.
@@ -3829,8 +3829,8 @@ $quoteDetails = json_encode(
             // Number block — its static caption included — rather than only
             // the input. Class-NAME STRING for the same reason: `:class` here
             // is a key lookup, not expression evaluation. UNCHANGED by the
-            // 2026-08-05 ruling above: that ruling is about the EDITABLE
-            // search control and the "Change company" swap specifically, and
+            // search-control change above: that change is about the EDITABLE
+            // control and the "Change company" swap specifically, and
             // this block's own capture gate is not part of it — see the
             // comment on the markup that binds this.
             get companyNumberBlockHiddenClass() {
@@ -3866,7 +3866,7 @@ $quoteDetails = json_encode(
                 // company, or renaming this one, always passes the gate.
                 if (this.isOrderIntentEnabled && triggerOrderIntent && invoiceCompany.companyId
                     && !this.hasOrderIntentDecisionFor(invoiceCompany.companyId, invoiceCompany.companyName)) {
-                    // Bug 5: the tile-local spinner goes up HERE rather than
+                    // The tile-local spinner goes up HERE rather than
                     // when the request leaves, because the listener debounces
                     // 500ms and half a second of a tile that has visibly not
                     // reacted to the pick is the complaint. Every path that
@@ -4065,7 +4065,7 @@ $quoteDetails = json_encode(
 
             /**
              * Substitute the buyer's company name and number into a copy
-             * template — both are only known client-side (TWO-25326 §7.3).
+             * template — both are only known client-side (TWO-25326).
              * Shared by the approved and declined resolvers below, which
              * differ only in which copy object they pass.
              *
@@ -4118,7 +4118,7 @@ $quoteDetails = json_encode(
 
             /**
              * Sibling of resolveOrderIntentApprovedNotice() for the "not
-             * approved / no intent" wording (TWO-25326 §7.2/§7.3). Same
+             * approved / no intent" wording (TWO-25326). Same
              * empty-brand-switch and substitution contract.
              */
             resolveOrderIntentNotAvailableNotice() {
@@ -4154,7 +4154,7 @@ $quoteDetails = json_encode(
                 // well as what the box is painted from, so it has to advance for
                 // `decidedCompanyId` regardless of what is on screen now, or that
                 // company's own check would be permanently stuck pending — the
-                // original bug 4 defect this whole mechanism exists to fix.
+                // original stale-verdict defect this mechanism exists to fix.
                 // The verdict record — id, name and decision — advances as ONE
                 // write, unconditionally. Writing the id here and the other two
                 // below the paint guard was a real defect: pick A (approved),
@@ -4233,7 +4233,7 @@ $quoteDetails = json_encode(
 
                 /*
                  * ONE VERDICT, ONE NOTICE — and never the toast while the box
-                 * exists (2026-08-06 ruling).
+                 * exists (TWO-25326).
                  *
                  * A decline used to raise a 5-second `dispatchMessages()` toast
                  * AS WELL AS the in-tile "not available" box. Two notices for one
@@ -4430,7 +4430,7 @@ $quoteDetails = json_encode(
      * `orderIntentMessageVisible`, `companyTileLabelText`,
      * `companyIdHintVisible`, `companyIdHiddenClass` and
      * `companyNumberBlockHiddenClass` were all dead data properties holding
-     * their pre-interaction value. Every §7 company-search behaviour tied to
+     * their pre-interaction value. Every company-search behaviour tied to
      * them was inert in production, and no test saw it because the suites
      * mounted the BASE component, where the getters are real.
      * `payment-form-composition.test.js` mounts THIS factory for that reason
@@ -4612,7 +4612,7 @@ $quoteDetails = json_encode(
     let orderIntentDebounceTimeout = null;
 
     /*
-     * TWO-25326 tile bugfix batch, bug 4.
+     * TWO-25326.
      *
      * A monotonic sequence number, bumped by every intent request that actually
      * goes on the wire. A request may only publish its result — the verdict, the
@@ -4647,7 +4647,7 @@ $quoteDetails = json_encode(
             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
             if (!activePaymentMethod) {
-                // The spinner was raised optimistically on the pick (bug 5), so
+                // The spinner was raised optimistically on the pick, so
                 // every path that then declines to make a request has to take it
                 // back down. These two early returns did not, which left a
                 // "Checking availability" row up forever — reachable by picking a

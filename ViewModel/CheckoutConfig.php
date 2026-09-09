@@ -26,7 +26,7 @@ class CheckoutConfig implements ArgumentInterface
 {
     /**
      * Placeholder the Alpine component substitutes the buyer's company number
-     * into (TWO-25326 §7.3). Sibling of COMPANY_NAME_TOKEN below.
+     * into (TWO-25326). Sibling of COMPANY_NAME_TOKEN below.
      */
     public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
     /**
@@ -128,15 +128,14 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 §7.1 (2026-08-03 ruling), corrected 2026-08-04: is the
-     * payment tile the surface hosting the ONE company-search control right
-     * now? When false, the tile is text-only (§7.2/§7.3) and the
-     * address-area control is the enhanced one.
+     * TWO-25326: is the payment tile the surface hosting the ONE
+     * company-search control right now? When false, the tile is text-only and
+     * the address-area control is the enhanced one.
      *
      * Hyvä has NO setting of its own for this — the earlier revision's
      * Hyvä-local `two_general/hyva/company_search_location` field was wrong;
-     * Doug's correction is that there must be exactly one control deciding
-     * this per merchant, not one per platform. It reads the CORE module's
+     * the requirement is exactly one control deciding this per merchant, not
+     * one per platform. It reads the CORE module's
      * already-existing, already-correct setting directly, the same way
      * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below already
      * reuse ConfigRepository for other core config: `enable_company_search`
@@ -292,7 +291,7 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port, PR #445): company search must
+     * TWO-25326 (WooCommerce-plugin port): company search must
      * not run while a merchant's API key can't be verified, on top of
      * (not instead of) the existing `enable_company_search` toggle — see
      * getIsApiKeyVerified()/ApiKeyVerificationStatus for the full
@@ -311,7 +310,7 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port, PR #445): whether the merchant's
+     * TWO-25326 (WooCommerce-plugin port): whether the merchant's
      * currently configured API key can be verified right now. Delegates
      * to ApiKeyVerificationStatus — see its class doc for why this is a
      * standalone gate rather than a shared base-module service, and for
@@ -328,7 +327,7 @@ class CheckoutConfig implements ArgumentInterface
     /**
      * May a company pick FILL IN the buyer's address for them?
      *
-     * TWO-25326, 2026-08-06 ruling: TWO conditions, expressed here once.
+     * TWO-25326: TWO conditions, expressed here once.
      * Address autofill requires the `enable_address_search` setting AND the
      * company-search control living in the address entry — because autofill
      * writes city / postcode / street into an address FORM, and when the one
@@ -365,7 +364,7 @@ class CheckoutConfig implements ArgumentInterface
      * condition is about where the company-search CONTROL is mounted, which
      * decides nothing about the sole-trader flow — the sole-trader entry point
      * lives in the payment tile in both configurations, and its address
-     * write-back is unconditional per TWO-25461 §5. The only thing this gates
+     * write-back is unconditional per TWO-25461. The only thing this gates
      * is the buyer's PHONE NUMBER, which the merchant opted into having filled
      * in for them when they turned address autopopulation on.
      */
@@ -503,13 +502,12 @@ class CheckoutConfig implements ArgumentInterface
      * Mirrors the Luma checkout's config provider; the brand.xml contract
      * lives on the base module's brand descriptor.
      *
-     * TWO-25326 §7.3 (2026-08-03 ruling): the default copy now embeds BOTH
-     * the company name and number directly in the sentence — this is what
-     * replaces the standalone "<name> (<number>)" tile label, which the
-     * ruling removes rather than supplements. A brand override supplied
-     * before this ruling will not carry the number token; that is a brand-
-     * specific follow-up (§7.4), not something this method can fix on a
-     * brand's behalf.
+     * TWO-25326: the default copy now embeds BOTH the company name and number
+     * directly in the sentence — this is what replaces the standalone
+     * "<name> (<number>)" tile label, which the ticket removes rather than
+     * supplements. A brand override supplied before TWO-25326 will not carry
+     * the number token; that is a brand-specific follow-up, not something this
+     * method can fix on a brand's behalf.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
@@ -558,11 +556,11 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 §7.3 (2026-08-03 ruling): the tile's "not approved / no
-     * intent" wording, shown persistently in the text-only tile (§7.2)
-     * exactly where the approved notice would otherwise render.
+     * TWO-25326: the tile's "not approved / no intent" wording, shown
+     * persistently in the text-only tile exactly where the approved notice
+     * would otherwise render.
      *
-     * Two independent brand declarations of its own (ruling 19.5), read
+     * Two independent brand declarations of its own, read
      * exactly as getOrderIntentApprovedNotice() above reads the approved
      * pair — the two outcomes are suppressed and worded separately:
      *

@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §7, Hyvä payment tile. Three complaints, one fix:
+ * TWO-25326, Hyvä payment tile. Three complaints, one fix:
  *
  *   - the company name showed as an editable search control rather than a
  *     read-only label once a company had been captured;
@@ -13,32 +13,30 @@
  * inputs still in the DOM so `payment[company_name]` and `payment[company_id]`
  * still submit.
  *
- * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling). This file used to
- * carry a SECOND gate alongside the label's, guarding the search block, the
- * Company Number block and a "Change company" button — all three hidden
- * together on CAPTURE, with the button as the only route back out. Doug's
- * exact words, carried over from the identical ruling on Magento (PR #324):
- * the search control "is controlled ONLY by the state of the 'enable search
- * in address' admin setting ... and search control visibility is not
- * changed for any other reason." Found in live testing to read as a
- * confusing hide-and-reshow rather than a stable control.
+ * The later change on the same ticket: this file used to carry a SECOND gate
+ * alongside the label's, guarding the search block, the Company Number block
+ * and a "Change company" button — all three hidden together on CAPTURE, with
+ * the button as the only route back out. The rule, carried over verbatim from
+ * the identical one on the Magento plugin: the search control "is controlled
+ * ONLY by the state of the 'enable search in address' admin setting ... and
+ * search control visibility is not changed for any other reason." Found in live
+ * testing to read as a confusing hide-and-reshow rather than a stable control.
  *
  * The consequence for this file:
  *
- *   - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a
- *     binding that now reads `true` always, an absent one. Doug's ruling is
- *     "controlled ONLY by the admin setting", so the block carries no
- *     `x-show` of its own in this branch at all; `searchBlockHasNoOwnGate()`
- *     pins the DOM fact instead of a component getter that does not exist;
- *   - the "Change company" button, `CHANGE_BUTTON_SHOW_BINDING`,
- *     `CHANGE_BUTTON_CLICK_BINDING` and `clearCapturedCompany()` are all
- *     REMOVED, along with every test whose only subject was that round trip;
- *   - the Company Number block's own gate (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`)
- *     is UNCHANGED — that block was never part of this bug, and still hides
- *     once a registry number is locked in, exactly as §7 shipped it;
- *   - the LABEL's gate (gate 2 below) is likewise unchanged — it still follows
- *     the order-intent notice, per the 2026-08-03 ruling, independently of
- *     both of the above.
+ * - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a binding
+ * that now reads `true` always, an absent one. The rule is "controlled ONLY by
+ * the admin setting", so the block carries no `x-show` of its own in this
+ * branch at all; `searchBlockHasNoOwnGate()` pins the DOM fact instead of a
+ * component getter that does not exist; - the "Change company" button,
+ * `CHANGE_BUTTON_SHOW_BINDING`, `CHANGE_BUTTON_CLICK_BINDING` and
+ * `clearCapturedCompany()` are all REMOVED, along with every test whose only
+ * subject was that round trip; - the Company Number block's own gate
+ * (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`) is UNCHANGED — that block was never
+ * part of the search-control change, and still hides once a registry number is
+ * locked in, exactly as TWO-25326 shipped it; - the LABEL's gate (gate 2 below)
+ * is likewise unchanged — it still follows the order-intent notice,
+ * independently of both of the above.
  *
  * Every binding is read out of the SHIPPED markup by `H.readAlpineBinding()`
  * rather than named as a literal. This repo has repeatedly shipped bindings
@@ -68,9 +66,9 @@ const LABEL_TEXT_BINDING = H.readAlpineBinding(
 );
 
 /**
- * The gate on the whole Company Number block, caption included. UNCHANGED by
- * the 2026-08-05 ruling: this block still hides once a registry number is
- * locked in.
+ * The gate on the whole Company Number block, caption included. It hides once
+ * a registry number is locked in; the search control's visibility is separate
+ * and carries no gate of its own.
  */
 const NUMBER_BLOCK_HIDDEN_CLASS_BINDING = readNumberBlockClassBinding();
 
@@ -144,12 +142,12 @@ function parsedMarkup() {
 }
 
 /**
- * Doug's exact-words ruling (carried over from Magento PR #324): the search
- * control "is controlled ONLY by the state of the 'enable search in address'
- * admin setting ... and search control visibility is not changed for any
- * other reason." Pinned as the absence of any `x-show` between the
- * company-name input and the `<form>` — the input's own ancestor chain is the
- * only place a reintroduced capture- or mode-based gate could hide.
+ * The rule, verbatim (TWO-25326): the search control "is controlled ONLY by
+ * the state of the 'enable search in address' admin setting ... and search
+ * control visibility is not changed for any other reason." Pinned as the
+ * absence of any `x-show` between the company-name input and the `<form>` —
+ * the input's own ancestor chain is the only place a reintroduced capture- or
+ * mode-based gate could hide.
  *
  * @returns {void}
  */
@@ -185,7 +183,7 @@ function readNumberBlockClassBinding() {
   return bound;
 }
 
-describe("the captured-company tile label (TWO-25326 §7)", () => {
+describe("the captured-company tile label (TWO-25326)", () => {
   let env;
   let fetchStub;
   let component;
@@ -262,14 +260,14 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       expect(binding() in component).toBe(true);
     });
 
-    test("the search block carries no visibility gate of its own (2026-08-05 ruling, bug 5)", () => {
+    test("the search block carries no visibility gate of its own (TWO-25326)", () => {
       expectSearchBlockHasNoOwnVisibilityGate();
     });
 
     test("the label row is the first child of the payment fieldset", () => {
-      // §7 puts it between the term chips (outside the form) and the
+      // TWO-25326 puts it between the term chips (outside the form) and the
       // order-intent message (the element that used to be first here). The
-      // label itself carries the class §7 names.
+      // label itself carries the class the ticket names.
       const fieldset = parsedMarkup().querySelector("form fieldset");
       const label = fieldset.querySelector('[data-name="company_tile_label"]');
 
@@ -279,10 +277,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("there is no 'Change company' control left in the markup", () => {
-      // TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the button
-      // this used to pin is REMOVED, along with the hide-and-reshow apparatus
-      // it was the only route out of. The search control stays visible
-      // instead, so there is nothing left for a "change" affordance to do.
+      // TWO-25326: the button this used to pin is REMOVED, along with the
+      // hide-and-reshow apparatus it was the only route out of. The search
+      // control stays visible instead, so there is nothing left for a
+      // "change" affordance to do.
       expect(
         parsedMarkup().querySelector('[data-name="company_tile_change"]'),
       ).toBeNull();
@@ -300,8 +298,8 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("the two superseded inline hints are gone from the markup", () => {
-      // §7 forbids extra text labels beside the single line. Reinstating
-      // either paragraph fails here.
+      // TWO-25326 forbids extra text labels beside the single line.
+      // Reinstating either paragraph fails here.
       const doc = parsedMarkup();
 
       expect(doc.querySelector('[data-name="company_name_hint"]')).toBeNull();
@@ -360,9 +358,10 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("reads exactly '<name> (<number>)' once the intent is approved", () => {
-      // Capture alone no longer shows it — that is the 2026-08-03 ruling, and
-      // it is asserted here as well as in its own describe below, because this
-      // is the state a reader of this block would expect to show a label.
+      // Capture alone no longer shows it: the label follows the order-intent
+      // notice (TWO-25326). Asserted here as well as in its own describe
+      // below, because this is the state a reader of this block would expect
+      // to show a label.
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
 
       approveIntent(component);
@@ -373,7 +372,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       );
     });
 
-    test("keeps the editable search control visible (2026-08-05 ruling, bug 5)", () => {
+    test("keeps the editable search control visible (TWO-25326)", () => {
       // THE fix. Before it, capture hid this block and the only way back was
       // the now-removed "Change company" button. There is no gate to flip
       // any more, which is the structural pin at the top of this file — this
@@ -382,8 +381,8 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("hides the whole Company Number block, caption included", () => {
-      // UNCHANGED by the 2026-08-05 ruling — this block was never part of
-      // bug 5, and still hides once a registry number is locked in.
+      // This block was never part of the search-control change: it still
+      // hides once a registry number is locked in.
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
 
@@ -475,8 +474,8 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
           captured ? "hidden" : "",
         );
         // The search control's own gate no longer depends on capture OR mode
-        // (2026-08-05 ruling, bug 5) — there is no gate at all, pinned
-        // structurally above rather than against component state here.
+        // — there is no gate at all, pinned structurally above rather than
+        // against component state here.
       });
     });
 
@@ -510,10 +509,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       //    destroy the company the buyer had just typed.
       //
       // Pinned as a test because re-adding the bridge without solving (1) is
-      // the obvious next move and it is the wrong one. Unaffected by the
-      // 2026-08-05 ruling: there is no clearing mechanism left to bridge to at
-      // all now that "Change company" is gone, which makes this guard more
-      // load-bearing, not less.
+      // the obvious next move and it is the wrong one. Still true now that
+      // "Change company" is gone: there is no clearing mechanism left to
+      // bridge to at all, which makes this guard more load-bearing, not less.
       const js = H.renderTemplateJs(H.GATEWAY_METHOD_TEMPLATE);
 
       expect(js).not.toContain("billing_as_shipping_address_updated");
@@ -522,14 +520,14 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
   });
 
   /**
-   * The 2026-08-03 ruling on TWO-25326: the label is shown exactly when the
-   * inline order-intent notice is shown, and hidden exactly when it is hidden.
+   * TWO-25326: the label is shown exactly when the inline order-intent notice
+   * is shown, and hidden exactly when it is hidden.
    *
    * "Exactly when" is asserted two ways, because either alone is weak:
    *
    *  - as SOURCE: the two `x-show` bindings must be the identical expression.
    *    Two different getters that agree in the states a test happens to visit is
-   *    the precise defect the ruling forbids, and no set of behavioural cases
+   *    the precise defect the ticket forbids, and no set of behavioural cases
    *    can rule it out.
    *  - as BEHAVIOUR: across every state that separates the new gate from the
    *    superseded capture one — captured-with-no-intent, declined, errored,
@@ -538,7 +536,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    * The behavioural cases are the mutation-sensitive half: each had the label
    * VISIBLE under the old gate, so reverting the markup one-liner fails them.
    *
-   * Unaffected by the 2026-08-05 ruling on bug 5 — the label's OWN gate never
+   * Unaffected by the search-control change — the label's OWN gate never
    * named the search control's or the "Change company" button's, and still
    * does not.
    */
@@ -551,8 +549,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
     });
 
     test("a captured company with no intent dispatched yet shows neither", () => {
-      // THE case the ruling changes and the old gate got wrong: fully captured,
-      // so the superseded gate showed the label; no intent, so no notice.
+      // THE case the ticket changes and the old gate got wrong: fully
+      // captured, so the superseded gate showed the label; no intent, so no
+      // notice.
       component.selectItem(pickerItem("Example Trading Ltd", "123456789"));
 
       expect(component[INTENT_MESSAGE_SHOW_BINDING]).toBe(false);
@@ -702,7 +701,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
   });
 
   /**
-   * TWO-25345, re-examined under the 2026-08-05 ruling.
+   * TWO-25345, re-examined under TWO-25326.
    *
    * The original defect: re-picking the SAME company after "Change company"
    * left the tile showing a bare "Change company" button and nothing else —
@@ -714,8 +713,8 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
    *  - `fillCompanyData()` then suppressed the intent that would have re-set
    *    it, because a decision for that same identifier was still on record.
    *
-   * "Change company" is gone (bug 5), and with it the ONLY path that used to
-   * reset the decision records mid-session — so the specific "repaints
+   * "Change company" is gone (TWO-25326), and with it the ONLY path that used
+   * to reset the decision records mid-session — so the specific "repaints
    * the label instead of leaving a bare button" scenario cannot occur any
    * more: there is no button to leave bare. What survives, and is still
    * pinned below, is the dedup mechanism itself — a DIFFERENT company must
@@ -899,7 +898,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       );
       // and the top-level listener's own "already processed" gate — read via
       // a local alias (`component`) rather than the global directly, because
-      // bug 5's local-spinner rework wrapped this in executeOrderIntent(),
+      // the local-spinner rework wrapped this in executeOrderIntent(),
       // but it is still the SAME global instance under that name:
       expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(

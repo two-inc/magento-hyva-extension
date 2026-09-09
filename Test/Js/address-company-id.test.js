@@ -4,7 +4,7 @@
  *
  * TWO-25288 / TWO-25326. The company-NUMBER provenance behind the address step.
  *
- * TWO-25326 §5/§7 removed the editable company-number INPUT from this surface
+ * TWO-25326 removed the editable company-number INPUT from this surface
  * entirely. The ticket records the permanently-visible "Company Number" field
  * as a defect in its own right: it must not exist before a result is selected,
  * nor in manual-entry mode, nor be editable at any point. What remains here is
@@ -229,7 +229,7 @@ describe("address-step company number", () => {
   /**
    * Drive `onCompanyIdInput()` the way the PAYMENT step's binding does.
    *
-   * The address step has no such input since §5/§7; the handler survives
+   * The address step has no such input since TWO-25326; the handler survives
    * because it is what stamps `company_id_source: 'manual'` into the shared
    * blob, and the payment step derives its own field's editability from that.
    */
@@ -256,7 +256,7 @@ describe("address-step company number", () => {
     return { companyName: name, companyId: id, lookupId: "" };
   }
 
-  describe("the address step renders no company-number input at all (TWO-25326 §5/§7)", () => {
+  describe("the address step renders no company-number input at all (TWO-25326)", () => {
     // REPLACES the four tests that read this input's `:disabled` / `:value` /
     // `@input.debounce.300ms` bindings, its `company_id` class, its label and
     // its absent `name`. The field itself is what the ticket removes, so the
@@ -324,7 +324,7 @@ describe("address-step company number", () => {
       ).toBe("companyIdDisabled");
     });
 
-    test("the below-the-field manual-entry link stays gone (2026-08-05 ruling, superseding bug 4.2)", () => {
+    test("the below-the-field manual-entry link stays gone (TWO-25326)", () => {
       // 2026-07-28 first pass deleted this link outright: its old gate showed
       // it whenever the panel was shut, which included an untouched field and
       // a completed selection — both states its wording ("My company is not
@@ -333,7 +333,7 @@ describe("address-step company number", () => {
       // into manual entry at all, so 2026-08-01 restored it, gated on
       // `belowFieldManualEntryVisible`.
       //
-      // 2026-08-05 (TWO-25326 tile bugfix batch, bug 2) removed it again for
+      // 2026-08-05 (TWO-25326) removed it again for
       // good instead: the panel now opens on click/keypress from zero typed
       // characters, so the in-dropdown row is reachable immediately and there
       // is no state left for a persistent second copy to cover. See
@@ -456,7 +456,7 @@ describe("address-step company number", () => {
 
     test("a pick stays locked in SEARCH mode, because the name cannot be edited there", async () => {
       // REPLACES "editing the name after a pick unlocks the field again".
-      // TWO-25326 §1 makes that edit impossible on this surface: the panel owns
+      // TWO-25326 makes that edit impossible on this surface: the panel owns
       // the name field in search mode and moves anything typed into its own
       // query box, so `onNameFieldInput` returns before it can invalidate a
       // registry pick. The unlock still exists — see the manual-mode tests
@@ -570,7 +570,7 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("init restores the completed-selection flag (TWO-25288 element 5)", () => {
+  describe("init restores the completed-selection flag (TWO-25288)", () => {
     // `isCompanySelected` says a company has actually been captured, and the
     // mount has to restore it: a page reload after a completed pick otherwise
     // reads as an untouched field.
@@ -610,7 +610,7 @@ describe("address-step company number", () => {
       expect(component.isCompanySelected).toBe(false);
     });
 
-    test("a real edit after a restored selection flips it back (TWO-25288 element 5)", async () => {
+    test("a real edit after a restored selection flips it back (TWO-25288)", async () => {
       // The two fixes chained, not just proven in isolation: init() marks a
       // restored pick complete, and a real edit must still be able to end that
       // state, or a restored selection looks identical to one made this page
@@ -796,7 +796,7 @@ describe("address-step company number", () => {
 
   describe("a name edit never leaves the previous company's number behind", () => {
     /*
-     * TWO-25326 §1 narrowed WHERE a name edit can happen at all. In search mode
+     * TWO-25326 narrowed WHERE a name edit can happen at all. In search mode
      * the company-name field is not editable, so there is no name edit to
      * mishandle — the search path deliberately no longer runs the
      * stale-identifier
@@ -898,10 +898,10 @@ describe("address-step company number", () => {
     });
 
     test("a name edit drops ANY identifier that no longer describes the name", async () => {
-      // §5 removed this surface's company-number input, so nothing here can
-      // write a `manual` identifier and nothing can correct one either —
-      // sparing it lets an identifier left in storage by an earlier session
-      // travel with a name it never belonged to.
+      // TWO-25326 removed this surface's company-number input, so nothing
+      // here can write a `manual` identifier and nothing can correct one
+      // either — sparing it lets an identifier left in storage by an earlier
+      // session travel with a name it never belonged to.
       component = mount({ quote_id: "test-quote-1" });
       enterManual();
       await typeName("Jo Smith Trading");
@@ -937,7 +937,7 @@ describe("address-step company number", () => {
   describe("in SEARCH mode the company-name field publishes nothing at all", () => {
     /*
      * REPLACES "only a settled name is published", which pinned a length guard
-     * on the search path's commit. TWO-25326 §1 removed that commit outright:
+     * on the search path's commit. TWO-25326 removed that commit outright:
      * in search mode the name field is not a query box and not a capture field
      * — only a registry pick writes the company name. That is strictly stronger
      * than the old guard, which still published every fragment at or above the
@@ -1028,13 +1028,13 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("the company-number display (bug 4.3)", () => {
+  describe("the company-number display", () => {
     /**
      * The `x-show`/`x-text` bindings read out of the shipped markup, so a
      * renamed getter that forgets to repoint either binding fails here
      * instead of silently passing.
      *
-     * The `inputVisible` half is gone with the input (TWO-25326 §5/§7). It
+     * The `inputVisible` half is gone with the input (TWO-25326). It
      * used to resolve `.field.two-company-id`'s `!companyIdDisplayVisible`
      * gate through the negation getter; there is no longer any element on this
      * surface carrying that binding, and the presence of the getter alone
@@ -1121,7 +1121,7 @@ describe("address-step company number", () => {
       // this); the display must track the same reversal, or the buyer would
       // see inert text for a number that no longer describes the company in
       // the field. Driven through manual mode, the only place the name is
-      // editable since §1.
+      // editable since TWO-25326.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       expect(readDisplayState().displayVisible).toBe(true);

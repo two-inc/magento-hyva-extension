@@ -193,7 +193,7 @@ describe("company-search threshold provenance", () => {
       // disguise, and pinning the pattern rather than the digit is what stops
       // the next one landing.
       //
-      // `query` and `term` are named alongside `search` because TWO-25326 §1
+      // `query` and `term` are named alongside `search` because TWO-25326
       // moved the guards onto the panel's own query text — `search` alone
       // would now match nothing on this surface, which is exactly how a
       // provenance check goes quietly vacuous.
@@ -411,7 +411,7 @@ describe("the capture field carries no watermark", () => {
  * number `searchCompanies()` enforces both come off `minSearchChars`, and they
  * are checked against each other below rather than each against a fixture.
  */
-describe("address field — minimum-characters hint (element 4)", () => {
+describe("address field — minimum-characters hint (TWO-25288)", () => {
   let mounted;
   let searchApi;
 

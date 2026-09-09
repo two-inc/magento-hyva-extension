@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 tile bugfix batch, bug 4. Doug's repro on a real Hyvä checkout:
+ * TWO-25326. Reported from a real Hyvä checkout:
  * selecting company A fires a correct order-intent check; selecting a DIFFERENT
  * company afterwards fires none at all.
  *
@@ -56,7 +56,7 @@ function deferred() {
   return { promise: promise, resolve: resolve, reject: reject };
 }
 
-describe("order-intent sequencing (bug 4)", () => {
+describe("order-intent sequencing (TWO-25326)", () => {
   let env;
   let fetchStub;
   let component;
