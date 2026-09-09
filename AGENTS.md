@@ -169,17 +169,19 @@ supplies no URL gets no anchor and no tagline at all — never an empty `href`,
 never an empty element.
 
 Whether the intent-declined notice renders at all, and its wording, come from two
-separate brand-registry declarations read here: the switch is the only thing that
-suppresses it, and the copy override is inert when empty — an empty override never
-doubles as an off switch (TWO-25326). A base declaring no switch leaves the notice
-on.
+separate brand-registry declarations: only the switch suppresses it, and the copy
+override is inert when empty — an empty override never doubles as an off switch
+(TWO-25326). A base declaring no declined switch falls back to the approved
+notice's switch, so a brand that turned that one off gets neither; a base
+declaring no switch of either kind leaves the notice on.
 
 `dev/base-tile-copy-parity.sh` pins the four tile-copy methods this checkout calls
-against the base module's declarations, and `ci.yml`
-invokes it as `bash dev/base-tile-copy-parity.sh`. **Any guard whose failure mode
-is "did not execute" is invoked through `bash`**: a script committed mode `100644`
-and run as `./script.sh` exits 126, which on a CI dashboard is indistinguishable
-from a check that ran and failed — the guard's own absence reads as its verdict.
+against the base module's declarations, and `ci.yml` invokes it as
+`bash dev/base-tile-copy-parity.sh`. **A NON-EXECUTABLE guard is invoked through
+`bash`**: a script whose mode is `100644` and which is run as `./script.sh` exits
+126, which on a CI dashboard is indistinguishable from a check that ran and
+failed — the guard's own absence reads as its verdict. A guard committed
+executable runs directly.
 
 ### Order intent: one box, and a verdict that can be repainted
 
@@ -537,11 +539,12 @@ signup window is up, and this checkout inherits all three rules (TWO-25658):
   field counted as INSIDE it: the field is the popover's own trigger and sits
   outside the panel node, and a buyer typing a query is still inside the control.
 
-A window or application switch lands on no control at all and settles nothing. A
-fourth rule (TWO-25658) — **a Sole trader chip belonging to a DIFFERENT capture
-popover gets a popup of its own**, raised through that chip's own click handler so
-a launch stays spelled out in one place — and reaching that chip by FOCUS does not
-raise it on this checkout: the popup closes and nothing replaces it.
+A window or application switch lands on no control at all and settles nothing.
+
+**Reaching another capture popover's Sole trader chip by FOCUS raises nothing** —
+that chip is not the exempt one, so the popup closes like it would for any other
+target. Only activating the chip launches a popup, through its own click handler,
+which is where a launch stays spelled out (TWO-25658).
 
 All of it lives in the base plugin, none of it in this repo. A mount that adds
 focus handling of its own to a chip or the company field is competing with rules it
@@ -549,7 +552,8 @@ cannot see.
 
 **The open panel takes the company field's tab stop**, inherited the same way:
 `tabindex="-1"` while it is up, and on close the field's PRIOR value restored
-exactly, which is removal when there was none (TWO-25503). Without it the
+exactly — a theme's own `tabindex` is given back, and removal is what a field
+carrying none gets back (TWO-25503). Without it the
 focus opener is a keyboard trap — the opener puts the caret in the query field,
 Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
 2.1.2). A mount must not write a `tabindex` onto that field.
@@ -648,14 +652,14 @@ an id the store does not have.
 ### Staging Cache Refresh (git-sync workflow)
 
 **`magento-dev` is the deployment that tracks this repo's `staging`**, through its
-`git-sync-hyva` container (`--ref=staging --period=60s`); each brand's own dev
-deployment git-syncs this repo alongside its overlay. `deploy/magento` has no
-git-sync container at all and serves the deployed image's code, which tracks
-`main`. So anything verifying `staging` code
-goes to the dev shop, and a check pointed at the other one silently reports on
-`main`. Confirm which code a shop has from the git-sync container's checked-out
-HEAD, below; `pub/static/deployed_version.txt` answers with an HTML 404 page on
-these shops and settles nothing.
+`git-sync-hyva` container; each brand's own dev deployment git-syncs this repo
+too, alongside that brand's overlay. `deploy/magento` has no git-sync container at
+all and serves the deployed image's code, which tracks `main`. So anything
+verifying `staging` code goes to the dev deployment, and a check pointed at the
+other one silently reports on `main`. Confirm which code a deployment has from its
+git-sync container's checked-out HEAD, as below;
+`pub/static/deployed_version.txt` answers with an HTML 404 page and settles
+nothing.
 
 The redeploy below is in-place, and the storefront 500s for roughly three minutes
 while it runs — warn testers before merging to `staging`.
