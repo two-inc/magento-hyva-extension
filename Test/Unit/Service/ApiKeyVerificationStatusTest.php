@@ -14,8 +14,9 @@ use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
  * (see the class doc on ApiKeyVerificationStatus for why the base module's
  * merchant-record service isn't usable here) — these tests assert (a) the
  * empty/whitespace-only key short-circuit never reaches Adapter at all,
- * (b) success/failure
- * detection off Adapter::execute()'s error_code/http_status contract, (c)
+ * (b) the CATEGORY reached off Adapter::execute()'s error_code/http_status
+ * contract and which of those categories is a definitive rejection
+ * (ABN-533), (c)
  * the short cache this class adds so a persistent failure does not re-run
  * the live call on every call, (d) the per-store memo, so
  * evaluating this for two different stores in one request can't return
@@ -43,7 +44,8 @@ class ApiKeyVerificationStatusTest extends TestCase
             },
         );
 
-        $this->assertFalse($status->isVerified());
+        $this->assertSame(ApiKeyVerificationStatus::NOT_CONFIGURED, $status->getStatus());
+        $this->assertTrue($status->isDefinitiveFailure());
         $this->assertSame(0, $adapterCalls);
     }
 
@@ -62,62 +64,92 @@ class ApiKeyVerificationStatusTest extends TestCase
             },
         );
 
-        $this->assertFalse($status->isVerified());
+        $this->assertSame(ApiKeyVerificationStatus::NOT_CONFIGURED, $status->getStatus());
+        $this->assertTrue($status->isDefinitiveFailure());
         $this->assertSame(0, $adapterCalls);
     }
 
-    public function testVerifiedKeyIsTrueWhenAdapterReturnsASuccessPayload(): void
-    {
-        $saved = [];
-        $status = $this->build(
-            apiKey: 'a-valid-key',
-            execute: fn () => ['id' => 'merchant-1', 'short_name' => 'Acme'],
-            cacheSave: function (string $value) use (&$saved) {
-                $saved[] = $value;
-            },
-        );
-
-        $this->assertTrue($status->isVerified());
-        $this->assertSame(['1'], $saved);
-    }
-
     /**
-     * @dataProvider adapterFailureShapes
+     * @dataProvider adapterOutcomes
+     * @param array<string,mixed> $adapterResult
      */
-    public function testUnverifiableKeyIsFalseForEachAdapterFailureShape(array $adapterResult): void
-    {
+    public function testEachAdapterOutcomeIsCategorisedCachedAndOnlyRejectionsAreFatal(
+        array $adapterResult,
+        string $expectedStatus,
+        bool $definitive,
+        string $description
+    ): void {
         $saved = [];
         $status = $this->build(
-            apiKey: 'a-broken-key',
+            apiKey: 'a-key',
             execute: fn () => $adapterResult,
             cacheSave: function (string $value) use (&$saved) {
                 $saved[] = $value;
             },
         );
 
-        $this->assertFalse($status->isVerified());
-        $this->assertSame(['0'], $saved);
+        $this->assertSame($expectedStatus, $status->getStatus(), $description);
+        $this->assertSame($definitive, $status->isDefinitiveFailure(), $description);
+        $this->assertSame([$expectedStatus], $saved, $description);
     }
 
-    public static function adapterFailureShapes(): array
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: bool, 3: string}>
+     */
+    public static function adapterOutcomes(): array
     {
         return [
-            'invalid/expired key (401)' => [['error' => 'invalid_api_key', 'http_status' => 401]],
-            'Two 5xx' => [['http_status' => 503]],
-            'caught translator/transport failure' => [['error_code' => 400, 'error_message' => 'timed out']],
+            'success payload' => [
+                ['id' => 'merchant-1', 'short_name' => 'Example'],
+                ApiKeyVerificationStatus::OK, false,
+                'a 2xx carrying a merchant id is the only verified state',
+            ],
+            'invalid/expired key (401)' => [
+                ['error' => 'invalid_api_key', 'http_status' => 401],
+                ApiKeyVerificationStatus::INVALID_KEY, true,
+                'Two rejected this key',
+            ],
+            'forbidden (403)' => [
+                ['http_status' => 403],
+                ApiKeyVerificationStatus::INVALID_KEY, true,
+                'a 403 is the same rejection',
+            ],
+            'Two 5xx' => [
+                ['http_status' => 503],
+                ApiKeyVerificationStatus::SERVICE_ERROR, false,
+                'company search keeps running through an outage',
+            ],
+            'other non-2xx' => [
+                ['http_status' => 404],
+                ApiKeyVerificationStatus::ERROR, false,
+                'a 404 is not a verdict on the key',
+            ],
+            'caught translator/transport failure' => [
+                ['error_code' => 400, 'error_message' => 'timed out'],
+                ApiKeyVerificationStatus::UNREACHABLE, false,
+                'no exchange completed, so nothing was rejected',
+            ],
             // translatorFailure() (Adapter::execute()) sets BOTH keys at
-            // once — the shape that would slip through if the check were
-            // ever "simplified" to assume the two markers are mutually
-            // exclusive.
+            // once — the shape that would slip through if the categoriser
+            // ever assumed the two markers are mutually exclusive.
             'translator failure (both markers set)' => [
                 ['error_code' => 502, 'http_status' => 502, 'error_message' => 'translation failed'],
+                ApiKeyVerificationStatus::SERVICE_ERROR, false,
+                'http_status wins when both markers are present',
+            ],
+            '2xx carrying no merchant id' => [
+                ['short_name' => 'Example'],
+                ApiKeyVerificationStatus::MALFORMED_RESPONSE, false,
+                'a captive portal answers 200 too, and that is not a rejected key',
             ],
         ];
     }
 
     /**
-     * The whole point of this class: a cached outcome (positive OR
-     * negative) must not re-trigger Adapter's live round trip.
+     * The whole point of this class: a cached outcome must not re-trigger
+     * Adapter's live round trip. That is also what bounds an outage to one
+     * attempt per store per cache lifetime now that a failure no longer
+     * stands the control down.
      */
     public function testCachedOutcomeSkipsAdapterEntirely(): void
     {
@@ -126,13 +158,25 @@ class ApiKeyVerificationStatusTest extends TestCase
             apiKey: 'a-broken-key',
             execute: function () use (&$adapterCalls) {
                 $adapterCalls++;
-                return ['http_status' => 503];
+                return ['http_status' => 401];
             },
-            cacheLoad: fn () => '0',
+            cacheLoad: fn () => ApiKeyVerificationStatus::SERVICE_ERROR,
         );
 
-        $this->assertFalse($status->isVerified());
+        $this->assertSame(ApiKeyVerificationStatus::SERVICE_ERROR, $status->getStatus());
         $this->assertSame(0, $adapterCalls);
+    }
+
+    /** A slot written in some other shape is a miss, not a category. */
+    public function testAnUnrecognisedCacheSlotIsReVerified(): void
+    {
+        $status = $this->build(
+            apiKey: 'a-valid-key',
+            execute: fn () => ['id' => 'merchant-1'],
+            cacheLoad: fn () => '1',
+        );
+
+        $this->assertSame(ApiKeyVerificationStatus::OK, $status->getStatus());
     }
 
     /**
@@ -151,8 +195,8 @@ class ApiKeyVerificationStatusTest extends TestCase
             },
         );
 
-        $this->assertTrue($status->isVerified());
-        $this->assertTrue($status->isVerified());
+        $this->assertSame(ApiKeyVerificationStatus::OK, $status->getStatus());
+        $this->assertSame(ApiKeyVerificationStatus::OK, $status->getStatus());
         $this->assertSame(1, $adapterCalls);
     }
 
@@ -172,12 +216,12 @@ class ApiKeyVerificationStatusTest extends TestCase
             return $storeId === 1 ? ['id' => 'merchant-1'] : ['http_status' => 401];
         });
 
-        $this->assertTrue($status->isVerified(1));
-        $this->assertFalse($status->isVerified(2));
+        $this->assertSame(ApiKeyVerificationStatus::OK, $status->getStatus(1));
+        $this->assertSame(ApiKeyVerificationStatus::INVALID_KEY, $status->getStatus(2));
         // Re-querying store 1 must still be true (not clobbered by store
         // 2's later, different-valued call) and must not re-hit the
         // adapter (memo hit).
-        $this->assertTrue($status->isVerified(1));
+        $this->assertSame(ApiKeyVerificationStatus::OK, $status->getStatus(1));
         $this->assertSame(1, $adapterCallsByStore[1]);
         $this->assertSame(1, $adapterCallsByStore[2]);
     }
@@ -211,9 +255,9 @@ class ApiKeyVerificationStatusTest extends TestCase
             mode: $mode,
         );
 
-        $status->isVerified();
+        $status->getStatus();
 
-        $expected = 'two_gatewayhyva_api_key_verified_' . $expectedDigest;
+        $expected = 'two_gatewayhyva_api_key_status_' . $expectedDigest;
         $this->assertSame([$expected], $loaded, $description);
         $this->assertSame([$expected], $savedTo, $description);
     }
@@ -249,7 +293,7 @@ class ApiKeyVerificationStatusTest extends TestCase
             cacheSave: $save,
             mode: 'sandbox',
         );
-        $this->assertTrue($sandbox->isVerified());
+        $this->assertSame(ApiKeyVerificationStatus::OK, $sandbox->getStatus());
 
         $productionCalls = 0;
         $production = $this->build(
@@ -263,10 +307,17 @@ class ApiKeyVerificationStatusTest extends TestCase
             mode: 'production',
         );
 
-        $this->assertFalse($production->isVerified(), 'production must not read the sandbox verdict');
+        $this->assertSame(
+            ApiKeyVerificationStatus::INVALID_KEY,
+            $production->getStatus(),
+            'production must not read the sandbox verdict'
+        );
         $this->assertSame(1, $productionCalls, 'production must reach the adapter for its own verdict');
         $this->assertCount(2, $store, 'the two modes must occupy separate cache identifiers');
-        $this->assertSame(['1', '0'], array_values($store));
+        $this->assertSame(
+            [ApiKeyVerificationStatus::OK, ApiKeyVerificationStatus::INVALID_KEY],
+            array_values($store)
+        );
     }
 
     /**
@@ -284,7 +335,7 @@ class ApiKeyVerificationStatusTest extends TestCase
             },
         );
 
-        $status->isVerified();
+        $status->getStatus();
 
         $this->assertSame([TwoGateway::CACHE_TAG], $tags);
     }
@@ -304,7 +355,7 @@ class ApiKeyVerificationStatusTest extends TestCase
             },
         );
 
-        $status->isVerified();
+        $status->getStatus();
 
         $this->assertCount(7, $args, 'timeout must be passed positionally, so all seven arguments are present');
         $this->assertSame(10, $args[6]);

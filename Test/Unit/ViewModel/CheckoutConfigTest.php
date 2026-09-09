@@ -7,6 +7,7 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
+use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /**
@@ -370,17 +371,50 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port): company search must be
-     * off when EITHER the merchant's `enable_company_search` setting is off
-     * OR the API key can't currently be verified — neither alone is
-     * sufficient to turn it on.
+     * Company search is off when the `enable_company_search` setting is off,
+     * and when Two has rejected the key — but ABN-533: not when Two merely
+     * failed to answer.
+     *
+     * @dataProvider companySearchGateCases
      */
-    public function testCompanySearchEnabledRequiresBothTheCoreSettingAndAVerifiedKey(): void
+    public function testCompanySearchNeedsTheSettingAndANonRejectedKey(
+        bool $setting,
+        string $keyStatus,
+        bool $expected,
+        string $description
+    ): void {
+        $this->assertSame(
+            $expected,
+            $this->isCompanySearchEnabledFor($setting, $keyStatus),
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: string, 2: bool, 3: string}>
+     */
+    public static function companySearchGateCases(): array
     {
-        $this->assertTrue($this->isCompanySearchEnabledFor(true, true));
-        $this->assertFalse($this->isCompanySearchEnabledFor(true, false));
-        $this->assertFalse($this->isCompanySearchEnabledFor(false, true));
-        $this->assertFalse($this->isCompanySearchEnabledFor(false, false));
+        return [
+            'setting on, verified' => [true, ApiKeyVerificationStatus::OK, true,
+                'the ordinary shop'],
+            'setting off, verified' => [false, ApiKeyVerificationStatus::OK, false,
+                'the merchant turned it off'],
+            'setting on, rejected key' => [true, ApiKeyVerificationStatus::INVALID_KEY, false,
+                'a captured company would have nothing to feed'],
+            'setting on, no key' => [true, ApiKeyVerificationStatus::NOT_CONFIGURED, false,
+                'nothing is configured to feed'],
+            'setting on, unreachable' => [true, ApiKeyVerificationStatus::UNREACHABLE, true,
+                'an outage must not remove a working affordance'],
+            'setting on, service error' => [true, ApiKeyVerificationStatus::SERVICE_ERROR, true,
+                'a 5xx says nothing about the key'],
+            'setting on, other error' => [true, ApiKeyVerificationStatus::ERROR, true,
+                'a non-2xx that is not a 401/403 is not a rejection'],
+            'setting on, malformed' => [true, ApiKeyVerificationStatus::MALFORMED_RESPONSE, true,
+                'an unreadable answer is about the service, not the key'],
+            'setting off, rejected key' => [false, ApiKeyVerificationStatus::INVALID_KEY, false,
+                'both reasons at once still off'],
+        ];
     }
 
     /**
@@ -539,13 +573,7 @@ class CheckoutConfigTest extends TestCase
         $this->assertSame(self::DEFAULT_WITH_COMPANY, $notice['withCompany']);
     }
 
-    public function testGetIsApiKeyVerifiedDelegatesToTheInjectedStatusService(): void
-    {
-        $this->assertTrue($this->isApiKeyVerifiedFor(true));
-        $this->assertFalse($this->isApiKeyVerifiedFor(false));
-    }
-
-    private function isCompanySearchEnabledFor(bool $coreEnableCompanySearch, bool $apiKeyVerified): bool
+    private function isCompanySearchEnabledFor(bool $coreEnableCompanySearch, string $keyStatus): bool
     {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
@@ -568,39 +596,30 @@ class CheckoutConfigTest extends TestCase
         $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
         $reflection->getProperty('apiKeyVerificationStatus')->setValue(
             $viewModel,
-            $this->apiKeyVerificationStatusFake($apiKeyVerified)
+            $this->apiKeyVerificationStatusFake($keyStatus)
         );
 
         return $viewModel->getIsCompanySearchEnabled();
     }
 
-    private function isApiKeyVerifiedFor(bool $verified): bool
+    /**
+     * The real predicate over a stubbed category, so the gate cannot pass by
+     * disagreeing with ApiKeyVerificationStatus about which ones are fatal.
+     */
+    private function apiKeyVerificationStatusFake(string $status): object
     {
-        $reflection = new ReflectionClass(CheckoutConfig::class);
-        $viewModel = $reflection->newInstanceWithoutConstructor();
+        return new class ($status) extends ApiKeyVerificationStatus {
+            /** @var string */
+            private $status;
 
-        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
-            $viewModel,
-            $this->apiKeyVerificationStatusFake($verified)
-        );
-
-        return $viewModel->getIsApiKeyVerified();
-    }
-
-    private function apiKeyVerificationStatusFake(bool $verified): object
-    {
-        return new class ($verified) {
-            /** @var bool */
-            private $verified;
-
-            public function __construct(bool $verified)
+            public function __construct(string $status)
             {
-                $this->verified = $verified;
+                $this->status = $status;
             }
 
-            public function isVerified(): bool
+            public function getStatus(?int $storeId = null): string
             {
-                return $this->verified;
+                return $this->status;
             }
         };
     }
