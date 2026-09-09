@@ -6,6 +6,7 @@ namespace Two\GatewayHyva\Test\Unit\Service;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use Two\Gateway\Model\Cache\Type\TwoGateway;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 /**
@@ -16,9 +17,10 @@ use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
  * (b) success/failure
  * detection off Adapter::execute()'s error_code/http_status contract, (c)
  * the short cache this class adds so a persistent failure does not re-run
- * the live call on every call, and (d) the per-store memo, so
+ * the live call on every call, (d) the per-store memo, so
  * evaluating this for two different stores in one request can't return
- * one store's verdict for another's.
+ * one store's verdict for another's, and (e) the cache identifier, cache
+ * tag and call timeout (ABN-534).
  *
  * Built via newInstanceWithoutConstructor() + reflection property
  * injection, matching CheckoutConfigTest's convention in this repo: the
@@ -180,27 +182,165 @@ class ApiKeyVerificationStatusTest extends TestCase
         $this->assertSame(1, $adapterCallsByStore[2]);
     }
 
+    /**
+     * ABN-534. The cache identifier is a sha256 of the operating mode and
+     * the API key, so a sandbox verdict and a production verdict for one
+     * key occupy separate slots. Digests are literals, not recomputed with
+     * the production expression.
+     *
+     * @dataProvider cacheIdentifierCases
+     */
+    public function testCacheIdentifierIsComposedOfModeAndApiKey(
+        string $mode,
+        string $apiKey,
+        string $expectedDigest,
+        string $description
+    ): void {
+        $loaded = [];
+        $savedTo = [];
+        $status = $this->build(
+            apiKey: $apiKey,
+            execute: fn () => ['id' => 'merchant-1'],
+            cacheLoad: function (string $identifier) use (&$loaded) {
+                $loaded[] = $identifier;
+                return false;
+            },
+            cacheSave: function (string $value, string $identifier) use (&$savedTo) {
+                $savedTo[] = $identifier;
+            },
+            mode: $mode,
+        );
+
+        $status->isVerified();
+
+        $expected = 'two_gatewayhyva_api_key_verified_' . $expectedDigest;
+        $this->assertSame([$expected], $loaded, $description);
+        $this->assertSame([$expected], $savedTo, $description);
+    }
+
+    public static function cacheIdentifierCases(): array
+    {
+        return [
+            ['sandbox', 'shared-key', 'dcfa630905f238a6314cd07ea50d7fefc644430b2a5b1daa455afed911abe3c1', 'sandbox slot for a shared key'],
+            ['production', 'shared-key', 'dacb9fbac88129d2b56714415f6a0887b02c34d79abc72aca9fa7d9e026384ad', 'production slot for the same shared key'],
+            ['sandbox', 'other-key', '0d5ee347c8df7f1a6de6b391add685cff6ee3d7609ed8143501f087ab8b81e26', 'a key swap moves the slot'],
+        ];
+    }
+
+    /**
+     * ABN-534. One API key, one shared cache backend, two modes: the
+     * verdict stored for sandbox must not be served to production. The
+     * production instance has to reach the adapter and get its own answer.
+     */
+    public function testSandboxVerdictIsNotServedToProduction(): void
+    {
+        $store = [];
+        $load = function (string $identifier) use (&$store) {
+            return $store[$identifier] ?? false;
+        };
+        $save = function (string $value, string $identifier) use (&$store) {
+            $store[$identifier] = $value;
+        };
+
+        $sandbox = $this->build(
+            apiKey: 'shared-key',
+            execute: fn () => ['id' => 'merchant-1'],
+            cacheLoad: $load,
+            cacheSave: $save,
+            mode: 'sandbox',
+        );
+        $this->assertTrue($sandbox->isVerified());
+
+        $productionCalls = 0;
+        $production = $this->build(
+            apiKey: 'shared-key',
+            execute: function () use (&$productionCalls) {
+                $productionCalls++;
+                return ['http_status' => 401];
+            },
+            cacheLoad: $load,
+            cacheSave: $save,
+            mode: 'production',
+        );
+
+        $this->assertFalse($production->isVerified(), 'production must not read the sandbox verdict');
+        $this->assertSame(1, $productionCalls, 'production must reach the adapter for its own verdict');
+        $this->assertCount(2, $store, 'the two modes must occupy separate cache identifiers');
+        $this->assertSame(['1', '0'], array_values($store));
+    }
+
+    /**
+     * ABN-534. Without the base module's gateway cache tag,
+     * `cache:clean two_gateway` cannot drop a wrong verdict.
+     */
+    public function testCacheSaveCarriesTheGatewayCacheTag(): void
+    {
+        $tags = null;
+        $status = $this->build(
+            apiKey: 'a-valid-key',
+            execute: fn () => ['id' => 'merchant-1'],
+            cacheSave: function (string $value, string $identifier, array $savedTags) use (&$tags) {
+                $tags = $savedTags;
+            },
+        );
+
+        $status->isVerified();
+
+        $this->assertSame([TwoGateway::CACHE_TAG], $tags);
+    }
+
+    /**
+     * ABN-534. Adapter's 7th parameter is the timeout; left unset the call
+     * inherits the adapter default and can hold a checkout render.
+     */
+    public function testVerificationCallCarriesAnExplicitTimeout(): void
+    {
+        $args = null;
+        $status = $this->build(
+            apiKey: 'a-valid-key',
+            execute: function (...$passed) use (&$args) {
+                $args = $passed;
+                return ['id' => 'merchant-1'];
+            },
+        );
+
+        $status->isVerified();
+
+        $this->assertCount(7, $args, 'timeout must be passed positionally, so all seven arguments are present');
+        $this->assertSame(10, $args[6]);
+    }
+
     private function build(
         string $apiKey,
         callable $execute,
         ?callable $cacheLoad = null,
         ?callable $cacheSave = null,
+        string $mode = 'sandbox',
     ): ApiKeyVerificationStatus {
         $reflection = new ReflectionClass(ApiKeyVerificationStatus::class);
         $instance = $reflection->newInstanceWithoutConstructor();
 
-        $configRepository = new class ($apiKey) {
+        $configRepository = new class ($apiKey, $mode) {
             /** @var string */
             private $apiKey;
 
-            public function __construct(string $apiKey)
+            /** @var string */
+            private $mode;
+
+            public function __construct(string $apiKey, string $mode)
             {
                 $this->apiKey = $apiKey;
+                $this->mode = $mode;
             }
 
             public function getApiKey(): string
             {
                 return $this->apiKey;
+            }
+
+            public function getMode(?int $storeId = null): string
+            {
+                return $this->mode;
             }
         };
 
@@ -213,9 +353,9 @@ class ApiKeyVerificationStatusTest extends TestCase
                 $this->execute = $execute;
             }
 
-            public function execute(): array
+            public function execute(...$args): array
             {
-                return ($this->execute)();
+                return ($this->execute)(...$args);
             }
         };
 
@@ -249,6 +389,11 @@ class ApiKeyVerificationStatusTest extends TestCase
             {
                 return $this->apiKeyByStore[$storeId] ?? '';
             }
+
+            public function getMode(?int $storeId = null): string
+            {
+                return 'sandbox';
+            }
         };
 
         $adapter = new class ($executeForStore) {
@@ -260,7 +405,7 @@ class ApiKeyVerificationStatusTest extends TestCase
                 $this->executeForStore = $executeForStore;
             }
 
-            public function execute(string $endpoint, array $payload, string $method, ?int $storeId = null): array
+            public function execute(string $endpoint, array $payload, string $method, ?int $storeId = null, ...$rest): array
             {
                 return ($this->executeForStore)($storeId);
             }
@@ -300,7 +445,7 @@ class ApiKeyVerificationStatusTest extends TestCase
             public function save(string $data, string $identifier, array $tags = [], $lifetime = null): bool
             {
                 if ($this->onSave) {
-                    ($this->onSave)($data);
+                    ($this->onSave)($data, $identifier, $tags, $lifetime);
                 }
                 return true;
             }

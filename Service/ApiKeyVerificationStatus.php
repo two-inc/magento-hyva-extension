@@ -10,6 +10,7 @@ namespace Two\GatewayHyva\Service;
 
 use Magento\Framework\App\CacheInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Cache\Type\TwoGateway;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -43,6 +44,12 @@ class ApiKeyVerificationStatus
      * the same reason.
      */
     private const CACHE_LIFETIME = 300;
+
+    /** Tagged with the base module's gateway cache type so `cache:clean two_gateway` drops the verdict. */
+    private const CACHE_TAGS = [TwoGateway::CACHE_TAG];
+
+    /** Seconds. This call sits on a checkout render, so a verification may not outlast a page. */
+    private const VERIFY_TIMEOUT_SECONDS = 10;
 
     /**
      * @var Adapter
@@ -102,13 +109,25 @@ class ApiKeyVerificationStatus
             return $this->memo[$memoKey] = false;
         }
 
-        $cacheKey = self::CACHE_KEY_PREFIX . hash('sha256', $apiKey);
+        // The mode decides which host the key is verified against, so two
+        // store views sharing a key across sandbox and production must not
+        // share one slot. sha256 of the key, never the key itself.
+        $cacheKey = self::CACHE_KEY_PREFIX
+            . hash('sha256', $this->configRepository->getMode($storeId) . "\0" . $apiKey);
         $cached = $this->cache->load($cacheKey);
         if ($cached !== false) {
             return $this->memo[$memoKey] = ($cached === '1');
         }
 
-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', $storeId);
+        $result = $this->adapter->execute(
+            '/v1/merchant/verify_api_key',
+            [],
+            'GET',
+            $storeId,
+            null,
+            null,
+            self::VERIFY_TIMEOUT_SECONDS
+        );
         // Adapter::execute() signals a non-2xx response (or a caught
         // request/response translator failure) by adding an `http_status`
         // and/or `error_code` key to the decoded body — either one present
@@ -116,7 +135,7 @@ class ApiKeyVerificationStatus
         // 2xx success payload never carries either, matching the same
         // contract the base module relies on for the same endpoint.
         $verified = is_array($result) && !isset($result['error_code']) && !isset($result['http_status']);
-        $this->cache->save($verified ? '1' : '0', $cacheKey, [], self::CACHE_LIFETIME);
+        $this->cache->save($verified ? '1' : '0', $cacheKey, self::CACHE_TAGS, self::CACHE_LIFETIME);
 
         return $this->memo[$memoKey] = $verified;
     }
