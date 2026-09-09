@@ -43,7 +43,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>
 <?php
 /*
- * TWO-25326 tile bugfix batch, bug 4: `w-full min-w-0` on the tile's own
+ * TWO-25326: `w-full min-w-0` on the tile's own
  * root, not present before this fix.
  *
  * Reported only with company search IN THE TILE
@@ -214,7 +214,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * had been captured.
              *
              * The label is consequently NOT a swap with the tile's company
-             * controls any more either. TWO-25326 tile bugfix batch, bug 5:
+             * controls any more either. TWO-25326:
              * the search control's visibility is no longer conditioned on
              * capture at all — it is decided solely by
              * the admin setting that says WHERE the one control renders. The
@@ -288,7 +288,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             </p>
             <?php
             /*
-             * TWO-25326 tile bugfix batch, bug 5: the order-intent check had no
+             * TWO-25326: the order-intent check had no
              * visible progress indicator at all on Hyvä, so a buyer who picked
              * a company sat looking at an unchanged tile for however long the
              * decision took and had no way to tell it was working.
@@ -533,14 +533,14 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * this CSP-friendly Alpine build cannot evaluate an object literal
              * (see the longer note on the input).
              *
-             * Same CAPTURED gate as the search block used to carry before
-             * bug 5 (see gateway_method-csp-js.phtml) — that change was about
-             * the EDITABLE search control and the "Change company" swap
-             * specifically, not about this block, so this gate
+             * Same CAPTURED gate as the search block used to carry before the
+             * search-control change (see gateway_method-csp-js.phtml) — that
+             * change was about the EDITABLE search control and the "Change
+             * company" swap specifically, not about this block, so this gate
              * is deliberately UNCHANGED: a buyer who has no captured company
              * still sees and can fill the field, and once captured the number
-             * is carried by the tile label instead. The inputs stay in the
-             * DOM either way, so `payment[company_id]` still submits.
+             * is carried by the tile label instead. The inputs stay in the DOM
+             * either way, so `payment[company_id]` still submits.
              */
             ?>
             <div class="flex flex-col field field-reserved required" :class="companyNumberBlockHiddenClass">

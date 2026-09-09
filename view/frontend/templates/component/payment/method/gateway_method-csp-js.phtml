@@ -3137,7 +3137,7 @@ $quoteDetails = json_encode(
             orderNote: '',
             poNumber: '',
             isPaymentTermsAccepted: false,
-            // TWO-25326 tile bugfix batch, bug 5: true from the moment an
+            // TWO-25326: true from the moment an
             // order-intent request actually goes on the wire until the CURRENT
             // one settles. Only the current one may clear it — see
             // `orderIntentSeq` at the bottom of this file.
@@ -3470,8 +3470,8 @@ $quoteDetails = json_encode(
             },
 
             /*
-             * Bug 5, kept as history rather than silently
-             * dropped: the search control's visibility is governed ONLY by the
+             * Kept as history rather than silently dropped (TWO-25326): the
+             * search control's visibility is governed ONLY by the
              * admin setting that decides WHERE it renders, never by capture
              * state. Capturing a company used to hide the search block and the
              * whole Company Number block and offer a "Change company" button as
@@ -3829,7 +3829,7 @@ $quoteDetails = json_encode(
             // Number block — its static caption included — rather than only
             // the input. Class-NAME STRING for the same reason: `:class` here
             // is a key lookup, not expression evaluation. UNCHANGED by the
-            // bug 5 change above: that change is about the EDITABLE search
+            // search-control change above: that change is about the EDITABLE
             // control and the "Change company" swap specifically, and
             // this block's own capture gate is not part of it — see the
             // comment on the markup that binds this.
@@ -3866,7 +3866,7 @@ $quoteDetails = json_encode(
                 // company, or renaming this one, always passes the gate.
                 if (this.isOrderIntentEnabled && triggerOrderIntent && invoiceCompany.companyId
                     && !this.hasOrderIntentDecisionFor(invoiceCompany.companyId, invoiceCompany.companyName)) {
-                    // Bug 5: the tile-local spinner goes up HERE rather than
+                    // The tile-local spinner goes up HERE rather than
                     // when the request leaves, because the listener debounces
                     // 500ms and half a second of a tile that has visibly not
                     // reacted to the pick is the complaint. Every path that
@@ -4154,7 +4154,7 @@ $quoteDetails = json_encode(
                 // well as what the box is painted from, so it has to advance for
                 // `decidedCompanyId` regardless of what is on screen now, or that
                 // company's own check would be permanently stuck pending — the
-                // original bug 4 defect this whole mechanism exists to fix.
+                // original stale-verdict defect this mechanism exists to fix.
                 // The verdict record — id, name and decision — advances as ONE
                 // write, unconditionally. Writing the id here and the other two
                 // below the paint guard was a real defect: pick A (approved),
@@ -4612,7 +4612,7 @@ $quoteDetails = json_encode(
     let orderIntentDebounceTimeout = null;
 
     /*
-     * TWO-25326 tile bugfix batch, bug 4.
+     * TWO-25326.
      *
      * A monotonic sequence number, bumped by every intent request that actually
      * goes on the wire. A request may only publish its result — the verdict, the
@@ -4647,7 +4647,7 @@ $quoteDetails = json_encode(
             const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
             if (!activePaymentMethod) {
-                // The spinner was raised optimistically on the pick (bug 5), so
+                // The spinner was raised optimistically on the pick, so
                 // every path that then declines to make a request has to take it
                 // back down. These two early returns did not, which left a
                 // "Checking availability" row up forever — reachable by picking a

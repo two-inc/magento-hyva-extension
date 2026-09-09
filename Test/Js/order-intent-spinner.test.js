@@ -2,10 +2,10 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 tile bugfix batch, bug 5.
+ * TWO-25326.
  *
- * Bug 5: the order-intent check had no visible progress indicator at all on
- * Hyvä. A buyer who picked a company sat looking at an unchanged tile for
+ * The defect: the order-intent check had no visible progress indicator at all
+ * on Hyvä. A buyer who picked a company sat looking at an unchanged tile for
  * however long the decision took, with no way to tell it was working.
  *
  * The standing cross-platform rule about the fix: the indicator must be LOCAL
@@ -365,7 +365,7 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       await H.flushPromises();
 
       // The harness records `magewire:loader:start` / `:done` as a sequence.
-      // Requirement 11: this check must never reach for that overlay.
+      // The tile-local rule: this check must never reach for that overlay.
       expect(env.loaderEvents).toEqual([]);
     });
   });

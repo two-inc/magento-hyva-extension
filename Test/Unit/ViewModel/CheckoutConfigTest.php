@@ -370,7 +370,7 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port, PR #445): company search must be
+     * TWO-25326 (WooCommerce-plugin port): company search must be
      * off when EITHER the merchant's `enable_company_search` setting is off
      * OR the API key can't currently be verified — neither alone is
      * sufficient to turn it on.

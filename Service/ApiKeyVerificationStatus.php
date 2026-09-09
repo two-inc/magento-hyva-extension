@@ -16,8 +16,7 @@ use Two\Gateway\Service\Api\Adapter;
  * Whether the merchant's currently configured API key can be verified right
  * now — the gate the address-block/tile company-search control must respect
  * so it never renders against a key Two cannot actually authenticate
- * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix,
- * PR #445).
+ * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix).
  *
  * Built directly on Adapter rather than the base module's merchant-record
  * service — see the note above the constructor for why. Mirrors this repo's

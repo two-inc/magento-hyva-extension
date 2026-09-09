@@ -287,8 +287,7 @@ class GatewayMethod extends Component
      * Same excl/incl split as the order-summary segment
      * (Two\Gateway\Service\Order\SurchargeDisplay::pick()), except "both":
      * the summary shows both rows there, but the chip shows one value and
-     * Doug's call is that value stays net — a deliberate divergence, not
-     * an oversight.
+     * that value stays net — a deliberate divergence, not an oversight.
      */
     private function resolveDisplayAmount(string $mode, float $net, float $gross): float
     {

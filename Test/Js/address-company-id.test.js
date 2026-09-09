@@ -333,7 +333,7 @@ describe("address-step company number", () => {
       // into manual entry at all, so 2026-08-01 restored it, gated on
       // `belowFieldManualEntryVisible`.
       //
-      // 2026-08-05 (TWO-25326 tile bugfix batch, bug 2) removed it again for
+      // 2026-08-05 (TWO-25326) removed it again for
       // good instead: the panel now opens on click/keypress from zero typed
       // characters, so the in-dropdown row is reachable immediately and there
       // is no state left for a persistent second copy to cover. See

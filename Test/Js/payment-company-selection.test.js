@@ -82,7 +82,7 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
  * `:class` gate, which is still exactly "a registry number is locked in", and
  * is what the capture assertions here now read.
  *
- * TWO-25326 tile bugfix batch, bug 5: the "Change company" button this bound
+ * TWO-25326: the "Change company" button this bound
  * to before is REMOVED — the search control no longer hides on capture, so
  * there is nothing left for it to reveal. The Company Number block's own
  * capture gate is UNCHANGED by that change (it was never part of the bug), so
@@ -1054,8 +1054,8 @@ describe("payment component company selection", () => {
   });
 
   /*
-   * DELETED 2026-08-05 — describe("the 'Enter details manually' link (TWO-25326
-   * tile bugfix batch, bug 1)"), all five tests.
+   * DELETED 2026-08-05 — describe("the 'Enter details manually' link"), all
+   * five tests.
    *
    * Every one of them asserted that the tile's own manual-entry link stayed
    * HIDDEN until the buyer had typed something, on the reasoning that the link
@@ -1082,14 +1082,14 @@ describe("payment component company selection", () => {
    * below-the-field copy and its gate are gone", and "the panel is still
    * reachable, and the row with it, before anything is typed".
    *
-   * DELETED with them — describe("the min-characters hint (TWO-25326 tile bugfix
-   * batch, bug 1)"), four of its five tests. They drove the hint through
-   * `twoGatewayHyvaOnCompanySearchFocus()` (deleted) and measured it against
-   * `search`, the company-name field's text. The shared control's hint measures
-   * the PANEL'S QUERY instead and, like the row, deliberately shows from ZERO
-   * characters — so "stays hidden before the buyer has typed anything" is now a
-   * statement of the defect rather than the fix. The behaviour is covered once, on
-   * the shared getter, in company-search-min-chars.test.js.
+   * DELETED with them — describe("the min-characters hint"), four of its five
+   * tests. They drove the hint through `twoGatewayHyvaOnCompanySearchFocus()`
+   * (deleted) and measured it against `search`, the company-name field's text.
+   * The shared control's hint measures the PANEL'S QUERY instead and, like the
+   * row, deliberately shows from ZERO characters — so "stays hidden before the
+   * buyer has typed anything" is now a statement of the defect rather than the
+   * fix. The behaviour is covered once, on the shared getter, in
+   * company-search-min-chars.test.js.
    *
    * The WIRE test is kept below, because that part is genuinely per-surface: it is
    * the tile's copy of the markup and the tile's component that have to agree.
@@ -1114,14 +1114,14 @@ describe("payment component company selection", () => {
 
   /**
    * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation) — was
-   * describe("typing over a captured company (TWO-25326 bug 5 follow-up)").
+   * describe("typing over a captured company").
    *
    * The requirement is unchanged and is the one the money rides on: an order must
    * never carry a company name and a registry number describing two different
    * companies. What changed is the MECHANISM, and every one of the eight tests
    * here drove the old one.
    *
-   * Bug 5 removed the "Change company" swap, leaving the search field visible and
+   * Removing the "Change company" swap left the search field visible and
    * apparently editable after a capture. The tile's answer was a pair of
    * tile-local handlers — `@blur` → `OnCompanySearchBlur` and
    * `ForgetCompanyIfNameDiverged` — that watched for the field's text diverging
@@ -1143,7 +1143,7 @@ describe("payment component company selection", () => {
    * `commitManualCompany()` → `forgetStaleCompanyId()` is the one writer. That is
    * what the tests below drive.
    */
-  describe("a captured company cannot be typed over (TWO-25326 bug 5 follow-up)", () => {
+  describe("a captured company cannot be typed over (TWO-25326)", () => {
     test("in search mode the field publishes nothing the buyer types", () => {
       /*
        * The field is deliberately NOT `readonly` any more. The shared popover

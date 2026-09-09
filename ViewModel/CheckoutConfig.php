@@ -134,8 +134,8 @@ class CheckoutConfig implements ArgumentInterface
      *
      * Hyvä has NO setting of its own for this — the earlier revision's
      * Hyvä-local `two_general/hyva/company_search_location` field was wrong;
-     * Doug's correction is that there must be exactly one control deciding
-     * this per merchant, not one per platform. It reads the CORE module's
+     * the requirement is exactly one control deciding this per merchant, not
+     * one per platform. It reads the CORE module's
      * already-existing, already-correct setting directly, the same way
      * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below already
      * reuse ConfigRepository for other core config: `enable_company_search`
@@ -291,7 +291,7 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port, PR #445): company search must
+     * TWO-25326 (WooCommerce-plugin port): company search must
      * not run while a merchant's API key can't be verified, on top of
      * (not instead of) the existing `enable_company_search` toggle — see
      * getIsApiKeyVerified()/ApiKeyVerificationStatus for the full
@@ -310,7 +310,7 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326 (WooCommerce-plugin port, PR #445): whether the merchant's
+     * TWO-25326 (WooCommerce-plugin port): whether the merchant's
      * currently configured API key can be verified right now. Delegates
      * to ApiKeyVerificationStatus — see its class doc for why this is a
      * standalone gate rather than a shared base-module service, and for

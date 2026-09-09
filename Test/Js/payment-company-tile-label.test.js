@@ -13,20 +13,19 @@
  * inputs still in the DOM so `payment[company_name]` and `payment[company_id]`
  * still submit.
  *
- * TWO-25326 tile bugfix batch, bug 5. This file used to
- * carry a SECOND gate alongside the label's, guarding the search block, the
- * Company Number block and a "Change company" button — all three hidden
- * together on CAPTURE, with the button as the only route back out. Doug's
- * exact words, carried over from the identical ruling on Magento (PR #324):
- * the search control "is controlled ONLY by the state of the 'enable search
- * in address' admin setting ... and search control visibility is not
- * changed for any other reason." Found in live testing to read as a
- * confusing hide-and-reshow rather than a stable control.
+ * TWO-25326. This file used to carry a SECOND gate alongside the label's,
+ * guarding the search block, the Company Number block and a "Change company"
+ * button — all three hidden together on CAPTURE, with the button as the only
+ * route back out. The rule, carried over verbatim from the identical one on
+ * the Magento plugin: the search control "is controlled ONLY by the state of
+ * the 'enable search in address' admin setting ... and search control
+ * visibility is not changed for any other reason." Found in live testing to
+ * read as a confusing hide-and-reshow rather than a stable control.
  *
  * The consequence for this file:
  *
  *   - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a
- *     binding that now reads `true` always, an absent one. Doug's ruling is
+ *     binding that now reads `true` always, an absent one. The rule is
  *     "controlled ONLY by the admin setting", so the block carries no
  *     `x-show` of its own in this branch at all; `searchBlockHasNoOwnGate()`
  *     pins the DOM fact instead of a component getter that does not exist;
@@ -143,12 +142,12 @@ function parsedMarkup() {
 }
 
 /**
- * Doug's exact-words ruling (carried over from Magento PR #324): the search
- * control "is controlled ONLY by the state of the 'enable search in address'
- * admin setting ... and search control visibility is not changed for any
- * other reason." Pinned as the absence of any `x-show` between the
- * company-name input and the `<form>` — the input's own ancestor chain is the
- * only place a reintroduced capture- or mode-based gate could hide.
+ * The rule, verbatim (TWO-25326): the search control "is controlled ONLY by
+ * the state of the 'enable search in address' admin setting ... and search
+ * control visibility is not changed for any other reason." Pinned as the
+ * absence of any `x-show` between the company-name input and the `<form>` —
+ * the input's own ancestor chain is the only place a reintroduced capture- or
+ * mode-based gate could hide.
  *
  * @returns {void}
  */
@@ -278,10 +277,10 @@ describe("the captured-company tile label (TWO-25326)", () => {
     });
 
     test("there is no 'Change company' control left in the markup", () => {
-      // TWO-25326 tile bugfix batch, bug 5: the button
-      // this used to pin is REMOVED, along with the hide-and-reshow apparatus
-      // it was the only route out of. The search control stays visible
-      // instead, so there is nothing left for a "change" affordance to do.
+      // TWO-25326: the button this used to pin is REMOVED, along with the
+      // hide-and-reshow apparatus it was the only route out of. The search
+      // control stays visible instead, so there is nothing left for a
+      // "change" affordance to do.
       expect(
         parsedMarkup().querySelector('[data-name="company_tile_change"]'),
       ).toBeNull();
@@ -382,8 +381,8 @@ describe("the captured-company tile label (TWO-25326)", () => {
     });
 
     test("hides the whole Company Number block, caption included", () => {
-      // This block was never part of bug 5: it still hides once a registry
-      // number is locked in.
+      // This block was never part of the search-control change: it still
+      // hides once a registry number is locked in.
       expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("hidden");
     });
 
@@ -537,8 +536,9 @@ describe("the captured-company tile label (TWO-25326)", () => {
    * The behavioural cases are the mutation-sensitive half: each had the label
    * VISIBLE under the old gate, so reverting the markup one-liner fails them.
    *
-   * Unaffected by bug 5 — the label's OWN gate never named the search
-   * control's or the "Change company" button's, and still does not.
+   * Unaffected by the search-control change — the label's OWN gate never
+   * named the search control's or the "Change company" button's, and still
+   * does not.
    */
   describe("the label is shown exactly when the intent notice is", () => {
     test("both bindings are the same getter, not two that merely agree", () => {
@@ -713,8 +713,8 @@ describe("the captured-company tile label (TWO-25326)", () => {
    *  - `fillCompanyData()` then suppressed the intent that would have re-set
    *    it, because a decision for that same identifier was still on record.
    *
-   * "Change company" is gone (bug 5), and with it the ONLY path that used to
-   * reset the decision records mid-session — so the specific "repaints
+   * "Change company" is gone (TWO-25326), and with it the ONLY path that used
+   * to reset the decision records mid-session — so the specific "repaints
    * the label instead of leaving a bare button" scenario cannot occur any
    * more: there is no button to leave bare. What survives, and is still
    * pinned below, is the dedup mechanism itself — a DIFFERENT company must
@@ -898,7 +898,7 @@ describe("the captured-company tile label (TWO-25326)", () => {
       );
       // and the top-level listener's own "already processed" gate — read via
       // a local alias (`component`) rather than the global directly, because
-      // bug 5's local-spinner rework wrapped this in executeOrderIntent(),
+      // the local-spinner rework wrapped this in executeOrderIntent(),
       // but it is still the SAME global instance under that name:
       expect(js).toContain("const component = twoPaymentComponentInstance;");
       expect(js).toContain(

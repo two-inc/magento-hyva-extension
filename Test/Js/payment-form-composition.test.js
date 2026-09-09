@@ -24,12 +24,12 @@
  *   | (companyIdHintVisible, the derivation the other two capture gates read) |
  *
  * Two rows left that table on 2026-08-05, both by deletion rather than by
- * changing behaviour (TWO-25326 tile bugfix batch, bug 5): `x-show
- * companySearchBlockVisible` and `companyChangeControlVisible`. The search
- * control's visibility is now decided solely by the admin setting that says WHERE
- * the one control renders — never by capture, never by mode — so there is no
- * getter left to find frozen, and the "Change company" button whose gate the
- * second one was is removed with the hide it existed to reverse.
+ * changing behaviour (TWO-25326): `x-show companySearchBlockVisible` and
+ * `companyChangeControlVisible`. The search control's visibility is now
+ * decided solely by the admin setting that says WHERE the one control renders
+ * — never by capture, never by mode — so there is no getter left to find
+ * frozen, and the "Change company" button whose gate the second one was is
+ * removed with the hide it existed to reverse.
  *
  * So the whole company-search apparatus was inert in production while 476
  * tests passed, because the suites that assert on these getters assert on the
@@ -187,8 +187,8 @@ function ancestorBinding(selector, ancestorSelector, attribute) {
  * `companyNumberBlockHiddenClass`).
  *
  * `companyChangeControlVisible` — the "Change company" button's own gate —
- * is REMOVED by the TWO-25326 tile bugfix batch (bug 5)
- * along with the button itself, so it is no longer one of these bindings.
+ * is REMOVED by TWO-25326 along with the button itself, so it is no longer
+ * one of these bindings.
  *
  * The floor under `formSubtreeBindings()`: that walk skips nested `x-data`
  * scopes, so a nesting change could otherwise shrink its coverage silently —
@@ -216,7 +216,7 @@ const FROZEN_GETTER_BINDINGS = [
   // payment-company-tile-label.test.js reads it too.
   //
   // "The search block's x-show" was the third entry here until 2026-08-05.
-  // TWO-25326 tile bugfix batch, bug 5 removed `companySearchBlockVisible`: the
+  // TWO-25326 removed `companySearchBlockVisible`: the
   // search control's visibility is decided solely by the admin setting that says
   // WHERE the one control renders, never by capture state, so there is no
   // `[x-show]` ancestor around the company-name input for a binding to be read
@@ -425,8 +425,8 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       // rather than passing with a hole in it.
       //
       // Was six and five until 2026-08-05: `companySearchBlockVisible` is gone
-      // with the capture-driven hide of the search control (TWO-25326 tile bugfix
-      // batch, bug 5). Both counts are restated rather than derived, deliberately
+      // with the capture-driven hide of the search control (TWO-25326). Both
+      // counts are restated rather than derived, deliberately
       // — deriving them from the array makes this assertion unable to notice an
       // entry disappearing, which is the thing it exists to catch.
       const distinct = FROZEN_GETTER_BINDINGS.map((b) => b.expression).filter(
@@ -487,7 +487,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
 
     test("nothing is captured and nothing is hidden to begin with", () => {
       // `companySearchBlockVisible` was the first assertion here until
-      // 2026-08-05. The getter is deleted (TWO-25326 tile bugfix batch, bug 5):
+      // 2026-08-05. The getter is deleted (TWO-25326):
       // the search control's visibility is decided solely by the admin setting
       // that says WHERE the one control renders, so there is no component state
       // left to assert on — its absence is pinned in
@@ -499,10 +499,10 @@ describe("the component the payment form mounts (TWO-25332)", () => {
     });
 
     test("capture hides the number block, and nothing hides the search control", () => {
-      // TWO-25326 tile bugfix batch, bug 5: unlike the
-      // Company Number block, the search control no longer hides on capture — it
-      // stays visible and editable exactly as it was before the pick, so there is
-      // no separate "way back" control to offer any more.
+      // TWO-25326: unlike the Company Number block, the search control no
+      // longer hides on capture — it stays visible and editable exactly as it
+      // was before the pick, so there is no separate "way back" control to
+      // offer any more.
       //
       // Asserted as the ABSENCE of the getter rather than as
       // `companySearchBlockVisible === true`, which is what this used to read.

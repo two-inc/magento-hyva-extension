@@ -66,7 +66,7 @@ function normalise(html) {
   return html.replace(/\s+/g, " ").trim();
 }
 
-describe("one company-search control (bug 6)", () => {
+describe("one company-search control (TWO-25326)", () => {
   const tile = H.GATEWAY_METHOD_MARKUP_TEMPLATE;
   const address = H.COMPANY_NAME_MARKUP_TEMPLATE;
 
@@ -204,7 +204,7 @@ describe("one company-search control (bug 6)", () => {
   );
 });
 
-describe("the manual-entry affordance lives only in the popover (bug 2)", () => {
+describe("the manual-entry affordance lives only in the popover (TWO-25326)", () => {
   let env;
   let fetchStub;
   let component;
@@ -296,7 +296,7 @@ describe("the manual-entry affordance lives only in the popover (bug 2)", () => 
 
 });
 
-describe("the control is not an input-group (bug 3)", () => {
+describe("the control is not an input-group (TWO-25326)", () => {
   test("no mount point emits the class", () => {
     [H.GATEWAY_METHOD_MARKUP_TEMPLATE, H.COMPANY_NAME_MARKUP_TEMPLATE].forEach(
       function (relPath) {
@@ -329,7 +329,7 @@ describe("the control is not an input-group (bug 3)", () => {
   });
 });
 
-describe("the control cannot outgrow its column (bug 1)", () => {
+describe("the control cannot outgrow its column (TWO-25326)", () => {
   test("the wrapper claims its column's width and refuses its intrinsic minimum", () => {
     const doc = render(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
     const group = doc.querySelector(".two-company-search-group");

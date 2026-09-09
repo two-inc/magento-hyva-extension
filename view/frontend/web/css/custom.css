@@ -255,7 +255,7 @@ summary::marker {
 }
 
 /*
- * Bug 4.1 (2026-07-28): the focus ring must stay scoped to whichever field
+ * TWO-25326 (2026-07-28): the focus ring must stay scoped to whichever field
  * actually has DOM focus, not bleed across this wrapper onto the sibling
  * Company Number field it also contains.
  *
@@ -286,8 +286,8 @@ summary::marker {
 }
 
 /*
- * TWO-25326 tile bugfix batch bug 3 — the reported frame around the
- * company-name field and the Company Number label together.
+ * TWO-25326 — the reported frame around the company-name field and the
+ * Company Number label together.
  *
  * Two revisions of this rule chased the wrong mechanism. Hyvä's shared field
  * styling treats `.input-group` as ONE control and rings it on `:focus-within`,

@@ -9,7 +9,7 @@ use ReflectionClass;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 /**
- * TWO-25326 (WooCommerce-plugin port, PR #445). Built directly on Adapter
+ * TWO-25326 (WooCommerce-plugin port). Built directly on Adapter
  * (see the class doc on ApiKeyVerificationStatus for why the base module's
  * merchant-record service isn't usable here) — these tests assert (a) the
  * empty/whitespace-only key short-circuit never reaches Adapter at all,
