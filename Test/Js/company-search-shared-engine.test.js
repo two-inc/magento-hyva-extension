@@ -263,10 +263,10 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
   });
 
   /**
-   * TWO-25326, 2026-08-06: autofill is gated, and the gate is a term of
-   * selectItem() rather than a property of the surface's markup.
+   * TWO-25326: autofill is gated, and the gate is a term of selectItem()
+   * rather than a property of the surface's markup.
    *
-   * The ruling has two conditions — the `enable_address_search` setting AND
+   * The gate has two conditions — the `enable_address_search` setting AND
    * the one company-search control living in the address entry — and
    * CheckoutConfig::getIsAddressSearchEnabled() is where they are combined
    * (see Test/Unit/ViewModel/CheckoutConfigTest.php for that truth table).

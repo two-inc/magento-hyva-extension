@@ -31,7 +31,7 @@
  * getter left to find frozen, and the "Change company" button whose gate the
  * second one was is removed with the hide it existed to reverse.
  *
- * So the whole §7 company-search apparatus was inert in production while 476
+ * So the whole company-search apparatus was inert in production while 476
  * tests passed, because the suites that assert on these getters assert on the
  * BASE component, where they are real. That is a HARNESS-CONTRACT gap, not a
  * coverage gap: no number of assertions against the base object can fail for a
@@ -178,16 +178,16 @@ function ancestorBinding(selector, ancestorSelector, attribute) {
 }
 
 /**
- * The §7 bindings whose getters the spread froze, as the SHIPPED markup names
- * them: SIX bindings naming FIVE distinct getters — the label's `x-show` and
- * the notice's `x-show` are deliberately the same getter, which is the whole
- * point of the 2026-08-03 ruling. The sixth getter of the five this PR names,
+ * The company-search bindings whose getters the spread froze, as the SHIPPED
+ * markup names them: SIX bindings naming FIVE distinct getters — the label's
+ * `x-show` and the notice's `x-show` are deliberately the same getter
+ * (TWO-25326). The sixth getter of the five this PR names,
  * `companyIdHintVisible`, is bound to nothing directly; it is the derivation
  * the two remaining capture gates read (`companyIdHiddenClass` and
  * `companyNumberBlockHiddenClass`).
  *
  * `companyChangeControlVisible` — the "Change company" button's own gate —
- * is REMOVED by the TWO-25326 tile bugfix batch (2026-08-05 ruling, bug 5)
+ * is REMOVED by the TWO-25326 tile bugfix batch (bug 5)
  * along with the button itself, so it is no longer one of these bindings.
  *
  * The floor under `formSubtreeBindings()`: that walk skips nested `x-data`
@@ -404,7 +404,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       expect(binding.expression in form).toBe(true);
     });
 
-    test("the §7 bindings the freeze killed are inside that enumeration", () => {
+    test("the company-search bindings the freeze killed are inside that enumeration", () => {
       // THE FLOOR. The walk above skips nested `x-data` scopes, and the only
       // thing it throws on is an empty result — so wrapping one of these blocks
       // in an `x-data` would quietly drop it from the enumeration and take a
@@ -499,7 +499,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
     });
 
     test("capture hides the number block, and nothing hides the search control", () => {
-      // TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): unlike the
+      // TWO-25326 tile bugfix batch, bug 5: unlike the
       // Company Number block, the search control no longer hides on capture — it
       // stays visible and editable exactly as it was before the pick, so there is
       // no separate "way back" control to offer any more.
@@ -527,7 +527,7 @@ describe("the component the payment form mounts (TWO-25332)", () => {
 
     test("order intent disabled: nothing is dispatched, and the label's own gate stays shut", () => {
       // NOT a defect this PR introduces, and not one it hides either: it is the
-      // state the 2026-08-03 ruling implies, now reachable on screen for the
+      // state TWO-25326 implies, now reachable on screen for the
       // first time because the gates are live. With order intent disabled for
       // the merchant — or for a Dutch buyer whose company is not a BV, where
       // placeOrderIntent() resolves null — the notice never fires, so the label

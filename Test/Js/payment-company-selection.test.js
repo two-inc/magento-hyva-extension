@@ -70,23 +70,23 @@ const COMPANY_ID_HIDDEN_CLASS_BINDING = H.readAlpineBinding(
   ":class",
 );
 /**
- * TWO-25326 §7 replaced TWO-25288's two inline hint paragraphs
+ * TWO-25326 replaced TWO-25288's two inline hint paragraphs
  * (`company_name_hint` / `company_id_hint`) with ONE captured-company label at
  * the top of the payment fieldset, and this file's hint assertions moved onto it
  * wholesale.
  *
- * They have since moved OFF its `x-show` again. Since the 2026-08-03 ruling on
- * TWO-25326 the label's visibility follows the order-intent notice, not capture
- * — so it is no longer the observable consequence of the derivation this file
- * tests. `COMPANY_CAPTURE_GATE_BINDING` below is: the Company Number block's
+ * They have since moved OFF its `x-show` again. Under TWO-25326 the label's
+ * visibility follows the order-intent notice, not capture — so it is no longer
+ * the observable consequence of the derivation this file tests.
+ * `COMPANY_CAPTURE_GATE_BINDING` below is: the Company Number block's
  * `:class` gate, which is still exactly "a registry number is locked in", and
  * is what the capture assertions here now read.
  *
- * TWO-25326 tile bugfix batch, bug 5 (2026-08-05 ruling): the "Change
- * company" button this bound to before is REMOVED — the search control no
- * longer hides on capture, so there is nothing left for it to reveal. The
- * Company Number block's own capture gate is UNCHANGED by that ruling (it was
- * never part of the bug), so it remains this file's read on "is captured" —
+ * TWO-25326 tile bugfix batch, bug 5: the "Change company" button this bound
+ * to before is REMOVED — the search control no longer hides on capture, so
+ * there is nothing left for it to reveal. The Company Number block's own
+ * capture gate is UNCHANGED by that change (it was never part of the bug), so
+ * it remains this file's read on "is captured" —
  * a string ("hidden"/"") rather than the button's own boolean `x-show`.
  *
  * The label's own two bindings are still resolved, and still from the shipped
@@ -148,7 +148,7 @@ describe("payment component company selection", () => {
     // `#company_id` starts WITHOUT a `disabled` attribute: its locked state is
     // Alpine's to apply, and hardcoding it here is how the earlier version of
     // this fixture let the suite pass with the field permanently disabled.
-    // The captured-company label (TWO-25326 §7) starts with neither `hidden`
+    // The captured-company label (TWO-25326) starts with neither `hidden`
     // (on the input) nor a rendered value, for the same reason `#company_id`
     // starts without `disabled`: locked state is Alpine's to apply.
     // The two `data-two-capture-*` attributes are how the shared controller
@@ -254,7 +254,7 @@ describe("payment component company selection", () => {
   }
 
   /**
-   * Apply the template's `x-show` / `x-text` bindings for TWO-25326 §7's
+   * Apply the template's `x-show` / `x-text` bindings for TWO-25326's
    * captured-company label, the same by-hand way `syncCompanyIdHint()` applies
    * the input's `:class`.
    *
@@ -308,7 +308,7 @@ describe("payment component company selection", () => {
     syncCompanyTileLabel(component);
   }
 
-  /** @returns {HTMLElement} the TWO-25326 §7 captured-company label */
+  /** @returns {HTMLElement} the TWO-25326 captured-company label */
   function companyTileLabel() {
     return document.querySelector('[data-name="company_tile_label"]');
   }
@@ -611,7 +611,7 @@ describe("payment component company selection", () => {
    * the search box and `getItems()` recomputed editability from its text on every
    * keystroke.
    *
-   * Neither half is true any more (TWO-25326 §1 and the 2026-08-05
+   * Neither half is true any more (TWO-25326 and the 2026-08-05
    * consolidation). The search term lives in the panel's own query field, and
    * `getItems()` deliberately touches neither the captured pair nor its
    * editability in search mode — running a search is not evidence the buyer
@@ -829,7 +829,7 @@ describe("payment component company selection", () => {
     });
   });
 
-  describe("the capture gate (TWO-25326 §7) and the hidden number input", () => {
+  describe("the capture gate (TWO-25326) and the hidden number input", () => {
     test("stays hidden with an empty class before any company is picked", () => {
       // `companyIdDisabled` defaults locked, but with nothing stored
       // `initialize()` derives it open (see the earlier "is open once the
@@ -1027,8 +1027,8 @@ describe("payment component company selection", () => {
       // editability combination rather than today's scenarios.
       //
       // Read off the Company Number block's own gate, not the label's — the
-      // label follows the order-intent notice since the 2026-08-03 ruling and
-      // would make this pass vacuously.
+      // label follows the order-intent notice (TWO-25326) and would make this
+      // pass vacuously.
       [
         [false, false, ""],
         [false, false, "12345678"],

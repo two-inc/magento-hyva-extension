@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326, 2026-08-05 ruling: there is EXACTLY ONE company-search control
+ * TWO-25326: there is EXACTLY ONE company-search control
  * implementation, and it is reused at every point it is mounted.
  *
  * Before this, the payment tile carried a second control of its own alongside the

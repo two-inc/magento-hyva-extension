@@ -286,7 +286,7 @@ summary::marker {
 }
 
 /*
- * TWO-25326 §7 / tile bugfix batch bug 3 — the reported frame around the
+ * TWO-25326 tile bugfix batch bug 3 — the reported frame around the
  * company-name field and the Company Number label together.
  *
  * Two revisions of this rule chased the wrong mechanism. Hyvä's shared field

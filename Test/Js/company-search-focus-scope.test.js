@@ -16,11 +16,11 @@
  * gives the search input its own, scoped by the `>` combinator to exclude
  * anything nested deeper.
  *
- * Two later developments, both 2026-08-05 / TWO-25326, moved where this bug
- * lives and are pinned by the last four tests: §5 replaced the company-number
- * INPUT with a plain-text display, and the tile bugfix batch's bug 3 took
- * `.input-group` off the wrapper altogether — that class's own UNFOCUSED border
- * was the remaining artefact and no `:focus-within` override could reach it.
+ * Two later developments, both TWO-25326, moved where this bug lives and are
+ * pinned by the last four tests: the company-number INPUT was replaced with a
+ * plain-text display, and the tile bugfix batch's bug 3 took `.input-group`
+ * off the wrapper altogether — that class's own UNFOCUSED border was the
+ * remaining artefact and no `:focus-within` override could reach it.
  *
  * jsdom (the version this repo's Jest runs on) does not implement
  * `:focus-within` matching for `getComputedStyle` — verified empirically, not
@@ -71,7 +71,7 @@ function ruleBody(selector) {
   return match === null ? null : match[1];
 }
 
-describe("company-search focus scope (bug 4.1)", () => {
+describe("company-search focus scope (TWO-25326)", () => {
   test("the wrapper's own focus-within ring is suppressed", () => {
     // Without this rule the reported bleed is exactly what the shared
     // field/input-group `:focus-within` behaviour produces: a ring framing
@@ -118,11 +118,11 @@ describe("company-search focus scope (bug 4.1)", () => {
     expect(body).not.toMatch(/129,\s*140,\s*248/);
   });
 
-  test("there is no company-number INPUT on the address step at all (TWO-25326 §5)", () => {
+  test("there is no company-number INPUT on the address step at all (TWO-25326)", () => {
     // Stronger than the claim this replaces. The number used to be a real,
     // permanently-visible input and the rule above only had to avoid ringing
-    // it; §5 removes it outright, so the guarantee is now that no such control
-    // exists — not before a selection, not in manual mode, not ever.
+    // it; TWO-25326 removes it outright, so the guarantee is now that no such
+    // control exists — not before a selection, not in manual mode, not ever.
     const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
     const doc = new DOMParser().parseFromString(markup, "text/html");
 

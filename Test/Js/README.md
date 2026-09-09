@@ -495,8 +495,8 @@ stylesheet. Counts are failures within `company-search-spinner.test.js` (13 test
 | Make the spinner rule a descendant selector                   | 2             |
 | Add `!important` to the spinner's `background-image`          | 1             |
 
-`company-manual-entry.test.js` — the manual-entry affordance on the address step, TWO-25288
-element 5. The wording is the cheap part; three things had made the affordance not work.
+`company-manual-entry.test.js` — the manual-entry affordance on the address step, TWO-25288.
+The wording is the cheap part; three things had made the affordance not work.
 **Timing:** the row lives inside the results dropdown and the dropdown was gated on
 `items.length > 0`, so the one route into manual entry appeared only once a search had fired
 AND matched — absent in exactly the case it exists for, a company the registry does not have.
@@ -535,7 +535,7 @@ goes and the link takes back over — the row does not own "everything from the 
 upwards", as three comments here and in the templates used to say. Exactly one route shows
 either way, so only the description was wrong; the behaviour is left alone and now pinned.
 
-The reverse link (`Search for company`) got the same keyboard treatment even though element 5
+The reverse link (`Search for company`) got the same keyboard treatment even though TWO-25288
 does not name it: making the way INTO manual entry keyboard-operable while leaving the way out
 mouse-only would have built a trap that did not exist before.
 
@@ -601,13 +601,14 @@ tests read the `x-show` binding off each mount point's shipped markup and two ev
 getter on each mounted component, because a getter nothing consults and a binding naming a
 property no component has are both silently inert.
 
-The remaining two are about the §4 Tab-out, and they are the reason this is more than a
-visibility flag. The "not on the list" button is the panel's last focusable and its
+The remaining two are about Tab-out from the panel, and they are the reason this is more than
+a visibility flag. The "not on the list" button is the panel's last focusable and its
 `@keydown.tab` is what shuts the panel on the way out; plain Tab from the query field was
 therefore deliberately left to the browser. Withhold the button and that shortcut inverts —
-focus walks off and leaves an open panel over the rest of the form, which is the very defect
-§4 exists for. `onQueryTab()` now delegates to `onManualEntryTab()` when the row is not
-offered, so the two surfaces differ in who closes the panel and not in whether it closes.
+focus walks off and leaves an open panel over the rest of the form, which is exactly what
+closing the panel on Tab-out exists to prevent. `onQueryTab()` now delegates to
+`onManualEntryTab()` when the row is not offered, so the two surfaces differ in who closes
+the panel and not in whether it closes.
 
 Mutation-checked: dropping the tile override fails 1, dropping the `x-show` binding fails 2,
 and reverting `onQueryTab()` to its plain early return fails 1.
@@ -627,7 +628,7 @@ component that paints them (`orderIntentMessageVisible`, `companyTileLabelText`,
 `companySearchBlockVisible`, `companyChangeControlVisible`, `companyNumberBlockHiddenClass`,
 `companyIdHiddenClass`, and the `companyIdHintVisible` derivation the last four of those
 read), so
-the whole §7 company-search apparatus on the tile was inert in production behind 476 green
+the whole company-search apparatus on the tile was inert in production behind 476 green
 tests. **No number of assertions against the base object could have failed for it.**
 
 What the suite therefore pins, in the order that matters:
@@ -656,10 +657,11 @@ What the suite therefore pins, in the order that matters:
 - the configuration where order intent never fires (disabled for the merchant, or a Dutch
   buyer whose company is not a BV): capture still hides both company blocks while the label's
   own `x-show` — read out of the shipped markup, because the getter cannot answer this; it
-  still returns the text — stays shut. That is the 2026-08-03 ruling's consequence rather than
-  a defect, and it is now reachable on screen because the gates are live. The flag is made
-  load-bearing by a pair: with it off nothing dispatches `dispatch-order-intent`, with it on
-  the same capture does. Both inputs keep their values, so the order still places.
+  still returns the text — stays shut. That follows from gating the label on the order-intent
+  notice (TWO-25326) rather than on capture; it is not a defect, and it is now reachable on
+  screen because the gates are live. The flag is made load-bearing by a pair: with it off
+  nothing dispatches `dispatch-order-intent`, with it on the same capture does. Both inputs
+  keep their values, so the order still places.
 
 | Mutation                                                           | Failing tests                                                                                                                                                            |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -121,7 +121,7 @@ $quoteDetailsJson = json_encode(
 
 function <?= $gwBase ?>CompanySearchField() {
     /*
-     * TWO-25326, 2026-08-05 ruling: this is an ADAPTER, not a control.
+     * TWO-25326: this is an ADAPTER, not a control.
      *
      * The whole of the company-search control — the query/name split, the
      * dropdown, the keyboard and focus management, the manual-entry route, the
@@ -251,7 +251,7 @@ function <?= $gwBase ?>CompanySearchField() {
         /**
          * The buyer typed into a company-number field.
          *
-         * Bound to NOTHING in companyName.phtml (TWO-25326 §5 removed the
+         * Bound to NOTHING in companyName.phtml (TWO-25326 removed the
          * editable company-number input this surface used to have) but kept as
          * a real, working method rather than deleted: it still maintains the
          * `company_id_source` provenance the payment step reads out of the

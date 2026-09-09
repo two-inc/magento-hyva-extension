@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §2(b). Field routing when the engine writes an address it was
+ * TWO-25461. Field routing when the engine writes an address it was
  * handed — a registered-company search result or an autofill payload — through
  * `setAddressData()`.
  */

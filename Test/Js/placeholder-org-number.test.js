@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326, cross-platform requirement 12: an organisation number beginning
+ * TWO-25326: an organisation number beginning
  * with the literal prefix `TWO:` is an INTERNAL placeholder, minted for a company
  * that has no number in its home registry. It is a real identifier as far as
  * every API call is concerned — it is what `payment[company_id]` submits and what
@@ -10,7 +10,7 @@
  * it as a registry number their company does not have. It must never reach the
  * screen.
  *
- * There are four display sites, and the requirement is explicit that they share
+ * There are four display sites, and the ticket is explicit that they share
  * ONE helper rather than each testing the prefix: the results rows, the address
  * step's number display, the payment tile's `<name> (<number>)` label, and the
  * two order-intent verdict notices. Four separate prefix checks is how one of
@@ -36,7 +36,7 @@ const NOTICE_COPY = {
   companyNumberToken: "{{number}}",
 };
 
-describe("placeholder organisation numbers are never shown (requirement 12)", () => {
+describe("placeholder organisation numbers are never shown (TWO-25326)", () => {
   let env;
   let fetchStub;
 

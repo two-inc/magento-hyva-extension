@@ -26,10 +26,9 @@ $gwBase = $fnPrefix . 'GatewayHyva';
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
-// TWO-25326 §7.1 (2026-08-03 ruling, corrected 2026-08-04): the ONE
-// company-search control renders either here (in this tile) or on the
-// address step — never both, never neither. Decided by the CORE module's
-// `enable_company_search` setting, not a Hyvä-local one. See
+// TWO-25326: the ONE company-search control renders either here (in this
+// tile) or on the address step — never both, never neither. Decided by the
+// CORE module's `enable_company_search` setting, not a Hyvä-local one. See
 // CheckoutConfig::getIsCompanySearchInPaymentTile().
 $isCompanySearchInPaymentTile = $configModel->getIsCompanySearchInPaymentTile();
 $paymentTermsMessage = $configModel->getpaymentTermsMessage();
@@ -176,10 +175,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         <fieldset class="space-y-4">
             <?php
             /*
-             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): the captured-company
-             * label + "Change company" button only make sense where the
-             * enhanced company-search control lives — i.e. in THIS tile, when
-             * the admin setting points the one control here.
+             * TWO-25326: the captured-company label + "Change company" button
+             * only make sense where the enhanced company-search control lives
+             * — i.e. in THIS tile, when the admin setting points the one
+             * control here.
              *
              * When the control lives on the address step instead (the
              * default), the tile is text-only and carries no editable route
@@ -191,33 +190,33 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php if ($isCompanySearchInPaymentTile): ?>
             <?php
             /*
-             * TWO-25326 §7: the ONE captured-company label.
+             * TWO-25326: the ONE captured-company label.
              *
              * Reads "<name> (<number>)" and replaces three separate things the
              * tile used to show once a company had been captured — an editable
              * search control still holding the name, a static "Company Number"
-             * caption, and the number rendered again below it. §7 asks for a
-             * single read-only line, so the two inline hint paragraphs that
-             * preceded this (`company_name_hint` / `company_id_hint`) are gone
-             * with it rather than kept alongside.
+             * caption, and the number rendered again below it. The ticket
+             * asks for a single read-only line, so the two inline hint
+             * paragraphs that preceded this (`company_name_hint` /
+             * `company_id_hint`) are gone with it rather than kept alongside.
              *
              * First child of the fieldset, so it sits between the term chips
              * above and the order-intent notice below. Inside the FORM's
              * Alpine scope, not the outer tile's, because the form instance is
              * the one holding company state.
              *
-             * WHEN it shows is the 2026-08-03 ruling on TWO-25326: shown
-             * exactly when the order-intent notice below is shown, hidden
-             * exactly when it is hidden. Both bindings therefore name the SAME
-             * getter, `orderIntentMessageVisible`, rather than each testing a
-             * condition of its own that happens to agree. This supersedes the
+             * WHEN it shows (TWO-25326): exactly when the order-intent notice
+             * below is shown, hidden exactly when it is hidden. Both bindings
+             * therefore name the SAME getter, `orderIntentMessageVisible`,
+             * rather than each testing a condition of its own that happens to
+             * agree. This supersedes the
              * earlier gate, which showed the label whenever a company number
              * had been captured.
              *
              * The label is consequently NOT a swap with the tile's company
-             * controls any more either. TWO-25326 tile bugfix batch, bug 5
-             * (2026-08-05 ruling): the search control's visibility is no
-             * longer conditioned on capture at all — it is decided solely by
+             * controls any more either. TWO-25326 tile bugfix batch, bug 5:
+             * the search control's visibility is no longer conditioned on
+             * capture at all — it is decided solely by
              * the admin setting that says WHERE the one control renders. The
              * "Change company" button that
              * used to sit beside this label, as the only route back out of a
@@ -295,7 +294,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * decision took and had no way to tell it was working.
              *
              * LOCAL to the tile, never a page overlay — the standing
-             * cross-platform rule (requirement 11), and the same reason the
+             * cross-platform rule, and the same reason the
              * company-search spinner is an in-field element rather than
              * `magewire:loader:start`: a full-screen overlay over a checkout the
              * buyer is still filling in blocks interaction for a background
@@ -371,19 +370,19 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php endif ?>
             <?php
             /*
-             * TWO-25326 §7.2/§7.3 (2026-08-03 ruling): the sibling "not
-             * approved / no intent" text. Same shape and same reasoning as
-             * the approved notice above — a persistent inline element rather
-             * than a toast, gated on the identical brand switch (see
+             * TWO-25326: the sibling "not approved / no intent" text. Same
+             * shape and same reasoning as the approved notice above — a
+             * persistent inline element rather than a toast, gated on the
+             * identical brand switch (see
              * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its
              * own element, because it needs its own (unavailable, not
              * success) styling and its own `x-text`.
              *
              * Rendered in BOTH company-search-location modes, not only the
              * text-only tile: it is the ENTIRE story for a declined/no-intent
-             * company on either surface. As of the 2026-08-06 ruling it is also
-             * the only notice — the 5-second decline toast that used to fire
-             * alongside it is gone, so one verdict produces exactly one notice.
+             * company on either surface. It is also the only notice — the
+             * 5-second decline toast that used to fire alongside it is gone,
+             * so one verdict produces exactly one notice.
              *
              * Which makes the CONDITION on this element load-bearing beyond
              * this file: when the brand switch suppresses the copy there is no
@@ -447,13 +446,13 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php if (!$isCompanySearchInPaymentTile): ?>
             <?php
             /*
-             * TWO-25326 §7.1/§7.2 (2026-08-03 ruling): text-only tile.
+             * TWO-25326: text-only tile.
              *
              * The enhanced company-search control lives on the address step
              * in this (default) configuration, so the tile carries NO input
              * fields, no search control, and no "Change company" link — only
              * the intent-message text above, which now embeds the company
-             * name and number directly (§7.3).
+             * name and number directly.
              *
              * `payment[company_name]` / `payment[company_id]` still have to
              * reach the server, so they stay as hidden inputs rather than
@@ -474,7 +473,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php
             /*
              * THE company-search control, mounted from the ONE file that
-             * defines it (TWO-25326, 2026-08-05 ruling). This tile used to
+             * defines it (TWO-25326). This tile used to
              * carry a second, divergent control of its own — its own dropdown
              * markup, its own "Enter details manually" link, its own
              * min-characters guard, and a manual/search dual-input pair whose
@@ -518,11 +517,12 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <!-- Company Number -->
             <?php
             /*
-             * TWO-25326 §7: once a company is captured the whole block —
+             * TWO-25326: once a company is captured the whole block —
              * the static "Company Number" caption included — is hidden, and
              * the single `two-company-tile-label` line carries the number
-             * instead. The caption was the second of §7's three complaints;
-             * hiding only the input would have left it captioning nothing.
+             * instead. The caption was the second of the ticket's three
+             * complaints; hiding only the input would have left it captioning
+             * nothing.
              *
              * A class, not `x-show`: the inputs inside carry their own
              * `x-show` for the manual/search mirror pair, and a wrapper
@@ -533,10 +533,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * this CSP-friendly Alpine build cannot evaluate an object literal
              * (see the longer note on the input).
              *
-             * Same CAPTURED gate as the search block used to carry before the
-             * 2026-08-05 ruling (bug 5, see gateway_method-csp-js.phtml) — the
-             * ruling was about the EDITABLE search control and the "Change
-             * company" swap specifically, not about this block, so this gate
+             * Same CAPTURED gate as the search block used to carry before
+             * bug 5 (see gateway_method-csp-js.phtml) — that change was about
+             * the EDITABLE search control and the "Change company" swap
+             * specifically, not about this block, so this gate
              * is deliberately UNCHANGED: a buyer who has no captured company
              * still sees and can fill the field, and once captured the number
              * is carried by the tile label instead. The inputs stay in the

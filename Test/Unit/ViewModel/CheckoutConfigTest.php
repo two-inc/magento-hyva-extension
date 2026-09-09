@@ -20,7 +20,7 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
  */
 class CheckoutConfigTest extends TestCase
 {
-    // TWO-25326 §7.3 (2026-08-03 ruling): the default copy embeds both the
+    // TWO-25326: the default copy embeds both the
     // name and number tokens directly, replacing the standalone tile label.
     private const DEFAULT_WITH_COMPANY =
         'This order by {{companyName}} ({{companyNumber}}) is likely to be accepted by TestProduct';
@@ -249,7 +249,7 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326 §7.1: Hyvä has no setting of its own — the location is the
+     * TWO-25326: Hyvä has no setting of its own — the location is the
      * negation of the CORE module's `enable_company_search` setting, read
      * through the same injected ConfigRepository as
      * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below. Enabled
@@ -384,7 +384,7 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
-     * TWO-25326, 2026-08-06 ruling: address AUTOFILL requires BOTH the
+     * TWO-25326: address AUTOFILL requires BOTH the
      * `enable_address_search` setting AND the one company-search control
      * living in the address entry.
      *

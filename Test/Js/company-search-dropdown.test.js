@@ -2,14 +2,14 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §1/§2/§4, TWO-25503 — the Hyvä address step's company capture.
+ * TWO-25326, TWO-25503 — the Hyvä address step's company capture.
  *
  * Before TWO-25326 the address step had no dropdown architecture at all: the
  * company-name input was the search box, results were an overlay hanging off
  * it, and the ticket records that as "a plain in-field autocomplete". Almost
- * every §1 bullet failed as a consequence — no query field, no spinner, no
- * zero-result wording, a threshold hint that waited for a keystroke, Escape
- * doing nothing.
+ * every requirement the ticket names failed as a consequence — no query
+ * field, no spinner, no zero-result wording, a threshold hint that waited for
+ * a keystroke, Escape doing nothing.
  *
  * TWO-25503 then replaced this checkout's own answer to all of that with the
  * base plugin's shared popover, so the query field, the results, the verdict
@@ -19,7 +19,7 @@
  *
  * What is left here, and what this suite is now about, is the seam: the
  * company-name field this checkout renders, and the options it hands the panel.
- * Every §1 verdict the ticket names is still pinned — as the shape
+ * Every verdict the ticket names is still pinned — as the shape
  * `searchCompanies()` answers with, which is what the panel paints them from.
  *
  * On the limits of jsdom, stated rather than papered over: it performs no
@@ -44,9 +44,9 @@ function shippedDoc() {
   return new DOMParser().parseFromString(markup, "text/html");
 }
 
-describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () => {
+describe("address-step company capture (TWO-25326, TWO-25503)", () => {
   describe("the control's structure, read off the shipped template", () => {
-    test("§1 the company-name field is a plain input the panel can drive", () => {
+    test("the company-name field is a plain input the panel can drive", () => {
       // The panel binds `mousedown`, `focus`, `keydown` and `input` on this
       // field natively and moves what arrives into its own query box. A
       // `readonly` field — which is how this checkout used to hold the captured
@@ -110,7 +110,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       }
     });
 
-    test("§1 zero results are worded 'No matches found', exactly", () => {
+    test("zero results are worded 'No matches found', exactly", () => {
       // Exact, because Luma shipped "No results found" and the ticket counts
       // that as a failure.
       //
@@ -204,7 +204,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       ],
     };
 
-    test("§1 the debounce is 300ms, and the panel is what applies it", () => {
+    test("the debounce is 300ms, and the panel is what applies it", () => {
       // The engine no longer debounces, so a missing value here means every
       // keystroke goes on the wire.
       expect(searchApi.SEARCH_DEBOUNCE_MS).toBe(300);
@@ -223,7 +223,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       });
     });
 
-    test("§1 the searching state is up while the request is in flight and down after", async () => {
+    test("the searching state is up while the request is in flight and down after", async () => {
       const { pending } = await search("acm");
       expect(component.isSearching).toBe(true);
 
@@ -234,10 +234,10 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     });
 
     /*
-     * The §1 verdicts. The panel paints them, but it paints them from THIS
-     * shape, so an empty result set that claimed to be a failure — or a failure
-     * that came back as an empty result set — would put the wrong line on
-     * screen with nothing else in CI able to notice.
+     * The verdicts TWO-25326 names. The panel paints them, but it paints
+     * them from THIS shape, so an empty result set that claimed to be a
+     * failure — or a failure that came back as an empty result set — would put
+     * the wrong line on screen with nothing else in CI able to notice.
      */
     test.each([
       [
@@ -261,7 +261,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
         { count: 1, unavailable: false },
         "hits leave nothing to explain",
       ],
-    ])("§1 a settled search answers %#: %p (%s)", async (settle, expected) => {
+    ])("a settled search answers %#: %p (%s)", async (settle, expected) => {
       const { pending } = await search("acm");
 
       // In flight there is no verdict yet, so anything the panel could paint
@@ -303,7 +303,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(result.unavailable).toBe(false);
     });
 
-    test("§1 taking a result fills the NAME field and captures the identifier", async () => {
+    test("taking a result fills the NAME field and captures the identifier", async () => {
       const { pending } = await search("acm");
       fetchStub.searchCalls()[0].respondProxy(ONE_HIT);
       const result = await pending;
@@ -316,8 +316,8 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(component.companyName).toBe("Acme Ltd");
       expect(component.companyId).toBe("123456789");
       expect(component.companyIdSource).toBe("registry");
-      // §5: the number is displayed, read-only, only for a registry-supplied
-      // identifier.
+      // TWO-25326: the number is displayed, read-only, only for a
+      // registry-supplied identifier.
       expect(component.companyIdDisplayVisible).toBe(true);
       // The chips are repainted, so the mode the pick put the control in reads
       // as selected.
@@ -334,7 +334,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       ],
       ["TWO:ST-0001", "<em>Acme</em> Ltd", "an internal placeholder is not"],
     ])(
-      "§1 a results row renders %s as %p (%s)",
+      "a results row renders %s as %p (%s)",
       async (identifier, expected) => {
         const { pending } = await search("acm");
         fetchStub.searchCalls()[0].respondProxy({
@@ -359,14 +359,14 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       },
     );
 
-    test("§2 entering manual entry hands the field back to the buyer", () => {
+    test("entering manual entry hands the field back to the buyer", () => {
       capture().manualEntryMode();
 
       expect(component.manualMode).toBe(true);
       expect(panel.calls).toContain("releaseField");
     });
 
-    test("§3 returning to search takes the field back and reopens the panel", () => {
+    test("returning to search takes the field back and reopens the panel", () => {
       capture().manualEntryMode();
 
       panel.options.onExitManualEntry();
@@ -456,7 +456,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       return seen;
     }
 
-    test("§5 manual entry lands in this role's identity and record", () => {
+    test("manual entry lands in this role's identity and record", () => {
       // Deleting the address step's editable number input took
       // `onCompanyIdInput()` — the only writer on the manual path — out of the
       // DOM with it, so manual entry recorded nothing at all.
@@ -469,7 +469,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(storedSelection().company_name).toBe("Widgets Inc");
     });
 
-    test("§5 manual entry leaves the other role alone", () => {
+    test("manual entry leaves the other role alone", () => {
       capture().manualEntryMode();
       nameField.value = "Widgets Inc";
       component.$el = nameField;
@@ -502,10 +502,10 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     test("a name edit drops an identifier that belonged to another name", () => {
       // `forgetStaleCompanyId()` used to spare a
       // `manual`-sourced identifier, and with the address step's own number
-      // input gone (§5) nothing here can write or correct one — so an id left
-      // in storage by an earlier session rode along with every debounced
-      // keystroke, arming an order intent for a half-typed name beside somebody
-      // else's number.
+      // input gone (TWO-25326) nothing here can write or correct one — so an
+      // id left in storage by an earlier session rode along with every
+      // debounced keystroke, arming an order intent for a half-typed name
+      // beside somebody else's number.
       //
       // Suppressing the RECORD in that state is worse: the buyer's edits then
       // stop being recorded for the rest of the page load, reinstating the
@@ -579,12 +579,12 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       expect(restored.isCompanySelected).toBe(true);
     });
 
-    test("§5 the company-number label does not survive into manual entry", () => {
+    test("the company-number label does not survive into manual entry", () => {
       // enterManually() deliberately does not clear a previous pick, and the
       // stale-pair clear only fires once the typed name has diverged — so a
       // buyer who picked a company and then chose "not on the list" kept a
-      // registry-vouched number, and the label went on showing it. §5 requires
-      // manual entry to show no number at all.
+      // registry-vouched number, and the label went on showing it. TWO-25326
+      // requires manual entry to show no number at all.
       env.identity.write(
         {
           companyName: "Acme Ltd",

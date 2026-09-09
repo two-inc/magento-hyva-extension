@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * The manual-entry ROUTE on the address step (TWO-25288 element 5, TWO-25503).
+ * The manual-entry ROUTE on the address step (TWO-25288, TWO-25503).
  *
  * Manual entry is how a buyer whose company the registry does not have still
  * gets a name onto the order. What this suite pins is that the route exists,

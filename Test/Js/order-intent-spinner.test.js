@@ -2,16 +2,16 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 tile bugfix batch, bug 5 + cross-platform requirement 11.
+ * TWO-25326 tile bugfix batch, bug 5.
  *
  * Bug 5: the order-intent check had no visible progress indicator at all on
  * Hyvä. A buyer who picked a company sat looking at an unchanged tile for
  * however long the decision took, with no way to tell it was working.
  *
- * Requirement 11 is the standing cross-platform rule about the fix: the
- * indicator must be LOCAL to the payment tile, never a page-covering overlay.
- * The reason is the same one that made the company-search spinner an in-field
- * element rather than `magewire:loader:start` — a full-screen overlay over a
+ * The standing cross-platform rule about the fix: the indicator must be LOCAL
+ * to the payment tile, never a page-covering overlay. The reason is the same
+ * one that made the company-search spinner an in-field element rather than
+ * `magewire:loader:start` — a full-screen overlay over a
  * checkout the buyer is still filling in blocks interaction for a background
  * check they did not ask for. So this file asserts both halves: that the
  * indicator exists and is driven by real request state, AND that the intent path
@@ -67,7 +67,7 @@ function openCompanyPopover(env) {
   env.companyPanels[env.companyPanels.length - 1].open();
 }
 
-describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
+describe("order-intent progress indicator (TWO-25326)", () => {
   describe("the shipped markup", () => {
     let doc;
 
@@ -82,7 +82,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
 
       // Inside the tile's own root — the element that carries the tile
       // component. An indicator rendered as a sibling of the tile, or appended
-      // to `<body>`, is the page overlay requirement 11 forbids.
+      // to `<body>`, is the page overlay that rule forbids.
       const tileRoot = doc.querySelector(".payment-method-custom-form");
       expect(tileRoot).not.toBeNull();
       expect(tileRoot.contains(indicator)).toBe(true);
@@ -491,7 +491,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
         // sentence and the spinner, neither of which is a heading.
         expect(el.querySelector("h1,h2,h3,h4,h5,h6,strong,legend")).toBeNull();
 
-        // In the tile's flow, never a page overlay (requirement 11).
+        // In the tile's flow, never a page overlay.
         const tileRoot = doc.querySelector(".payment-method-custom-form");
         expect(tileRoot).not.toBeNull();
         expect(tileRoot.contains(el)).toBe(true);
@@ -621,7 +621,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     /**
-     * 2026-08-06 ruling: ONE verdict, ONE notice.
+     * ONE verdict, ONE notice (TWO-25326).
      *
      * A decline used to raise a 5-second toast as well as the in-tile box —
      * two notices saying the same thing, the weaker of which self-dismisses
@@ -760,9 +760,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       });
 
       test("a FAILED check still toasts — it carries detail the box does not", () => {
-        // Deliberately unchanged by the ruling: the box shows the general
-        // wording only, so deleting this toast would drop the API's own
-        // diagnostic text with nothing left carrying it.
+        // Deliberately unchanged: the box shows the general wording only, so
+        // deleting this toast would drop the API's own diagnostic text with
+        // nothing left carrying it.
         component.companyId = "111111111";
         component.generalErrorMessage = "SENTINEL-general-error";
 

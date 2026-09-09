@@ -2,15 +2,14 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §7.1-§7.3, 2026-08-03 ruling, corrected 2026-08-04. Exactly ONE
- * company-search control per merchant (not per platform), rendering either
- * in the address area or in the payment tile, driven by the CORE module's
- * `enable_company_search` setting. Hyvä has no setting of its own;
- * CheckoutConfig::getIsCompanySearchInPaymentTile() reads the core setting
- * directly.
+ * TWO-25326. Exactly ONE company-search control per merchant (not per
+ * platform), rendering either in the address area or in the payment tile,
+ * driven by the CORE module's `enable_company_search` setting. Hyvä has no
+ * setting of its own; CheckoutConfig::getIsCompanySearchInPaymentTile() reads
+ * the core setting directly.
  *
- * Every other suite in this directory over these two templates predates the
- * ruling and keeps testing each control's OWN behaviour as if it were the
+ * Every other suite in this directory over these two templates predates that
+ * switch and keeps testing each control's OWN behaviour as if it were the
  * active one (see the harness's per-file default in hyva-harness.js for why).
  * This file is the one place that asserts on the LOCATION SWITCH itself: the
  * production default (address-area) leaves the tile text-only with no
@@ -30,7 +29,7 @@ const PAYMENT_TILE_TRUE = [[/^\$isCompanySearchInPaymentTile$/, "1"]];
 // legacy-preserving one.
 const ADDRESS_AREA = [[/^\$isCompanySearchInPaymentTile$/, ""]];
 
-describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
+describe("company-search location (TWO-25326)", () => {
   describe("default (address-area) configuration", () => {
     test("the payment tile has no editable company controls at all", () => {
       const markup = H.renderTemplateMarkup(
@@ -119,7 +118,7 @@ describe("company-search location (TWO-25326 §7.1, 2026-08-03 ruling)", () => {
     });
   });
 
-  describe("resolveOrderIntentNotAvailableNotice() (TWO-25326 §7.3 wording)", () => {
+  describe("resolveOrderIntentNotAvailableNotice() wording (TWO-25326)", () => {
     const NOT_AVAILABLE_COPY = {
       withCompany: "Two is not available for this order by {name} ({id}).",
       withoutCompany: "Two is not available for this order.",
