@@ -80,17 +80,29 @@ class ApiKeyVerificationStatusTest extends TestCase
         string $description
     ): void {
         $saved = [];
+        $lifetimes = [];
         $status = $this->build(
             apiKey: 'a-key',
             execute: fn () => $adapterResult,
-            cacheSave: function (string $value) use (&$saved) {
+            cacheSave: function (string $value, string $identifier, array $tags, $lifetime) use (
+                &$saved,
+                &$lifetimes
+            ) {
                 $saved[] = $value;
+                $lifetimes[] = $lifetime;
             },
         );
 
         $this->assertSame($expectedStatus, $status->getStatus(), $description);
         $this->assertSame($definitive, $status->isDefinitiveFailure(), $description);
         $this->assertSame([$expectedStatus], $saved, $description);
+        // A failure is held for a quarter as long, so a corrected key restores
+        // this control on the same clock as the payment method.
+        $this->assertSame(
+            [$expectedStatus === ApiKeyVerificationStatus::OK ? 300 : 60],
+            $lifetimes,
+            $description
+        );
     }
 
     /**
