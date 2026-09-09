@@ -36,8 +36,7 @@ trap 'rm -f "$canonical"' EXIT
 # Fetch the raw file via the GitHub raw media type — avoids the JSON+base64
 # round-trip (and `base64 -d`'s GNU/BSD flag portability quirk). Retry a few
 # times so a transient API blip reds the check only for genuine drift, not a
-# one-off network hiccup — parity with the classifier's own fetch_json retry
-# (review: brtkwr on #153).
+# one-off network hiccup — parity with the classifier's own fetch_json retry.
 fetched=0
 for attempt in 1 2 3; do
     if gh api -H "Accept: application/vnd.github.raw" \

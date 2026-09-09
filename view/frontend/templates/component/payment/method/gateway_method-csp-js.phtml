@@ -3461,18 +3461,10 @@ $quoteDetails = json_encode(
             },
 
             /*
-             * The search-control rule, kept as history rather than silently
-             * dropped (TWO-25326): the search control's visibility is governed
-             * ONLY by the admin setting that decides WHERE it renders, never by
-             * capture state. Capturing a company used to hide the search block
-             * and the whole Company Number block and offer a "Change company"
-             * button as the only way back — found in live testing to read as a
-             * confusing hide-and-reshow rather than a stable control. The field
-             * is the buyer's route to a different company at every point now,
-             * exactly as it is before any company is captured, so
-             * `clearCapturedCompany()` / `focusCompanySearchInput()` /
-             * `OnChangeCompanyClick` / `companySearchBlockVisible` are all
-             * removed rather than rewired.
+             * TWO-25326: the search control's visibility is governed ONLY by
+             * the admin setting that decides WHERE it renders, never by
+             * capture state. The field is the buyer's route to a different
+             * company at every point, captured or not.
              */
             // Superseded by the shared engine, which writes `manual_mode`
             // through its own `writeSelection` option on every mode flip. Kept
@@ -3511,46 +3503,19 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // TWO-25326: the ONE gate for both the inline order-intent notice
-            // and the captured-company label beside it. The label is shown
-            // exactly when the notice is shown and hidden exactly when it is
-            // hidden, so both `x-show` bindings name THIS getter rather than
-            // each testing a condition of its own.
+            // TWO-25326: the ONE gate for both the inline order-intent
+            // notice and the captured-company label beside it. Not a "is a
+            // company captured" check: that diverges while an intent is
+            // pending, declined, or suppressed by the brand.
             //
-            // That is the whole reason it exists. A parallel "is a company
-            // captured" check would agree with the notice most of the time and
-            // diverge precisely in the states the ticket asks about: a company
-            // captured with no intent dispatched yet, an intent that was
-            // declined or errored, and a brand that suppressed the notice
-            // (`orderIntentApprovedNoticeCopy` null, so
-            // resolveOrderIntentApprovedNotice() always returns '').
+            // Two configurations stop the notice firing, so the label never
+            // renders either: order intent disabled for the merchant, and a
+            // Dutch buyer whose company is not a BV. A product decision, not
+            // one to widen this getter around.
             //
-            // `orderIntentApprovedNotice` is seeded to '' in the component
-            // literal specifically so this is never undefined — see the comment
-            // on that property. Boolean() rather than the bare string so the
-            // getter answers a boolean to a test that compares against one.
-            //
-            // READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two
-            // configurations mean the notice never fires at all, and so that
-            // the label never renders either: order intent disabled for the
-            // merchant (the `isOrderIntentEnabled` gate before dispatch), and a
-            // Dutch buyer whose company is not a BV. Both are permanent rather
-            // than transient, and on this surface the consequence is sharper
-            // than on Luma — capture still hides the search block AND the
-            // Company Number block, so those buyers see no company name
-            // anywhere on the tile and a bare "Change company" button next to
-            // nothing. That follows literally from "shown exactly when the
-            // notice is shown", so it is a consequence of that rule rather
-            // than a defect here, but it is a product decision and not one to
-            // paper over by widening this getter.
-            //
-            // This getter, and every other one in this literal, reaches the
-            // component the <form> mounts as a LIVE accessor only because
-            // PaymentFormWithValidation() composes with property descriptors
-            // (TWO-25332). Composing it with object spread — as it did until
-            // then — evaluated each getter once and copied the frozen result,
-            // which disabled the whole label apparatus in production
-            // without failing a single test. See that function's comment.
+            // Live accessor only because PaymentFormWithValidation() composes
+            // with property descriptors (TWO-25332); object spread froze each
+            // getter's first value instead.
             get orderIntentMessageVisible() {
                 return Boolean(this.orderIntentApprovedNotice);
             },
@@ -3819,11 +3784,8 @@ $quoteDetails = json_encode(
             // Companion to `companyIdHiddenClass`, hiding the whole Company
             // Number block — its static caption included — rather than only
             // the input. Class-NAME STRING for the same reason: `:class` here
-            // is a key lookup, not expression evaluation. UNCHANGED by the
-            // search-control change above: that change is about the EDITABLE
-            // control and the "Change company" swap specifically, and
-            // this block's own capture gate is not part of it — see the
-            // comment on the markup that binds this.
+            // is a key lookup, not expression evaluation. Gated on capture,
+            // unlike the search control.
             get companyNumberBlockHiddenClass() {
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
