@@ -503,7 +503,8 @@ $quoteDetails = json_encode(
 
     /**
      * The country field of the address in the INVOICE role, for a caller that is
-     * not mounted in an address form at all — the payment tile (TWO-25461).
+     * not mounted in an address form at all — the payment tile (porting guide
+     * §1(a.3)).
      *
      * The tile's company IS the invoice-role company: it reads and writes the
      * BILLING company record. So the country it must search in is the billing
@@ -3070,7 +3071,7 @@ $quoteDetails = json_encode(
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose
-             * country it wants by ROLE (TWO-25461): the
+             * country it wants by ROLE (TWO-25461, porting guide §1(a.3)): the
              * invoice-role one, which is the company record this tile reads and
              * writes. Previously it inherited a document-global lookup that took
              * the shipping country whatever the buyer's billing address said.
