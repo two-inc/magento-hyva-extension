@@ -4478,19 +4478,18 @@ $quoteDetails = json_encode(
                 const terms = Object.keys(surcharges);
                 // Empty map → surcharges not yet loaded; show nothing.
                 if (!terms.length) return '';
-                const raw = surcharges[this.days];
-                if (raw === undefined) return '';
                 // Match Luma (gateway_method.js `termOptions`): if EVERY
                 // term is ~zero, show no fee on any chip; if ANY term is
-                // non-zero, show the fee on every chip — zero-fee chips
-                // then render `+€ 0.00`. The `< 0.005` threshold and the
-                // `+` prefix mirror the Luma renderer exactly so the two
-                // checkouts display identically.
+                // non-zero, show the fee on every chip — a zero-fee chip,
+                // and a chip the map does not answer for, then render
+                // `+€ 0.00`. The `< 0.005` threshold and the `+` prefix
+                // mirror the Luma renderer exactly so the two checkouts
+                // display identically.
                 const allZero = terms.every(function (days) {
                     return parseFloat(surcharges[days] || 0) < 0.005;
                 });
                 if (allZero) return '';
-                const amount = parseFloat(raw || 0);
+                const amount = parseFloat(surcharges[this.days] || 0);
                 const currency = this.$wire.currencyCode || 'EUR';
                 // Use the Magento store-view locale piped from PHP
                 // (`nl-NL`, `en-GB`, ...) so the chip's currency format
