@@ -67,12 +67,16 @@ class ApiKeyVerificationStatus
         self::NOT_CONFIGURED,
     ];
 
-    /**
-     * Seconds, applied to every outcome alike so a key that just broke and a
-     * key that just got fixed both surface within minutes. Also what bounds
-     * an outage to one verification attempt per store per interval.
-     */
+    /** Seconds a verified key is served from cache, so a revocation surfaces in minutes. */
     private const CACHE_LIFETIME = 300;
+
+    /**
+     * Seconds a failure is served from cache. Shorter, and the same figure as
+     * the base ApiKeyStatus, so a corrected key restores the payment method
+     * and this control together rather than 240 seconds apart. Still long
+     * enough that an outage costs one verification per store per minute.
+     */
+    private const FAILURE_CACHE_LIFETIME = 60;
 
     /** Tagged with the base module's gateway cache type so `cache:clean two_gateway` drops the verdict. */
     private const CACHE_TAGS = [TwoGateway::CACHE_TAG];
@@ -152,7 +156,12 @@ class ApiKeyVerificationStatus
             null,
             self::VERIFY_TIMEOUT_SECONDS
         ));
-        $this->cache->save($status, $cacheKey, self::CACHE_TAGS, self::CACHE_LIFETIME);
+        $this->cache->save(
+            $status,
+            $cacheKey,
+            self::CACHE_TAGS,
+            $status === self::OK ? self::CACHE_LIFETIME : self::FAILURE_CACHE_LIFETIME
+        );
 
         return $this->memo[$memoKey] = $status;
     }
@@ -172,18 +181,15 @@ class ApiKeyVerificationStatus
     }
 
     /**
-     * Adapter::execute() signals a non-2xx by adding `http_status`, and a
-     * transport or translator failure by adding `error_code` with no status
-     * (translatorFailure() sets both at once); a 2xx success payload carries
-     * neither and answers with the merchant `id`.
+     * Adapter::execute() signals a non-2xx by adding `http_status` and a
+     * transport or translator failure by adding `error_code`; translatorFailure()
+     * sets both, so `http_status` is read first and wins. A 2xx success payload
+     * carries neither and answers with the merchant `id`.
      *
-     * @param mixed $result
+     * @param array<string,mixed> $result
      */
-    private static function categorize($result): string
+    private static function categorize(array $result): string
     {
-        if (!is_array($result)) {
-            return self::UNREACHABLE;
-        }
         if (isset($result['http_status'])) {
             $code = (int) $result['http_status'];
             if ($code === 401 || $code === 403) {
