@@ -532,9 +532,22 @@ signup window is up, and this checkout inherits all three rules (TWO-25658):
   outside the panel node, so treating it as outside tore down the results the buyer
   was still typing against.
 
-A window or application switch lands on no control at all and settles nothing.
-None of this is implemented here; a mount that adds focus handling of its own to a
-chip or the company field is competing with it.
+A window or application switch lands on no control at all and settles nothing. The
+ruling adds a fourth — **a Sole trader chip belonging to a DIFFERENT capture
+popover gets a popup of its own**, raised through that chip's own click handler so
+a launch stays spelled out in one place — and the base plugin does not do that yet:
+a chip outside the popup's own popover closes it and raises nothing.
+
+All of it lives in the base plugin, none of it in this repo. A mount that adds
+focus handling of its own to a chip or the company field is competing with rules it
+cannot see.
+
+**The open panel takes the company field's tab stop**, inherited the same way:
+`tabindex="-1"` while it is up, and on close the field's PRIOR value restored
+exactly, which is removal because nothing sets one (TWO-25503). Without it the
+focus opener is a keyboard trap — the opener puts the caret in the query field,
+Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
+2.1.2). A mount must not write a `tabindex` onto that field.
 
 ### A popup window is in no tab listing
 
@@ -631,9 +644,9 @@ an id the store does not have.
 
 **`magento-dev` is the deployment that tracks this repo's `staging`**, through its
 `git-sync-hyva` container (`--ref=staging --period=60s`); each brand's own dev
-deployment git-syncs this repo alongside its overlay. `deploy/magento` — the shop at
-`magento.staging.two.inc` — has no git-sync container at all and serves the
-deployed image's code, which tracks `main`. So anything verifying `staging` code
+deployment git-syncs this repo alongside its overlay. `deploy/magento` has no
+git-sync container at all and serves the deployed image's code, which tracks
+`main`. So anything verifying `staging` code
 goes to the dev shop, and a check pointed at the other one silently reports on
 `main`. Confirm which code a shop has by reading the served asset itself:
 `pub/static/deployed_version.txt` answers with an HTML 404 page on these shops.
@@ -716,6 +729,15 @@ and proves nothing. Assert the observable proxies (the parts are one contiguous 
 in document order, a closed panel carries `hidden`, the handler leaves the `Tab`
 event undefaulted) and verify the keyboard behaviour itself in a real browser. Never
 present a jsdom Tab test as evidence that a trap is absent.
+
+Two more of the same class:
+
+- **jsdom's `getElementById` answers with the first-REGISTERED node, not the
+  tree-first one**, so a fixture carrying a duplicate id silently resolves to the
+  wrong element while reading as though it found the right one.
+- **A mutation proves NEW coverage only when re-run against the base ref.** One the
+  existing suite already catches proves the suite is sensitive, not that the case
+  added covers anything.
 
 ### Common Issues
 
