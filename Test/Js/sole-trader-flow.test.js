@@ -412,21 +412,6 @@ describe("the hosted signup (PDEV-4669)", () => {
     expect(tile.component.showPopupMessage).toBe(false);
   });
 
-  test("'select a different sole trader' is offered only once one is adopted", () => {
-    // The hosted flow needs something to replace.
-    tile = mountTile();
-    expect(tile.component.selectDifferentSoleTraderVisible).toBe(false);
-
-    soleTraderChip().onActivate();
-    tile.capture.adoptSoleTrader(BUYER);
-
-    expect(tile.component.selectDifferentSoleTraderVisible).toBe(true);
-
-    tile.component.selectDifferentSoleTrader();
-
-    expect(tile.flow.calls).toContain("selectDifferentSoleTrader");
-  });
-
   test("the spinner follows the flow's own busy state", () => {
     // The token mint runs before the hosted signup can open, so the wait is
     // real and needs saying.

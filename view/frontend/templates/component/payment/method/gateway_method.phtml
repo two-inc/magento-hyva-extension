@@ -250,6 +250,9 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * `.two-company-mode-chips` as the last child of the panel, after the
              * results, because DOM order is what makes the tab order correct.
              *
+             * Nor is the "select a different sole trader" link: same field
+             * chrome, same owner (ABN-526).
+             *
              * The progress row below is what the chip row's in-field spinner
              * became. It cannot go into the panel — the panel builds only the
              * search spinner, driven by the search API — and the wait it covers
@@ -266,24 +269,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 <span><?= $escaper->escapeHtml(__('Opening sole trader sign-up')) ?></span>
                 <span class="two-company-search__spinner" aria-hidden="true"></span>
             </div>
-            <?php
-            /*
-             * Only meaningful once an identity has been adopted, so its own
-             * getter rather than the tab's: it reopens the hosted flow with
-             * `autoselect=false` so the buyer is not handed straight back the
-             * registration they are trying to replace. There is deliberately no
-             * equivalent for an adopted REGISTERED company — the company-search
-             * field is that route.
-             */
-            ?>
-            <p x-cloak x-show="selectDifferentSoleTraderVisible">
-                <button type="button"
-                        class="two-soletrader-link two-field-action-link"
-                        data-name="select_different_soletrader"
-                        @click="selectDifferentSoleTrader">
-                    <?= $escaper->escapeHtml(__('Select a different sole trader')) ?>
-                </button>
-            </p>
             <?php
             /*
              * TWO-25326: the order-intent check had no

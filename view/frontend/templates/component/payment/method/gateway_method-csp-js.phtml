@@ -2757,18 +2757,9 @@ $quoteDetails = json_encode(
             get soleTraderSpinnerVisible() {
                 return this.soleTraderBusy;
             },
-            // Offered only once an identity has been adopted: the hosted flow
-            // needs something to replace.
-            get selectDifferentSoleTraderVisible() {
-                return this.showSoleTrader && Boolean(this.companyName);
-            },
             openSoleTraderSignupFromLink() {
                 const capture = this.captureController();
                 if (capture) capture.retrySignup();
-            },
-            selectDifferentSoleTrader() {
-                const capture = this.captureController();
-                if (capture) capture.soleTrader().selectDifferentSoleTrader();
             },
 
             /*

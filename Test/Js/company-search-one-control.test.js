@@ -365,3 +365,38 @@ describe("the control cannot outgrow its column (TWO-25326)", () => {
     expect(source(H.GATEWAY_METHOD_MARKUP_TEMPLATE)).not.toContain("min-h-108");
   });
 });
+
+describe("one 'select a different sole trader' control (ABN-526)", () => {
+  /**
+   * Controls offering to replace an adopted sole trader, by marker or by label.
+   *
+   * @param {Document} doc
+   * @returns {Array<Element>}
+   */
+  function relinkControls(doc) {
+    const marked = Array.from(
+      doc.querySelectorAll('[data-name*="different_soletrader"]'),
+    );
+    const labelled = Array.from(doc.querySelectorAll("button, a")).filter(
+      (el) => /select a different sole trader/i.test(el.textContent || ""),
+    );
+
+    return Array.from(new Set(marked.concat(labelled)));
+  }
+
+  test.each([
+    [H.GATEWAY_METHOD_MARKUP_TEMPLATE, "the payment tile"],
+    [H.COMPANY_NAME_MARKUP_TEMPLATE, "the address step"],
+  ])("%s server-renders none of its own (%s)", (relPath) => {
+    // The shared field chrome renders the one the buyer sees, on the same
+    // adoption, and nothing hides either.
+    expect(relinkControls(render(relPath))).toHaveLength(0);
+  });
+
+  test.each([
+    ["selectDifferentSoleTraderVisible", "a visibility getter to bind one to"],
+    ["selectDifferentSoleTrader(", "a handler for one to call"],
+  ])("the payment component exposes no %s (%s)", (symbol) => {
+    expect(source(H.GATEWAY_METHOD_TEMPLATE)).not.toContain(symbol);
+  });
+});
