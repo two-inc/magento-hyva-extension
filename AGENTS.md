@@ -538,12 +538,18 @@ signup window is up, and this checkout inherits all three rules (TWO-25658):
   field counted as INSIDE it: the field is the popover's own trigger and sits
   outside the panel node, and a buyer typing a query is still inside the control.
 
-A window or application switch lands on no control at all and settles nothing.
+A `focusin` the browser re-fires on window return counts as the buyer focusing
+that control, so an alt-tab back onto a control is classified like any other
+arrival. Opening the popup blurs whatever held focus for exactly that reason —
+with nothing focused, a window return settles nothing.
 
-**Reaching another capture popover's Sole trader chip by FOCUS raises nothing** —
-that chip is not the exempt one, so the popup closes like it would for any other
-target. Only activating the chip launches a popup, through its own click handler,
-which is where a launch stays spelled out (TWO-25658).
+**Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
+That chip is a different control, so this popup and popover close first; the new
+one is then raised by invoking that chip's own click handler, the single place a
+launch is spelled out. The exemption is per capture and survives a re-render
+because the popover is resolved from the company field each time — a stored
+popover node goes stale when a morph deletes the wrap and keeps the field, which
+makes a capture's own rebuilt chip read as a sibling's (TWO-25658).
 
 All of it lives in the base plugin, none of it in this repo. A mount that adds
 focus handling of its own to a chip or the company field is competing with rules it
