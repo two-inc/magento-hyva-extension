@@ -14,10 +14,13 @@ use Two\Gateway\Model\Cache\Type\TwoGateway;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
- * Whether the merchant's currently configured API key can be verified right
- * now — the gate the address-block/tile company-search control must respect
- * so it never renders against a key Two cannot actually authenticate
- * (TWO-25326, porting the WooCommerce plugin's API-key-failure-handling fix).
+ * The cached, categorised outcome of verifying the merchant's currently
+ * configured API key — the gate the address-block/tile company-search control
+ * respects so it never renders against a key Two has rejected (TWO-25326).
+ *
+ * The categories and the mapping onto them mirror the base module's
+ * Two\Gateway\Service\Merchant\ApiKeyStatus; keep them in step until the
+ * swap below is possible.
  *
  * Built directly on Adapter rather than the base module's merchant-record
  * service — see the note above the constructor for why. Mirrors this repo's
@@ -30,20 +33,50 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class ApiKeyVerificationStatus
 {
-    private const CACHE_KEY_PREFIX = 'two_gatewayhyva_api_key_verified_';
+    /** The key verified: a 2xx carrying a merchant id. */
+    public const OK = 'ok';
+
+    /** HTTP 401/403 — the key was rejected. */
+    public const INVALID_KEY = 'invalid_key';
+
+    /** HTTP 5xx — the service failed; the key may well be fine. */
+    public const SERVICE_ERROR = 'service_error';
+
+    /** No HTTP exchange completed: DNS, TLS, routing, connection or timeout. */
+    public const UNREACHABLE = 'unreachable';
+
+    /** Some other non-2xx status. */
+    public const ERROR = 'error';
+
+    /** A 2xx response that did not carry a merchant id. */
+    public const MALFORMED_RESPONSE = 'malformed_response';
+
+    /** No API key saved — nothing to verify. */
+    public const NOT_CONFIGURED = 'not_configured';
+
+    private const CACHE_KEY_PREFIX = 'two_gatewayhyva_api_key_status_';
+
+    /** Guards against reading a cache slot written in some other shape. */
+    private const CATEGORIES = [
+        self::OK,
+        self::INVALID_KEY,
+        self::SERVICE_ERROR,
+        self::UNREACHABLE,
+        self::ERROR,
+        self::MALFORMED_RESPONSE,
+        self::NOT_CONFIGURED,
+    ];
+
+    /** Seconds a verified key is served from cache, so a revocation surfaces in minutes. */
+    private const CACHE_LIFETIME = 300;
 
     /**
-     * Seconds. Matches WC_Twoinc::API_KEY_VERIFICATION_TTL in the
-     * woocommerce-plugin port of this fix (TWO-25326) — deliberately short,
-     * and deliberately applied to a FAILED verification the same as a
-     * successful one (unlike the base module's own cache, which only caches
-     * success): this is a binary availability gate, not a config-value
-     * cache with a safe "not configured" fallback, so both a key that just
-     * broke and a key that just got fixed need to surface within minutes,
-     * symmetrically. WC_Twoinc applies the same TTL to every outcome for
-     * the same reason.
+     * Seconds a failure is served from cache. Shorter, and the same figure as
+     * the base ApiKeyStatus, so a corrected key restores the payment method
+     * and this control together rather than 240 seconds apart. Still long
+     * enough that an outage costs one verification per store per minute.
      */
-    private const CACHE_LIFETIME = 300;
+    private const FAILURE_CACHE_LIFETIME = 60;
 
     /** Tagged with the base module's gateway cache type so `cache:clean two_gateway` drops the verdict. */
     private const CACHE_TAGS = [TwoGateway::CACHE_TAG];
@@ -74,7 +107,7 @@ class ApiKeyVerificationStatus
      * different stores within one request can never return one store's
      * verdict for another's.
      *
-     * @var array<int|string, bool>
+     * @var array<int|string, string>
      */
     private $memo = [];
 
@@ -89,15 +122,10 @@ class ApiKeyVerificationStatus
     }
 
     /**
-     * @param int|null $storeId
-     *
-     * @return bool true only when the currently configured API key was
-     *   confirmed verifiable (subject to the short cache above); false for
-     *   no key configured, an invalid/expired key, a Two-side error, or an
-     *   unreachable Two — this gate does not distinguish those reasons, as
-     *   this module has no admin surface of its own to show a reason on.
+     * The verification category for the stored key, verifying live only on a
+     * cache miss.
      */
-    public function isVerified(?int $storeId = null): bool
+    public function getStatus(?int $storeId = null): string
     {
         $memoKey = $storeId ?? '__default__';
         if (isset($this->memo[$memoKey])) {
@@ -106,7 +134,7 @@ class ApiKeyVerificationStatus
 
         $apiKey = trim((string) $this->configRepository->getApiKey($storeId));
         if ($apiKey === '') {
-            return $this->memo[$memoKey] = false;
+            return $this->memo[$memoKey] = self::NOT_CONFIGURED;
         }
 
         // The mode decides which host the key is verified against, so two
@@ -115,11 +143,11 @@ class ApiKeyVerificationStatus
         $cacheKey = self::CACHE_KEY_PREFIX
             . hash('sha256', $this->configRepository->getMode($storeId) . "\0" . $apiKey);
         $cached = $this->cache->load($cacheKey);
-        if ($cached !== false) {
-            return $this->memo[$memoKey] = ($cached === '1');
+        if (in_array($cached, self::CATEGORIES, true)) {
+            return $this->memo[$memoKey] = (string) $cached;
         }
 
-        $result = $this->adapter->execute(
+        $status = self::categorize($this->adapter->execute(
             '/v1/merchant/verify_api_key',
             [],
             'GET',
@@ -127,16 +155,54 @@ class ApiKeyVerificationStatus
             null,
             null,
             self::VERIFY_TIMEOUT_SECONDS
+        ));
+        $this->cache->save(
+            $status,
+            $cacheKey,
+            self::CACHE_TAGS,
+            $status === self::OK ? self::CACHE_LIFETIME : self::FAILURE_CACHE_LIFETIME
         );
-        // Adapter::execute() signals a non-2xx response (or a caught
-        // request/response translator failure) by adding an `http_status`
-        // and/or `error_code` key to the decoded body — either one present
-        // (translatorFailure() sets both at once) signals failure; a real
-        // 2xx success payload never carries either, matching the same
-        // contract the base module relies on for the same endpoint.
-        $verified = is_array($result) && !isset($result['error_code']) && !isset($result['http_status']);
-        $this->cache->save($verified ? '1' : '0', $cacheKey, self::CACHE_TAGS, self::CACHE_LIFETIME);
 
-        return $this->memo[$memoKey] = $verified;
+        return $this->memo[$memoKey] = $status;
+    }
+
+    /**
+     * True only for a DEFINITIVE rejection: Two said no, or there is no key to
+     * say no to. ABN-533 — an unreachable or erroring Two says nothing about
+     * the key, and standing the company-search control down for it removed a
+     * working affordance from a correctly configured shop for the length of
+     * every upstream incident.
+     */
+    public function isDefinitiveFailure(?int $storeId = null): bool
+    {
+        $status = $this->getStatus($storeId);
+
+        return $status === self::INVALID_KEY || $status === self::NOT_CONFIGURED;
+    }
+
+    /**
+     * Adapter::execute() signals a non-2xx by adding `http_status` and a
+     * transport or translator failure by adding `error_code`; translatorFailure()
+     * sets both, so `http_status` is read first and wins. A 2xx success payload
+     * carries neither and answers with the merchant `id`.
+     *
+     * @param array<string,mixed> $result
+     */
+    private static function categorize(array $result): string
+    {
+        if (isset($result['http_status'])) {
+            $code = (int) $result['http_status'];
+            if ($code === 401 || $code === 403) {
+                return self::INVALID_KEY;
+            }
+
+            return $code >= 500 ? self::SERVICE_ERROR : self::ERROR;
+        }
+        if (isset($result['error_code'])) {
+            return self::UNREACHABLE;
+        }
+        $id = $result['id'] ?? null;
+
+        return is_string($id) && $id !== '' ? self::OK : self::MALFORMED_RESPONSE;
     }
 }
