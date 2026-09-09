@@ -547,9 +547,15 @@ with nothing focused, a window return settles nothing.
 That chip is a different control, so this popup and popover close first; the new
 one is then raised by invoking that chip's own click handler, the single place a
 launch is spelled out. The exemption is per capture and survives a re-render
-because the popover is resolved from the company field each time — a stored
+because the popover is resolved live as the company field's sibling — a stored
 popover node goes stale when a morph deletes the wrap and keeps the field, which
 makes a capture's own rebuilt chip read as a sibling's (TWO-25658).
+
+**The POINTER route is not covered.** A chip's `mousedown` cancels, so a real
+click fires no `focusin` and reaches none of this: a buyer clicking a second
+capture's chip with the mouse can hold two popups open at once. Closing that means
+changing the chip's click path, not the focus rule — a mount must not read the
+focus rules as covering it.
 
 All of it lives in the base plugin, none of it in this repo. A mount that adds
 focus handling of its own to a chip or the company field is competing with rules it
