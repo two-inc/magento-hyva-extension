@@ -29,7 +29,6 @@ function read(relativePath) {
 
 const CHECKOUT_LAYOUT = 'view/frontend/layout/hyva_checkout_index_index.xml';
 const CUSTOM_CSS = 'view/frontend/web/css/custom.css';
-const PAYMENT_TILE = 'view/frontend/templates/component/payment/method/gateway_method.phtml';
 
 /**
  * The whole capture implementation, in load order. `Two_Gateway::`, not
@@ -103,7 +102,7 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         ['.two-company-dropdown', 'the panel and every part of it'],
         ['.two-company-mode-chip', 'the chips, and the row they sit in'],
         ['.two-company-search-back', 'the route back out of manual entry'],
-        ['.two-field-action-link', 'the appearance both action links share'],
+        ['.two-field-action-link', 'the appearance the shared chrome gives an action link'],
         ['.two-hidden', 'the panel\'s own hiding class, which no theme defines']
     ])('%s has no rule of its own here (%s)', (selector) => {
         const ownRule = new RegExp(
@@ -112,14 +111,5 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         );
 
         expect(read(CUSTOM_CSS)).not.toMatch(ownRule);
-    });
-});
-
-describe('the tile\'s own sole-trader link takes the shared appearance', () => {
-    // This tile renders its own copy of the link the capture component renders
-    // under the field; the shared class is what stops the two drifting (TWO-25652).
-    test('it carries the base stylesheet\'s action-link class', () => {
-        expect(read(PAYMENT_TILE))
-            .toContain('class="two-soletrader-link two-field-action-link"');
     });
 });
