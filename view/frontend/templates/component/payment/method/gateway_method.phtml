@@ -209,20 +209,18 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * below is shown, hidden exactly when it is hidden. Both bindings
              * therefore name the SAME getter, `orderIntentMessageVisible`,
              * rather than each testing a condition of its own that happens to
-             * agree. This supersedes the
-             * earlier gate, which showed the label whenever a company number
-             * had been captured.
+             * agree. This supersedes the earlier gate, which showed the label
+             * whenever a company number had been captured.
              *
              * The label is consequently NOT a swap with the tile's company
-             * controls any more either. TWO-25326:
-             * the search control's visibility is no longer conditioned on
-             * capture at all — it is decided solely by
-             * the admin setting that says WHERE the one control renders. The
-             * "Change company" button that
-             * used to sit beside this label, as the only route back out of a
-             * hidden search block, is REMOVED along with that hiding: the
-             * search field is now the buyer's route to a different company at
-             * every point, exactly as it is before any company is captured.
+             * controls any more either. TWO-25326: the search control's
+             * visibility is no longer conditioned on capture at all — it is
+             * decided solely by the admin setting that says WHERE the one
+             * control renders. The "Change company" button that used to sit
+             * beside this label, as the only route back out of a hidden search
+             * block, is REMOVED along with that hiding: the search field is now
+             * the buyer's route to a different company at every point, exactly
+             * as it is before any company is captured.
              *
              * Both bindings are bare getter names: this file's CSP-friendly
              * Alpine build looks a bound expression up as a key on the
@@ -294,10 +292,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * decision took and had no way to tell it was working.
              *
              * LOCAL to the tile, never a page overlay — the standing
-             * cross-platform rule, and the same reason the
-             * company-search spinner is an in-field element rather than
-             * `magewire:loader:start`: a full-screen overlay over a checkout the
-             * buyer is still filling in blocks interaction for a background
+             * cross-platform rule, and the same reason the company-search
+             * spinner is an in-field element rather than
+             * `magewire:loader:start`: a full-screen overlay over a checkout
+             * the buyer is still filling in blocks interaction for a background
              * check they did not ask for. This element sits in the tile's own
              * flow, exactly where the verdict will appear a moment later, so it
              * is replaced by its own result rather than by nothing.
@@ -374,9 +372,9 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * shape and same reasoning as the approved notice above — a
              * persistent inline element rather than a toast, gated on the
              * identical brand switch (see
-             * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its
-             * own element, because it needs its own (unavailable, not
-             * success) styling and its own `x-text`.
+             * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its own
+             * element, because it needs its own (unavailable, not success)
+             * styling and its own `x-text`.
              *
              * Rendered in BOTH company-search-location modes, not only the
              * text-only tile: it is the ENTIRE story for a declined/no-intent
@@ -473,15 +471,15 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <?php
             /*
              * THE company-search control, mounted from the ONE file that
-             * defines it (TWO-25326). This tile used to
-             * carry a second, divergent control of its own — its own dropdown
-             * markup, its own "Enter details manually" link, its own
-             * min-characters guard, and a manual/search dual-input pair whose
-             * `:id`/`:name` bindings swapped between two copies of each field.
-             * That duplication is what produced the three cosmetic bugs
-             * reported against this surface (a control wider than the tile, a
-             * manual-entry link painted before any interaction, a stray border
-             * around the field pair), so it is deleted rather than patched.
+             * defines it (TWO-25326). This tile used to carry a second,
+             * divergent control of its own — its own dropdown markup, its own
+             * "Enter details manually" link, its own min-characters guard, and
+             * a manual/search dual-input pair whose `:id`/`:name` bindings
+             * swapped between two copies of each field. That duplication is
+             * what produced the three cosmetic bugs reported against this
+             * surface (a control wider than the tile, a manual-entry link
+             * painted before any interaction, a stray border around the field
+             * pair), so it is deleted rather than patched.
              *
              * No `x-data`: the control's state lives on THIS form's component
              * (`PaymentFormWithValidation`, which composes

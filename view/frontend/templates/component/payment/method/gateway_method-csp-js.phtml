@@ -3137,10 +3137,10 @@ $quoteDetails = json_encode(
             orderNote: '',
             poNumber: '',
             isPaymentTermsAccepted: false,
-            // TWO-25326: true from the moment an
-            // order-intent request actually goes on the wire until the CURRENT
-            // one settles. Only the current one may clear it — see
-            // `orderIntentSeq` at the bottom of this file.
+            // TWO-25326: true from the moment an order-intent request actually
+            // goes on the wire until the CURRENT one settles. Only the current
+            // one may clear it — see `orderIntentSeq` at the bottom of this
+            // file.
             orderIntentChecking: false,
             // Whether the LAST applied decision allowed the order. Note it has
             // no reader anywhere in this repo, so it gates nothing client-side
@@ -3470,15 +3470,15 @@ $quoteDetails = json_encode(
             },
 
             /*
-             * Kept as history rather than silently dropped (TWO-25326): the
-             * search control's visibility is governed ONLY by the
-             * admin setting that decides WHERE it renders, never by capture
-             * state. Capturing a company used to hide the search block and the
-             * whole Company Number block and offer a "Change company" button as
-             * the only way back — found in live testing to read as a confusing
-             * hide-and-reshow rather than a stable control. The field is the
-             * buyer's route to a different company at every point now, exactly
-             * as it is before any company is captured, so
+             * The search-control rule, kept as history rather than silently
+             * dropped (TWO-25326): the search control's visibility is governed
+             * ONLY by the admin setting that decides WHERE it renders, never by
+             * capture state. Capturing a company used to hide the search block
+             * and the whole Company Number block and offer a "Change company"
+             * button as the only way back — found in live testing to read as a
+             * confusing hide-and-reshow rather than a stable control. The field
+             * is the buyer's route to a different company at every point now,
+             * exactly as it is before any company is captured, so
              * `clearCapturedCompany()` / `focusCompanySearchInput()` /
              * `OnChangeCompanyClick` / `companySearchBlockVisible` are all
              * removed rather than rewired.
@@ -3520,11 +3520,11 @@ $quoteDetails = json_encode(
                 return this.companyIdHintVisible ? 'hidden' : '';
             },
 
-            // TWO-25326: the ONE gate for both the
-            // inline order-intent notice and the captured-company label beside
-            // it. The label is shown exactly when the notice is shown and
-            // hidden exactly when it is hidden, so both `x-show` bindings name
-            // THIS getter rather than each testing a condition of its own.
+            // TWO-25326: the ONE gate for both the inline order-intent notice
+            // and the captured-company label beside it. The label is shown
+            // exactly when the notice is shown and hidden exactly when it is
+            // hidden, so both `x-show` bindings name THIS getter rather than
+            // each testing a condition of its own.
             //
             // That is the whole reason it exists. A parallel "is a company
             // captured" check would agree with the notice most of the time and

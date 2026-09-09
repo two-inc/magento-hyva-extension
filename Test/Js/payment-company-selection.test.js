@@ -1054,8 +1054,8 @@ describe("payment component company selection", () => {
   });
 
   /*
-   * DELETED 2026-08-05 — describe("the 'Enter details manually' link"), all
-   * five tests.
+   * DELETED 2026-08-05 — the five tests covering the tile's own
+   * "Enter details manually" link.
    *
    * Every one of them asserted that the tile's own manual-entry link stayed
    * HIDDEN until the buyer had typed something, on the reasoning that the link
@@ -1082,14 +1082,14 @@ describe("payment component company selection", () => {
    * below-the-field copy and its gate are gone", and "the panel is still
    * reachable, and the row with it, before anything is typed".
    *
-   * DELETED with them — describe("the min-characters hint"), four of its five
-   * tests. They drove the hint through `twoGatewayHyvaOnCompanySearchFocus()`
-   * (deleted) and measured it against `search`, the company-name field's text.
-   * The shared control's hint measures the PANEL'S QUERY instead and, like the
-   * row, deliberately shows from ZERO characters — so "stays hidden before the
-   * buyer has typed anything" is now a statement of the defect rather than the
-   * fix. The behaviour is covered once, on the shared getter, in
-   * company-search-min-chars.test.js.
+   * DELETED with them — four of the five tests covering the tile's own
+   * min-characters hint. They drove the hint through
+   * `twoGatewayHyvaOnCompanySearchFocus()` (deleted) and measured it against
+   * `search`, the company-name field's text. The shared control's hint measures
+   * the PANEL'S QUERY instead and, like the row, deliberately shows from ZERO
+   * characters — so "stays hidden before the buyer has typed anything" is now a
+   * statement of the defect rather than the fix. The behaviour is covered once,
+   * on the shared getter, in company-search-min-chars.test.js.
    *
    * The WIRE test is kept below, because that part is genuinely per-surface: it is
    * the tile's copy of the markup and the tile's component that have to agree.
@@ -1113,8 +1113,7 @@ describe("payment component company selection", () => {
   });
 
   /**
-   * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation) — was
-   * describe("typing over a captured company").
+   * REWRITTEN 2026-08-05 (TWO-25326, the one-control consolidation).
    *
    * The requirement is unchanged and is the one the money rides on: an order must
    * never carry a company name and a registry number describing two different

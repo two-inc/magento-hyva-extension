@@ -13,30 +13,30 @@
  * inputs still in the DOM so `payment[company_name]` and `payment[company_id]`
  * still submit.
  *
- * TWO-25326. This file used to carry a SECOND gate alongside the label's,
- * guarding the search block, the Company Number block and a "Change company"
- * button — all three hidden together on CAPTURE, with the button as the only
- * route back out. The rule, carried over verbatim from the identical one on
- * the Magento plugin: the search control "is controlled ONLY by the state of
- * the 'enable search in address' admin setting ... and search control
- * visibility is not changed for any other reason." Found in live testing to
- * read as a confusing hide-and-reshow rather than a stable control.
+ * The later change on the same ticket: this file used to carry a SECOND gate
+ * alongside the label's, guarding the search block, the Company Number block
+ * and a "Change company" button — all three hidden together on CAPTURE, with
+ * the button as the only route back out. The rule, carried over verbatim from
+ * the identical one on the Magento plugin: the search control "is controlled
+ * ONLY by the state of the 'enable search in address' admin setting ... and
+ * search control visibility is not changed for any other reason." Found in live
+ * testing to read as a confusing hide-and-reshow rather than a stable control.
  *
  * The consequence for this file:
  *
- *   - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a
- *     binding that now reads `true` always, an absent one. The rule is
- *     "controlled ONLY by the admin setting", so the block carries no
- *     `x-show` of its own in this branch at all; `searchBlockHasNoOwnGate()`
- *     pins the DOM fact instead of a component getter that does not exist;
- *   - the "Change company" button, `CHANGE_BUTTON_SHOW_BINDING`,
- *     `CHANGE_BUTTON_CLICK_BINDING` and `clearCapturedCompany()` are all
- *     REMOVED, along with every test whose only subject was that round trip;
- *   - the Company Number block's own gate (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`)
- *     is UNCHANGED — that block was never part of this bug, and still hides
- *     once a registry number is locked in, exactly as TWO-25326 shipped it;
- *   - the LABEL's gate (gate 2 below) is likewise unchanged — it still follows
- *     the order-intent notice, independently of both of the above.
+ * - there is no `SEARCH_BLOCK_SHOW_BINDING` any more, full stop — not a binding
+ * that now reads `true` always, an absent one. The rule is "controlled ONLY by
+ * the admin setting", so the block carries no `x-show` of its own in this
+ * branch at all; `searchBlockHasNoOwnGate()` pins the DOM fact instead of a
+ * component getter that does not exist; - the "Change company" button,
+ * `CHANGE_BUTTON_SHOW_BINDING`, `CHANGE_BUTTON_CLICK_BINDING` and
+ * `clearCapturedCompany()` are all REMOVED, along with every test whose only
+ * subject was that round trip; - the Company Number block's own gate
+ * (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`) is UNCHANGED — that block was never
+ * part of the search-control change, and still hides once a registry number is
+ * locked in, exactly as TWO-25326 shipped it; - the LABEL's gate (gate 2 below)
+ * is likewise unchanged — it still follows the order-intent notice,
+ * independently of both of the above.
  *
  * Every binding is read out of the SHIPPED markup by `H.readAlpineBinding()`
  * rather than named as a literal. This repo has repeatedly shipped bindings

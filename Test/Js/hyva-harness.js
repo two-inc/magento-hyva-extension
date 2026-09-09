@@ -398,15 +398,15 @@ function renderTemplate(relPath, extraRules) {
   //
   // Default is PER-FILE, not one shared value, and that is deliberate rather
   // than an inconsistency: every pre-existing suite over EITHER template was
-  // written against the pre-ruling code, where both templates' rich controls
-  // existed unconditionally and simultaneously — companyName.phtml's suites
-  // assume the address-area control is the live one, gateway_method*.phtml's
-  // assume the tile's own is. Production's actual default (address-area) is
-  // exactly companyName.phtml's assumption, so that file needs no override at
-  // all; gateway_method*.phtml's suites are, after this ruling, exercising the
+  // written against the pre-TWO-25326 code, where both templates' rich existed
+  // unconditionally and simultaneously — companyName.phtml's suites assume the
+  // address-area control is the live one, gateway_method*.phtml's assume the
+  // tile's own is. Production's actual default (address-area) is exactly
+  // companyName.phtml's assumption, so that file needs no override at all;
+  // gateway_method*.phtml's suites are, under TWO-25326, exercising the
   // NON-default (payment_tile) configuration — a real, intentional trade so
-  // their large existing coverage of that control's own behaviour did not
-  // need rewriting. `extraRules` can still override either default per test.
+  // their large existing coverage of that control's own behaviour did not need
+  // rewriting. `extraRules` can still override either default per test.
   if (source.indexOf("$isCompanySearchInPaymentTile") !== -1) {
     const override = extraRules
       ? resolveExpression("$isCompanySearchInPaymentTile", extraRules)

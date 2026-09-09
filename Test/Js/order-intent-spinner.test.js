@@ -82,7 +82,8 @@ describe("order-intent progress indicator (TWO-25326)", () => {
 
       // Inside the tile's own root — the element that carries the tile
       // component. An indicator rendered as a sibling of the tile, or appended
-      // to `<body>`, is the page overlay that rule forbids.
+      // to `<body>`, is the page-covering overlay this indicator must never
+      // become.
       const tileRoot = doc.querySelector(".payment-method-custom-form");
       expect(tileRoot).not.toBeNull();
       expect(tileRoot.contains(indicator)).toBe(true);

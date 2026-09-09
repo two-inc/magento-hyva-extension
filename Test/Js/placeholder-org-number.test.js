@@ -2,13 +2,12 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326: an organisation number beginning
- * with the literal prefix `TWO:` is an INTERNAL placeholder, minted for a company
- * that has no number in its home registry. It is a real identifier as far as
- * every API call is concerned — it is what `payment[company_id]` submits and what
- * the order-intent request carries — but it is meaningless to a buyer, who reads
- * it as a registry number their company does not have. It must never reach the
- * screen.
+ * TWO-25326: an organisation number beginning with the literal prefix `TWO:` is
+ * an INTERNAL placeholder, minted for a company that has no number in its home
+ * registry. It is a real identifier as far as every API call is concerned — it
+ * is what `payment[company_id]` submits and what the order-intent request
+ * carries — but it is meaningless to a buyer, who reads it as a registry number
+ * their company does not have. It must never reach the screen.
  *
  * There are four display sites, and the ticket is explicit that they share
  * ONE helper rather than each testing the prefix: the results rows, the address
