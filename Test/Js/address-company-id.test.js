@@ -324,14 +324,14 @@ describe("address-step company number", () => {
       ).toBe("companyIdDisabled");
     });
 
-    test("the below-the-field manual-entry link stays gone (2026-08-05 ruling, superseding bug 4.2 round 2)", () => {
+    test("the below-the-field manual-entry link stays gone (2026-08-05 ruling, superseding bug 4.2)", () => {
       // 2026-07-28 first pass deleted this link outright: its old gate showed
       // it whenever the panel was shut, which included an untouched field and
       // a completed selection — both states its wording ("My company is not
       // on the list") is false in. That much was right, but deleting it with
       // no replacement left an untouched/sub-threshold field with NO route
-      // into manual entry at all, so 2026-08-01 (adversarial review round 2)
-      // restored it, gated on `belowFieldManualEntryVisible`.
+      // into manual entry at all, so 2026-08-01 restored it, gated on
+      // `belowFieldManualEntryVisible`.
       //
       // 2026-08-05 (TWO-25326 tile bugfix batch, bug 2) removed it again for
       // good instead: the panel now opens on click/keypress from zero typed
@@ -570,7 +570,7 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("init restores the completed-selection flag (TWO-25288 element 5 round 2)", () => {
+  describe("init restores the completed-selection flag (TWO-25288 element 5)", () => {
     // `isCompanySelected` says a company has actually been captured, and the
     // mount has to restore it: a page reload after a completed pick otherwise
     // reads as an untouched field.
@@ -610,7 +610,7 @@ describe("address-step company number", () => {
       expect(component.isCompanySelected).toBe(false);
     });
 
-    test("a real edit after a restored selection flips it back (TWO-25288 element 5 round 2)", async () => {
+    test("a real edit after a restored selection flips it back (TWO-25288 element 5)", async () => {
       // The two fixes chained, not just proven in isolation: init() marks a
       // restored pick complete, and a real edit must still be able to end that
       // state, or a restored selection looks identical to one made this page

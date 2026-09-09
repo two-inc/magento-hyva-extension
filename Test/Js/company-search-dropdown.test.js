@@ -457,7 +457,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     }
 
     test("§5 manual entry lands in this role's identity and record", () => {
-      // Review round 1. Deleting the address step's editable number input took
+      // Deleting the address step's editable number input took
       // `onCompanyIdInput()` — the only writer on the manual path — out of the
       // DOM with it, so manual entry recorded nothing at all.
       capture().manualEntryMode();
@@ -480,7 +480,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     });
 
     test("clearing the manual company name CLEARS it from storage too", () => {
-      // Review round 2. `commitCompanyName()` used to early-return on
+      // `commitCompanyName()` used to early-return on
       // `search === companyName`, and with no prior pick `companyName` is ''
       // for the whole page load — so deleting a typed name hit `'' === ''`,
       // returned, and left the deleted name in storage. The payment step then
@@ -500,17 +500,17 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     });
 
     test("a name edit drops an identifier that belonged to another name", () => {
-      // Rounds 2 and 3. `forgetStaleCompanyId()` used to spare a
+      // `forgetStaleCompanyId()` used to spare a
       // `manual`-sourced identifier, and with the address step's own number
       // input gone (§5) nothing here can write or correct one — so an id left
       // in storage by an earlier session rode along with every debounced
       // keystroke, arming an order intent for a half-typed name beside somebody
       // else's number.
       //
-      // Round 2 suppressed the RECORD in that state, which was worse: the
-      // buyer's edits then stopped being recorded for the rest of the page
-      // load, reinstating the stale-submission bug. The fix is to drop the
-      // mismatched id instead, so every pair recorded is coherent.
+      // Suppressing the RECORD in that state is worse: the buyer's edits then
+      // stop being recorded for the rest of the page load, reinstating the
+      // stale-submission bug. Dropping the mismatched id instead keeps every
+      // recorded pair coherent.
       env.identityFor("shipping").write(
         {
           companyName: "Some Other Company Ltd",
@@ -525,7 +525,7 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
       component.$el = nameField;
       capture().commitManualCompany(nameField.value);
 
-      // The edit is still recorded — silence is what round 2 got wrong.
+      // The edit is still recorded — silence is the wrong answer here.
       expect(pairs.length).toBeGreaterThan(0);
       // Every one of them carries a coherent pair, and the last is the new
       // name with NO identifier. The dropped number and the new name arrive as
@@ -544,15 +544,15 @@ describe("address-step company capture (TWO-25326 §1/§2/§4, TWO-25503)", () =
     });
 
     test("init() restores a stored pick WITHOUT reconciling it against the field", () => {
-      // Reverted in review round 3, and the revert is deliberate.
+      // Not reconciling is deliberate.
       //
-      // Round 2 added a guard that dropped a restored pair when the
-      // company-name field held a different name — the case where the payment
-      // tile has overwritten the address step's pick in the ONE shared blob.
-      // Round 3 showed it destroys a GOOD pick instead: `wire:model.defer`
-      // means the server's `address.company` lags the client value, so a
-      // Magewire re-render landing before the roundtrip rebuilds the field from
-      // the stale name and the guard discards a perfectly correct pick.
+      // A guard that drops a restored pair when the company-name field holds a
+      // different name — the case where the payment tile has overwritten the
+      // address step's pick in the ONE shared blob — would destroy a GOOD pick
+      // rather than protect one: `wire:model.defer` means the server's
+      // `address.company` lags the client value, so a Magewire re-render landing
+      // before the roundtrip rebuilds the field from the stale name and the guard
+      // discards a perfectly correct pick.
       //
       // Both directions are heuristics over one storage key being asked to hold
       // two different companies. That needs a billing-scoped key, which is a

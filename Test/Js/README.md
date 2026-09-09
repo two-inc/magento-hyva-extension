@@ -169,7 +169,7 @@ walk's boundaries.
 not a counter**, so two rules pull against each other: a superseded search must _not_
 dispatch `done` (it would clear the overlay while its replacement is still running), and a
 search aborted with _no successor_ **must** dispatch `done` (or the overlay latches on
-forever and blocks checkout). A review round found the second rule broken — three
+forever and blocks checkout). The second rule is the one that broke — three
 characters then a backspace left the overlay up permanently — so every dismissal path gets
 its own test: backspacing below the minimum, tabbing out, picking a result, clearing the
 country mid-flight, a DOM-morph disconnect, a timeout, and a missing global. Plus: a search
@@ -236,7 +236,7 @@ flipping back on the next `element.updated` sweep, with no timer anywhere:
 | Watcher teardown left to the next mount's sweep instead of the re-render     | 1             |
 | A number recovered from the shipping form's own fields claimed as `registry` | 1             |
 
-One of these **started green** in an earlier round, and it is worth recording why. Flipping
+One of these **started green**, and it is worth recording why. Flipping
 the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls
 `applyCompanyIdEditability()` unconditionally and overwrites the literal — so every
 assertion made after mounting held either way. The literal is nonetheless the state Alpine
@@ -375,8 +375,8 @@ indistinguishable from the hardcoded literal. Covered on both entry points (page
 `checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
 rendered JS contains no `two_payment` at all.
 
-Also covered in `payment-company-selection.test.js`, and the reason that binding needed a
-second round: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
+Also covered in `payment-company-selection.test.js`, for the state that binding exists to
+cover: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
 default of `true` locked the field on first paint, where before the binding existed nothing
 locked it until a shipping sync did so imperatively. A buyer who typed a company name and
 never selected a hit was then facing a `company_id` that was empty AND disabled AND
@@ -391,7 +391,7 @@ recompute must stay BELOW the `isSelecting` early return or it undoes the lock t
 selection just applied. Note the declared default is deliberately still `true`: it is the
 state Alpine binds before `initialize()` runs, and the field must not flash open.
 
-And the reason it needed a THIRD round: that recompute writes **component state only**, and
+And a further state it has to cover: that recompute writes **component state only**, and
 Magewire re-renders destroy and rebuild the component. Only `selectItem()` writes browser
 storage, so a name the buyer typed and never picked survives a re-render as _nothing at
 all_ — and `initialize()`, deriving the flag as `Boolean(company_name) && !company_id`,
@@ -644,8 +644,7 @@ What the suite therefore pins, in the order that matters:
   deliberately the same one — are asserted to be inside the enumerated set, because a nesting
   change would otherwise shrink the enumeration silently, the walk itself only throwing on an
   empty result. The distinct-getter set is asserted by name too: resolving two entries to one
-  expression is how `companyNumberBlockHiddenClass` fell out of this floor once, in round 2 of
-  this PR's own review;
+  expression is how `companyNumberBlockHiddenClass` fell out of this floor once;
 - the composer keeps a getter live on both sides and keeps the validation object's
   precedence on a name collision (there is none today — the base names its entry point
   `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
@@ -721,8 +720,7 @@ template loaded per test, so handlers accumulate there too; it asserts whether a
 dispatched at all rather than how many, which is what makes it independent of the
 accumulation. WHY that has never surfaced otherwise is a question about that template's own
 handlers rather than about anything TWO-25332 touches, and it is deliberately not
-characterised here: two attempts to describe it, in review rounds 5 and 6 of PR #93, were
-both wrong.
+characterised here: attempts to describe it have been wrong.
 Elsewhere the leak is inert for a simpler reason: nothing drives the listeners at all, and each
 handler only arms the debounce when it fires. A new test that dispatches one belongs in its own
 file for the same reason — or have the production template guard its registration the

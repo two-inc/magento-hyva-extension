@@ -193,16 +193,16 @@ be up alongside nothing. All four are one box style in one place. The rules that
   `clearOrderIntentNotices()` takes all three states down and deliberately does
   NOT touch the in-progress row. Assignment lists that name only the siblings a
   caller happens to remember are how a state gets forgotten when a fourth one is
-  added — that is how this feature spent six review rounds.
+  added.
 - **A CHECK IN PROGRESS OUTRANKS EVERY RECORDED VERDICT.** `refresh` paints
   nothing while `orderIntentChecking` is true, and nothing under an open results
   panel. "Checking availability" and a conclusion may never be on screen together.
   The corollary is the part that bites: because a verdict can be _suppressed_,
   something must repaint it when the check stops — so `setOrderIntentChecking()`
   is the ONLY way the row goes down, and it re-derives the box. Lowering the flag
-  by hand reintroduces a blank box that nothing can refill. Rounds 4-7 each found
-  one more route to a verdict beside a progress row, because each fix guarded a
-  route instead of stating the rule.
+  by hand reintroduces a blank box that nothing can refill. Guarding one route at
+  a time, instead of stating the rule, always leaves one more route to a verdict
+  beside a progress row.
 - **Records are PER COMPANY, keyed by id.**
   `orderIntentDecisions[id] = { name, approved }` and
   `orderIntentFailures[id] = { name }`. A single slot
@@ -739,7 +739,7 @@ And the reason those two rules need writing down at all:
   them more carefully would have surfaced it. When a test and its subject were
   authored together, the thing to hunt is the divergence that would make the
   test agree with a bug, and **the person to hunt it is not the author** — which
-  is what the adversarial review round is for, not a formality before merge.
+  is what adversarial review is for, not a formality before merge.
 
 ### Keyboard behaviour is not verifiable in jsdom
 

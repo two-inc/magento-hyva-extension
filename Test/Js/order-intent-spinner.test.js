@@ -193,8 +193,8 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // The invariant enforced where the request actually leaves, which is the
       // only place that covers ALL of the dispatch sites. The address-area company
       // sync fires this event directly, changing neither company name nor id, so
-      // no watcher runs and nothing else would clear the box — round 6 found a
-      // stale verdict sitting beside the progress row for the whole request.
+      // no watcher runs and nothing else clears the box, leaving a stale verdict
+      // beside the progress row for the whole request.
       component.placeOrderIntent = function () {
         return deferred().promise;
       };
@@ -221,7 +221,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // lowers the row, which is what re-derives the box. Every other test in
       // this file calls the error handler directly with the row already down — a
       // state the live dispatcher never produces at that point — so without this
-      // the whole path was uncovered (round 7).
+      // the whole path is uncovered.
       component.generalErrorMessage = "SENTINEL-general-error";
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
@@ -242,7 +242,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("comes down when the payment method changes inside the debounce", () => {
-      // Round-3 finding. The row goes up optimistically on the pick, so every
+      // The row goes up optimistically on the pick, so every
       // path that then declines to make a request has to take it back down. Two
       // early returns in the debounce callback did not, leaving a permanent
       // "Checking availability" box — reachable by picking a company and then
@@ -512,9 +512,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // `x-cloak`, so the rule it needs had to be declared here — and if it goes
       // missing the four boxes flash on every checkout load, which is the exact
       // defect the attribute was added to fix.
-      // Anchored on the module's own class, not on `[x-cloak]` alone: round 9
-      // showed the loose pattern matched any selector, so narrowing or typo'ing
-      // this rule left the assertion green while restoring the flash it exists to
+      // Anchored on the module's own class, not on `[x-cloak]` alone: the loose
+      // pattern matches any selector, so narrowing or typo'ing this rule would
+      // leave the assertion green while restoring the flash it exists to
       // prevent.
       expect(CSS_SOURCE).toMatch(
         /\.two-order-intent-box\[x-cloak\]\s*\{[^}]*display:\s*none/,
@@ -548,8 +548,8 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     );
 
     test("the in-progress row reserves its spinner gutter independent of order", () => {
-      // Equal-specificity rules would leave this decided by position in the file
-      // (round 9). Two classes, so reordering the stylesheet cannot silently
+      // Equal-specificity rules would leave this decided by position in the file.
+      // Two classes, so reordering the stylesheet cannot silently
       // shrink the gutter the absolutely-positioned spinner sits in.
       expect(CSS_SOURCE).toMatch(
         /\.two-order-intent-box\.two-order-intent-checking\s*\{[^}]*padding-right:/,
@@ -658,7 +658,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       });
 
       /**
-       * The case that keeps a toast (review round 1): the box's ELEMENT is only
+       * The case that keeps a toast: the box's ELEMENT is only
        * rendered when the brand has not switched the notice copy off, and a
        * brand shipping today does switch it off — so a declined buyer there gets
        * the toast rather than nothing at all.
@@ -691,7 +691,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       });
 
       test("copy that is present but unusable falls back too", () => {
-        // Review round 2. The resolver deliberately degrades malformed copy to
+        // The resolver deliberately degrades malformed copy to
         // a SILENT box rather than throwing, so gating the fallback on "the
         // copy is null" left exactly that defensive branch showing a rendered,
         // empty box and no toast — silence, from the guard that exists to stop
@@ -840,10 +840,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a late reply does not decide whether the ORDER may be placed", () => {
-      // Round-5 finding on round-4's fix: hoisting the flag above the
-      // on-screen guard meant a reply about a company the buyer had left could
-      // still set it. The flag says whether THIS order may be placed, and the
-      // order is for the company on screen.
+      // Hoisting the flag above the on-screen guard lets a reply about a company
+      // the buyer had left still set it. The flag says whether THIS order may be
+      // placed, and the order is for the company on screen.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
       component.processOrderIntentSuccessResponse(
@@ -895,7 +894,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a retry in flight is not overpainted by the failure it is retrying", () => {
-      // Round-5 finding. The repaint fired on the panel closing, a moment after
+      // The repaint fired on the panel closing, a moment after
       // the re-pick had already raised the progress row and dispatched — so it
       // killed the row and put the stale failure back while the retry was still
       // on its way, and the dispatcher then raised the row again, leaving both on
@@ -942,11 +941,11 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a late reply files its verdict under the company it ASKED about", () => {
-      // Round-3 finding, and the sharpest one: the id used to advance above the
-      // paint guard while the name and decision were written below it, so this
-      // interleaving tore the record apart and left company B both unreachable
-      // (dedup said decided, the name said otherwise) and liable to be shown
-      // company A's approval.
+      // The sharpest failure this record shape prevents: the id used to advance
+      // above the paint guard while the name and decision were written below it,
+      // so this interleaving tore the record apart and left company B both
+      // unreachable (dedup said decided, the name said otherwise) and liable to
+      // be shown company A's approval.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
       component.processOrderIntentSuccessResponse(
@@ -1024,10 +1023,9 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("two companies' verdicts coexist, and coming back shows yours", () => {
-      // THE reason the record is a map. Six review rounds were spent patching a
-      // single slot that could not represent this: approve A, check B, come back
-      // to A, and A's verdict was gone for the session because B had overwritten
-      // the only slot there was.
+      // THE reason the record is a map. A single slot cannot represent this:
+      // approve A, check B, come back to A, and A's verdict is gone for the
+      // session because B has overwritten the only slot there is.
       const copy = (word) => ({
         withCompany: word + " {{companyName}}",
         withoutCompany: word,
@@ -1098,10 +1096,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // code returned `undefined` here rather than throwing, and `x-text` renders
       // that as the literal word "undefined" in the buyer's tile.
       //
-      // Asserted on the RESOLVER, not on the painted notice. Round 8 caught the
-      // first version of this test being vacuous: refresh's `if (!text) return`
-      // swallows `undefined` and '' identically, so the notice is '' either way
-      // and the defect the test names could not be observed through it.
+      // Asserted on the RESOLVER, not on the painted notice. Asserting on the
+      // notice is vacuous: refresh's `if (!text) return` swallows `undefined`
+      // and '' identically, so the notice is '' either way and the defect this
+      // test names cannot be observed through it.
       component.companyName = "";
       component.orderIntentApprovedNoticeCopy = {
         withCompany: "YES {{companyName}}",
@@ -1119,11 +1117,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("the dedup gate will not reuse a decision reached under another name", () => {
-      // The name half of `hasOrderIntentDecisionFor`, which round 8 found had no
-      // coverage at all — the gate's own JSDoc and AGENTS.md both call it
-      // load-bearing. A company renamed by hand after its check must be asked
-      // about again rather than inheriting the old name's answer, because the
-      // notice text embeds the name.
+      // The name half of `hasOrderIntentDecisionFor` — the gate's own JSDoc and
+      // AGENTS.md both call it load-bearing. A company renamed by hand after its
+      // check must be asked about again rather than inheriting the old name's
+      // answer, because the notice text embeds the name.
       component.orderIntentDecisions["111111111"] = {
         name: "Old Ltd",
         approved: true,
@@ -1151,7 +1148,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("an errored check is not painted under an open panel either", () => {
-      // Round 6: the two paint paths have to agree. The error path used to paint
+      // The two paint paths have to agree. The error path used to paint
       // regardless, justified by there being no record to repaint from later —
       // there is one now, so the justification is gone.
       component.companyName = "Alpha Ltd";
@@ -1183,13 +1180,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
       // error box back. And a manual-entry commit, which reaches
       // `onCompanyCommitted` without `onDropdownClear` ever firing.
       //
-      // (An earlier version of this comment named the shipping-step sync and the
-      // storage restore. Both are wrong and review round 11 caught it: the sync
-      // assigns `companyName`/`companyId` directly and never calls this method,
-      // and the storage restore passes `triggerOrderIntent = false`, so it takes
-      // the else branch. There are exactly two callers.)
-      //
-      // Found by mutation sweep after round 9: deleting that clear failed nothing.
+      // Found by mutation sweep: deleting that clear failed nothing.
       component.orderIntentApprovedNoticeCopy = {
         withCompany: "YES {{companyName}}",
         withoutCompany: "YES",
@@ -1219,10 +1210,10 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a check in progress outranks every recorded verdict", () => {
-      // The invariant, stated once instead of guarded per route (round 6).
-      // "Checking availability" and a conclusion cannot both be true, and after
-      // three rounds of guarding one more path to that state this is the rule
-      // that removes the class: while a check is running, nothing paints. The
+      // The invariant, stated once instead of guarded per route.
+      // "Checking availability" and a conclusion cannot both be true, and this
+      // is the rule that removes the class rather than guarding one more path
+      // to that state: while a check is running, nothing paints. The
       // dispatcher re-derives the box the moment it settles, so nothing is lost.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
@@ -1299,7 +1290,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a failed check is repainted too, not lost with the box", () => {
-      // Round-4 finding: the abandoned-search repaint covered the two decided
+      // The abandoned-search repaint covered the two decided
       // verdicts but not the failed one, which is written by the error handler
       // and was never recorded — so a buyer who searched and abandoned lost the
       // report of a failure that was still failing, with the order still blocked.
@@ -1355,7 +1346,7 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a brand-suppressed notice leaves the progress row alone", () => {
-      // Round-4 finding: the repaint lowered the row before knowing whether it
+      // The repaint lowered the row before knowing whether it
       // would paint anything, so a brand that switched the copy off got a tile
       // that went blank instead of one that kept showing progress until the
       // request settled on its own.
@@ -1376,8 +1367,8 @@ describe("order-intent progress indicator (bug 5 / requirement 11)", () => {
     });
 
     test("a late reply never pairs one company's id with another's name", () => {
-      // Round-4 finding on round-3's fix: the fallback for a missing name used
-      // live state, which for a late reply is the WRONG company. The record now
+      // The fallback for a missing name used live state, which for a late
+      // reply is the WRONG company. The record now
       // says "unknown" instead, which no company name can match, so the box
       // stays empty rather than mispainting.
       component.companyName = "Alpha Ltd";

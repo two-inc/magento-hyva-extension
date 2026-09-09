@@ -256,7 +256,7 @@ describe("order-intent sequencing (bug 4)", () => {
     });
 
     /**
-     * Review round 4 (Vader). `seq` alone answers "is this the newest
+     * `seq` alone answers "is this the newest
      * DISPATCH", not "is this still about the company on screen" — and those
      * diverge exactly here: reverting to an already-DECIDED company costs no
      * new dispatch (the test above this one, and "re-picking the company
@@ -330,7 +330,7 @@ describe("order-intent sequencing (bug 4)", () => {
     });
   });
 
-  describe("a Magewire remount mid-flight (review round 4, Han)", () => {
+  describe("a Magewire remount mid-flight", () => {
     /**
      * `initialize()` reassigns the module-level `twoPaymentComponentInstance`
      * on every call, which is exactly what a Magewire re-render of this tile

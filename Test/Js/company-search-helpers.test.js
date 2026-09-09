@@ -732,7 +732,7 @@ describe("shared company-search helpers", () => {
       });
 
       /**
-       * Review round 1 on this batch. Broadening the lookup by NAME also
+       * Broadening the lookup by NAME also
        * reaches fields the buyer has never seen: a logged-in checkout keeps an
        * address-book "add address" form in the DOM with its country select
        * pre-selected to the store's own country. Letting that outrank the
@@ -770,7 +770,7 @@ describe("shared company-search helpers", () => {
         });
 
         test("a hidden INPUT mirror of the country does not win", () => {
-          // Review round 5: `type="hidden"` is the one kind of hidden the
+          // `type="hidden"` is the one kind of hidden the
           // ancestor walk cannot see — `hidden` is false on it, its inline
           // `display` is empty, and it is not disabled. A hidden mirror of a
           // chosen country is by definition a field the buyer never saw.
@@ -823,7 +823,7 @@ describe("shared company-search helpers", () => {
         });
 
         /**
-         * Review round 2. The filter covers exactly what this batch ADDED —
+         * The filter covers exactly what this batch ADDED —
          * fields found by NAME. The two known ids were read unconditionally by
          * every previous version of this helper, and this checkout hides a
          * step's form subtree rather than unmounting it in at least some states,
