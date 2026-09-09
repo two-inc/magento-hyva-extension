@@ -15,7 +15,7 @@ etc/                  # Module configuration
 view/frontend/        # Hyvä frontend templates and layouts
 ├── templates/        # .phtml template files
 ├── layout/           # XML layout files
-└── web/              # CSS only — no JavaScript ships from this module
+└── web/              # CSS and images — no JavaScript ships from this module
 ViewModel/            # View models for templates
 Magewire/             # Magewire components (if applicable)
 ```
@@ -106,6 +106,19 @@ only, for the reason set out under `getIsProxyAvailable()` below. Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
 the class — never on the strength of its version number.
 
+## This is a public repository
+
+- No partner or merchant name reaches file contents, a commit body, a branch name
+  or a PR title or body. Gate before pushing: a force-push afterwards does not
+  remove a commit from GitHub's history.
+- In comments, commit messages and PR bodies alike, cite a Linear ticket id and
+  nothing else: a section, question or ruling number belonging to an internal
+  review document means nothing to a reader outside the company, and neither does
+  a person named as the authority for a rule.
+- The base plugin's DOCUMENTED contract may be pointed at. Its source text, schema
+  fragments and test identifiers may not be reproduced here — describe behaviour in
+  your own words.
+
 ## Hyvä config registration
 
 The module registers itself for Hyvä's config merge via
@@ -153,27 +166,20 @@ The payment tile's subtitle and the tooltip's explainer link come from the base
 module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
 hardcoded URL or a re-derivation of brand data here (ABN-496). A brand that
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
-never an empty element. Whether the intent-declined notice renders at all, and
-its wording, are the brand's own declarations read the same way (TWO-25326).
+never an empty element.
 
-`dev/base-tile-copy-parity.sh` pins that against the base module, and `ci.yml`
+Whether the intent-declined notice renders at all, and its wording, come from two
+separate brand-registry declarations read here: the switch is the only thing that
+suppresses it, and the copy override is inert when empty — an empty override never
+doubles as an off switch (TWO-25326). A base declaring no switch leaves the notice
+on.
+
+`dev/base-tile-copy-parity.sh` pins the four tile-copy methods this checkout calls
+against the base module's declarations, and `ci.yml`
 invokes it as `bash dev/base-tile-copy-parity.sh`. **Any guard whose failure mode
 is "did not execute" is invoked through `bash`**: a script committed mode `100644`
 and run as `./script.sh` exits 126, which on a CI dashboard is indistinguishable
 from a check that ran and failed — the guard's own absence reads as its verdict.
-
-### This is a public repository
-
-- No partner or merchant name reaches file contents, a commit body, a branch name
-  or a PR title or body. Gate before pushing: a force-push afterwards does not
-  remove a commit from GitHub's history.
-- In comments, commit messages and PR bodies alike, cite a Linear ticket id and
-  nothing else: a section, question or ruling number belonging to an internal
-  review document means nothing to a reader outside the company, and neither does
-  a person named as the authority for a rule.
-- The base plugin's DOCUMENTED contract may be pointed at, as the sections below
-  do. Its source text, schema fragments and test identifiers may not be reproduced
-  here — describe behaviour in your own words.
 
 ### Order intent: one box, and a verdict that can be repainted
 
@@ -529,14 +535,13 @@ signup window is up, and this checkout inherits all three rules (TWO-25658):
 - **any other target closes an open popup**;
 - **a target outside that role's popover closes the popover too**, with the company
   field counted as INSIDE it: the field is the popover's own trigger and sits
-  outside the panel node, so treating it as outside tore down the results the buyer
-  was still typing against.
+  outside the panel node, and a buyer typing a query is still inside the control.
 
-A window or application switch lands on no control at all and settles nothing. The
-ruling adds a fourth — **a Sole trader chip belonging to a DIFFERENT capture
+A window or application switch lands on no control at all and settles nothing. A
+fourth rule (TWO-25658) — **a Sole trader chip belonging to a DIFFERENT capture
 popover gets a popup of its own**, raised through that chip's own click handler so
-a launch stays spelled out in one place — and the base plugin does not do that yet:
-a chip outside the popup's own popover closes it and raises nothing.
+a launch stays spelled out in one place — and reaching that chip by FOCUS does not
+raise it on this checkout: the popup closes and nothing replaces it.
 
 All of it lives in the base plugin, none of it in this repo. A mount that adds
 focus handling of its own to a chip or the company field is competing with rules it
@@ -544,7 +549,7 @@ cannot see.
 
 **The open panel takes the company field's tab stop**, inherited the same way:
 `tabindex="-1"` while it is up, and on close the field's PRIOR value restored
-exactly, which is removal because nothing sets one (TWO-25503). Without it the
+exactly, which is removal when there was none (TWO-25503). Without it the
 focus opener is a keyboard trap — the opener puts the caret in the query field,
 Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
 2.1.2). A mount must not write a `tabindex` onto that field.
@@ -648,8 +653,9 @@ deployment git-syncs this repo alongside its overlay. `deploy/magento` has no
 git-sync container at all and serves the deployed image's code, which tracks
 `main`. So anything verifying `staging` code
 goes to the dev shop, and a check pointed at the other one silently reports on
-`main`. Confirm which code a shop has by reading the served asset itself:
-`pub/static/deployed_version.txt` answers with an HTML 404 page on these shops.
+`main`. Confirm which code a shop has from the git-sync container's checked-out
+HEAD, below; `pub/static/deployed_version.txt` answers with an HTML 404 page on
+these shops and settles nothing.
 
 The redeploy below is in-place, and the storefront 500s for roughly three minutes
 while it runs — warn testers before merging to `staging`.
