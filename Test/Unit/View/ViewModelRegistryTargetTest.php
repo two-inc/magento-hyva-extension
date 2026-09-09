@@ -9,14 +9,10 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
 /**
- * Hyva's view-model registry rejects anything that is not an ArgumentInterface,
- * and it throws rather than returning null. A template registered as a payment
- * method's icon provider renders inside the payment list, so that throw escapes
- * the list and the buyer is offered NO payment method at all — not ours, not a
- * core one (ABN-527).
- *
- * Static analysis: the registry call site names the class, so the target is
- * knowable without a Magento container.
+ * Hyva's view-model registry throws on a target that is not an
+ * ArgumentInterface. A template rendered inside the payment list lets that
+ * throw escape the list, so the buyer is offered no payment method at all —
+ * not ours, not a core one (ABN-527).
  */
 class ViewModelRegistryTargetTest extends TestCase
 {
@@ -41,8 +37,8 @@ class ViewModelRegistryTargetTest extends TestCase
             $case . ": {$template} reaches the base module directly; go through CheckoutConfig"
         );
 
+        // A theme- or framework-owned target is not loadable in this suite.
         if (strncmp($target, self::OWN_NAMESPACE, strlen(self::OWN_NAMESPACE)) !== 0) {
-            $this->assertTrue(true, $case . ': target is owned by the theme or the framework');
             return;
         }
 
@@ -80,12 +76,16 @@ class ViewModelRegistryTargetTest extends TestCase
      */
     private static function imports(string $source): array
     {
-        preg_match_all('/^use\s+([A-Za-z_\\\\][A-Za-z0-9_\\\\]*)\s*;/m', $source, $matches);
+        preg_match_all(
+            '/^use\s+([A-Za-z_\\\\][A-Za-z0-9_\\\\]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*;/mi',
+            $source,
+            $matches
+        );
 
         $imports = [];
-        foreach ($matches[1] as $fqcn) {
+        foreach ($matches[1] as $index => $fqcn) {
             $parts = explode('\\', $fqcn);
-            $imports[end($parts)] = $fqcn;
+            $imports[$matches[2][$index] ?: end($parts)] = $fqcn;
         }
 
         return $imports;
