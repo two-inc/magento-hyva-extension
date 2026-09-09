@@ -26,7 +26,7 @@
 #   2. Support window = current minor + (SUPPORT_WINDOW-1) previous minors,
 #      taken over ALL minors. Image availability does NOT slide the window:
 #      an in-policy minor with no CI image is surfaced as a skip, it is NOT
-#      silently replaced by an older out-of-policy minor (TWO-24998 Defect 2 —
+#      silently replaced by an older out-of-policy minor (TWO-24998 —
 #      "the window silently trails a minor behind").
 #   3. For each window minor: fetch composer.json, parse require.php → the
 #      PHP minors it accepts (e.g. "~8.2.0||~8.3.0||~8.4.0" → 8.2 8.3 8.4).
@@ -143,10 +143,10 @@ fetch_json() {
 # probe_image <image-tag> → prints one of: exists | missing | error
 #
 # Distinguishes a genuinely-unpublished image (skip) from a transient
-# registry failure (fail TOWARD running the test, per TWO-24998 Phase 2 —
-# a Docker Hub blip must not silently zero the matrix). `docker manifest
-# inspect` returns non-zero for both cases, so we inspect stderr: a clear
-# "not found"-class message → missing; anything else → retry once → error.
+# registry failure (fail TOWARD running the test, per TWO-24998 — a Docker Hub
+# blip must not silently zero the matrix). `docker manifest inspect` returns
+# non-zero for both cases, so we inspect stderr: a clear "not found"-class
+# message → missing; anything else → retry once → error.
 #
 # Trade-off, by design: because "error" maps to RUN, a genuinely-missing image
 # under degraded / rate-limited registry conditions is classified `run` and
@@ -199,7 +199,7 @@ fi
 # Window = the SUPPORT_WINDOW most-recent minors, over ALL of them. We do NOT
 # pre-filter image-less/excluded minors out before taking the top-N — doing so
 # would let an older out-of-policy minor backfill the window and hide the fact
-# that an in-policy minor is currently untestable (TWO-24998 Defect 2).
+# that an in-policy minor is currently untestable (TWO-24998).
 supported=$(echo "$all_minors" | head -n "$SUPPORT_WINDOW")
 log "Magento support window ($SUPPORT_WINDOW most-recent minors):"
 log "$supported" | sed 's/^/  /'
