@@ -4,25 +4,16 @@
  *
  * TWO-25245. Browser-JS-in-Jest harness for the Hyvä extension.
  *
- * This module's JS is an inline `<script>` block inside a `.phtml` template, so
+ * The JS under test is an inline `<script>` block inside a `.phtml` template, so
  * there is nothing to `require()`. The harness renders the template the way PHP
- * would (minus PHP), pulls the `<script>` bodies out and evaluates them.
+ * would (minus PHP), pulls the `<script>` bodies out and evaluates them in
+ * global scope exactly as a `<script>` tag would. Extracting the JS to a real
+ * `.js` file would be the clean answer, but that is a production change.
  *
- * Extracting the JS to a real `.js` file would be the clean answer, but that is
- * a production change, and PR #71 (TWO-25238, the CSP-token fix) is open over
- * exactly these templates. So the harness does the extraction at TEST time
- * instead: it renders the template the way PHP would (minus PHP), pulls the
- * `<script>` bodies out, and evaluates them in global scope exactly as a
- * `<script>` tag would.
- *
- * No production code was changed to make this testable.
- *
- * The dangerous failure mode for an approach like this is silent degradation:
- * a template edit that the renderer no longer understands, leaving a suite that
- * passes because it is testing nothing. Every step below therefore throws
- * rather than skips — an unknown PHP tag, a leftover PHP tag, a template with
- * no `<script>` in it, and a load that did not produce the globals it should
- * are all hard errors.
+ * Every step below throws rather than skips — an unknown PHP tag, a leftover
+ * PHP tag, a template with no `<script>` in it, and a load that did not produce
+ * the globals it should — so a template edit the renderer no longer understands
+ * cannot leave a suite that passes while testing nothing.
  */
 
 "use strict";
