@@ -12,11 +12,11 @@
  * mounts on whichever address forms the checkout renders and both forms' controls
  * are the same component: nothing in the resolver knew which one was asking.
  *
- * The rule (sole-trader porting guide §1): each address form's chip visibility
- * and company/country read LIVE from that same form's own current fields, never
- * from a different address; and the payment tile, which is in no address form at
- * all, reads the address holding the INVOICE role (§1(a.3)) — the billing one,
- * or the shipping one while the buyer says they are the same.
+ * The rule: each address form's chip visibility and company/country read LIVE
+ * from that same form's own current fields, never from a different address; and
+ * the payment tile, which is in no address form at all, reads the address
+ * holding the INVOICE role — the billing one, or the shipping one while the
+ * buyer says they are the same.
  *
  * Every search here is driven to the WIRE and asserted on the `country` query
  * parameter, because that is the only thing that proves which country the buyer
