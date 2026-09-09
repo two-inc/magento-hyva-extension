@@ -291,18 +291,9 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * TWO-25326: company search stands down while Two has REJECTED the
-     * merchant's API key, on top of (not instead of) the existing
-     * `enable_company_search` toggle — a captured company then has nothing
-     * left to feed. ABN-533: an unreachable or erroring Two is not a
-     * rejection, and the control keeps running through it. Both consumers
-     * (address-block and payment-tile controls, via the shared
-     * twoGatewayCompanySearchEngine options) already degrade to manual entry
-     * when this is false.
-     *
-     * This governs WHETHER company search runs, not WHERE it renders — the
-     * placement decision (getIsCompanySearchInPaymentTile() above) is a
-     * separate axis and is deliberately left untouched by this check.
+     * A REJECTED key leaves a captured company nothing to feed, so the search
+     * stands down (TWO-25326); an unreachable or erroring Two is not a
+     * rejection and it keeps running (ABN-533).
      */
     public function getIsCompanySearchEnabled()
     {
