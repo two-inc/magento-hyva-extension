@@ -75,7 +75,7 @@ case "${1:-}" in
     # of the classifier — not three independent runs that each re-fetch upstream
     # and re-probe every image. Prevents a transient `docker manifest inspect`
     # blip from putting a combo in one slice but not its mirror, and cuts the
-    # anonymous Docker Hub rate-limit exposure 3x (review: brtkwr on #237).
+    # anonymous Docker Hub rate-limit exposure 3x.
     --emit-all) mode=all ;;
     "") mode=report ;;
     *) echo "Unknown flag: $1" >&2; exit 2 ;;
@@ -148,12 +148,11 @@ fetch_json() {
 # inspect` returns non-zero for both cases, so we inspect stderr: a clear
 # "not found"-class message → missing; anything else → retry once → error.
 #
-# Trade-off (by design, review: brtkwr on #237): because "error" maps to RUN,
-# under degraded / rate-limited registry conditions a genuinely-missing image
-# is classified `run` and surfaces as a RED matrix leg rather than the intended
-# yellow (::warning::) skip. We prefer a loud red on a Docker Hub blip over a
-# silent green that hides zero coverage. Every such case emits the ::warning::
-# above, so the run/skip mismatch is greppable in the job log.
+# Trade-off, by design: because "error" maps to RUN, a genuinely-missing image
+# under degraded / rate-limited registry conditions is classified `run` and
+# surfaces as a RED matrix leg rather than the intended yellow (::warning::)
+# skip. A loud red on a Docker Hub blip beats a silent green hiding zero
+# coverage.
 # ---------------------------------------------------------------------------
 probe_image() {
     local img="$1" attempt out
