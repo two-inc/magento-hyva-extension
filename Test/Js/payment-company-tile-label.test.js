@@ -495,10 +495,9 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
   });
 
   describe("nothing clears the captured company automatically", () => {
-    test("(review round 2) — a withdrawn Magewire bridge stays withdrawn", () => {
+    test("a withdrawn Magewire bridge stays withdrawn", () => {
       // A `billing_as_shipping_address_updated` bridge was added and then
-      // WITHDRAWN. Two reasons, both found in review round 2 and neither
-      // resolvable without live measurement:
+      // WITHDRAWN. Two reasons, neither resolvable without live measurement:
       //
       // 1. Clearing the captured company blanks the ONE shared selection blob,
       //    which is also the SHIPPING company's record. Re-ticking "billing
@@ -889,7 +888,7 @@ describe("the captured-company tile label (TWO-25326 §7)", () => {
       // opposite of what this test is for.
       //
       // Both now ask the ONE question, of the ONE set of records the box is
-      // painted from (review round 7): the gate used to consult a separate
+      // painted from: the gate used to consult a separate
       // single-slot "last company dispatched for", which meant "already
       // decided" and "has a verdict to show" could disagree — and did, so a
       // company whose answer was known was asked about again.

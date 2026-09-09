@@ -15,7 +15,7 @@
  * Every editability assertion here lands on `#company_id`.disabled, through the
  * REAL `:disabled` expression read out of `gateway_method.phtml` by
  * `H.readAlpineBinding()`. Asserting on `companyIdDisabled` alone was the defect
- * a review round found in the first version of this suite: the state was bound
+ * in the first version of this suite: the state was bound
  * to nothing, so the whole apparatus had no effect on the page and the suite
  * passed with the field permanently disabled. A test that cannot fail for the
  * reason the fix exists is not a test of the fix.
@@ -429,7 +429,7 @@ describe("payment component company selection", () => {
     });
 
     test("stays editable after an identifier-bearing company locked it", () => {
-      // The blocker this round was about: the field had already been disabled
+      // The blocker: the field had already been disabled
       // (here by the previous selection, in production by every shipping sync),
       // so an identifier-less pick afterwards left it empty AND uneditable.
       component.selectItem(pickerItem("Example Trading Ltd", "12345678"));
@@ -466,9 +466,9 @@ describe("payment component company selection", () => {
       // half of the condition is true for an empty id — which used to fire an
       // intent for a company with no identifier at all. The listener would
       // discard it, but it would still read as a real submission in the event
-      // log. Seeded through the RECORD the gate actually reads (review round 7
-      // replaced a single-slot `lastOrderIntentCompanyId` with per-company
-      // records); assigning the old field here left this test seeding nothing.
+      // log. Seeded through the RECORD the gate actually reads — the per-company
+      // decisions map; seeding the old single-slot `lastOrderIntentCompanyId`
+      // instead leaves this test seeding nothing.
       component.orderIntentDecisions["11111111"] = {
         name: "Earlier Example Ltd",
         approved: true,
@@ -912,7 +912,7 @@ describe("payment component company selection", () => {
     });
 
     test("stays visible mid-initialize(), before fillCompanyData()'s $nextTick has run", () => {
-      // The review-round regression (TWO-25288): a restored selection derives
+      // TWO-25288: a restored selection derives
       // `companyIdEntryRequired` — and so `companyIdDisabled` — synchronously
       // in initialize(), straight from storage, while `this.companyId`
       // itself is only written by the `$nextTick(() => fillCompanyData(...))`

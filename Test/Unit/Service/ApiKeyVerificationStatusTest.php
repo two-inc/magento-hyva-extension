@@ -16,8 +16,7 @@ use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
  * (b) success/failure
  * detection off Adapter::execute()'s error_code/http_status contract, (c)
  * the short cache this class adds so a persistent failure does not re-run
- * the live call on every call — the exact latency risk the WooCommerce
- * port's own review round caught — and (d) the per-store memo, so
+ * the live call on every call, and (d) the per-store memo, so
  * evaluating this for two different stores in one request can't return
  * one store's verdict for another's.
  *

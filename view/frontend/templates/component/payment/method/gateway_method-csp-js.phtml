@@ -202,18 +202,18 @@ $quoteDetails = json_encode(
     };
 
     /*
-     * The BILLING company's own storage key (TWO-25326 review round 3).
+     * The BILLING company's own storage key (TWO-25326).
      *
      * The key above is the SHIPPING company's, and until now it was the only
      * one — so the payment tile and the address step both merged into it. That
      * is a data-corruption bug rather than an inconvenience: this checkout can
      * legitimately hold two different companies at once, because unticking
      * "billing same as shipping" lets the buyer name a different billing
-     * company, and one record cannot describe both. Every symptom rounds 2 and
-     * 3 chased — a tile pick overwriting the address step's number, an untick
-     * clearing the shipping company for good, `init()` restoring a pair that
-     * contradicted the field beside it — was a guess at which company a given
-     * read belonged to. With two keys there is nothing to guess.
+     * company, and one record cannot describe both. Every symptom — a tile pick
+     * overwriting the address step's number, an untick clearing the shipping
+     * company for good, `init()` restoring a pair that contradicted the field
+     * beside it — was a guess at which company a given read belonged to. With
+     * two keys there is nothing to guess.
      *
      * Same store-view scoping and same empty-key-means-no-storage contract as
      * the shipping key; see the note above for why '' must not become a shared
@@ -295,7 +295,7 @@ $quoteDetails = json_encode(
     /**
      * Is the buyer's billing address the shipping address?
      *
-     * Hoisted here from company-name-payment.phtml (review round 3) so the
+     * Hoisted here from company-name-payment.phtml so the
      * surfaces that depend on it cannot answer it differently — three of them
      * since TWO-25461, which added twoGatewayInvoiceRoleCountryField(). Defaults to
      * TRUE when the checkbox is absent, which is the pre-existing behaviour and
@@ -312,7 +312,7 @@ $quoteDetails = json_encode(
     /**
      * Is this country field one the buyer can actually have used?
      *
-     * Review round 1 on the 2026-08-06 batch: broadening the lookup to
+     * Broadening the lookup to
      * `country_id` BY NAME also picks up fields the buyer has never seen — a
      * logged-in checkout's address-book "add address" form is in the DOM with
      * its country select pre-selected to the store's own country, so an
@@ -328,7 +328,7 @@ $quoteDetails = json_encode(
      *
      * `disabled` is tested on every ANCESTOR too, not only the field: a
      * `<fieldset disabled>` disables everything inside it without setting the
-     * attribute on any of them (review round 2), and Hyvä's forms do disable
+     * attribute on any of them, and Hyvä's forms do disable
      * fieldsets while a step is saving.
      *
      * Applied ONLY to fields matched by NAME — see twoGatewayCountryFields()
@@ -340,8 +340,8 @@ $quoteDetails = json_encode(
     window.twoGatewayCountryFieldUsable = window.twoGatewayCountryFieldUsable || function(field) {
         if (!field) return false;
         /*
-         * A `type="hidden"` input is the one kind of hidden this walk cannot see
-         * (review round 5): `hidden` is false on it, its inline `display` is
+         * A `type="hidden"` input is the one kind of hidden this walk cannot
+         * see: `hidden` is false on it, its inline `display` is
          * empty, and the three checks below all pass — so a hidden MIRROR of a
          * chosen country, which is exactly a field the buyer never saw, would
          * have outranked the quote's real shipping country. Tested on the field
@@ -384,7 +384,7 @@ $quoteDetails = json_encode(
      * different id, and reading only the two ids silently missed it and fell
      * through to the quote.
      *
-     * THE VISIBILITY FILTER APPLIES ONLY TO THE NAME MATCHES (review round 2).
+     * THE VISIBILITY FILTER APPLIES ONLY TO THE NAME MATCHES.
      * The two known ids were read unconditionally by every version of this
      * helper before this batch, and this checkout does hide a step's form
      * subtree rather than unmounting it in at least some states — so filtering
@@ -533,8 +533,8 @@ $quoteDetails = json_encode(
      * selector, and the question this answers is whether the store leaves the
      * country to the buyer.
      *
-     * Reads the same list, so it inherits the same filtering: NAME matches only
-     * (review round 2). A name-matched select the buyer cannot reach does not
+     * Reads the same list, so it inherits the same filtering: NAME matches only.
+     * A name-matched select the buyer cannot reach does not
      * count — suppressing the store default on the strength of one leaves
      * company search saying "Please select a country first" with nothing on
      * screen to satisfy it, a dead end where the store default would merely have
@@ -1512,7 +1512,7 @@ $quoteDetails = json_encode(
 
                 /*
                  * The panel is dismissed AFTER the pick's own state is written,
-                 * not before it (review round 5). `onDropdownClear` is a hook a
+                 * not before it. `onDropdownClear` is a hook a
                  * SURFACE can chain onto — the payment tile does, to put back an
                  * order-intent verdict a search took down — and firing it while
                  * `companyName`/`companyId` still held the OUTGOING company meant
@@ -3158,12 +3158,11 @@ $quoteDetails = json_encode(
              * one whose check could not be completed. A decision for a company
              * removes its failure — the question has been answered.
              *
-             * PER COMPANY, not one slot, and that is the whole point. Six review
-             * rounds of this feature were spent patching a single-slot record, and
-             * every round found another sequence it could not represent: approve
-             * A, check B, come back to A, and A's verdict was simply gone, because
-             * B had overwritten the only slot there was. Each fix guarded one more
-             * route to that; the map removes the class.
+             * PER COMPANY, not one slot, and that is the whole point. A
+             * single-slot record cannot represent this: approve A, check B, come
+             * back to A, and A's verdict is simply gone, because B has
+             * overwritten the only slot there is. Guarding one more route to
+             * that leaves the next one; the map removes the class.
              *
              * The NAME is stored beside the decision, not used as the key. The
              * notice text embeds it, so a company hand-renamed after its check
@@ -3607,13 +3606,12 @@ $quoteDetails = json_encode(
              * The ONLY way `orderIntentChecking` goes down.
              *
              * Lowering the row and re-deriving the box are one action, not two
-             * that callers must remember to pair. Round 7 found the dual: the
-             * invariant "a check in progress outranks every recorded verdict"
-             * means a verdict is suppressed WHILE a check runs, so something has
-             * to repaint it when the check stops — and five of the six places
-             * that lowered the flag did not. A verdict on record then stayed
-             * invisible for the rest of the session, reachable by reverting to an
-             * already-decided company inside the dispatcher's debounce.
+             * that callers must remember to pair. The invariant "a check in
+             * progress outranks every recorded verdict" means a verdict is
+             * suppressed WHILE a check runs, so any place that lowers the flag
+             * without re-deriving leaves a verdict on record invisible for the
+             * rest of the session, reachable by reverting to an already-decided
+             * company inside the dispatcher's debounce.
              *
              * @param {boolean} running
              */
@@ -3635,9 +3633,9 @@ $quoteDetails = json_encode(
              * @returns {boolean} whether this exact company already has a
              *   DECISION on record — the dedup gate's question. Derived from the
              *   same per-company records the box is, so "already decided" and
-             *   "has a verdict to show" cannot disagree; they were two mechanisms
-             *   until round 7, and the single-slot one defeated the map's whole
-             *   purpose by re-asking about a company whose answer was known.
+             *   "has a verdict to show" cannot disagree. Splitting this into two
+             *   mechanisms, one of them single-slot, would defeat the map's whole
+             *   purpose by re-asking about a company whose answer is known.
              */
             hasOrderIntentDecisionFor(companyId, companyName) {
                 if (!companyId) return false;
@@ -3698,7 +3696,7 @@ $quoteDetails = json_encode(
              *
              * Fails closed: a company with nothing on record gets an empty box,
              * and so does a hand-typed company, which has no identifier to match
-             * on. A recorded FAILURE is repainted too (round 4) — the check is
+             * on. A recorded FAILURE is repainted too — the check is
              * still failed and the order still blocked, so an empty tile would
              * read as "nothing was ever tried" — but a failure being retried
              * right now is not, because dispatching forgets it first.
@@ -3721,11 +3719,11 @@ $quoteDetails = json_encode(
                  *
                  * This is the invariant the box's states are supposed to satisfy,
                  * stated once, here, instead of being chased around the call
-                 * sites. Rounds 4, 5 and 6 each found another route to "checking"
-                 * and a conclusion on screen together — a watcher firing after a
-                 * pick, a panel closing during a retry, an address-area sync
-                 * dispatching with no watcher involved — because each fix guarded
-                 * one route and the next round found the next one.
+                 * sites. There are many routes to "checking" and a conclusion on
+                 * screen together — a watcher firing after a pick, a panel
+                 * closing during a retry, an address-area sync dispatching with
+                 * no watcher involved — and guarding them one at a time only
+                 * ever leaves the next one.
                  *
                  * Nothing is lost by refusing to paint here: the dispatcher
                  * re-derives the box from the record the moment the request
@@ -3738,7 +3736,7 @@ $quoteDetails = json_encode(
                 // results panel. Without this the two paint paths disagreed, and
                 // the disagreement was reachable — this tile's company-number
                 // field is editable, so typing a decided company's number back in
-                // while the panel is open repainted through here (round 5).
+                // while the panel is open repainted through here.
                 if (this.companyPopoverIsOpen()) return;
 
                 // A failed check is a verdict too, and the same reasoning that
@@ -3878,13 +3876,13 @@ $quoteDetails = json_encode(
                      * and a conclusion cannot both be true of one company.
                      *
                      * Cleared HERE, beside the write that raises the row, rather
-                     * than anywhere earlier. Round 5 tried to solve the same
-                     * problem by forgetting the failure RECORD at this point,
-                     * which cannot work: forgetting a record does not un-paint a
-                     * notice that is already on screen, and the panel-closed
-                     * repaint runs before this method (selectItem dismisses the
-                     * panel, then commits). Clearing the notices is what actually
-                     * removes it, and it does not depend on that ordering.
+                     * than anywhere earlier. Forgetting the failure RECORD at
+                     * this point instead cannot work: forgetting a record does
+                     * not un-paint a notice that is already on screen, and the
+                     * panel-closed repaint runs before this method (selectItem
+                     * dismisses the panel, then commits). Clearing the notices is
+                     * what actually removes it, and it does not depend on that
+                     * ordering.
                      *
                      * The failure RECORD is deliberately not dropped here: the
                      * dispatcher has five gates that can still decline to send,
@@ -4206,7 +4204,7 @@ $quoteDetails = json_encode(
 
                 /*
                  * The VISIBLE verdict is a separate concern from the dedup
-                 * bookkeeping above, and is guarded on its own (review round 4):
+                 * bookkeeping above, and is guarded on its own:
                  * the dedup gate deliberately skips dispatching (and does not
                  * advance `orderIntentSeq`) when the buyer re-picks a company
                  * already decided — so pick A (decided) → pick B (dispatches)
@@ -4227,7 +4225,7 @@ $quoteDetails = json_encode(
                 // Past the guard, and only past it. This bit says whether THE
                 // ORDER may be placed, and the order is for the company on
                 // screen — so a late reply about a company the buyer has left
-                // must not touch it (round 5). It is still set before the
+                // must not touch it. It is still set before the
                 // panel-open guard below, because a reply that merely declines to
                 // PAINT has still decided, and leaving it stale would let a
                 // declined company through on a flag set by an earlier approval.
@@ -4245,14 +4243,14 @@ $quoteDetails = json_encode(
                  * box beside their company already says and keeps saying.
                  *
                  * The box is not unconditional, though, which is why this is a
-                 * FALLBACK rather than a deletion (review round 1). Its ELEMENT is
+                 * FALLBACK rather than a deletion. Its ELEMENT is
                  * only rendered when the brand has not switched the notice copy
                  * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
                  * today does switch it off), so on such a brand deleting the toast
                  * outright left a declined buyer with no signal whatsoever.
                  *
                  * Gated on the RESOLVED SENTENCE being empty, not on the copy
-                 * being null (review round 2). The two agree for the brand switch,
+                 * being null. The two agree for the brand switch,
                  * which is the case that matters — `resolveOrderIntentNotAvailable
                  * Notice()` returns '' for absent copy — but the resolver also
                  * returns '' for copy that is present and unusable (a malformed
@@ -4733,8 +4731,8 @@ $quoteDetails = json_encode(
                 component.setOrderIntentChecking(true);
 
                 /*
-                 * A second way a reply can be stale, beyond `seq` (review
-                 * round 4): a MAGEWIRE REMOUNT. `initialize()` reassigns
+                 * A second way a reply can be stale, beyond `seq`: a MAGEWIRE
+                 * REMOUNT. `initialize()` reassigns
                  * `twoPaymentComponentInstance` on every remount, but this
                  * closure captured the OLD `component` when the request went
                  * out. A re-render mid-flight (the tile's own comments

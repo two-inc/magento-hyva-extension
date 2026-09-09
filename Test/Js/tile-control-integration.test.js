@@ -565,7 +565,7 @@ describe("the payment tile's mounted control (integration)", () => {
   });
 
   test("picking a new company evaluates against the INCOMING one", async () => {
-    // Round-5 finding. The engine dismissed the panel BEFORE writing the pick's
+    // The engine dismissed the panel BEFORE writing the pick's
     // company, so the tile's panel-closed repaint ran against the OUTGOING one —
     // briefly repainting the previous company's verdict and lowering the progress
     // row of the request that had just gone out for its replacement. Ordering was
@@ -597,7 +597,7 @@ describe("the payment tile's mounted control (integration)", () => {
   });
 
   test("abandoning a search puts the standing verdict back", async () => {
-    // Round-3 finding: clearing on search start had no counterpart for a search
+    // Clearing on search start had no counterpart for a search
     // that ENDS without changing the company. The buyer opens the panel, types,
     // then presses Escape or clicks away — no watcher fires, no pick happens, and
     // nothing else writes the notices, so the verdict was gone for the rest of
@@ -634,7 +634,7 @@ describe("the payment tile's mounted control (integration)", () => {
     // …and abandoning it puts the box back, because the company on screen is
     // still the one the verdict was reached for. Synchronous: the engine
     // dismisses the panel AFTER writing the pick's company, so the hook needs no
-    // deferral (round 5).
+    // deferral.
     component.closeDropdown();
 
     expect(component.orderIntentApprovedNotice).not.toBe("");

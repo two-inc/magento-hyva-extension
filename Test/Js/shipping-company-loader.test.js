@@ -14,7 +14,7 @@
  *   - a search aborted with NO successor MUST dispatch `done`, or the overlay
  *     latches on forever and the buyer cannot check out.
  *
- * A review round found the second rule broken: typing three characters and then
+ * The second rule is the one that broke: typing three characters and then
  * backspacing left the overlay up permanently. Every dismissal path is that
  * same case — backspace below three characters, tab out, pick a result, clear
  * the country, a DOM-morph disconnect — so each one gets a test here.
