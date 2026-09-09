@@ -3061,10 +3061,10 @@ $quoteDetails = json_encode(
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose
-             * country it wants by ROLE (TWO-25461): the
-             * invoice-role one, which is the company record this tile reads and
-             * writes. Previously it inherited a document-global lookup that took
-             * the shipping country whatever the buyer's billing address said.
+             * country it wants by ROLE (TWO-25461): the invoice-role one, which
+             * is the company record this tile reads and writes. Previously it
+             * inherited a document-global lookup that took the shipping country
+             * whatever the buyer's billing address said.
              */
             resolveCountryContext: function () { return window.twoGatewayInvoiceRoleCountryField(); },
             // Invariant, unlike the country context above: the tile submits the
