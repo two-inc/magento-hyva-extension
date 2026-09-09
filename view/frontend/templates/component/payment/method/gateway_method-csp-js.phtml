@@ -3652,10 +3652,10 @@ $quoteDetails = json_encode(
              *
              * Fails closed: a company with nothing on record gets an empty box,
              * and so does a hand-typed company, which has no identifier to match
-             * on. A recorded FAILURE is repainted too — the check is
-             * still failed and the order still blocked, so an empty tile would
-             * read as "nothing was ever tried" — but a failure being retried
-             * right now is not, because dispatching forgets it first.
+             * on. A recorded FAILURE is repainted too — placement is permitted
+             * on a failure, so the box is the buyer's only sign the check
+             * happened — but a failure being retried right now is not, because
+             * dispatching forgets it first.
              *
              * Called from three kinds of place: the `companyName`/`companyId` watchers,
              * fillCompanyData()'s suppressed-dispatch branch, and the control's
@@ -3695,10 +3695,7 @@ $quoteDetails = json_encode(
                 // while the panel is open repainted through here.
                 if (this.companyPopoverIsOpen()) return;
 
-                // A failed check is a verdict too, and the same reasoning that
-                // brings a decline back brings this back: the check is still
-                // failed and the order is still blocked, so the buyer must not be
-                // left with an empty tile that looks like nothing was ever tried.
+                // A failure is repainted like a decline, though only a decline blocks placement.
                 const record = this.orderIntentRecordForCurrentCompany();
                 if (!record) return;
 
