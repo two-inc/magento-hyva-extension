@@ -177,11 +177,10 @@ declaring no switch of either kind leaves the notice on.
 
 `dev/base-tile-copy-parity.sh` pins the four tile-copy methods this checkout calls
 against the base module's declarations, and `ci.yml` invokes it as
-`bash dev/base-tile-copy-parity.sh`. **A NON-EXECUTABLE guard is invoked through
-`bash`**: a script whose mode is `100644` and which is run as `./script.sh` exits
-126, which on a CI dashboard is indistinguishable from a check that ran and
-failed — the guard's own absence reads as its verdict. A guard committed
-executable runs directly.
+`bash dev/base-tile-copy-parity.sh`. **Invoke anything whose failure mode is "did
+not execute" through `bash`**: run as `./script.sh` it depends on the committed
+mode, and a `100644` script exits 126 — on a CI dashboard indistinguishable from a
+check that ran and failed, so the guard's own absence reads as its verdict.
 
 ### Order intent: one box, and a verdict that can be repainted
 
@@ -661,8 +660,9 @@ git-sync container's checked-out HEAD, as below;
 `pub/static/deployed_version.txt` answers with an HTML 404 page and settles
 nothing.
 
-The redeploy below is in-place, and the storefront 500s for roughly three minutes
-while it runs — warn testers before merging to `staging`.
+A merge to `staging` triggers an in-place static redeploy on the dev deployment
+and the storefront 500s for roughly three minutes, so a check that starts mid-sync
+fails for environmental reasons. Warn testers before merging.
 
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:
 
