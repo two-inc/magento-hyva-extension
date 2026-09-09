@@ -61,8 +61,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # One classification, sliced three ways (--emit-all) so run/skip/lint
-          # are mutually consistent and we hit upstream + Docker Hub once, not 3x
-          # (review: brtkwr on #237).
+          # are mutually consistent and we hit upstream + Docker Hub once, not 3x.
           all=$(./dev/magento-support-matrix.sh --emit-all)
           matrix=$(echo "$all" | jq -c '.matrix')
           skips=$(echo "$all" | jq -c '.skips')
@@ -162,7 +161,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run codesniffer
         # Pinned by digest (was `:latest`) so a new upstream coding-standard
-        # release can't flip CI red with no repo change (review: brtkwr on #55).
+        # release can't flip CI red with no repo change.
         # To bump: docker pull …:latest && docker inspect --format
         # '{{index .RepoDigests 0}}' …, then update the digest here.
         run: |
