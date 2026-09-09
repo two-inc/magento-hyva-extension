@@ -46,11 +46,69 @@ namespace Magento\Config\Block\System\Config\Form {
         class Field
         {
             /**
+             * Declared by core's AbstractBlock, not by Two — a subclass that
+             * reads them outside the framework would otherwise create dynamic
+             * properties.
+             *
+             * @var mixed
+             */
+            protected $_request;
+
+            /** @var mixed */
+            protected $_storeManager;
+
+            /**
              * @param array<mixed> $data
              */
             public function __construct(?Context $context = null, array $data = [])
             {
             }
+
+            public function getRequest()
+            {
+                return $this->_request;
+            }
+        }
+    }
+}
+
+namespace Magento\Framework\Exception {
+    if (!class_exists(NoSuchEntityException::class, false)) {
+        class NoSuchEntityException extends \Exception
+        {
+        }
+    }
+}
+
+namespace Magento\Framework\App {
+    if (!interface_exists(RequestInterface::class, false)) {
+        interface RequestInterface
+        {
+            /**
+             * @param string $key
+             * @param mixed $default
+             * @return mixed
+             */
+            public function getParam($key, $default = null);
+        }
+    }
+}
+
+namespace Magento\Store\Model {
+    if (!interface_exists(StoreManagerInterface::class, false)) {
+        interface StoreManagerInterface
+        {
+            /**
+             * @param mixed $storeId
+             * @return mixed
+             */
+            public function getStore($storeId = null);
+
+            /**
+             * @param mixed $websiteId
+             * @return mixed
+             */
+            public function getWebsite($websiteId = null);
         }
     }
 }

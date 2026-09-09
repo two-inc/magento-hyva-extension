@@ -598,8 +598,93 @@ class CheckoutConfigTest extends TestCase
             $viewModel,
             $this->apiKeyVerificationStatusFake($keyStatus)
         );
+        $reflection->getProperty('logRepository')->setValue($viewModel, $this->logRepositoryFake());
 
         return $viewModel->getIsCompanySearchEnabled();
+    }
+
+    /**
+     * ABN-518: standing the control down is invisible to the merchant unless
+     * it is recorded, and it is recorded once per request, not once per read.
+     *
+     * @dataProvider companySearchLogCases
+     */
+    public function testWithholdingCompanySearchIsLoggedOncePerRequest(
+        string $keyStatus,
+        int $expectedEntries,
+        string $description
+    ): void {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+
+        $configRepository = new class {
+            public function isCompanySearchEnabled(): bool
+            {
+                return true;
+            }
+        };
+        $log = $this->logRepositoryFake();
+
+        $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
+        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
+            $viewModel,
+            $this->apiKeyVerificationStatusFake($keyStatus)
+        );
+        $reflection->getProperty('logRepository')->setValue($viewModel, $log);
+
+        $viewModel->getIsCompanySearchEnabled();
+        $viewModel->getIsCompanySearchEnabled();
+        $viewModel->getIsCompanySearchEnabled();
+
+        $this->assertCount($expectedEntries, $log->entries, $description);
+        if ($expectedEntries > 0) {
+            $this->assertSame(
+                ['status' => $keyStatus],
+                $log->entries[0][1],
+                $description
+            );
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int, 2: string}>
+     */
+    public static function companySearchLogCases(): array
+    {
+        return [
+            'rejected key' => [ApiKeyVerificationStatus::INVALID_KEY, 1,
+                'a definitive rejection is recorded once, however many reads'],
+            'no key saved' => [ApiKeyVerificationStatus::NOT_CONFIGURED, 1,
+                'and so is an unconfigured install'],
+            'verified' => [ApiKeyVerificationStatus::OK, 0,
+                'nothing is withheld, so nothing is recorded'],
+            'service error' => [ApiKeyVerificationStatus::SERVICE_ERROR, 0,
+                'ABN-533: a transient verdict withholds nothing, so it records nothing'],
+            'unreachable' => [ApiKeyVerificationStatus::UNREACHABLE, 0,
+                'nor does a network failure reaching us'],
+        ];
+    }
+
+    /** Collects what the view model records, for ABN-518's log assertion. */
+    private function logRepositoryFake(): object
+    {
+        return new class {
+            /** @var array<int, array{0: string, 1: mixed}> */
+            public $entries = [];
+
+            public function addDebugLog(string $type, $data)
+            {
+                $this->entries[] = [$type, $data];
+            }
+
+            public function addErrorLog(string $type, $data)
+            {
+            }
+
+            public function addLog(string $type, $data)
+            {
+            }
+        };
     }
 
     /**
