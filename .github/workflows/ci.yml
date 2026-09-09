@@ -44,6 +44,17 @@ jobs:
         # indistinguishable on the dashboard from one that ran and failed.
         run: bash dev/base-tile-copy-parity.sh
 
+  base-cache-tag-parity:
+    name: Base cache-tag parity
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the stub's cache tag matches the base constant
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Invoked through bash for the same reason as the job above.
+        run: bash dev/base-cache-tag-parity.sh
+
   # Discovers the current Magento support window from upstream so the
   # PHPStan / DI-compile / lint matrices track Adobe's lifecycle without
   # hand-maintenance. `dev/magento-support-matrix.sh` is the single
