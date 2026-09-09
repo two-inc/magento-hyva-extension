@@ -420,12 +420,6 @@ class CheckoutConfig implements ArgumentInterface
         return implode(' ', $kept);
     }
 
-    public function getSupportedCountryCodes()
-    {
-        $countries = ["no", "gb", "se", "nl"];
-        return $countries;
-    }
-
     public function getIsDepartmentFieldEnabled()
     {
         return $this->configRepository->isDepartmentEnabled();
