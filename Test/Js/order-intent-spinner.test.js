@@ -1291,10 +1291,8 @@ describe("order-intent progress indicator (TWO-25326)", () => {
     });
 
     test("a failed check is repainted too, not lost with the box", () => {
-      // The abandoned-search repaint covered the two decided
-      // verdicts but not the failed one, which is written by the error handler
-      // and was never recorded — so a buyer who searched and abandoned lost the
-      // report of a failure that was still failing, with the order still blocked.
+      // A failure is not a decision record, so the abandoned-search repaint has
+      // to bring it back by its own route.
       component.companyName = "Alpha Ltd";
       component.companyId = "111111111";
       component.generalErrorMessage = "SENTINEL-general-error";
