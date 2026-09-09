@@ -15,7 +15,7 @@ etc/                  # Module configuration
 view/frontend/        # Hyvä frontend templates and layouts
 ├── templates/        # .phtml template files
 ├── layout/           # XML layout files
-└── web/              # CSS/JS assets
+└── web/              # CSS and images — no JavaScript ships from this module
 ViewModel/            # View models for templates
 Magewire/             # Magewire components (if applicable)
 ```
@@ -106,6 +106,19 @@ only, for the reason set out under `getIsProxyAvailable()` below. Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
 the class — never on the strength of its version number.
 
+## This is a public repository
+
+- No partner or merchant name reaches file contents, a commit body, a branch name
+  or a PR title or body. Gate before pushing: a force-push afterwards does not
+  remove a commit from GitHub's history.
+- In comments, commit messages and PR bodies alike, cite a Linear ticket id and
+  nothing else: a section, question or ruling number belonging to an internal
+  review document means nothing to a reader outside the company, and neither does
+  a person named as the authority for a rule.
+- The base plugin's DOCUMENTED contract may be pointed at. Its source text, schema
+  fragments and test identifiers may not be reproduced here — describe behaviour in
+  your own words.
+
 ## Hyvä config registration
 
 The module registers itself for Hyvä's config merge via
@@ -154,6 +167,20 @@ module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
 hardcoded URL or a re-derivation of brand data here (ABN-496). A brand that
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
 never an empty element.
+
+Whether the intent-declined notice renders at all, and its wording, come from two
+separate brand-registry declarations: only the switch suppresses it, and the copy
+override is inert when empty — an empty override never doubles as an off switch
+(TWO-25326). A base declaring no declined switch falls back to the approved
+notice's switch, so a brand that turned that one off gets neither; a base
+declaring no switch of either kind leaves the notice on.
+
+`dev/base-tile-copy-parity.sh` pins the four tile-copy methods this checkout calls
+against the base module's declarations, and `ci.yml` invokes it as
+`bash dev/base-tile-copy-parity.sh`. **Invoke anything whose failure mode is "did
+not execute" through `bash`**: run as `./script.sh` it depends on the committed
+mode, and a `100644` script exits 126 — on a CI dashboard indistinguishable from a
+check that ran and failed, so the guard's own absence reads as its verdict.
 
 ### Order intent: one box, and a verdict that can be repainted
 
@@ -259,6 +286,16 @@ second implementation, and never patch a surface by copying part of it — that
 duplication is what produced a batch of "three independent cosmetic bugs" on the
 payment tile that turned out to be one bug, and later what left this checkout's
 mode chips outside the panel while Luma's were inside it.
+
+**This module ships NO JavaScript file at all** — `view/frontend/web/js` does not
+exist, and it must not come into being. Four base-plugin modules are loaded by
+`Two_Gateway::` reference from `view/frontend/layout/hyva_checkout_index_index.xml`
+— the panel, the identity, the sole-trader flow and the capture controller — each
+framework-free with a UMD tail that attaches a browser global the mounts then read.
+The Alpine and Magewire code in this repo's `.phtml` templates is the HOST ADAPTER
+those modules ask for, never a second implementation of what they do. A behaviour
+change belongs in the base plugin, where both checkouts get it; a new `.js` file
+here is the duplication this arrangement exists to prevent.
 
 **ONE IDENTITY AND ONE CONTROLLER PER ADDRESS ROLE.** The checkout can hold two
 companies at once — the delivery panel's and the invoice panel's — so
@@ -488,6 +525,46 @@ Things that bite:
   screen; the helper answers `''` for one, which is the same case as "no number",
   so surrounding parentheses drop with it.
 
+### What focus landing on the checkout does to an open signup popup
+
+The base plugin's sole-trader flow classifies every `focusin` while the hosted
+signup window is up, and this checkout inherits all three rules (TWO-25658):
+
+- **the role's own Sole trader chip is inert** — arrival moves the popup neither
+  way, and only an activation raises it, the browser delivering Enter and Space on
+  a focused chip as a click;
+- **any other target closes an open popup**;
+- **a target outside that role's popover closes the popover too**, with the company
+  field counted as INSIDE it: the field is the popover's own trigger and sits
+  outside the panel node, and a buyer typing a query is still inside the control.
+
+A window or application switch lands on no control at all and settles nothing.
+
+**Reaching another capture popover's Sole trader chip by FOCUS raises nothing** —
+that chip is not the exempt one, so the popup closes like it would for any other
+target. Only activating the chip launches a popup, through its own click handler,
+which is where a launch stays spelled out (TWO-25658).
+
+All of it lives in the base plugin, none of it in this repo. A mount that adds
+focus handling of its own to a chip or the company field is competing with rules it
+cannot see.
+
+**The open panel takes the company field's tab stop**, inherited the same way:
+`tabindex="-1"` while it is up, and on close the field's PRIOR value restored
+exactly — a theme's own `tabindex` is given back, and removal is what a field
+carrying none gets back (TWO-25503). Without it the
+focus opener is a keyboard trap — the opener puts the caret in the query field,
+Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
+2.1.2). A mount must not write a `tabindex` onto that field.
+
+### A popup window is in no tab listing
+
+`window.open` returns a window outside a browser extension's tab group, so a tab
+list can never answer "did the popup open" — nor can a hang. The authoritative
+check is the page's own retained handle and its `.closed`, which means wrapping
+`window.open` before the action that should raise one. Judging from a tab list
+yields a confident false "no window opened".
+
 ### Two addresses, and NOTHING passes between them
 
 The checkout can hold two addresses — shipping, and a separate billing one once
@@ -573,10 +650,24 @@ an id the store does not have.
 
 ### Staging Cache Refresh (git-sync workflow)
 
+**`magento-dev` is the deployment that tracks this repo's `staging`**, through its
+`git-sync-hyva` container; each brand's own dev deployment git-syncs this repo
+too, alongside that brand's overlay. `deploy/magento` has no git-sync container at
+all and serves the deployed image's code, which tracks `main`. So anything
+verifying `staging` code goes to the dev deployment, and a check pointed at the
+other one silently reports on `main`. Confirm which code a deployment has from its
+git-sync container's checked-out HEAD, as below;
+`pub/static/deployed_version.txt` answers with an HTML 404 page and settles
+nothing.
+
+A merge to `staging` triggers an in-place static redeploy on the dev deployment
+and the storefront 500s for roughly three minutes, so a check that starts mid-sync
+fails for environmental reasons. Warn testers before merging.
+
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:
 
 ```bash
-kubectl exec deploy/magento -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
+kubectl exec deploy/magento-dev -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
 ```
 
 When developing with git-sync on staging, after pushing changes:
@@ -584,19 +675,19 @@ When developing with git-sync on staging, after pushing changes:
 1. Wait for git-sync to pull the latest commit:
 
 ```bash
-kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
+kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
 ```
 
 2. Clear cache and restart Apache:
 
 ```bash
-kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
 Or combined (wait 15s for sync then clear):
 
 ```bash
-sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+sleep 15 && kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
 ### Tests that read a file as TEXT, and mutants that check them
@@ -637,6 +728,26 @@ And the reason those two rules need writing down at all:
   authored together, the thing to hunt is the divergence that would make the
   test agree with a bug, and **the person to hunt it is not the author** — which
   is what the adversarial review round is for, not a formality before merge.
+
+### Keyboard behaviour is not verifiable in jsdom
+
+jsdom implements no sequential focus navigation: a dispatched `Tab` keydown moves
+focus nowhere, so no Jest suite here can observe a focus trap, a wrong tab order or
+a reverse-Tab dead end, however many cases it carries and however green it is. This
+is the same class of empty check as the two rules above — a suite that runs cleanly
+and proves nothing. Assert the observable proxies (the parts are one contiguous run
+in document order, a closed panel carries `hidden`, the handler leaves the `Tab`
+event undefaulted) and verify the keyboard behaviour itself in a real browser. Never
+present a jsdom Tab test as evidence that a trap is absent.
+
+Two more of the same class:
+
+- **jsdom's `getElementById` answers with the first-REGISTERED node, not the
+  tree-first one**, so a fixture carrying a duplicate id silently resolves to the
+  wrong element while reading as though it found the right one.
+- **A mutation proves NEW coverage only when re-run against the base ref.** One the
+  existing suite already catches proves the suite is sensitive, not that the case
+  added covers anything.
 
 ### Common Issues
 
