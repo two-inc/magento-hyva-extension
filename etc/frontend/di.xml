@@ -22,6 +22,8 @@
     <!-- TWO-24812: re-check the selected payment term is still offered before placing the order -->
     <type name="Two\GatewayHyva\Model\Magewire\Payment\PlaceOrderService">
         <plugin name="TwoGatewayHyva::termStillAvailable" type="Two\GatewayHyva\Plugin\Payment\TermStillAvailablePlugin" sortOrder="10"/>
+        <!-- ABN-556: state the charged term on the payload placement composes the order from -->
+        <plugin name="TwoGatewayHyva::recordSelectedTerm" type="Two\GatewayHyva\Plugin\Payment\RecordSelectedTermPlugin" sortOrder="20"/>
     </type>
     <!-- Position Company field after Country selector -->
     <type name="Hyva\Checkout\Model\Form\EntityForm\EavAttributeShippingAddressForm">

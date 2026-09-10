@@ -20,6 +20,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\TermSurchargePreview;
+use Two\GatewayHyva\Service\ChargedTerm;
 
 /**
  * GatewayMethod - Hyvä Checkout
@@ -93,6 +94,7 @@ class GatewayMethod extends Component
         private TermSurchargePreview $termSurchargePreview,
         private LogRepository $logRepository,
         private LocaleResolver $localeResolver,
+        private ChargedTerm $chargedTerm,
         private string $methodCode = 'two_payment',
     ) {}
 
@@ -131,7 +133,10 @@ class GatewayMethod extends Component
     {
         $quote = $this->checkoutSession->getQuote();
         $payment = $quote->getPayment();
-        $payment->setAdditionalInformation($value["additionalData"]);
+        $additionalData = $value["additionalData"] ?? [];
+        // Placement refuses a term that disagrees with the priced one (ABN-556).
+        $additionalData['selectedTerm'] = $this->chargedTerm->resolve((int) $quote->getStoreId());
+        $payment->setAdditionalInformation($additionalData);
         $quote->setPayment($payment);
         $this->quoteRepository->save($quote);
     }
@@ -215,9 +220,7 @@ class GatewayMethod extends Component
             // BCP-47 with hyphens. Translate.
             $this->currencyLocale = (string) str_replace('_', '-', (string) $this->localeResolver->getLocale());
 
-            $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
-            $defaultTerm = (int) $this->configRepository->getDefaultPaymentTerm($storeId);
-            $this->selectedTerm = $sessionTerm > 0 ? $sessionTerm : $defaultTerm;
+            $this->selectedTerm = $this->chargedTerm->resolve($storeId);
 
             // Chips visibility is driven by available payment terms alone.
             // Surcharge type only gates per-chip surcharge value display —

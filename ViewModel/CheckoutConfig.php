@@ -22,6 +22,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\GatewayHyva\Service\ChargedTerm;
 
 class CheckoutConfig implements ArgumentInterface
 {
@@ -112,6 +113,11 @@ class CheckoutConfig implements ArgumentInterface
     private $logRepository;
 
     /** @var bool */
+    /**
+     * @var ChargedTerm
+     */
+    private $chargedTerm;
+
     private $withholdLogged = false;
 
     public function __construct(
@@ -125,6 +131,7 @@ class CheckoutConfig implements ArgumentInterface
         ApiKeyVerificationStatus $apiKeyVerificationStatus,
         CheckoutTileCopy $checkoutTileCopy,
         LogRepository $logRepository,
+        ChargedTerm $chargedTerm,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -136,6 +143,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
         $this->checkoutTileCopy = $checkoutTileCopy;
         $this->logRepository = $logRepository;
+        $this->chargedTerm = $chargedTerm;
     }
 
     /**
@@ -179,8 +187,7 @@ class CheckoutConfig implements ArgumentInterface
      */
     public function getSelectedPaymentTerm(): int
     {
-        $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
-        return $sessionTerm > 0 ? $sessionTerm : $this->getDefaultPaymentTerm();
+        return $this->chargedTerm->resolve();
     }
 
     public function getSurchargeDescription(): string

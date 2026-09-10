@@ -265,6 +265,22 @@ be up alongside nothing. All four are one box style in one place. The rules that
   `disabled` attribute those events no longer reach in Hyvä Checkout 1.3.13, lifting
   only its own decline so a placement already in flight stays blocked.
 
+### One charged term, and placement states it
+
+`Service\ChargedTerm` is the single answer to "which payment term is this
+checkout charged for": the buyer's chip choice while the merchant still offers
+it, else the configured default, and an empty offered set is a cold cache
+rather than a withdrawal. The chip state, the tile's placement payload and the
+page config all read it, so no two of them can name a different term.
+
+`Plugin\Payment\RecordSelectedTermPlugin` states that term on the quote
+payment immediately before placement, because the base module resolves the
+charged term from the payment's additional information and refuses an order
+whose term disagrees with the one the surcharge was priced on (ABN-556). It
+belongs at placement rather than only in the tile's payload assembly: that
+assembly runs only while order intent is enabled, and a round trip before
+placement, so a chip clicked afterwards would leave the recorded term behind.
+
 ### Magewire Components
 
 - Located in `Magewire/` directory

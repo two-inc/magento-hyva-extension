@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-// Minimal stubs of the Magento/Hyva types TermStillAvailablePlugin and
-// PlaceOrderService depend on. Only the surface these classes actually
-// call is stubbed — see Test/bootstrap.php for the convention.
+// Minimal stubs of the Magento/Hyva quote, session and placement types the
+// term-selection suites exercise. Only the surface the code under test
+// actually calls is stubbed — see Test/bootstrap.php for the convention.
 
 namespace Magento\Quote\Api {
     if (!interface_exists(CartManagementInterface::class, false)) {
@@ -22,11 +22,47 @@ namespace Hyva\Checkout\Model\Magewire\OrderData {
     }
 }
 
+namespace Magento\Quote\Model\Quote {
+    if (!class_exists(Payment::class, false)) {
+        class Payment
+        {
+            /** @var array<string, mixed> */
+            private array $additionalInformation = [];
+
+            /**
+             * Magento's own signature: one key with the two-argument form,
+             * the whole array with the one-argument form.
+             *
+             * @param array<string, mixed>|string $information
+             */
+            public function setAdditionalInformation($information, $value = null): self
+            {
+                if (is_array($information)) {
+                    $this->additionalInformation = $information;
+                    return $this;
+                }
+                $this->additionalInformation[$information] = $value;
+                return $this;
+            }
+
+            /** @return array<string, mixed> */
+            public function getAdditionalInformation(): array
+            {
+                return $this->additionalInformation;
+            }
+        }
+    }
+}
+
 namespace Magento\Quote\Model {
+    use Magento\Quote\Model\Quote\Payment;
+
     if (!class_exists(Quote::class, false)) {
         class Quote
         {
             private int $storeId = 0;
+
+            private ?Payment $payment = null;
 
             public function getStoreId(): int
             {
@@ -38,6 +74,31 @@ namespace Magento\Quote\Model {
                 $this->storeId = $storeId;
                 return $this;
             }
+
+            public function getPayment(): Payment
+            {
+                if ($this->payment === null) {
+                    $this->payment = new Payment();
+                }
+                return $this->payment;
+            }
+
+            public function setPayment(Payment $payment): self
+            {
+                $this->payment = $payment;
+                return $this;
+            }
+        }
+    }
+}
+
+namespace Magento\Quote\Api {
+    use Magento\Quote\Model\Quote;
+
+    if (!interface_exists(CartRepositoryInterface::class, false)) {
+        interface CartRepositoryInterface
+        {
+            public function save(Quote $quote): void;
         }
     }
 }
@@ -63,6 +124,8 @@ namespace Magento\Checkout\Model {
         {
             private int $twoSelectedTerm = 0;
 
+            private ?\Magento\Quote\Model\Quote $quote = null;
+
             public function getTwoSelectedTerm(): int
             {
                 return $this->twoSelectedTerm;
@@ -71,6 +134,19 @@ namespace Magento\Checkout\Model {
             public function setTwoSelectedTerm(int $days): void
             {
                 $this->twoSelectedTerm = $days;
+            }
+
+            public function getQuote(): \Magento\Quote\Model\Quote
+            {
+                if ($this->quote === null) {
+                    $this->quote = new \Magento\Quote\Model\Quote();
+                }
+                return $this->quote;
+            }
+
+            public function setQuote(\Magento\Quote\Model\Quote $quote): void
+            {
+                $this->quote = $quote;
             }
         }
     }
