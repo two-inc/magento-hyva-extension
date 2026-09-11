@@ -163,14 +163,10 @@ class GatewayMethod extends Component
         $this->checkoutSession->setTwoSelectedTerm($days);
 
         try {
-            $quote = $this->checkoutSession->getQuote();
-            $quote->collectTotals();
-            $this->quoteRepository->save($quote);
+            $quote = $this->reprice();
         } catch (\Exception $e) {
-            // Persistence failed — restore prior session term so the chip
-            // does not lie about the active selection on next render.
-            $this->checkoutSession->setTwoSelectedTerm($previousTerm);
             $this->logRepository->addErrorLog('Hyva chip: selectTerm save failed', $e->getMessage());
+            $this->rollbackTerm($previousTerm, $days);
             $this->hydrateChipState();
             throw new LocalizedException(__('Could not update payment term. Please try again.'));
         }
@@ -183,6 +179,37 @@ class GatewayMethod extends Component
         // previousActivePaymentMethod.code).
         $currentMethod = (string) ($quote->getPayment()->getMethod() ?: $this->methodCode);
         $this->emit('payment_method_selected', ['method' => $currentMethod]);
+    }
+
+    /**
+     * The surcharge is priced off the session term, so every write to that
+     * term has to be followed by one of these.
+     */
+    private function reprice(): \Magento\Quote\Model\Quote
+    {
+        $quote = $this->checkoutSession->getQuote();
+        $quote->collectTotals();
+        $this->quoteRepository->save($quote);
+
+        return $quote;
+    }
+
+    /**
+     * Restore first, reprice second: placement refuses a term that disagrees
+     * with the fee's term, but charges one that silently agrees. A failed
+     * compensating repricing leaves the abandoned term's fee in the session,
+     * so the term goes back to match it.
+     */
+    private function rollbackTerm(int $previousTerm, int $abandonedTerm): void
+    {
+        $this->checkoutSession->setTwoSelectedTerm($previousTerm);
+
+        try {
+            $this->reprice();
+        } catch (\Exception $e) {
+            $this->checkoutSession->setTwoSelectedTerm($abandonedTerm);
+            $this->logRepository->addErrorLog('Hyva chip: term rollback reprice failed', $e->getMessage());
+        }
     }
 
     /**

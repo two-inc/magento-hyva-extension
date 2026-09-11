@@ -26,13 +26,17 @@ use Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod;
 class GatewayMethodTermSelectionTest extends TestCase
 {
     /**
-     * Given a chip click; When persistence fails or succeeds; Then the session
-     * term and the buyer-facing message match the outcome.
+     * Given a chip click; When persistence fails or succeeds; Then every
+     * repricing prices the term the session then names, and the session ends on
+     * the term whose fee it holds.
+     *
+     * @param array<int, int> $expectedTermsPriced
      *
      * @dataProvider selectionProvider
      */
     public function testSelectTerm(
         int $failingSaves,
+        array $expectedTermsPriced,
         int $expectedSessionTerm,
         ?string $expectedMessage,
         string $because
@@ -61,19 +65,30 @@ class GatewayMethodTermSelectionTest extends TestCase
         }
 
         $this->assertSame($expectedMessage, $message, $because);
+        $this->assertSame($expectedTermsPriced, $quote->termsPriced, "$because: terms priced, in order");
         $this->assertSame($expectedSessionTerm, $session->getTwoSelectedTerm(), "$because: session term");
     }
 
-    /** @return array<string, array{int, int, ?string, string}> */
+    /** @return array<string, array{int, array<int, int>, int, ?string, string}> */
     public static function selectionProvider(): array
     {
+        $failed = 'Could not update payment term. Please try again.';
+
         return [
-            'save succeeds' => [0, 60, null, 'the buyer stays on the term they picked'],
-            'save fails' => [
+            'save succeeds' => [0, [60], 60, null, 'the buyer stays on the term they picked'],
+            'save fails, rollback reprices' => [
                 1,
+                [60, 30],
                 30,
-                'Could not update payment term. Please try again.',
-                'a failed save returns the buyer to the previous term and says so',
+                $failed,
+                'the restored term is repriced, so the fee belongs to the term the order names',
+            ],
+            'rollback reprice fails too' => [
+                2,
+                [60, 30],
+                60,
+                $failed,
+                'the session keeps the term whose fee it still holds, rather than crossing the two',
             ],
         ];
     }

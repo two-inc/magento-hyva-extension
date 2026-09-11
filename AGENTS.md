@@ -295,6 +295,16 @@ this repo pairs the extension with an overlay, so nothing here would catch it â€
 `Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
 guard.
 
+### A term change is never left unpriced
+
+`selectTerm()` writes the session term and reprices; a failed save restores the
+previous term and reprices again, in that order. The surcharge is priced off
+the session term, and placement compares the term it composes the order with
+against the term the fee was priced on â€” it refuses a disagreement and charges
+an agreement, so a restored-but-unpriced term would compose the previous term
+carrying the abandoned term's fee. When the compensating repricing also fails
+the session goes back to the abandoned term, whose fee it is still holding.
+
 ### Magewire Components
 
 - Located in `Magewire/` directory
