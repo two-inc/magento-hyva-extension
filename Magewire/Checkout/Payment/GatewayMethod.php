@@ -20,7 +20,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\TermSurchargePreview;
-use Two\GatewayHyva\Service\ChargedTerm;
+use Two\Gateway\Service\Order\ChargedTermResolver;
 
 /**
  * GatewayMethod - Hyvä Checkout
@@ -94,9 +94,20 @@ class GatewayMethod extends Component
         private TermSurchargePreview $termSurchargePreview,
         private LogRepository $logRepository,
         private LocaleResolver $localeResolver,
-        private ChargedTerm $chargedTerm,
         private string $methodCode = 'two_payment',
+        // Last and optional: the brand overlay subclasses this component and
+        // forwards the constructor positionally.
+        private ?ChargedTermResolver $chargedTerm = null,
     ) {}
+
+    private function chargedTerm(): ChargedTermResolver
+    {
+        if ($this->chargedTerm === null) {
+            $this->chargedTerm = new ChargedTermResolver($this->checkoutSession, $this->configRepository);
+        }
+
+        return $this->chargedTerm;
+    }
 
     /**
      * @throws LocalizedException
@@ -135,7 +146,7 @@ class GatewayMethod extends Component
         $payment = $quote->getPayment();
         $additionalData = $value["additionalData"] ?? [];
         // Placement refuses a term that disagrees with the priced one (ABN-556).
-        $additionalData['selectedTerm'] = $this->chargedTerm->resolve((int) $quote->getStoreId());
+        $additionalData['selectedTerm'] = $this->chargedTerm()->resolve((int) $quote->getStoreId());
         $payment->setAdditionalInformation($additionalData);
         $quote->setPayment($payment);
         $this->quoteRepository->save($quote);
@@ -220,7 +231,7 @@ class GatewayMethod extends Component
             // BCP-47 with hyphens. Translate.
             $this->currencyLocale = (string) str_replace('_', '-', (string) $this->localeResolver->getLocale());
 
-            $this->selectedTerm = $this->chargedTerm->resolve($storeId);
+            $this->selectedTerm = $this->chargedTerm()->resolve($storeId);
 
             // Chips visibility is driven by available payment terms alone.
             // Surcharge type only gates per-chip surcharge value display —

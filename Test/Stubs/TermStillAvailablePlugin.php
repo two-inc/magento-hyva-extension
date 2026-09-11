@@ -159,9 +159,35 @@ namespace Two\Gateway\Api\Config {
             /** @return int[] */
             public function getAllBuyerTerms(?int $storeId = null): array;
 
-            public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool;
-
             public function isCompanySearchEnabled(?int $storeId = null): bool;
+        }
+    }
+}
+
+namespace Two\Gateway\Service\Order {
+    if (!class_exists(ChargedTermResolver::class, false)) {
+        /**
+         * The base module's charged-term resolver. Its resolution is tested in
+         * that module; here it answers whatever a test sets, and records the
+         * store ids it was asked about.
+         */
+        class ChargedTermResolver
+        {
+            public int $resolved = 0;
+
+            /** @var array<int, ?int> */
+            public array $storeIds = [];
+
+            public function __construct($checkoutSession = null, $configRepository = null)
+            {
+            }
+
+            public function resolve(?int $storeId = null): int
+            {
+                $this->storeIds[] = $storeId;
+
+                return $this->resolved;
+            }
         }
     }
 }

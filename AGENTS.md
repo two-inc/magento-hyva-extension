@@ -267,26 +267,30 @@ be up alongside nothing. All four are one box style in one place. The rules that
 
 ### One charged term, and placement states it
 
-`Service\ChargedTerm` is the single answer to "which payment term is this
-checkout charged for": the buyer's chip choice while the merchant still offers
-it, else the configured default, and no term at all when nothing is offered.
-That is the same answer the base module prices the surcharge on, deliberately —
-the two disagreeing is what placement refuses. The chip state, the tile's
-placement payload and the page config all read it, so no two of them can name a
-different term.
+The base module's charged-term resolver is the single answer to "which payment
+term is this checkout charged for", and the chip state and the tile's placement
+payload both read it — the same object the base module prices the surcharge on,
+so the two cannot name different terms. There is deliberately no local copy of
+that resolution: a copy is what drifts and reintroduces the refusal.
+
+`Plugin\Payment\RecordSelectedTermPlugin` states that term on the quote payment
+immediately before placement, because the base module reads the charged term
+from the payment's additional information and refuses an order whose term
+disagrees with the one the surcharge was priced on (ABN-556). It belongs at
+placement rather than only in the tile's payload assembly: that assembly runs
+only while order intent is enabled, and a round trip earlier, so a chip clicked
+afterwards would leave the recorded term behind.
 
 A choice the merchant withdraws mid-checkout does not silently become the
-default: the term re-check that runs first at placement (TWO-24812) still
-refuses it and tells the buyer to reselect. The fallback is what the chips and
-the surcharge use until they do.
+default: the term re-check that runs first at placement (TWO-24812) refuses it
+and tells the buyer to reselect. The fallback is what the chips and the
+surcharge use until they do.
 
-`Plugin\Payment\RecordSelectedTermPlugin` states that term on the quote
-payment immediately before placement, because the base module resolves the
-charged term from the payment's additional information and refuses an order
-whose term disagrees with the one the surcharge was priced on (ABN-556). It
-belongs at placement rather than only in the tile's payload assembly: that
-assembly runs only while order intent is enabled, and a round trip before
-placement, so a chip clicked afterwards would leave the recorded term behind.
+**The payment tile's Magewire component takes new dependencies LAST.** The brand
+overlay subclasses it and forwards the constructor positionally, ending with the
+method code, so a parameter inserted ahead of that lands in the wrong slot and
+the tile stops constructing on every branded store view. No CI leg in this repo
+pairs the extension with that overlay, so nothing here would catch it.
 
 ### Magewire Components
 
