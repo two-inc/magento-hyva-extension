@@ -29,19 +29,10 @@ namespace Magento\Quote\Model\Quote {
             /** @var array<string, mixed> */
             private array $additionalInformation = [];
 
-            /**
-             * Magento's own signature: one key with the two-argument form,
-             * the whole array with the one-argument form.
-             *
-             * @param array<string, mixed>|string $information
-             */
-            public function setAdditionalInformation($information, $value = null): self
+            public function setAdditionalInformation(string $key, $value): self
             {
-                if (is_array($information)) {
-                    $this->additionalInformation = $information;
-                    return $this;
-                }
-                $this->additionalInformation[$information] = $value;
+                $this->additionalInformation[$key] = $value;
+
                 return $this;
             }
 
@@ -124,8 +115,6 @@ namespace Magento\Checkout\Model {
         {
             private int $twoSelectedTerm = 0;
 
-            private ?\Magento\Quote\Model\Quote $quote = null;
-
             public function getTwoSelectedTerm(): int
             {
                 return $this->twoSelectedTerm;
@@ -134,19 +123,6 @@ namespace Magento\Checkout\Model {
             public function setTwoSelectedTerm(int $days): void
             {
                 $this->twoSelectedTerm = $days;
-            }
-
-            public function getQuote(): \Magento\Quote\Model\Quote
-            {
-                if ($this->quote === null) {
-                    $this->quote = new \Magento\Quote\Model\Quote();
-                }
-                return $this->quote;
-            }
-
-            public function setQuote(\Magento\Quote\Model\Quote $quote): void
-            {
-                $this->quote = $quote;
             }
         }
     }
@@ -178,8 +154,10 @@ namespace Two\Gateway\Service\Order {
             /** @var array<int, ?int> */
             public array $storeIds = [];
 
-            public function __construct($checkoutSession = null, $configRepository = null)
-            {
+            public function __construct(
+                ?\Magento\Checkout\Model\Session $checkoutSession = null,
+                ?\Two\Gateway\Api\Config\RepositoryInterface $configRepository = null
+            ) {
             }
 
             public function resolve(?int $storeId = null): int

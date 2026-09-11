@@ -287,11 +287,13 @@ rendering the resolved fallback as already-selected would make the chip inert an
 strand the buyer behind the term re-check that runs first at placement
 (TWO-24812).
 
-**The payment tile's Magewire component takes new dependencies LAST.** The brand
-overlay subclasses it and forwards the constructor positionally, ending with the
-method code, so a parameter inserted ahead of that lands in the wrong slot and
-the tile stops constructing on every branded store view. No CI leg in this repo
-pairs the extension with that overlay, so nothing here would catch it.
+**The payment tile's Magewire component takes new dependencies LAST, after the
+method code.** A brand overlay subclasses it and forwards the constructor
+positionally, so a parameter inserted ahead of the method code lands in the wrong
+slot and the tile stops constructing on every branded store view. No CI leg in
+this repo pairs the extension with an overlay, so nothing here would catch it —
+`Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
+guard.
 
 ### Magewire Components
 
