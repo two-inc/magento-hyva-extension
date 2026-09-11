@@ -295,6 +295,25 @@ extension with such a subclass, so
 `Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
 guard (ABN-556).
 
+### A chip states its term type, not just a day count
+
+An end-of-month term falls due that many days after the end of the month, so a
+chip reading "30 days" on a shop configured that way states the wrong due date
+(ABN-554). The visible text is `30 days` under standard terms and `EOM+30` under
+end of month, and only the end-of-month chip carries a `title` and an
+`aria-label`, both reading `EOM+30: pay 30 days after the end of the month`. The
+name opens with the visible token because WCAG 2.5.3 requires the accessible name
+to contain the visible text, so the phrase may not be reordered to lead with the
+explanation. A standard chip carries neither, since a name restating its visible
+text would risk the same criterion.
+
+**The templates and the name come from the Magewire component, not from the
+template file.** Alpine's CSP build forbids expressions in attribute bindings, so
+the chip's own script can only read a bare identifier; the day count and the
+stored term type are both known server-side, which leaves nothing for the browser
+to decide. That also makes each of them directly unit-testable, where a
+conditional buried in the `.phtml` is not.
+
 ### A term change is never left unpriced
 
 `selectTerm()` writes the session term and reprices; a failed save restores the
