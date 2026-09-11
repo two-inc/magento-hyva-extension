@@ -152,7 +152,7 @@ for may never be generated on a real store. That failure is silent: a
 `bg-red-50 border border-red-200` box renders as an unstyled, colourless box that
 still claims whatever it says. So **colour, border and the geometry of any element
 this module owns go in `view/frontend/web/css/custom.css`**, not in a class list.
-Precedents in that file: `input.company_id:disabled`,
+Precedents in that file:
 `.two-company-search__unavailable`, `.two-company-search__spinner`, and the
 four-state `.two-order-intent-box` (the order-intent verdict box — one box, one
 place in the tile, states differing only in colour, geometry declared once on the
@@ -316,9 +316,11 @@ order-intent notices name the company the resolver answers, so a delivery-panel
 pick IS visible there — a notice naming the company the check ran for is required.
 That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
 identity when it presents a company number, else the shipping one, else nothing.
-What the surfaces ask is `twoGatewayInvoiceCompany()`, which puts a number typed
-into the tile's own field FIRST — no identity holds it — then that resolver, then
-the tile's own capture. `twoGatewayApplyInvoiceCompanyFields()` is the ONLY
+What the surfaces ask is `twoGatewayInvoiceCompany()`, which takes that
+resolver's answer and falls back to the tile's own capture. **No surface on this
+checkout offers an editable company identifier** (ABN-564): a number reaches the
+pair only from a registry hit, so there is no hand-entered value for either to
+prefer. `twoGatewayApplyInvoiceCompanyFields()` is the ONLY
 writer of the `payment[company_name]` / `payment[company_id]` pair that submits:
 it writes each field from that answer and blanks neither while it holds a value
 the writer did not put there, which is why the surface mirrors' clear and repaint

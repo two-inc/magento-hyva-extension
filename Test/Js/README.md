@@ -191,28 +191,25 @@ caller abort (so a timeout goes silent) fails 8. Both loader rules likewise: inv
 `this.searchAbortController === controller` fails four tests, and weakening it to an
 unconditional `done` fails the supersession test.
 
-The TWO-25253 identifier guard was mutation-checked the same way, **twenty-three** separate
-reverts, each red. Every count below was taken against the shipped templates, one revert at
-a time, never carried forward from an earlier revision:
+ABN-564 removed the editable company identifier from this checkout altogether, and with it
+the state family that decided when the field was locked — the lock flag, the entry-required
+flag, the formula that derived one from the other, and the two class getters that hid the
+block. A captured number is read-only text in the tile label, and a company the registry has
+no number for is simply not captured.
 
-| Mutation                                                                        | Tests failing                                                                    |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Delete `:disabled="companyIdDisabled"` from `gateway_method.phtml`              | `payment-company-selection.test.js` fails to run at all — 28 tests never execute |
-| Drop the editability recompute from `getItems()`                                | 2                                                                                |
-| `getItems()` recompute always `true` (blanket unlock)                           | 1                                                                                |
-| `getItems()` recompute always `false` (blanket lock)                            | 6                                                                                |
-| Hoist the `getItems()` recompute above its `isSelecting` early return           | 1                                                                                |
-| `identifierOf` back to a truthiness test (so `id: 0` reads as absent)           | 1                                                                                |
-| `manualMode` watcher back to assigning `!value` inline                          | 1                                                                                |
-| `companyIdDisabled` declared `false` instead of `true`                          | 1                                                                                |
-| `fillCompanyData()` bails on an empty id again                                  | 4                                                                                |
-| `selectItem()` stops deriving `companyIdEntryRequired`                          | 6                                                                                |
-| `initialize()` stops deriving it at all (forced `false`)                        | 5                                                                                |
-| `initialize()` back to `Boolean(company_name) && !company_id`                   | 3                                                                                |
-| `initialize()` derivation forced `true` (blanket unlock)                        | 3                                                                                |
-| Drop the `x-for :key` fallback                                                  | 1                                                                                |
-| Drop the `companyId &&` term from the order-intent trigger                      | 1                                                                                |
-| `applyCompanyIdEditability()` ignores `companyIdEntryRequired`                  | 16                                                                               |
+The removal is pinned the same way, one revert at a time against the shipped templates:
+
+| Mutation                                                                      | Named failure                                                                              |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| The tile's identifier input restored as `type="text"` with `required`         | `the payment tile carries the identifier as a hidden input only` — `["text", true, true]`   |
+| A lock flag declared on the engine again                                      | four suites, including every row of `no unlock survives on the component`                   |
+| A lock flag written by `selectItem()` only                                    | `no unlock survives on the component` cases 1-6, case 0 still green                         |
+| The vouched-number test ignores provenance                                    | two rows of `a number counts as vouched for only when the registry supplied it`             |
+| The dead hand-entered-number branch restored in the invoice-company resolver  | both rows of `a stray number in the submitted field is never taken as a capture`            |
+
+The last row matters most: with nothing left that can put a number in the submitted field by
+hand, a value found there is not a capture, and a resolver that preferred it would hand the
+order a company nothing vouched for.
 
 The per-role isolation guards (`panel-role-isolation.test.js`, and the surviving dual-mount
 cases in `capture-identity-watchers.test.js`) were mutation-checked the same way, against the
@@ -236,13 +233,11 @@ flipping back on the next `element.updated` sweep, with no timer anywhere:
 | Watcher teardown left to the next mount's sweep instead of the re-render     | 1             |
 | A number recovered from the shipping form's own fields claimed as `registry` | 1             |
 
-One of these **started green**, and it is worth recording why. Flipping
-the declared `companyIdDisabled: true` to `false` changed nothing, because `initialize()` calls
-`applyCompanyIdEditability()` unconditionally and overwrites the literal — so every
-assertion made after mounting held either way. The literal is nonetheless the state Alpine
-binds on FIRST PAINT, before `initialize()` has run, and a wrong one flashes the field open.
-It is now pinned by mounting the factory without calling `initialize()`. Nothing in the
-re-verified table above starts green.
+One mutation above starts green on the component alone and is worth recording: a lock flag
+declared on the engine is invisible to any assertion made after mounting, because the
+lifecycle would overwrite the literal. It is caught by mounting the factory without calling
+`initialize()`, which is the state Alpine binds on FIRST PAINT. Nothing in the table starts
+green.
 
 Two things here have **no automated coverage** and are called out rather than implied: the
 `input.company_id:disabled` rule in `custom.css` (no test asserts that rule), and Alpine's own
@@ -304,14 +299,11 @@ the resolver from publishing an organisation number as `company_name`. Reducing 
 (`twoGatewayHyvaPaymentMethodBase`) does with a selected company once `companyId` is
 allowed to be empty. Stopping the throw above is only half the fix; the half that costs
 money is downstream. `fillCompanyData()` used to bail on an empty id, so selecting a company
-with no identifier wrote the new NAME and left the PREVIOUS company's identifier in the
-field — disabled, so the buyer could not correct it, and read straight back out by
-`buildOrderIntentRequestBody()` and by the checkout's own `payment[company_id]`. Covered:
-name and id always describing the same company, the id field left empty but **editable**
-(empty and disabled is an unfillable required field), the locked state derived in one place
-from `manualMode || companyIdEntryRequired` so leaving manual mode cannot re-lock a field
-still to be filled, selecting an identified company afterwards re-locking it, the same
-state restored from browser storage, no order intent dispatched for an empty id, and the dropdown's
+with no identifier wrote the new NAME and left the PREVIOUS company's identifier behind, read
+straight back out by `buildOrderIntentRequestBody()` and by the checkout's own
+`payment[company_id]`. Covered: name and id always describing the same company, the pair
+cleared together, the same state restored from browser storage, no order intent dispatched
+for an empty id, and the dropdown's
 `x-for :key` staying unique when two hits in one response both lack an identifier (it was
 bound to `companyId`, and Alpine renders one row per distinct key, so a collision on `''`
 silently cost the buyer a company that matched; both surfaces bind a getter with a positional
@@ -375,21 +367,13 @@ indistinguishable from the hardcoded literal. Covered on both entry points (page
 `checkout:payment:method-activate`): the brand's code acts, another brand's does not, and the
 rendered JS contains no `two_payment` at all.
 
-Also covered in `payment-company-selection.test.js`, for the state that binding exists to
-cover: a name **typed without picking a dropdown hit**. Landing `:disabled="companyIdDisabled"` with a declared
-default of `true` locked the field on first paint, where before the binding existed nothing
-locked it until a shipping sync did so imperatively. A buyer who typed a company name and
-never selected a hit was then facing a `company_id` that was empty AND disabled AND
-required — and the only escape, "Enter details manually", sits inside the dropdown's
-`x-show="isOpen"`, so it vanishes the moment they tab away. `getItems()`, the name field's
-own `@input.debounce.300ms` handler, now recomputes `companyIdEntryRequired` on every edit
-from the invariant the whole binding exists for: **enabled whenever there is no
-registry-supplied identifier for the name currently in the field, disabled exactly when one
-has been written for it**. Six tests pin it, including the two that stop an over-correction
-— a blanket unlock would re-open the hand-overwritable registry-number hole, and the
-recompute must stay BELOW the `isSelecting` early return or it undoes the lock the
-selection just applied. Note the declared default is deliberately still `true`: it is the
-state Alpine binds before `initialize()` runs, and the field must not flash open.
+Also covered in `payment-company-selection.test.js`: a name **typed without picking a
+dropdown hit**. There is no identifier field for the buyer to be stranded in front of any
+more, so what that suite pins is the capture itself — a typed name captures no number, and no
+lifecycle step puts an editable identifier or an unlock back on the component. One table
+drives mount, a pick with a number, a pick without one, a replacement pick, the identity
+clearing, manual entry and an adoption with no identifier; each asserts that nothing on the
+component could unlock a field.
 
 And a further state it has to cover: that recompute writes **component state only**, and
 Magewire re-renders destroy and rebuild the component. Only `selectItem()` writes browser
@@ -411,14 +395,12 @@ binding closes. What is lost is the half-typed name, which is the restore's pre-
 "storage wins over a transient edit" behaviour. The pair never disagrees, which is the
 property that costs money.
 
-Every editability assertion in that file lands on `document.getElementById('company_id')
-.disabled`, applied through the **real** `:disabled` expression read out of
-`gateway_method.phtml`. That is not decoration. The first version of this suite asserted only
-on `companyIdDisabled`, which at the time was bound to nothing at all: the field was disabled
-imperatively elsewhere and never re-enabled, so the suite passed with the required field
-permanently uneditable — the exact condition the fix exists to prevent. Deleting the
-`:disabled` attribute from the template now fails the whole file at load. A test that cannot
-fail for the reason the fix exists is not a test of the fix.
+Every identifier assertion in that file reads the **shipped** markup rather than a component
+flag: the element's `type`, and the absence of `required`, `data-validate`, `:disabled` and
+`:class` on it. State bound to nothing is the trap this suite has fallen into before — an
+earlier version asserted only on a lock flag that no template bound, and passed while the
+real field sat permanently uneditable. A test that cannot fail for the reason the fix exists
+is not a test of the fix.
 
 Its own file because the template registers unremovable top-level `window` listeners — see
 the known-leak note below.
@@ -623,13 +605,10 @@ renderer.
 object, and the composition is a thing that can be wrong on its own.
 TWO-25332: it composed with object **spread**, which copies own enumerable properties by
 value — so it invoked each of the base's getters once and stored the reading as a plain data
-property. Seven derived values were frozen at their pre-interaction state on the only
-component that paints them (`orderIntentMessageVisible`, `companyTileLabelText`,
-`companySearchBlockVisible`, `companyChangeControlVisible`, `companyNumberBlockHiddenClass`,
-`companyIdHiddenClass`, and the `companyIdHintVisible` derivation the last four of those
-read), so
-the whole company-search apparatus on the tile was inert in production behind 476 green
-tests. **No number of assertions against the base object could have failed for it.**
+property. Derived values were frozen at their pre-interaction state on the only component
+that paints them — `orderIntentMessageVisible` and `companyTileLabelText` among them, along
+with the company-search and company-number gates of the day — so the whole company-search
+apparatus on the tile was inert in production behind 476 green tests. **No number of assertions against the base object could have failed for it.**
 
 What the suite therefore pins, in the order that matters:
 
@@ -640,18 +619,17 @@ What the suite therefore pins, in the order that matters:
   shipped markup names a key the form component defines. Nested `x-data` subtrees are
   skipped: a binding under `PaymentTermsComponent` resolves against that component, and it
   would pass here either way today only because that factory returns `PaymentMethodBase()`
-  unchanged. The walk has a **floor** under it: the seven bindings whose getters the freeze
-  killed — naming six distinct getters, since the label's gate and the notice's gate are
-  deliberately the same one — are asserted to be inside the enumerated set, because a nesting
+  unchanged. The walk has a **floor** under it: the three surviving bindings whose getters the
+  freeze killed — naming two distinct getters, since the label's gate and the notice's gate
+  are deliberately the same one — are asserted to be inside the enumerated set, because a nesting
   change would otherwise shrink the enumeration silently, the walk itself only throwing on an
-  empty result. The distinct-getter set is asserted by name too: resolving two entries to one
-  expression is how `companyNumberBlockHiddenClass` fell out of this floor once;
+  empty result. The distinct-getter set is asserted by name too, so a helper that resolved two
+  entries to one expression fails here rather than passing with a hole in it;
 - the composer keeps a getter live on both sides and keeps the validation object's
   precedence on a name collision (there is none today — the base names its entry point
   `initialize(quote)`, not `init` — so the ordering is pinned on the composer itself);
-- the four revived behaviours, on the form component, including the two states where a getter
-  is read before the value behind it exists: a read before `initialize()`, and the tick inside
-  `initialize()` where `companyIdDisabled` is derived but `companyId` is not written yet;
+- the four revived behaviours, on the form component, including a getter read before
+  `initialize()` has put anything behind it;
 - the notice-clearing `$watch`es, registered and fired on the FORM component with a recording
   `$watch` rather than the shared instance's no-op stub;
 - the configuration where order intent never fires (disabled for the merchant, or a Dutch

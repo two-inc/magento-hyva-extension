@@ -472,7 +472,7 @@ describe("the payment tile's mounted control (integration)", () => {
     expect(panel.options.isChipVisible("manual")).toBe(false);
   });
 
-  test("manual entry hands the field back, and search takes it again", () => {
+  test("manual entry hands the NAME field back, and search takes it again", () => {
     capture().manualEntryMode();
 
     expect(component.manualMode).toBe(true);
@@ -481,9 +481,10 @@ describe("the payment tile's mounted control (integration)", () => {
     // the panel has let go of it.
     expect(panel.calls).toContain("releaseField");
     expect(component.searchModeActive).toBe(false);
-    // The company-number input unlocks with it, since nothing has vouched for
-    // an identifier for a hand-typed name.
-    expect(component.companyIdDisabled).toBe(false);
+    // ABN-564: the NAME only. Manual entry vouches for no identifier and
+    // opens no way to type one.
+    expect(component.hasVouchedCompanyId()).toBe(false);
+    expect("companyIdDisabled" in component).toBe(false);
 
     capture().registeredMode();
     expect(component.searchModeActive).toBe(true);

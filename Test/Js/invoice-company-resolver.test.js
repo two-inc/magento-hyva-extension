@@ -442,25 +442,20 @@ describe("the invoice-company resolver", () => {
     [NOTHING, "nothing captured anywhere"],
     [SHIPPING, "a delivery company captured as well"],
   ])(
-    "a number typed into the tile's own field outranks %s (%s)",
+    "a stray number in the submitted field is never taken as a capture, with %s (%s)",
     (shipping, description) => {
+      // No surface offers an editable identifier (ABN-564), so a value the
+      // writer did not put there vouches for nothing and must not become the
+      // company being placed for.
       render(true);
       capture("shipping", shipping);
       const tile = mountTile();
 
       document.getElementById("company_id").value = "99999999";
-      window.twoGatewayApplyInvoiceCompanyFields(tile);
 
-      expect([description, document.getElementById("company_id").value]) //
-        .toEqual([description, "99999999"]);
-      expect([description, tile.invoiceCompany()]).toEqual([
+      expect([description, tile.invoiceCompany().companyId]).toEqual([
         description,
-        {
-          companyName: "",
-          companyId: "99999999",
-          companyIdSource: "manual",
-          role: "typed",
-        },
+        shipping === NOTHING ? "" : shipping.companyId,
       ]);
     },
   );

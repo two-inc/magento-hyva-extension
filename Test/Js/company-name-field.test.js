@@ -640,7 +640,7 @@ describe("company-name field picker", () => {
       expect(fetchStub.searchCalls()).toHaveLength(before);
       expect(restored.companyId).toBe("111");
       expect(restored.companyIdSource).toBe("registry");
-      expect(restored.companyIdDisabled).toBe(true);
+      expect(restored.hasVouchedCompanyId()).toBe(true);
     });
   });
 
