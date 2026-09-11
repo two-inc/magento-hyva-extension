@@ -20,7 +20,6 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\TermSurchargePreview;
-use Two\Gateway\Service\Order\ChargedTermResolver;
 
 /**
  * GatewayMethod - Hyvä Checkout
@@ -95,19 +94,7 @@ class GatewayMethod extends Component
         private LogRepository $logRepository,
         private LocaleResolver $localeResolver,
         private string $methodCode = 'two_payment',
-        // Last and optional: the brand overlay subclasses this component and
-        // forwards the constructor positionally.
-        private ?ChargedTermResolver $chargedTerm = null,
     ) {}
-
-    private function chargedTerm(): ChargedTermResolver
-    {
-        if ($this->chargedTerm === null) {
-            $this->chargedTerm = new ChargedTermResolver($this->checkoutSession, $this->configRepository);
-        }
-
-        return $this->chargedTerm;
-    }
 
     /**
      * @throws LocalizedException
@@ -144,10 +131,7 @@ class GatewayMethod extends Component
     {
         $quote = $this->checkoutSession->getQuote();
         $payment = $quote->getPayment();
-        $additionalData = $value["additionalData"] ?? [];
-        // Placement refuses a term that disagrees with the priced one (ABN-556).
-        $additionalData['selectedTerm'] = $this->chargedTerm()->resolve((int) $quote->getStoreId());
-        $payment->setAdditionalInformation($additionalData);
+        $payment->setAdditionalInformation($value["additionalData"]);
         $quote->setPayment($payment);
         $this->quoteRepository->save($quote);
     }
@@ -231,7 +215,9 @@ class GatewayMethod extends Component
             // BCP-47 with hyphens. Translate.
             $this->currencyLocale = (string) str_replace('_', '-', (string) $this->localeResolver->getLocale());
 
-            $this->selectedTerm = $this->chargedTerm()->resolve($storeId);
+            $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
+            $defaultTerm = (int) $this->configRepository->getDefaultPaymentTerm($storeId);
+            $this->selectedTerm = $sessionTerm > 0 ? $sessionTerm : $defaultTerm;
 
             // Chips visibility is driven by available payment terms alone.
             // Surcharge type only gates per-chip surcharge value display —
