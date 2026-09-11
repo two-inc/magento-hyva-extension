@@ -142,6 +142,10 @@ const PHP_VALUE_RULES = [
   // The end-of-month chip's accessible name, distinct from every label above so
   // a test reading it can tell it apart from the visible-text templates.
   [/^\$chipName$/, "EOM+%1: pay %1 days after the end of the month"],
+  [
+    /^\$chipNameWithFee$/,
+    "EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge",
+  ],
   [/^\$singleDay$/, "30"],
   [/^\$(pluralLabel|singularLabel)$/, "day"],
   [/^\(int\) \$days$/, "14"],

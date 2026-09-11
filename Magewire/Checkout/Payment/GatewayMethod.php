@@ -324,6 +324,25 @@ class GatewayMethod extends Component
     }
 
     /**
+     * The same sentence stating the surcharge as well, `%2` left for the browser
+     * to substitute once the quote lands. An `aria-label` replaces the whole
+     * accessible name, so the amount rendered inside the chip is announced
+     * nowhere unless the name carries it too.
+     */
+    public function chipExplanationWithFee(int $days): string
+    {
+        if (!$this->isEndOfMonth) {
+            return '';
+        }
+
+        return str_replace(
+            '%1',
+            (string) $days,
+            (string) __('EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge')
+        );
+    }
+
+    /**
      * Calculator basis matches the read-only Surcharges webapi endpoint:
      * persisted grand_total minus the surcharge segment we just wrote.
      * That excludes our own contribution so chip-to-chip switches don't
