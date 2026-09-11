@@ -29,6 +29,8 @@ namespace Magento\Quote\Model\Quote {
             /** @var array<string, mixed> */
             private array $additionalInformation = [];
 
+            private ?string $method = null;
+
             public function setAdditionalInformation(string $key, $value): self
             {
                 $this->additionalInformation[$key] = $value;
@@ -40,6 +42,18 @@ namespace Magento\Quote\Model\Quote {
             public function getAdditionalInformation(): array
             {
                 return $this->additionalInformation;
+            }
+
+            public function getMethod(): ?string
+            {
+                return $this->method;
+            }
+
+            public function setMethod(?string $method): self
+            {
+                $this->method = $method;
+
+                return $this;
             }
         }
     }
@@ -79,6 +93,16 @@ namespace Magento\Quote\Model {
                 $this->payment = $payment;
                 return $this;
             }
+
+            public function collectTotals(): self
+            {
+                return $this;
+            }
+
+            public function getQuoteCurrencyCode(): string
+            {
+                return 'EUR';
+            }
         }
     }
 }
@@ -115,6 +139,10 @@ namespace Magento\Checkout\Model {
         {
             private int $twoSelectedTerm = 0;
 
+            private float $twoSurchargeGross = 0.0;
+
+            private ?\Magento\Quote\Model\Quote $quote = null;
+
             public function getTwoSelectedTerm(): int
             {
                 return $this->twoSelectedTerm;
@@ -123,6 +151,30 @@ namespace Magento\Checkout\Model {
             public function setTwoSelectedTerm(int $days): void
             {
                 $this->twoSelectedTerm = $days;
+            }
+
+            public function getQuote(): \Magento\Quote\Model\Quote
+            {
+                if ($this->quote === null) {
+                    $this->quote = new \Magento\Quote\Model\Quote();
+                }
+
+                return $this->quote;
+            }
+
+            public function setQuote(\Magento\Quote\Model\Quote $quote): void
+            {
+                $this->quote = $quote;
+            }
+
+            public function getTwoSurchargeGross(): float
+            {
+                return $this->twoSurchargeGross;
+            }
+
+            public function setTwoSurchargeGross(float $gross): void
+            {
+                $this->twoSurchargeGross = $gross;
             }
         }
     }
