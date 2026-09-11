@@ -40,10 +40,10 @@ class GatewayMethodSelectedTermTest extends TestCase
     {
         return [
             ['the chip choice is charged', 90, [30, 60, 90], 30, 90],
+            ['an offered non-default choice is charged, not the default', 60, [30, 60], 30, 60],
             ['no choice leaves the configured default charged', 0, [30, 60, 90], 30, 30],
             ['a term the merchant withdrew is not charged', 45, [30, 60, 90], 30, 30],
-            ['an empty offered set is a cold cache, not a withdrawal', 90, [], 30, 90],
-            ['nothing offered and no default resolves to no term', 0, [], null, 0],
+            ['nothing offered leaves no term to charge', 90, [], null, 0],
         ];
     }
 
@@ -82,8 +82,9 @@ class GatewayMethodSelectedTermTest extends TestCase
     {
         return [
             ['the term is stated at placement, whatever the tile sent earlier', 90, [30, 60, 90], 30, 90],
+            ['an offered non-default choice is stated, not the default', 60, [30, 60], 30, 60],
             ['a withdrawn choice states the default the surcharge was priced on', 45, [30, 60, 90], 30, 30],
-            ['with no term to state nothing is written onto the payment', 0, [], null, null],
+            ['with no term to state nothing is written onto the payment', 90, [], null, null],
         ];
     }
 
@@ -157,6 +158,12 @@ class GatewayMethodSelectedTermTest extends TestCase
             {
                 $this->storeIds[] = $storeId;
                 return $this->offered;
+            }
+
+            public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool
+            {
+                $this->storeIds[] = $storeId;
+                return in_array($termDays, $this->offered, true);
             }
         };
     }

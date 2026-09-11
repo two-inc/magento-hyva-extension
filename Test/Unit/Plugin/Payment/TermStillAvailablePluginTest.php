@@ -43,6 +43,11 @@ class TermStillAvailablePluginTest extends TestCase
             {
                 return $this->offeredTerms;
             }
+
+            public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool
+            {
+                return in_array($termDays, $this->offeredTerms, true);
+            }
         };
 
         $plugin = new TermStillAvailablePlugin($checkoutSession, $configRepository);

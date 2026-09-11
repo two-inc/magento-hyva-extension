@@ -269,9 +269,16 @@ be up alongside nothing. All four are one box style in one place. The rules that
 
 `Service\ChargedTerm` is the single answer to "which payment term is this
 checkout charged for": the buyer's chip choice while the merchant still offers
-it, else the configured default, and an empty offered set is a cold cache
-rather than a withdrawal. The chip state, the tile's placement payload and the
-page config all read it, so no two of them can name a different term.
+it, else the configured default, and no term at all when nothing is offered.
+That is the same answer the base module prices the surcharge on, deliberately —
+the two disagreeing is what placement refuses. The chip state, the tile's
+placement payload and the page config all read it, so no two of them can name a
+different term.
+
+A choice the merchant withdraws mid-checkout does not silently become the
+default: the term re-check that runs first at placement (TWO-24812) still
+refuses it and tells the buyer to reselect. The fallback is what the chips and
+the surcharge use until they do.
 
 `Plugin\Payment\RecordSelectedTermPlugin` states that term on the quote
 payment immediately before placement, because the base module resolves the
