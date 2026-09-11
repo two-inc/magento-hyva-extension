@@ -9,12 +9,11 @@ use ReflectionMethod;
 use Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod;
 
 /**
- * A brand overlay subclasses this component and forwards the constructor
- * positionally up to and including the method code, so the method code has to
- * stay at the position it holds. A dependency inserted ahead of it lands in the
- * wrong parameter and the payment tile stops constructing on every branded store
- * view — which no CI leg in this repository would catch. Appending after it is
- * safe, which is why the assertion pins a position rather than the end.
+ * Subclasses outside this repository forward this constructor positionally, so
+ * the method code has to keep the position it holds — a dependency inserted
+ * ahead of it lands in the wrong parameter and the payment tile stops
+ * constructing. Appending after it is safe, which is why the assertion pins a
+ * position rather than the end.
  */
 class GatewayMethodConstructorTest extends TestCase
 {

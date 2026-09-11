@@ -288,12 +288,12 @@ strand the buyer behind the term re-check that runs first at placement
 (TWO-24812).
 
 **The payment tile's Magewire component takes new dependencies LAST, after the
-method code.** A brand overlay subclasses it and forwards the constructor
-positionally, so a parameter inserted ahead of the method code lands in the wrong
-slot and the tile stops constructing on every branded store view. No CI leg in
-this repo pairs the extension with an overlay, so nothing here would catch it —
+method code.** Subclasses outside this repository forward the constructor
+positionally, so a dependency inserted ahead of the method code lands in the
+wrong parameter and the tile stops constructing. No CI leg here pairs the
+extension with such a subclass, so
 `Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
-guard.
+guard (ABN-556).
 
 ### A term change is never left unpriced
 
