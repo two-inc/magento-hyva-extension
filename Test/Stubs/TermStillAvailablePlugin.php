@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-// Minimal stubs of the Magento/Hyva types TermStillAvailablePlugin and
-// PlaceOrderService depend on. Only the surface these classes actually
-// call is stubbed — see Test/bootstrap.php for the convention.
+// Minimal stubs of the Magento/Hyva quote, session and placement types the
+// term-selection suites exercise. Only the surface the code under test
+// actually calls is stubbed — see Test/bootstrap.php for the convention.
 
 namespace Magento\Quote\Api {
     if (!interface_exists(CartManagementInterface::class, false)) {
@@ -22,11 +22,52 @@ namespace Hyva\Checkout\Model\Magewire\OrderData {
     }
 }
 
+namespace Magento\Quote\Model\Quote {
+    if (!class_exists(Payment::class, false)) {
+        class Payment
+        {
+            /** @var array<string, mixed> */
+            private array $additionalInformation = [];
+
+            private ?string $method = null;
+
+            public function setAdditionalInformation(string $key, $value): self
+            {
+                $this->additionalInformation[$key] = $value;
+
+                return $this;
+            }
+
+            /** @return array<string, mixed> */
+            public function getAdditionalInformation(): array
+            {
+                return $this->additionalInformation;
+            }
+
+            public function getMethod(): ?string
+            {
+                return $this->method;
+            }
+
+            public function setMethod(?string $method): self
+            {
+                $this->method = $method;
+
+                return $this;
+            }
+        }
+    }
+}
+
 namespace Magento\Quote\Model {
+    use Magento\Quote\Model\Quote\Payment;
+
     if (!class_exists(Quote::class, false)) {
         class Quote
         {
             private int $storeId = 0;
+
+            private ?Payment $payment = null;
 
             public function getStoreId(): int
             {
@@ -38,6 +79,41 @@ namespace Magento\Quote\Model {
                 $this->storeId = $storeId;
                 return $this;
             }
+
+            public function getPayment(): Payment
+            {
+                if ($this->payment === null) {
+                    $this->payment = new Payment();
+                }
+                return $this->payment;
+            }
+
+            public function setPayment(Payment $payment): self
+            {
+                $this->payment = $payment;
+                return $this;
+            }
+
+            public function collectTotals(): self
+            {
+                return $this;
+            }
+
+            public function getQuoteCurrencyCode(): string
+            {
+                return 'EUR';
+            }
+        }
+    }
+}
+
+namespace Magento\Quote\Api {
+    use Magento\Quote\Model\Quote;
+
+    if (!interface_exists(CartRepositoryInterface::class, false)) {
+        interface CartRepositoryInterface
+        {
+            public function save(Quote $quote): void;
         }
     }
 }
@@ -63,6 +139,10 @@ namespace Magento\Checkout\Model {
         {
             private int $twoSelectedTerm = 0;
 
+            private float $twoSurchargeGross = 0.0;
+
+            private ?\Magento\Quote\Model\Quote $quote = null;
+
             public function getTwoSelectedTerm(): int
             {
                 return $this->twoSelectedTerm;
@@ -71,6 +151,30 @@ namespace Magento\Checkout\Model {
             public function setTwoSelectedTerm(int $days): void
             {
                 $this->twoSelectedTerm = $days;
+            }
+
+            public function getQuote(): \Magento\Quote\Model\Quote
+            {
+                if ($this->quote === null) {
+                    $this->quote = new \Magento\Quote\Model\Quote();
+                }
+
+                return $this->quote;
+            }
+
+            public function setQuote(\Magento\Quote\Model\Quote $quote): void
+            {
+                $this->quote = $quote;
+            }
+
+            public function getTwoSurchargeGross(): float
+            {
+                return $this->twoSurchargeGross;
+            }
+
+            public function setTwoSurchargeGross(float $gross): void
+            {
+                $this->twoSurchargeGross = $gross;
             }
         }
     }
@@ -84,6 +188,36 @@ namespace Two\Gateway\Api\Config {
             public function getAllBuyerTerms(?int $storeId = null): array;
 
             public function isCompanySearchEnabled(?int $storeId = null): bool;
+        }
+    }
+}
+
+namespace Two\Gateway\Service\Order {
+    if (!class_exists(ChargedTermResolver::class, false)) {
+        /**
+         * The base module's charged-term resolver. Its resolution is tested in
+         * that module; here it answers whatever a test sets, and records the
+         * store ids it was asked about.
+         */
+        class ChargedTermResolver
+        {
+            public int $resolved = 0;
+
+            /** @var array<int, ?int> */
+            public array $storeIds = [];
+
+            public function __construct(
+                ?\Magento\Checkout\Model\Session $checkoutSession = null,
+                ?\Two\Gateway\Api\Config\RepositoryInterface $configRepository = null
+            ) {
+            }
+
+            public function resolve(?int $storeId = null): int
+            {
+                $this->storeIds[] = $storeId;
+
+                return $this->resolved;
+            }
         }
     }
 }

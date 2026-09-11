@@ -15,6 +15,7 @@ require __DIR__ . '/Stubs/TermStillAvailablePlugin.php';
 require __DIR__ . '/Stubs/SurchargeDisplay.php';
 require __DIR__ . '/Stubs/CheckoutTileCopy.php';
 require __DIR__ . '/Stubs/TwoGatewayCacheType.php';
+require __DIR__ . '/Stubs/GatewayMethodDependencies.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';

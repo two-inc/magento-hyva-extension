@@ -11,7 +11,6 @@ declare(strict_types=1);
 
 namespace Two\GatewayHyva\ViewModel;
 
-use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -79,11 +78,6 @@ class CheckoutConfig implements ArgumentInterface
     private $assetRepository;
 
     /**
-     * @var CheckoutSession
-     */
-    private $checkoutSession;
-
-    /**
      * @var BrandedHyvaViewModelInterface
      */
     private $brandedViewModel;
@@ -120,7 +114,6 @@ class CheckoutConfig implements ArgumentInterface
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
-        CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
         ApiKeyVerificationStatus $apiKeyVerificationStatus,
         CheckoutTileCopy $checkoutTileCopy,
@@ -131,7 +124,6 @@ class CheckoutConfig implements ArgumentInterface
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
-        $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
         $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
         $this->checkoutTileCopy = $checkoutTileCopy;
@@ -172,15 +164,6 @@ class CheckoutConfig implements ArgumentInterface
     public function getDefaultPaymentTerm(): int
     {
         return (int) $this->configRepository->getDefaultPaymentTerm();
-    }
-
-    /**
-     * Currently selected term in checkout session, falling back to default.
-     */
-    public function getSelectedPaymentTerm(): int
-    {
-        $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
-        return $sessionTerm > 0 ? $sessionTerm : $this->getDefaultPaymentTerm();
     }
 
     public function getSurchargeDescription(): string

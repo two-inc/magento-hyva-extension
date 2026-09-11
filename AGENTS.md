@@ -265,6 +265,46 @@ be up alongside nothing. All four are one box style in one place. The rules that
   `disabled` attribute those events no longer reach in Hyvä Checkout 1.3.13, lifting
   only its own decline so a placement already in flight stays blocked.
 
+### Placement states the charged term
+
+`Plugin\Payment\RecordSelectedTermPlugin` states the payment term this checkout
+is charged for on the quote payment immediately before placement, reading the
+base module's own charged-term resolver — the same object that module prices the
+surcharge through, so the order and the fee cannot name different terms. Without
+it the payload carried no term at all, the composer substituted the configured
+default, and every other offered term was refused as unavailable (ABN-556).
+
+It belongs at placement rather than in the tile's payload assembly: that
+assembly runs only while order intent is enabled, and a round trip earlier, so
+a chip clicked afterwards would leave the recorded term behind. Both brands
+route placement through the same plugged service, so the plugin is the one place
+that covers every store view.
+
+**The chip state stays the buyer's raw choice, not the resolved one.** A term the
+merchant withdraws mid-checkout matches no chip, which is what leaves the default
+chip clickable — and clicking it is the only thing that rewrites the session, so
+rendering the resolved fallback as already-selected would make the chip inert and
+strand the buyer behind the term re-check that runs first at placement
+(TWO-24812).
+
+**The payment tile's Magewire component takes new dependencies LAST, after the
+method code.** Subclasses outside this repository forward the constructor
+positionally, so a dependency inserted ahead of the method code lands in the
+wrong parameter and the tile stops constructing. No CI leg here pairs the
+extension with such a subclass, so
+`Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
+guard (ABN-556).
+
+### A term change is never left unpriced
+
+`selectTerm()` writes the session term and reprices; a failed save restores the
+previous term and reprices again, in that order. The surcharge is priced off
+the session term, and placement compares the term it composes the order with
+against the term the fee was priced on — it refuses a disagreement and charges
+an agreement, so a restored-but-unpriced term would compose the previous term
+carrying the abandoned term's fee. When the compensating repricing also fails
+the session goes back to the abandoned term, whose fee it is still holding.
+
 ### Magewire Components
 
 - Located in `Magewire/` directory
