@@ -4418,7 +4418,7 @@ $quoteDetails = json_encode(
                 if (!this.name) return '';
                 const amount = this.isLoading ? '' : this.surchargeAmountText;
                 if (!amount || !this.nameWithFee) return this.name;
-                return this.nameWithFee.replace('%2', amount);
+                return this.nameWithFee.split('%2').join(amount);
             },
 
             // CSP-friendly Alpine refuses boolean operators in attribute
