@@ -19,17 +19,13 @@
  *   |----------------------------------|-----------|--------------------|
  *   | x-show orderIntentMessageVisible | false     | the intent notice  |
  *   | x-text companyTileLabelText      | ''        | name (number)      |
- *   | :class companyNumberBlockHiddenClass | ''    | capture            |
- *   | :class companyIdHiddenClass      | ''        | capture            |
- *   | (companyIdHintVisible, the derivation the other two capture gates read) |
  *
- * Two rows left that table on 2026-08-05, both by deletion rather than by
- * changing behaviour (TWO-25326): `x-show companySearchBlockVisible` and
- * `companyChangeControlVisible`. The search control's visibility is now
- * decided solely by the admin setting that says WHERE the one control renders
- * — never by capture, never by mode — so there is no getter left to find
- * frozen, and the "Change company" button whose gate the second one was is
- * removed with the hide it existed to reverse.
+ * Three more gates once belonged in that table and are gone by deletion rather
+ * than by changing behaviour: `companySearchBlockVisible` and
+ * `companyChangeControlVisible` (TWO-25326 — the search control's visibility is
+ * decided solely by the admin setting that says WHERE the one control renders),
+ * and the company-number gates (ABN-564 — there is no editable identifier for a
+ * gate to hide).
  *
  * So the whole company-search apparatus was inert in production while 476
  * tests passed, because the suites that assert on these getters assert on the
@@ -132,63 +128,10 @@ function formSubtreeBindings() {
 }
 
 /**
- * The bare property name a STRICT ancestor of `selector` binds, for the two
- * blocks that carry no `data-name` themselves.
- *
- * The walk starts at `parentElement`, not at the element: `closest()` matches
- * the element itself first, and the `company_id` input carries a `:class` of
- * its own (`companyIdHiddenClass`), so starting there silently returned the
- * input's binding instead of the block's — which quietly dropped
- * `companyNumberBlockHiddenClass` out of the floor below. The resolved element
- * is asserted not to be the starting one, so that cannot recur.
- *
- * Throws rather than returning nothing: the value is a floor under another
- * test, so a silent blank would raise the floor's own coverage question.
- *
- * @param {string} selector the element inside the block
- * @param {string} ancestorSelector the bound ancestor
- * @param {string} attribute the Alpine binding to read off it
- * @returns {string}
- */
-function ancestorBinding(selector, ancestorSelector, attribute) {
-  const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
-  const doc = new DOMParser().parseFromString(markup, "text/html");
-  const inner = doc.querySelector(selector);
-  if (inner === null) {
-    throw new Error("`" + selector + "` is gone from the payment tile");
-  }
-  const parent = inner.parentElement;
-  const block = parent === null ? null : parent.closest(ancestorSelector);
-  if (block === null || block === inner) {
-    throw new Error(
-      "`" +
-        selector +
-        "` has no STRICT ancestor matching `" +
-        ancestorSelector +
-        "`",
-    );
-  }
-  const expression = block.getAttribute(attribute);
-  if (!expression) {
-    throw new Error(
-      "the block around `" + selector + "` has no `" + attribute + "` gate",
-    );
-  }
-  return expression;
-}
-
-/**
  * The company-search bindings whose getters the spread froze, as the SHIPPED
- * markup names them: SIX bindings naming FIVE distinct getters — the label's
+ * markup names them: THREE bindings naming TWO distinct getters — the label's
  * `x-show` and the notice's `x-show` are deliberately the same getter
- * (TWO-25326). The sixth getter of the five this PR names,
- * `companyIdHintVisible`, is bound to nothing directly; it is the derivation
- * the two remaining capture gates read (`companyIdHiddenClass` and
- * `companyNumberBlockHiddenClass`).
- *
- * `companyChangeControlVisible` — the "Change company" button's own gate —
- * is REMOVED by TWO-25326 along with the button itself, so it is no longer
- * one of these bindings.
+ * (TWO-25326).
  *
  * The floor under `formSubtreeBindings()`: that walk skips nested `x-data`
  * scopes, so a nesting change could otherwise shrink its coverage silently —
@@ -201,39 +144,14 @@ const FROZEN_GETTER_BINDINGS = [
   ['[data-name="company_tile_label"]', "x-show"],
   ['[data-name="company_tile_label"]', "x-text"],
   ['[data-name="order_intent_message"]', "x-show"],
-  ['input[data-name="company_id"]', ":class"],
-]
-  .map(([selector, attribute]) => ({
-    what: selector + " " + attribute,
-    expression: H.readAlpineBinding(
-      H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-      selector,
-      attribute,
-    ),
-  }))
-  // The Company Number block carries no `data-name` of its own — it is the
-  // ancestor of the input that does, which is how
-  // payment-company-tile-label.test.js reads it too.
-  //
-  // "The search block's x-show" was the third entry here until 2026-08-05.
-  // TWO-25326 removed `companySearchBlockVisible`: the
-  // search control's visibility is decided solely by the admin setting that says
-  // WHERE the one control renders, never by capture state, so there is no
-  // `[x-show]` ancestor around the company-name input for a binding to be read
-  // off — which is why this file could not even LOAD until the entry went. It is
-  // deleted rather than re-pointed because there is no replacement gate: the
-  // absence of one IS the fix, and `company-search-one-control.test.js` is where
-  // that is pinned.
-  .concat([
-    {
-      what: "the Company Number block's :class",
-      expression: ancestorBinding(
-        'input[data-name="company_id"]',
-        "[\\:class]",
-        ":class",
-      ),
-    },
-  ]);
+].map(([selector, attribute]) => ({
+  what: selector + " " + attribute,
+  expression: H.readAlpineBinding(
+    H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+    selector,
+    attribute,
+  ),
+}));
 
 /** The label's own visibility gate — the one the getter cannot answer. */
 const LABEL_SHOW_BINDING = H.readAlpineBinding(
@@ -418,28 +336,19 @@ describe("the component the payment form mounts (TWO-25332)", () => {
 
       expect(missing).toEqual([]);
 
-      // FIVE bindings, FOUR distinct getters — the label's gate and the
+      // THREE bindings, TWO distinct getters — the label's gate and the
       // notice's gate are the same getter by design. Asserted so a helper that
-      // silently resolved two entries to one expression, which is exactly how
-      // `companyNumberBlockHiddenClass` fell out of this list once, fails here
-      // rather than passing with a hole in it.
-      //
-      // Was six and five until 2026-08-05: `companySearchBlockVisible` is gone
-      // with the capture-driven hide of the search control (TWO-25326). Both
-      // counts are restated rather than derived, deliberately
-      // — deriving them from the array makes this assertion unable to notice an
-      // entry disappearing, which is the thing it exists to catch.
+      // silently resolved two entries to one expression fails here rather than
+      // passing with a hole in it. Both counts are restated rather than
+      // derived, deliberately: deriving them from the array makes this
+      // assertion unable to notice an entry disappearing, which is the thing
+      // it exists to catch.
       const distinct = FROZEN_GETTER_BINDINGS.map((b) => b.expression).filter(
         (name, index, all) => all.indexOf(name) === index,
       );
-      expect(FROZEN_GETTER_BINDINGS).toHaveLength(5);
+      expect(FROZEN_GETTER_BINDINGS).toHaveLength(3);
       expect(distinct.sort()).toEqual(
-        [
-          "companyIdHiddenClass",
-          "companyNumberBlockHiddenClass",
-          "companyTileLabelText",
-          "orderIntentMessageVisible",
-        ].sort(),
+        ["companyTileLabelText", "orderIntentMessageVisible"].sort(),
       );
     });
   });
@@ -485,34 +394,31 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       expect(fresh.orderIntentMessageVisible).toBe(false);
     });
 
-    test("nothing is captured and nothing is hidden to begin with", () => {
-      // `companySearchBlockVisible` was the first assertion here until
-      // 2026-08-05. The getter is deleted (TWO-25326):
-      // the search control's visibility is decided solely by the admin setting
-      // that says WHERE the one control renders, so there is no component state
-      // left to assert on — its absence is pinned in
-      // company-search-one-control.test.js instead.
-      expect(form.companyNumberBlockHiddenClass).toBe("");
-      expect(form.companyIdHiddenClass).toBe("");
+    test("nothing is captured to begin with", () => {
       expect(form.orderIntentMessageVisible).toBe(false);
       expect(form.companyTileLabelText).toBe("");
     });
 
-    test("capture hides the number block, and nothing hides the search control", () => {
-      // TWO-25326: unlike the Company Number block, the search control no
-      // longer hides on capture — it stays visible and editable exactly as it
-      // was before the pick, so there is no separate "way back" control to
-      // offer any more.
-      //
-      // Asserted as the ABSENCE of the getter rather than as
-      // `companySearchBlockVisible === true`, which is what this used to read.
-      // The getter is deleted, and a getter that returns a constant `true` is a
-      // hide mechanism waiting to be re-enabled; nothing at all is the fix.
+    /**
+     * Gates that could hide a control are asserted ABSENT rather than
+     * constant-true: a getter returning a constant is a hide mechanism waiting
+     * to be re-enabled, and nothing at all is the fix.
+     *
+     * `companySearchBlockVisible` — the capture-driven hide of the search
+     * control (TWO-25326). The company-number gates — ABN-564, where the
+     * identifier itself is no longer editable, so there is nothing to hide.
+     */
+    test.each([
+      ["companySearchBlockVisible"],
+      ["companyIdHintVisible"],
+      ["companyIdHiddenClass"],
+      ["companyNumberBlockHiddenClass"],
+      ["companyIdDisabled"],
+      ["applyCompanyIdEditability"],
+    ])("capture leaves no `%s` on the composed form component", (member) => {
       form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
 
-      expect("companySearchBlockVisible" in form).toBe(false);
-      expect(form.companyNumberBlockHiddenClass).toBe("hidden");
-      expect(form.companyIdHiddenClass).toBe("hidden");
+      expect(member in form).toBe(false);
     });
 
     test("an approved intent shows the notice and the label together", () => {
@@ -555,10 +461,9 @@ describe("the component the payment form mounts (TWO-25332)", () => {
 
         expect(dispatched).toEqual([]);
         expect(form[LABEL_SHOW_BINDING]).toBe(false);
-        expect(form.companyNumberBlockHiddenClass).toBe("hidden");
         // The order still places: both inputs stay in the DOM with their
-        // values, hidden by a class rather than removed, so
-        // `payment[company_name]` and `payment[company_id]` still submit.
+        // values, so `payment[company_name]` and `payment[company_id]` still
+        // submit.
         // Cosmetic-but-bad, not order-blocking — which is why it is a product
         // question and not a blocker.
         expect(document.getElementById("company_name").value).toBe(
@@ -587,11 +492,11 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       }
     });
 
-    test("editing the company away gives the controls back", () => {
+    test("editing the company away leaves the label with the new name alone", () => {
       form.selectItem(pickerItem("Example Trading Ltd", "123456789"));
       form.selectItem(pickerItem("Other Example Ltd", ""));
 
-      expect(form.companyNumberBlockHiddenClass).toBe("");
+      expect(form.companyTileLabelText).toBe("Other Example Ltd");
     });
   });
 
@@ -608,26 +513,18 @@ describe("the component the payment form mounts (TWO-25332)", () => {
       });
 
       expect(() => {
-        expect(fresh.companyIdHintVisible).toBe(false);
-        expect(fresh.companyIdHiddenClass).toBe("");
-        expect(fresh.companyNumberBlockHiddenClass).toBe("");
         expect(fresh.companyTileLabelText).toBe("");
         expect(fresh.orderIntentMessageVisible).toBe(false);
       }).not.toThrow();
     });
 
-    test("the mid-initialize() tick before the id arrives hides nothing", () => {
-      // `companyIdDisabled` is derived synchronously from storage while
-      // `companyId` is written a tick later by fillCompanyData(). On the base
-      // component this is already pinned; it matters more here, because this
-      // is the component whose bindings paint.
-      form.companyIdEntryRequired = false;
+    test("the mid-initialize() tick before the id arrives paints the name alone", () => {
+      // `companyName` is restored synchronously from storage while `companyId`
+      // is written a tick later by fillCompanyData(). The label must not emit
+      // "Example Trading Ltd ()" in between.
       form.companyId = "";
       form.companyName = "Example Trading Ltd";
-      form.applyCompanyIdEditability();
 
-      expect(form.companyNumberBlockHiddenClass).toBe("");
-      expect(form.companyIdHiddenClass).toBe("");
       expect(form.companyTileLabelText).toBe("Example Trading Ltd");
     });
 

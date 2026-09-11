@@ -486,7 +486,7 @@ describe("what an adopted sole trader writes into this checkout", () => {
     expect(stored.manual_mode).toBe(false);
   });
 
-  test("the adopted number counts as vouched, so its field stays locked", () => {
+  test("the adopted number counts as vouched, and stays non-editable", () => {
     // It came from the registry through the server-side autofill record, which
     // is the same standing an ordinary search pick's number has.
     tile = mountTile();
@@ -494,7 +494,9 @@ describe("what an adopted sole trader writes into this checkout", () => {
     tile.capture.adoptSoleTrader(BUYER);
 
     expect(tile.component.companyIdSource).toBe("registry");
-    expect(tile.component.companyIdDisabled).toBe(true);
+    expect(tile.component.hasVouchedCompanyId()).toBe(true);
+    // ABN-564: adoption is one of the paths that used to unlock the number.
+    expect("companyIdDisabled" in tile.component).toBe(false);
   });
 
   test("the identity reaches the inputs the order submits", () => {

@@ -33,7 +33,7 @@ describe("placement after an order-intent decline", () => {
       '  <input type="text" id="company_name" name="payment[company_name]" value="' +
         company.name +
         '" />',
-      '  <input type="text" id="company_id" name="payment[company_id]"' +
+      '  <input type="hidden" id="company_id" name="payment[company_id]"' +
         ' data-name="company_id" value="' +
         company.id +
         '" />',
@@ -115,6 +115,16 @@ describe("placement after an order-intent decline", () => {
    * @param {Object} decisions `orderIntentDecisions`, keyed by company id
    */
   function showCompany(form, company, decisions) {
+    // The identity, not the submitted pair: that pair is written FROM the
+    // identity, and nothing on the checkout can put a number in it by hand.
+    env.identityFor("billing").write(
+      {
+        companyName: company.name,
+        companyId: company.id,
+        companyIdSource: "registry",
+      },
+      { authoritative: true },
+    );
     document.getElementById("company_name").value = company.name;
     document.getElementById("company_id").value = company.id;
     form.companyName = company.name;

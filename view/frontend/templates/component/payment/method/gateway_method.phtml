@@ -48,12 +48,12 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
  *
  * Reported only with company search IN THE TILE
  * ($isCompanySearchInPaymentTile true): the tile then renders substantial
- * markup with real content (the search field, its absolutely-positioned
- * dropdown, the Company Number block) in place of the near-empty two hidden
- * inputs the text-only mode renders. Without `min-w-0` a flex/grid child
+ * markup with real content (the search field and its absolutely-positioned
+ * dropdown) in place of the near-empty hidden inputs the text-only mode
+ * renders. Without `min-w-0` a flex/grid child
  * defaults to `min-width: auto`, sized to its content's intrinsic minimum —
  * so nothing here stopped this root from being pushed wider than its
- * intended column the moment it held content with a wider minimum than two
+ * intended column the moment it held content with a wider minimum than
  * hidden inputs (whose own minimum is zero). `w-full` is the complementary
  * half: it makes the root explicitly claim exactly its column's width rather
  * than an undefined natural one, so it can only ever match the column, never
@@ -225,8 +225,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * Both bindings are bare getter names: this file's CSP-friendly
              * Alpine build looks a bound expression up as a key on the
              * component rather than evaluating it, so `companyTileLabelText`
-             * does the concatenation in JS (see the same reasoning on
-             * `companyIdHiddenClass` below).
+             * does the concatenation in JS.
              */
             ?>
             <div class="two-company-tile-label-row flex items-center gap-2">
@@ -299,9 +298,9 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * Tailwind utilities': it is one of four states of ONE box — this
              * row and the three verdicts below it — and the four have to agree
              * on their geometry, which they cannot do if each restates it in a
-             * class list. The same reason `input.company_id:disabled` and
-             * `.two-company-search__unavailable` are CSS here rather than
-             * utilities: the module must not depend on the merchant's Tailwind
+             * class list. The same reason
+             * `.two-company-search__unavailable` is CSS here rather than a
+             * utility: the module must not depend on the merchant's Tailwind
              * build having generated a colour only this module asks for, and an
              * uncompiled `bg-red-50` is an invisible box rather than a loud
              * failure.
@@ -426,32 +425,36 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 x-show="twoTileErrorVisible"
                 x-text="orderIntentErrorNotice"
             ></div>
+            <?php
+            /*
+             * ABN-564: the company identifier is never editable on the
+             * checkout, in either company-search placement, so it submits from
+             * a hidden input regardless of where the search control renders.
+             * A captured number is shown read-only by the tile label above.
+             *
+             * `data-name`: how a surface that is not this form resolves the
+             * payment step's company pair without a document-wide id lookup.
+             */
+            ?>
+            <input type="hidden" id="company_id" name="payment[company_id]" data-name="company_id" />
             <?php if (!$isCompanySearchInPaymentTile): ?>
             <?php
             /*
              * TWO-25326: text-only tile.
              *
              * The enhanced company-search control lives on the address step
-             * in this (default) configuration, so the tile carries NO input
-             * fields, no search control, and no "Change company" link — only
-             * the intent-message text above, which now embeds the company
-             * name and number directly.
+             * in this (default) configuration, so the tile carries NO search
+             * control and no "Change company" link — only the intent-message
+             * text above, which embeds the company name and number directly.
              *
-             * `payment[company_name]` / `payment[company_id]` still have to
-             * reach the server, so they stay as hidden inputs rather than
-             * disappearing outright — twoValidatePaymentForm()'s doSave()
-             * reads them by name, and fillCompanyData() / initialize() are
-             * unchanged: they already write these two elements' `.value`
-             * imperatively by id, and do so regardless of which markup mode
-             * is rendered.
-             *
-             * `data-name` stays on both: it is how a surface that is not this
-             * form resolves the payment step's company pair without a
-             * document-wide id lookup.
+             * `payment[company_name]` still has to reach the server, so it
+             * stays as a hidden input rather than disappearing outright:
+             * twoValidatePaymentForm()'s doSave() reads it by name, and
+             * fillCompanyData() / initialize() write the element's `.value`
+             * imperatively by id regardless of which markup mode is rendered.
              */
             ?>
             <input type="hidden" id="company_name" name="payment[company_name]" data-name="company_name" />
-            <input type="hidden" id="company_id" name="payment[company_id]" data-name="company_id" />
             <?php else: ?>
             <?php
             /*
@@ -468,10 +471,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              *
              * No `x-data`: the control's state lives on THIS form's component
              * (`PaymentFormWithValidation`, which composes
-             * `twoGatewayCaptureSurfaceMixin`), because the tile label, the
-             * order-intent dispatch and the Company Number block below all read
-             * the same captured-company state. `$twoControlAlpineData` is
-             * therefore empty and the control inherits this scope.
+             * `twoGatewayCaptureSurfaceMixin`), because the tile label and
+             * the order-intent dispatch read the same captured-company state.
+             * `$twoControlAlpineData` is therefore empty and the control
+             * inherits this scope.
              *
              * The input carries the canonical `payment[company_name]` in BOTH
              * modes — there is one field now, not a visible/hidden mirror pair —
@@ -497,93 +500,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 ) ?>
             </div>
 
-            <!-- Company Number -->
-            <?php
-            /*
-             * TWO-25326: once a company is captured the whole block —
-             * the static "Company Number" caption included — is hidden, and
-             * the single `two-company-tile-label` line carries the number
-             * instead. The caption was the second of the ticket's three
-             * complaints; hiding only the input would have left it captioning
-             * nothing.
-             *
-             * A class, not `x-show`: the inputs inside carry their own
-             * `x-show` for the manual/search mirror pair, and a wrapper
-             * `x-show` writing `display:none` on this div is independent of
-             * those, but `:class` keeps the two mechanisms from being confused
-             * for one another and matches `companyIdHiddenClass` on the input
-             * below. Bound to a getter returning a plain class-name STRING —
-             * this CSP-friendly Alpine build cannot evaluate an object literal
-             * (see the longer note on the input).
-             *
-             * Same CAPTURED gate as the search block used to carry before the
-             * search-control change (see gateway_method-csp-js.phtml) — that
-             * change was about the EDITABLE search control and the "Change
-             * company" swap specifically, not about this block, so this gate
-             * is deliberately UNCHANGED: a buyer who has no captured company
-             * still sees and can fill the field, and once captured the number
-             * is carried by the tile label instead. The inputs stay in the DOM
-             * either way, so `payment[company_id]` still submits.
-             */
-            ?>
-            <div class="flex flex-col field field-reserved required" :class="companyNumberBlockHiddenClass">
-              <label for="company_id" class="font-semibold text-gray-700">
-                <?= $escaper->escapeHtmlAttr(__("Company Number")) ?>
-              </label>
-              <!--
-                  `:disabled` is the ONLY thing that locks this field. It used
-                  to be set imperatively from company-name-payment.phtml, which
-                  disabled it on every shipping sync and never reversed it — so
-                  a company whose national identifier the search response
-                  omitted left the buyer with a required field that was empty
-                  AND uneditable. The lock is now derived state
-                  (`manualMode || companyIdEntryRequired`, see
-                  applyCompanyIdEditability()) with exactly one writer.
-
-                  The greyed-out look is `input.company_id:disabled` in
-                  custom.css, NOT a `:style` binding: CSP-friendly Alpine does
-                  not EVALUATE an attribute expression at all — it looks the
-                  whole string up as a key on the component — so an object
-                  literal `:style="{ backgroundColor: … }"` is not something it
-                  can compute, and a STRING `:style` would set the whole style
-                  attribute, which is where `x-show` writes `display: none`.
-
-                  `:class="companyIdHiddenClass"` hides the input once the
-                  number is locked AND actually present, because the captured
-                  number is then carried by the tile label above instead.
-                  `companyIdDisabled` can only be true when NOT in manual mode
-                  (see applyCompanyIdEditability()), so this never hides the
-                  field while the buyer still needs to fill it in (empty,
-                  enabled, required); the non-empty `companyId` term (see
-                  `companyIdHintVisible`) is what stops it being hidden a tick
-                  before its value has arrived. A class-name STRING, not an
-                  object literal, for the same CSP reason as above.
-              -->
-              <?php
-              /*
-               * ONE input, not the visible/hidden mirror pair this block used
-               * to carry (TWO-25326, 2026-08-05). The pair existed because the
-               * old tile-local search control duplicated every field between a
-               * search-mode copy and a manual-mode copy and swapped their
-               * `:id`/`:name` bindings so that only the visible one submitted
-               * canonically. The shared control has ONE company-name field in
-               * both modes, so the number needs one too — and eight
-               * id/name-resolution getters, each a place for the two copies to
-               * disagree about which is canonical, are gone with it.
-               */
-              ?>
-              <input
-                type="text"
-                :class="companyIdHiddenClass"
-                id="company_id"
-                name="payment[company_id]"
-                :disabled="companyIdDisabled"
-                data-name="company_id"
-                required
-                data-validate='{"required": true}'
-                class="company_id border border-gray-300 rounded-md p-2 focus:ring focus:ring-indigo-300 validate"
-              />
-            </div>
             <?php endif // !$isCompanySearchInPaymentTile ?>
 
             <!-- Invoice Email (Conditional) -->

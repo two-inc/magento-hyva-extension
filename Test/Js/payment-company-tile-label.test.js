@@ -31,10 +31,9 @@
  * component getter that does not exist; - the "Change company" button,
  * `CHANGE_BUTTON_SHOW_BINDING`, `CHANGE_BUTTON_CLICK_BINDING` and
  * `clearCapturedCompany()` are all REMOVED, along with every test whose only
- * subject was that round trip; - the Company Number block's own gate
- * (`NUMBER_BLOCK_HIDDEN_CLASS_BINDING`) is UNCHANGED — that block was never
- * part of the search-control change, and still hides once a registry number is
- * locked in, exactly as TWO-25326 shipped it; - the LABEL's gate (gate 2 below)
+ * subject was that round trip; - there is no Company Number block and no
+ * editable identifier anywhere on the checkout (ABN-564), so this label is the
+ * tile's only rendering of a captured number; - the LABEL's gate (gate 2 below)
  * is likewise unchanged — it still follows the order-intent notice,
  * independently of both of the above.
  *
@@ -64,13 +63,6 @@ const LABEL_TEXT_BINDING = H.readAlpineBinding(
   '[data-name="company_tile_label"]',
   "x-text",
 );
-
-/**
- * The gate on the whole Company Number block, caption included. It hides once
- * a registry number is locked in; the search control's visibility is separate
- * and carries no gate of its own.
- */
-const NUMBER_BLOCK_HIDDEN_CLASS_BINDING = readNumberBlockClassBinding();
 
 /**
  * The inline order-intent notice's `x-show`. The label's gate must be this same
@@ -164,23 +156,22 @@ function expectSearchBlockHasNoOwnVisibilityGate() {
 }
 
 /**
- * @returns {string} the bare getter name the Company Number block's `:class`
- *   binds to
+ * ABN-564: the identifier submits, and is never typeable. A hidden input with
+ * no lock binding cannot be unlocked by any component state, which is what
+ * makes the invariant state-independent.
+ *
+ * @returns {void}
  */
-function readNumberBlockClassBinding() {
-  const input = parsedMarkup().querySelector('input[data-name="company_id"]');
-  if (!input) {
-    throw new Error("the company_id input is gone from the tile");
-  }
-  const block = input.parentElement;
-  const bound = block.getAttribute(":class");
-  if (!bound) {
-    throw new Error(
-      "the Company Number block has no :class gate — its static caption would " +
-        "survive capture on its own",
-    );
-  }
-  return bound;
+function expectNoEditableCompanyIdControl() {
+  const doc = parsedMarkup();
+  const inputs = doc.querySelectorAll('[name="payment[company_id]"]');
+
+  expect(inputs).toHaveLength(1);
+  expect(inputs[0].getAttribute("type")).toBe("hidden");
+  expect(inputs[0].hasAttribute("required")).toBe(false);
+  expect(inputs[0].hasAttribute("data-validate")).toBe(false);
+  expect(inputs[0].hasAttribute(":disabled")).toBe(false);
+  expect(doc.querySelector('label[for="company_id"]')).toBeNull();
 }
 
 describe("the captured-company tile label (TWO-25326)", () => {
@@ -254,7 +245,6 @@ describe("the captured-company tile label (TWO-25326)", () => {
     test.each([
       ["label x-show", () => LABEL_SHOW_BINDING],
       ["label x-text", () => LABEL_TEXT_BINDING],
-      ["number block :class", () => NUMBER_BLOCK_HIDDEN_CLASS_BINDING],
       ["intent message x-show", () => INTENT_MESSAGE_SHOW_BINDING],
     ])("%s names a key the component actually defines", (_label, binding) => {
       expect(binding() in component).toBe(true);
@@ -313,28 +303,13 @@ describe("the captured-company tile label (TWO-25326)", () => {
       // search control is the only capture route for a buyer who never sees
       // the address-step company field.
       expect(component[LABEL_SHOW_BINDING]).toBe(false);
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+      expectNoEditableCompanyIdControl();
     });
 
-    test("keeps the controls visible for a pick that carried no identifier", () => {
-      // Captured means "a registry number is locked in", not "a name was
-      // chosen". A hit with no identifier still needs the buyer to type the
-      // number, so nothing may be hidden.
+    test("a pick whose registry answer omitted the number captures none", () => {
       component.selectItem(pickerItem("Example Trading Ltd", ""));
 
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
-    });
-
-    test("keeps the controls visible mid-initialize(), before the id arrives", () => {
-      // `companyIdDisabled` is derived synchronously from storage while
-      // `companyId` is only written a tick later by fillCompanyData(). The
-      // controls must not vanish in between.
-      component.companyIdEntryRequired = false;
-      component.companyId = "";
-      component.companyName = "Example Trading Ltd";
-      component.applyCompanyIdEditability();
-
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(component.companyId).toBe("");
     });
 
     test("a name with no number paints no label text, even if it were shown", () => {
@@ -380,10 +355,11 @@ describe("the captured-company tile label (TWO-25326)", () => {
       expectSearchBlockHasNoOwnVisibilityGate();
     });
 
-    test("hides the whole Company Number block, caption included", () => {
-      // This block was never part of the search-control change: it still
-      // hides once a registry number is locked in.
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("hidden");
+    test("renders the number read-only, in the label and nowhere else", () => {
+      approveIntent(component);
+
+      expect(component[LABEL_TEXT_BINDING]).toContain("123456789");
+      expectNoEditableCompanyIdControl();
     });
 
     test("keeps both submitting inputs in the DOM", () => {
@@ -393,21 +369,18 @@ describe("the captured-company tile label (TWO-25326)", () => {
       expect(
         doc.querySelector('input[data-name="company_name"]'),
       ).not.toBeNull();
-      expect(doc.querySelector('input[data-name="company_id"]')).not.toBeNull();
+      expectNoEditableCompanyIdControl();
       expect(document.getElementById("company_name").value).toBe(
         "Example Trading Ltd",
       );
       expect(document.getElementById("company_id").value).toBe("123456789");
     });
 
-    test("gives the Company Number block back when the buyer edits the name", () => {
-      // The reverse transition. `companyName` has no clearing writer, so a gate
-      // keyed on it directly would leave the block hidden for a company the
-      // buyer has just typed away from.
-      //
-      // Driven through the popover and the shared identity, because the mirror
-      // that state lands on is written from the identity's notification — a pick
-      // put straight onto the component would be overwritten by the first one.
+    test("the abandoned identity leaves no unlock behind on the component", () => {
+      // ABN-564: abandoning a captured company is the transition the reported
+      // defect went through, and it reaches the component's mirror from the
+      // identity's own notification — a pick put straight onto the component
+      // would be overwritten by the first one.
       panel().options.onSelect({
         text: "Example Trading Ltd",
         companyId: "123456789",
@@ -424,13 +397,11 @@ describe("the captured-company tile label (TWO-25326)", () => {
         component.$el = previousEl;
       }
 
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
-    });
-
-    test("gives the Company Number block back when a later pick carries no identifier", () => {
-      component.selectItem(pickerItem("Other Example Ltd", ""));
-
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
+      expect(
+        ["companyIdDisabled", "companyIdEntryRequired"].filter(
+          (member) => member in component,
+        ),
+      ).toEqual([]);
     });
 
     test("a different company can be captured afterwards, typed straight over the field", () => {
@@ -447,52 +418,12 @@ describe("the captured-company tile label (TWO-25326)", () => {
     });
   });
 
-  describe("the capture gate itself", () => {
-    test("the Company Number block is hidden only while a number is actually locked in", () => {
-      // Across every combination of the three inputs to the derivation, not
-      // just the scenarios above: hiding a control the buyer still needs is
-      // the order-blocking failure, so it must be unreachable by construction.
-      [
-        [false, false, ""],
-        [false, false, "123456789"],
-        [false, true, ""],
-        [false, true, "123456789"],
-        [true, false, ""],
-        [true, false, "123456789"],
-        [true, true, ""],
-        [true, true, "123456789"],
-      ].forEach(([manualMode, companyIdEntryRequired, companyId]) => {
-        component.manualMode = manualMode;
-        component.companyIdEntryRequired = companyIdEntryRequired;
-        component.companyId = companyId;
-        component.companyName = "Some Company Ltd";
-        component.applyCompanyIdEditability();
-
-        const captured = Boolean(component.companyIdDisabled && companyId);
-
-        expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe(
-          captured ? "hidden" : "",
-        );
-        // The search control's own gate no longer depends on capture OR mode
-        // — there is no gate at all, pinned structurally above rather than
-        // against component state here.
-      });
-    });
-
-    test("manual mode never captures, so it never hides the Company Number block", () => {
-      // `applyCompanyIdEditability()` cannot lock the field while manualMode
-      // is set, which is what makes the capture gate safe for the manual
-      // route as well.
-      component.manualMode = true;
-      component.showManual = true;
-      component.companyName = "Example Trading Ltd";
-      component.companyId = "123456789";
-      component.applyCompanyIdEditability();
-
-      expect(component[NUMBER_BLOCK_HIDDEN_CLASS_BINDING]).toBe("");
-    });
-  });
-
+  /**
+   * ABN-564. The reported defect was reachable only through a STATE
+   * transition — a billing-country change cleared the selected identity, and
+   * the number box turned required and typeable. So the invariant is driven
+   * through the lifecycle rather than asserted once at mount.
+   */
   describe("nothing clears the captured company automatically", () => {
     test("a withdrawn Magewire bridge stays withdrawn", () => {
       // A `billing_as_shipping_address_updated` bridge was added and then
@@ -543,9 +474,6 @@ describe("the captured-company tile label (TWO-25326)", () => {
   describe("the label is shown exactly when the intent notice is", () => {
     test("both bindings are the same getter, not two that merely agree", () => {
       expect(LABEL_SHOW_BINDING).toBe(INTENT_MESSAGE_SHOW_BINDING);
-      // And it is the notice's own gate that both read, not the Company
-      // Number block's (the search block has no gate at all to compare).
-      expect(LABEL_SHOW_BINDING).not.toBe(NUMBER_BLOCK_HIDDEN_CLASS_BINDING);
     });
 
     test("a captured company with no intent dispatched yet shows neither", () => {
@@ -771,13 +699,9 @@ describe("the captured-company tile label (TWO-25326)", () => {
       };
 
       fresh.initialize(JSON.parse(H.QUOTE_JSON));
-      // The three the component registers. A rename that drops one would
+      // The two the component registers. A rename that drops one would
       // otherwise make every assertion below vacuous.
-      expect(Object.keys(callbacks).sort()).toEqual([
-        "companyId",
-        "companyName",
-        "manualMode",
-      ]);
+      expect(Object.keys(callbacks).sort()).toEqual(["companyId", "companyName"]);
 
       fresh.orderIntentApprovedNoticeCopy = NOTICE_COPY;
 

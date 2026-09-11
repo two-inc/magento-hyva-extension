@@ -386,8 +386,7 @@ summary::marker {
  * holds the message and nothing else, matching the other three platforms'
  * treatment.
  *
- * CSS rather than Tailwind utilities, for the reason
- * `input.company_id:disabled` gives at the bottom of this file: the module must
+ * CSS rather than Tailwind utilities: the module must
  * not depend on the merchant's Tailwind build having generated a colour only
  * this module asks for. That dependency fails SILENTLY — an uncompiled
  * `bg-red-50` renders a borderless, colourless box that still says the check
@@ -483,19 +482,3 @@ summary::marker {
   color: #991b1b;
 }
 
-/*
- * Company-number field, locked state (TWO-25253).
- *
- * The field is greyed out exactly when it is disabled, by construction —
- * `:disabled` is the single piece of state gateway_method.phtml binds, and the
- * look derives from it here rather than from a second Alpine `:style` binding
- * carrying the same fact. A string `:style` binding would also fight the
- * element's `x-show`, which writes `display: none` into the same attribute.
- *
- * CSS rather than a Tailwind utility for the reason the positioning rules
- * above give: the module must not depend on the merchant's Tailwind build
- * having generated a class only this module uses.
- */
-input.company_id:disabled {
-  background-color: #d3d3d3;
-}

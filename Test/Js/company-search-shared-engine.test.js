@@ -239,27 +239,33 @@ describe("TWO-25326 shared engine behaviour that is genuinely new at this layer"
     delete window.dispatchMessages;
   });
 
-  test("editableCompanyIdExtraUnlock is the address step's own escape hatch — the default formula (the tile's) carries no such term", () => {
-    const tileLike = mount({ editableCompanyId: true });
-    tileLike.manualMode = false;
-    tileLike.companyIdEntryRequired = false;
-    tileLike.applyCompanyIdEditability();
-    // Locked: search is "on" (no extra-unlock term), not in manual mode,
-    // and nothing requires entry.
-    expect(tileLike.companyIdDisabled).toBe(true);
-
-    const addressLike = mount({
-      editableCompanyId: true,
-      editableCompanyIdExtraUnlock: function () {
-        return !this.isCompanySearchEnabled;
-      },
-      isCompanySearchEnabled: false,
+  /**
+   * ABN-564: the engine carries no company-number unlock mechanism, on any
+   * surface and under any option. An option a surface could set to make the
+   * identifier typeable is what let a required, editable company-number box
+   * appear once a selection cleared.
+   */
+  test.each([
+    ["applyCompanyIdEditability", "the lock formula"],
+    ["companyIdDisabled", "the lock state it wrote"],
+    ["companyIdEntryRequired", "the flag that unlocked it"],
+    ["onCompanyIdInput", "the typed-number handler"],
+  ])("the engine exposes no `%s` — %s", (member) => {
+    // Every surface composes ONE engine, so an unlock reachable through any
+    // option is an unlock on all three.
+    [
+      mount({}),
+      mount({ editableCompanyId: true }),
+      mount({
+        editableCompanyId: true,
+        editableCompanyIdExtraUnlock: function () {
+          return true;
+        },
+        isCompanySearchEnabled: false,
+      }),
+    ].forEach((component) => {
+      expect(member in component).toBe(false);
     });
-    addressLike.manualMode = false;
-    addressLike.companyIdEntryRequired = false;
-    addressLike.applyCompanyIdEditability();
-    // Unlocked purely off the extra term: search itself is off.
-    expect(addressLike.companyIdDisabled).toBe(false);
   });
 
   /**

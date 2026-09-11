@@ -14,20 +14,17 @@
  * registry did not give does so on the PAYMENT step, which keeps its own
  * separately-gated inputs.
  *
- * So this file no longer tests an address-step input. It tests the state
- * machine that outlived it: `companyId` / `companyIdSource` /
- * `companyIdDisabled` / `companyIdEntryRequired` are still maintained by this
- * component, still written into the shared selection blob, and the payment step
- * still reads the provenance out of that blob to decide whether ITS number
- * field is typeable. Get the provenance wrong here and the payment step locks a
- * field over the buyer's own value, which is the dead end this file exists to
- * catch — there is now no second company-number input on the address step to
- * fall back on, because there is no first one either.
+ * ABN-564 removed the editable input from the PAYMENT step too, so no surface
+ * on this checkout offers one and this component carries no lock state at all.
+ * What it still maintains is `companyId` / `companyIdSource` — written into the
+ * shared selection blob, and read by the payment step to tell a registry number
+ * from one that arrived any other way. Get the provenance wrong here and the
+ * payment step shows the wrong company's number beside the right company's
+ * name.
  *
  * Two failure shapes, both of which have shipped in this repo before:
  *
- *  - a number that is empty AND locked AND needed on the surface that still
- *    renders one;
+ *  - an identifier that survives beside a name it no longer describes;
  *  - state that is bound to nothing. The display lives in companyName.phtml and
  *    the state in companyName-csp-js.phtml, so a getter can be perfect and the
  *    page still inert. Every binding under test is therefore read out of the
@@ -51,21 +48,11 @@ const REMOVED_ID_INPUT_SELECTORS = [
   "#two_address_company_id",
 ];
 
-/**
- * The fixture stand-in for the element `onCompanyIdInput()` reads through
- * `$el`. It is deliberately NOT a shipped selector: the address step renders no
- * such input any more, and the handler survives only to maintain the
- * provenance the payment step consumes. Naming it something the markup cannot
- * contain is what stops this fixture being mistaken for the real thing.
- */
-const ID_DRIVER = "input[data-test-company-id-driver]";
-
 describe("address-step company number", () => {
   let env;
   let fetchStub;
   let component;
   let nameField;
-  let idField;
   let root;
   let recordedPairs;
 
@@ -73,17 +60,14 @@ describe("address-step company number", () => {
     // Nesting depth is load-bearing: setAddressData() walks four levels up
     // from $root to find the address container.
     //
-    // Two inputs: the company NAME field, and the number driver described at
-    // ID_DRIVER — a test stand-in for the payment step's input, since this
-    // surface renders none. Only the name field carries
-    // `data-two-capture-field`, and the driver sits FIRST, so document order is
-    // not what makes `companyNameField()` right.
+    // A decoy text input sits FIRST and carries no `data-two-capture-field`,
+    // so document order is not what makes `companyNameField()` right.
     document.body.innerHTML = [
       '<div id="address-container">',
       '  <input name="city" value="" />',
       "  <div><div><div>",
       '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
-      '      <input type="text" class="company_id" data-test-company-id-driver="true" value="" />',
+      '      <input type="text" data-test-decoy="true" value="" />',
       '      <input type="text" id="company-field" data-two-capture-field value="" />',
       "    </div>",
       "  </div></div></div>",
@@ -99,7 +83,6 @@ describe("address-step company number", () => {
     env.fireAlpineInit();
 
     nameField = document.getElementById("company-field");
-    idField = document.querySelector(ID_DRIVER);
     root = document.getElementById("company-root");
 
     // Every pair this role's identity notified — the one channel by which a
@@ -227,25 +210,6 @@ describe("address-step company number", () => {
   }
 
   /**
-   * Drive `onCompanyIdInput()` the way the PAYMENT step's binding does.
-   *
-   * The address step has no such input since TWO-25326; the handler survives
-   * because it is what stamps `company_id_source: 'manual'` into the shared
-   * blob, and the payment step derives its own field's editability from that.
-   */
-  function typeNumber(text) {
-    idField.value = text;
-    // `$el` is the bound element for THIS handler — the number field.
-    const previousEl = component.$el;
-    component.$el = idField;
-    try {
-      component.onCompanyIdInput();
-    } finally {
-      component.$el = previousEl;
-    }
-  }
-
-  /**
    * A search hit, as the shared mapper produces it.
    *
    * @param {string} name
@@ -301,27 +265,26 @@ describe("address-step company number", () => {
     });
 
     test("the provenance state survives the removal, because the payment step reads it", () => {
-      // `companyIdDisabled` / `applyCompanyIdEditability()` /
-      // `onCompanyIdInput()` / `companyIdEntryRequired` are deliberately kept:
-      // they maintain `company_id_source` in the shared selection blob, which
-      // is the payment step's only way to tell a registry number from one the
-      // buyer typed. Deleting them along with the input would silently re-lock
-      // the tile's field over the buyer's own value.
+      // `company_id_source` in the shared selection blob is the payment step's
+      // only way to tell a registry number from one that arrived any other
+      // way, so it outlives the input.
       const mounted = mount();
 
-      expect(typeof mounted.applyCompanyIdEditability).toBe("function");
-      expect(typeof mounted.onCompanyIdInput).toBe("function");
-      expect(typeof mounted.companyIdDisabled).toBe("boolean");
-      expect(typeof mounted.companyIdEntryRequired).toBe("boolean");
-      // And the tile still binds the state that mirrors it, so the two ends of
-      // that contract are asserted together rather than assumed.
-      expect(
-        H.readAlpineBinding(
-          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-          'input[data-name="company_id"]',
-          ":disabled",
-        ),
-      ).toBe("companyIdDisabled");
+      expect(typeof mounted.companyId).toBe("string");
+      expect(typeof mounted.companyIdSource).toBe("string");
+      expect(typeof mounted.hasVouchedCompanyId).toBe("function");
+    });
+
+    test.each([
+      ["applyCompanyIdEditability"],
+      ["onCompanyIdInput"],
+      ["companyIdDisabled"],
+      ["companyIdEntryRequired"],
+    ])("nothing on this surface can unlock a number: no `%s`", (member) => {
+      // ABN-564: a surviving unlock, even one bound to nothing here, is how an
+      // editable identifier comes back the next time this surface grows a
+      // field.
+      expect(member in mount()).toBe(false);
     });
 
     test("the below-the-field manual-entry link stays gone (TWO-25326)", () => {
@@ -361,153 +324,126 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("the field is locked exactly when a number has been vouched for", () => {
-    test("it starts locked, before init has read anything", () => {
-      // The declared default must be locked or the field flashes open on
-      // first paint for a buyer whose company already has an identifier.
+  describe("a number counts as vouched for only when the registry supplied it", () => {
+    test.each([
+      [{}, "", false, "nothing stored vouches for nothing"],
+      [
+        {
+          company_name: "Acme Ltd",
+          company_id: "111",
+          company_id_source: "registry",
+        },
+        "111",
+        true,
+        "a restored registry pick keeps its provenance",
+      ],
+      [
+        {
+          company_name: "Jo Smith Trading",
+          company_id: "1234567",
+          company_id_source: "manual",
+        },
+        "1234567",
+        false,
+        "a number from an earlier session's own capture is not the registry's",
+      ],
+      [
+        { company_name: "Acme Ltd", company_id: "111" },
+        "111",
+        false,
+        "a blob written before provenance existed vouches for nothing",
+      ],
+      [
+        { company_name: "Acme Ltd", company_id: "" },
+        "",
+        false,
+        "a restored selection with no identifier",
+      ],
+    ])(
+      "restored %p -> companyId %p, vouched %p (%s)",
+      (stored, expectedId, expectedVouched) => {
+        component = mount(stored);
+
+        expect([component.companyId, component.hasVouchedCompanyId()]).toEqual([
+          expectedId,
+          expectedVouched,
+        ]);
+      },
+    );
+
+    test("a fresh component vouches for nothing before init has read anything", () => {
       const raw = env.alpineComponents[COMPONENT_NAME]();
 
-      expect(raw.companyIdDisabled).toBe(true);
+      expect(raw.hasVouchedCompanyId()).toBe(false);
     });
 
-    test("a restored REGISTRY pick stays locked", () => {
-      component = mount({
-        company_name: "Acme Ltd",
-        company_id: "111",
-        company_id_source: "registry",
-      });
-
-      expect(component.companyId).toBe("111");
-      expect(component.companyIdDisabled).toBe(true);
-    });
-
-    test("a restored HAND-TYPED number stays typeable", () => {
-      // This assertion used to be the other way round — the restore path asked
-      // only "is there a number", so the first Magewire re-render after the
-      // buyer typed one locked the field over their own value. A typo was then
-      // uncorrectable: this is the only company-number input on the address
-      // step, so there is nowhere else to fix it.
-      component = mount({
-        company_name: "Jo Smith Trading",
-        company_id: "1234567",
-        company_id_source: "manual",
-      });
-
-      expect(component.companyId).toBe("1234567");
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("a restored number of unknown provenance stays typeable", () => {
-      // A blob written before provenance existed, or by anything else sharing
-      // the key. Nothing has vouched for that number, and this direction of
-      // error is recoverable while locking it is a dead end.
-      component = mount({ company_name: "Acme Ltd", company_id: "111" });
-
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("a number the buyer typed survives a re-render as typeable", () => {
-      // The whole round trip, over the real accessors: type, then remount the
-      // way a Magewire re-render does.
-      component = mount({ quote_id: "test-quote-1" });
-      typeNumber("1234567");
-      expect(storedSelection().company_id).toBe("1234567");
-
-      component = mount();
-
-      expect(component.companyId).toBe("1234567");
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("a restored selection with no identifier is typeable", () => {
-      component = mount({ company_name: "Acme Ltd", company_id: "" });
-
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("empty storage leaves the field typeable", () => {
-      component = mount({});
-
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("a pick WITH an identifier fills and locks the field", async () => {
+    test("a pick WITH an identifier is vouched for", async () => {
       component = mount({ quote_id: "test-quote-1" });
 
       await pick(hit("Acme Ltd", "111"));
 
-      expect(component.companyId).toBe("111");
-      expect(component.companyName).toBe("Acme Ltd");
-      expect(component.companyIdDisabled).toBe(true);
-      expect(storedSelection().company_id).toBe("111");
+      expect([
+        component.companyId,
+        component.companyName,
+        component.hasVouchedCompanyId(),
+        storedSelection().company_id,
+      ]).toEqual(["111", "Acme Ltd", true, "111"]);
     });
 
-    test("a pick WITHOUT an identifier leaves the field empty and typeable", async () => {
+    test("a pick WITHOUT an identifier drops the previous one", async () => {
+      // The previous pick's number must not survive beside a new company's
+      // name — that submits company A while the buyer selected company B.
       component = mount({ company_id: "999" });
 
       await pick(hit("Example Trading Ltd", ""));
 
-      // The previous pick's number must not survive beside a new company's
-      // name — that submits company A while the buyer selected company B.
-      expect(component.companyId).toBe("");
-      expect(component.companyIdDisabled).toBe(false);
-      expect(storedSelection().company_id).toBe("");
+      expect([
+        component.companyId,
+        component.hasVouchedCompanyId(),
+        storedSelection().company_id,
+      ]).toEqual(["", false, ""]);
     });
 
-    test("a pick stays locked in SEARCH mode, because the name cannot be edited there", async () => {
-      // REPLACES "editing the name after a pick unlocks the field again".
-      // TWO-25326 makes that edit impossible on this surface: the panel owns
-      // the name field in search mode and moves anything typed into its own
-      // query box, so `onNameFieldInput` returns before it can invalidate a
-      // registry pick. The unlock still exists — see the manual-mode tests
-      // below, where the field IS the capture field.
+    test("a pick survives a name edit in SEARCH mode, where the name is not editable", async () => {
+      // The panel owns the name field in search mode and moves anything typed
+      // into its own query box, so the input handler returns before it can
+      // invalidate a registry pick.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      expect(component.companyIdDisabled).toBe(true);
 
       await typeName("Acme Limited");
 
-      expect(component.companyIdDisabled).toBe(true);
-      expect(component.companyId).toBe("111");
+      expect([component.companyId, component.hasVouchedCompanyId()]).toEqual([
+        "111",
+        true,
+      ]);
     });
 
-    test("editing the name in MANUAL mode after a pick unlocks the number", async () => {
+    test("editing the name in MANUAL mode after a pick abandons the number", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
-      expect(component.companyIdDisabled).toBe(true);
+      expect(component.hasVouchedCompanyId()).toBe(true);
 
       enterManual();
       await typeName("Acme Limited");
 
-      expect(component.companyIdDisabled).toBe(false);
+      expect(component.hasVouchedCompanyId()).toBe(false);
     });
 
-    test("it stays unlocked while the buyer keeps typing", async () => {
-      component = mount({ quote_id: "test-quote-1" });
-      await pick(hit("Acme Ltd", "111"));
-      enterManual();
-
-      await typeName("Acme Limite");
-      await typeName("Acme Limited");
-      await typeName("Acme Limited T");
-
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("it stays unlocked when the handler re-fires on unchanged text", async () => {
+    test("repeated edits, including one that re-fires on unchanged text, keep it abandoned", async () => {
       // The handler fires more than once for the same text — a second debounce
-      // window, a blur, a Magewire echo. If recording the typed name also
-      // re-pointed `companyName` at it, the comparison would match on that
-      // second run and re-lock the field, leaving the buyer holding an edited
-      // name beside the PREVIOUS company's number, uneditable.
+      // window, a blur, a Magewire echo. Recording the typed name must not
+      // re-point `companyName` at it, or the second run matches and the
+      // previous company's number comes back beside an edited name.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       enterManual();
 
       await typeName("Different Company Ltd");
       await typeName("Different Company Ltd");
+      await typeName("Different Company Ltd T");
 
-      expect(component.companyIdDisabled).toBe(false);
+      expect(component.hasVouchedCompanyId()).toBe(false);
     });
 
     test.each([
@@ -520,53 +456,48 @@ describe("address-step company number", () => {
         // number goes with the mode switch, before anything is typed.
         component = mount({ quote_id: "test-quote-1" });
         await pick(hit("Acme Ltd", "111"));
-        expect(component.companyIdDisabled).toBe(true);
+        expect(component.hasVouchedCompanyId()).toBe(true);
 
         enterManual();
         expect(component.companyId).toBe("");
 
         await typeName(typed);
 
-        expect(component.companyId).toBe("");
-        expect(component.companyIdDisabled).toBe(false);
-        expect(storedSelection().company_id).toBe("");
-        expect(storedSelection().company_name).toBe(typed);
+        expect([
+          component.companyId,
+          storedSelection().company_id,
+          storedSelection().company_name,
+        ]).toEqual(["", "", typed]);
       },
     );
 
-    test("bouncing through manual mode does not re-lock an unvouched number", async () => {
-      // A buyer who takes the manual-entry chip and returns to search must not
-      // find the number field locked — nothing has vouched for a number for the
-      // name they are holding.
+    test("bouncing through manual mode vouches for nothing on the way back", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Example Trading Ltd", ""));
-      expect(component.companyIdDisabled).toBe(false);
 
       enterManual();
-      expect(component.companyIdDisabled).toBe(false);
-
       leaveManual();
-      expect(component.companyIdDisabled).toBe(false);
+
+      expect(component.hasVouchedCompanyId()).toBe(false);
     });
 
-    test("manual mode unlocks the number a registry pick vouched for, by abandoning it", () => {
+    test("manual mode abandons the number a registry pick vouched for", () => {
       component = mount({
         company_name: "Acme Ltd",
         company_id: "111",
         company_id_source: "registry",
       });
-      expect(component.companyIdDisabled).toBe(true);
+      expect(component.hasVouchedCompanyId()).toBe(true);
 
       enterManual();
-      expect(component.companyIdDisabled).toBe(false);
       expect(component.companyId).toBe("");
 
       leaveManual();
 
-      // Nothing vouches for a number for the name now held, so the way back out
-      // leaves the field typeable rather than re-locking it.
-      expect(component.companyIdDisabled).toBe(false);
-      expect(component.companyIdSource).toBe("");
+      expect([
+        component.hasVouchedCompanyId(),
+        component.companyIdSource,
+      ]).toEqual([false, ""]);
     });
   });
 
@@ -651,27 +582,7 @@ describe("address-step company number", () => {
     });
   });
 
-  describe("a typed number reaches the rest of the checkout", () => {
-    test("it is written through the store-view-keyed accessor", () => {
-      component = mount({ quote_id: "test-quote-1", company_name: "Acme Ltd" });
-
-      typeNumber("12345678");
-
-      // Merged, not rebuilt: dropping `quote_id` is what disarmed the
-      // new-order clear, and the name has to travel with the number.
-      // `company_id_source` travels with the value: both surfaces read one key,
-      // so the restore path can only tell a typed number from a picked one if
-      // the writer says which it was.
-      expect(storedSelection()).toEqual({
-        quote_id: "test-quote-1",
-        company_name: "Acme Ltd",
-        company_id: "12345678",
-        company_id_source: "manual",
-        manual_mode: false,
-      });
-      expect(component.companyId).toBe("12345678");
-    });
-
+  describe("the restore reaches this role's identity and no other", () => {
     test("the mount restores the company into THIS role's identity", () => {
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
@@ -715,15 +626,6 @@ describe("address-step company number", () => {
       expect(env.browserStorage.getItem(H.BILLING_COMPANY_KEY)).toBeNull();
     });
 
-    test("re-firing with an unchanged value writes nothing", () => {
-      // The handler fires more than once for the same text — a second debounce
-      // window, a blur, a Magewire echo — and only a real change may write.
-      component = mount({ quote_id: "test-quote-1", company_id: "12345678" });
-
-      typeNumber("12345678");
-
-      expect(storedSelection().company_id_source).toBe("");
-    });
   });
 
   describe("the typed company NAME is captured on every path", () => {
@@ -853,14 +755,14 @@ describe("address-step company number", () => {
 
       expect(component.companyId).toBe("111");
       expect(component.companyIdSource).toBe("registry");
-      expect(component.companyIdDisabled).toBe(true);
+      expect(component.hasVouchedCompanyId()).toBe(true);
       expect(storedSelection().company_id).toBe("111");
       expect(storedSelection().company_name).toBe("Acme Ltd");
     });
 
-    test("the payment step's own gate reopens on the cleared pair", async () => {
-      // The exact expression the tile derives its editability from. With the old
-      // number still stored it read as "vouched for", which is the lock.
+    test("the payment step reads the cleared pair too", async () => {
+      // Both surfaces read one blob, so the clear has to reach storage: the old
+      // number left there is the one the payment step would show.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
 
@@ -884,9 +786,7 @@ describe("address-step company number", () => {
       expect(storedSelection().company_name).toBe("Jo Smith Trading");
     });
 
-    test("returning to search after that clear leaves the field typeable", async () => {
-      // Empty AND locked AND required is the dead end this file exists to catch,
-      // and dropping the number is exactly what can create it.
+    test("returning to search after that clear vouches for nothing", async () => {
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       enterManual();
@@ -894,18 +794,20 @@ describe("address-step company number", () => {
 
       leaveManual();
 
-      expect(component.companyIdDisabled).toBe(false);
+      expect(component.hasVouchedCompanyId()).toBe(false);
     });
 
     test("a name edit drops ANY identifier that no longer describes the name", async () => {
-      // TWO-25326 removed this surface's company-number input, so nothing
-      // here can write a `manual` identifier and nothing can correct one
-      // either — sparing it lets an identifier left in storage by an earlier
-      // session travel with a name it never belonged to.
-      component = mount({ quote_id: "test-quote-1" });
+      // No surface on this checkout captures an identifier the registry did
+      // not supply, so an unvouched one can only have come from storage — and
+      // sparing it lets it travel with a name it never belonged to.
+      component = mount({
+        quote_id: "test-quote-1",
+        company_name: "Jo Smith Trading",
+        company_id: "1234567",
+        company_id_source: "manual",
+      });
       enterManual();
-      await typeName("Jo Smith Trading");
-      typeNumber("1234567");
 
       await typeName("Jo Smith Trading Ltd");
 
@@ -1000,22 +902,10 @@ describe("address-step company number", () => {
       expect(component.items).toEqual([]);
     });
 
-    test("still records the name and leaves the number typeable", async () => {
+    test("still records the name, and pairs it with no number", async () => {
       await typeName("Acme Widgets Limited");
 
       expect(storedSelection().company_name).toBe("Acme Widgets Limited");
-      expect(component.companyIdDisabled).toBe(false);
-    });
-
-    test("still carries a typed number into the stored record", async () => {
-      await typeName("Acme Widgets Limited");
-      typeNumber("87654321");
-
-      expect(storedSelection()).toMatchObject({
-        company_name: "Acme Widgets Limited",
-        company_id: "87654321",
-        company_id_source: "manual",
-      });
       // The name edit is the identity's, and never pairs the typed name with a
       // stale number.
       expect(recordedPairs).toEqual([
@@ -1097,31 +987,34 @@ describe("address-step company number", () => {
       await pick(hit("Example Trading Ltd", ""));
 
       const state = readDisplayState();
-      expect(state.displayVisible).toBe(false);
-      expect(component.companyIdEntryRequired).toBe(true);
+      expect([state.displayVisible, component.hasVouchedCompanyId()]).toEqual([
+        false,
+        false,
+      ]);
     });
 
-    test("a hand-typed number is never read out as a registry one", () => {
-      // Manual entry has no "selected result" at all. The number the buyer
-      // transcribes on the payment step must stay theirs to correct, so it
-      // must not appear here as inert, vouched-for text.
-      component = mount({ quote_id: "test-quote-1" });
-      enterManual();
-      typeNumber("1234567");
+    test("a number the registry did not supply is never read out as one it did", () => {
+      // A restored blob is the only way such a number reaches this surface, and
+      // presenting it as inert text would claim a registry identity for it.
+      component = mount({
+        quote_id: "test-quote-1",
+        company_name: "Jo Smith Trading",
+        company_id: "1234567",
+        company_id_source: "manual",
+      });
 
       const state = readDisplayState();
-      expect(component.companyId).toBe("1234567");
-      expect(component.companyIdSource).toBe("manual");
-      expect(state.displayVisible).toBe(false);
-      expect(component.companyIdDisabled).toBe(false);
+      expect([
+        component.companyId,
+        component.companyIdSource,
+        state.displayVisible,
+      ]).toEqual(["1234567", "manual", false]);
     });
 
     test("editing the name in manual mode after a registry pick takes the display down", async () => {
-      // The lock reverses (`companyIdDisabled` suite above already pins
-      // this); the display must track the same reversal, or the buyer would
-      // see inert text for a number that no longer describes the company in
-      // the field. Driven through manual mode, the only place the name is
-      // editable since TWO-25326.
+      // The display must track the abandonment, or the buyer sees inert text
+      // for a number that no longer describes the company in the field. Driven
+      // through manual mode, the only place the name is editable.
       component = mount({ quote_id: "test-quote-1" });
       await pick(hit("Acme Ltd", "111"));
       expect(readDisplayState().displayVisible).toBe(true);
@@ -1160,10 +1053,9 @@ describe("address-step company number", () => {
     });
 
     test("the display names itself for screen readers", () => {
-      // The visible "Company Number" label div is hidden once this display
-      // is showing (it belongs to the input branch), so without an
-      // aria-label of its own a screen-reader user hears only the bare
-      // registry number, with nothing announcing what it is. The harness
+      // Nothing else names this number on the page, so without an aria-label
+      // of its own a screen-reader user hears only the bare registry number,
+      // with nothing announcing what it is. The harness
       // resolves every `__()` call to one placeholder string (see
       // `ESCAPED_STRING` in hyva-harness.js), so this asserts the attribute
       // is present and non-empty rather than pinning exact wording.
@@ -1177,21 +1069,21 @@ describe("address-step company number", () => {
   });
 
   describe("per-surface isolation", () => {
-    test("the payment tile's own number field is untouched by this change", () => {
-      // PR1 is additive: the tile still renders its own dual-input pair and
-      // still swaps the canonical id/name onto whichever mode is visible.
-      // Severing that is PR2's business, and until then this surface gaining a
-      // field must not have altered it.
+    test("the payment tile carries the identifier as a hidden input only", () => {
+      // The pair still has to reach the server, so the element stays — as a
+      // hidden input with nothing that could make it editable (ABN-564).
       const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+      const inputs = Array.from(
+        doc.querySelectorAll('input[data-name="company_id"]'),
+      );
 
-      expect(markup).toContain('data-name="company_id"');
-      expect(
-        H.readAlpineBinding(
-          H.GATEWAY_METHOD_MARKUP_TEMPLATE,
-          'input[data-name="company_id"]',
-          ":disabled",
-        ),
-      ).toBe("companyIdDisabled");
+      expect(inputs).toHaveLength(1);
+      expect([
+        inputs[0].getAttribute("type"),
+        inputs[0].hasAttribute(":disabled"),
+        inputs[0].hasAttribute("required"),
+      ]).toEqual(["hidden", false, false]);
     });
   });
 });

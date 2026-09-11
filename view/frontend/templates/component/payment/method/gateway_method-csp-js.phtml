@@ -1071,13 +1071,6 @@ $quoteDetails = json_encode(
      *   own query box are different state, so a keystroke in the panel never
      *   overwrites the captured name until a result is picked. Only the
      *   address-book modal, which composes this engine directly, leaves it off.
-     * @param {boolean} [options.editableCompanyId=false] whether this
-     *   surface owns a company-number input whose lock state this engine
-     *   should compute (address + tile; shipping has none).
-     * @param {Function} [options.editableCompanyIdExtraUnlock] extra
-     *   unlock term folded into the id-lock formula (address unlocks whenever
-     *   search itself is switched off; tile has no such term because the tile
-     *   only ever renders with search on).
      * @param {string} options.dropdownSelector CSS selector for the
      *   scrollable results container (adjustScroll()).
      * @param {string} options.itemSelector CSS selector for one result row.
@@ -1134,8 +1127,6 @@ $quoteDetails = json_encode(
             isAddressSearchEnabled: false,
             manualModeSupported: false,
             querySplit: false,
-            editableCompanyId: false,
-            editableCompanyIdExtraUnlock: function () { return false; },
             dropdownSelector: '.company-results',
             itemSelector: 'div.cursor-pointer',
             scopeItemLookupToRoot: false,
@@ -1219,8 +1210,6 @@ $quoteDetails = json_encode(
             companyName: '',
             companyId: '',
             companyIdSource: '',
-            companyIdEntryRequired: false,
-            companyIdDisabled: true,
             searchCompletedFor: null,
 
             /** Cancel any in-flight company search. Safe to call repeatedly. */
@@ -1242,27 +1231,9 @@ $quoteDetails = json_encode(
             },
 
             /**
-             * Recompute the company-number field's locked state. One derived
-             * state, one writer, shared by every surface that has such a
-             * field. `editableCompanyIdExtraUnlock` is where the address
-             * step's search-switched-off term lives without leaking into the
-             * tile's formula, which has none.
-             */
-            applyCompanyIdEditability() {
-                if (!cfg.editableCompanyId) return;
-                this.companyIdDisabled = !(
-                    cfg.editableCompanyIdExtraUnlock.call(this)
-                    || this.manualMode
-                    || this.companyIdEntryRequired
-                );
-            },
-
-            /**
              * Drop a registry-supplied identifier that no longer belongs to
-             * the name currently held, from state AND storage together — see
-             * the address step's historical note on why both have to move as
-             * one (the payment step derives its own editability from
-             * `company_id` in the same blob).
+             * the name currently held, from state AND storage together: the
+             * payment step reads the pair out of that same blob.
              *
              * A CALLER MUST WRITE `this.search` FIRST. This compares it against
              * `companyName`, and `search` also carries what the popover repaints
@@ -1277,7 +1248,6 @@ $quoteDetails = json_encode(
 
                 this.companyId = '';
                 this.companyIdSource = '';
-                this.companyIdEntryRequired = true;
                 cfg.writeSelection.call(this, { company_id: '', company_id_source: '' });
             },
 
@@ -1506,8 +1476,6 @@ $quoteDetails = json_encode(
                 this.companyName = item.companyName;
                 this.companyId = item.companyId || '';
                 this.companyIdSource = this.companyId ? 'registry' : '';
-                this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-                this.applyCompanyIdEditability();
 
                 /*
                  * The panel is dismissed AFTER the pick's own state is written,
@@ -1561,14 +1529,11 @@ $quoteDetails = json_encode(
              */
             commitManualCompany(name) {
                 this.search = name;
-                // NOT an unconditional `companyIdEntryRequired = true`: a
-                // name edit that still matches the name a registry number
-                // was written for must leave that number LOCKED —
-                // forgetStaleCompanyId() is the only writer of this flag on
-                // this path, and only when the text has actually diverged.
+                // Only when the text has actually diverged: a name edit that
+                // still matches the name a registry number was written for
+                // keeps that number.
                 this.forgetStaleCompanyId();
                 this.isCompanySelected = false;
-                this.applyCompanyIdEditability();
 
                 cfg.writeSelection.call(this, { company_name: name });
                 cfg.onCompanyCommitted.call(this, name, this.companyId, this.companyIdSource);
@@ -1591,7 +1556,6 @@ $quoteDetails = json_encode(
                 this.searchCompletedFor = null;
                 cfg.onDropdownClear.call(this);
                 cfg.writeSelection.call(this, { manual_mode: true });
-                this.applyCompanyIdEditability();
                 cfg.afterManualToggle.call(this, true);
             },
             enableSearch(event) {
@@ -1602,7 +1566,6 @@ $quoteDetails = json_encode(
                 }
                 this.manualMode = false;
                 cfg.writeSelection.call(this, { manual_mode: false });
-                this.applyCompanyIdEditability();
                 cfg.afterManualToggle.call(this, false);
             },
 
@@ -1958,28 +1921,14 @@ $quoteDetails = json_encode(
     };
 
     /**
-     * The company being placed for: a hand-typed number, else the resolver, else the tile's capture.
+     * The company being placed for: the resolver's answer, else the tile's own capture.
      *
      * @param {Object} [surface] the tile asking; the live instance otherwise
-     * @returns {Object} as twoGatewayResolveInvoiceCompany(), `role` 'typed' for a hand-entered number
+     * @returns {Object} as twoGatewayResolveInvoiceCompany()
      */
     window.twoGatewayInvoiceCompany = window.twoGatewayInvoiceCompany || function (surface) {
         const tile = surface || twoPaymentComponentInstance;
         const tileName = tile ? tile.companyName : '';
-        const written = window.twoGatewayInvoiceCompanyWritten || {};
-        const field = document.getElementById('company_id');
-        // A value the writer put there itself is a captured company coming back.
-        const typed = field && field.value && field.value !== written.companyId
-            ? field.value
-            : '';
-        if (typed) {
-            return {
-                companyName: tileName,
-                companyId: typed,
-                companyIdSource: 'manual',
-                role: 'typed'
-            };
-        }
         const resolved = window.twoGatewayResolveInvoiceCompany();
         if (resolved.companyId) return resolved;
         return {
@@ -2581,8 +2530,6 @@ $quoteDetails = json_encode(
                     // the buyer had explicitly abandoned.
                     self.search = self.companyName;
                     self.isCompanySelected = Boolean(self.companyId);
-                    self.companyIdEntryRequired = !identity.hasVouchedNumber();
-                    self.applyCompanyIdEditability();
                     if (!changed) return;
                     // A discarded company has to leave the FIELD too. The commit
                     // hook writes the name it is given and returns early on an
@@ -3056,7 +3003,6 @@ $quoteDetails = json_encode(
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isCompanySearchEnabled: true,
             isAddressSearchEnabled: false,
-            editableCompanyId: true,
             countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
@@ -3418,14 +3364,6 @@ $quoteDetails = json_encode(
                     this.refreshOrderIntentVerdict();
                 });
 
-                // Watch manualMode and update derived state reactively. Goes
-                // through applyCompanyIdEditability() rather than assigning
-                // `!value` directly, so leaving manual mode cannot re-disable a
-                // company-id field the buyer still has to fill in by hand.
-                this.$watch('manualMode', () => {
-                    this.applyCompanyIdEditability();
-                });
-
                 this.$nextTick(() => {
                     // A tile hosting no control reads its role's identity
                     // instead; its record describes a capture it did not make.
@@ -3472,35 +3410,10 @@ $quoteDetails = json_encode(
                 window.twoGatewayWriteBillingCompany({ manual_mode: manualMode });
             },
 
-            // Manual/search toggling, keyboard navigation, dropdown teardown
-            // and the company-id lock formula (`applyCompanyIdEditability()`)
-            // are the shared engine's — `enterManually()`, `enableSearch()`,
-            // `nextItem()`/`prevItem()`/`adjustScroll()`,
-            // `selectHighlightedItem()`, `closeCompanyList()`. This tile's
-            // `editableCompanyIdExtraUnlock` is the engine default (`false`):
-            // the formula here has always been exactly
-            // `!(manualMode || companyIdEntryRequired)`, with no extra term —
-            // unlike the address step, which unlocks whenever search itself
-            // is switched off (see that surface's own options).
-
-            // TWO-25288: whether there is an actual registry id to show.
-            // Deliberately NOT just `companyIdDisabled`, which the identity
-            // mirror can set a tick before the number itself lands — gating on
-            // it alone paints the hint with no number behind it.
-            get companyIdHintVisible() {
-                return this.companyIdDisabled && Boolean(this.companyId);
-            },
-
-            // Additive (TWO-25288): purely derived, no new writer. Hides the
-            // now-redundant search-mode company_id input once its value is
-            // shown via the inline hint next to the company name field
-            // instead. Returns a class-NAME STRING, not an object literal —
-            // `:class` bindings in this CSP-friendly Alpine build only work
-            // as a key lookup (see chipClasses / GetItemClass above), not
-            // expression evaluation.
-            get companyIdHiddenClass() {
-                return this.companyIdHintVisible ? 'hidden' : '';
-            },
+            // Manual/search toggling, keyboard navigation and dropdown
+            // teardown are the shared engine's — `enterManually()`,
+            // `enableSearch()`, `nextItem()`/`prevItem()`/`adjustScroll()`,
+            // `selectHighlightedItem()`, `closeCompanyList()`.
 
             // TWO-25326: the ONE gate for both the inline order-intent
             // notice and the captured-company label beside it. Not a "is a
@@ -3777,15 +3690,6 @@ $quoteDetails = json_encode(
                 return companyId ? companyName + ' (' + companyId + ')' : companyName;
             },
 
-            // Companion to `companyIdHiddenClass`, hiding the whole Company
-            // Number block — its static caption included — rather than only
-            // the input. Class-NAME STRING for the same reason: `:class` here
-            // is a key lookup, not expression evaluation. Gated on capture,
-            // unlike the search control.
-            get companyNumberBlockHiddenClass() {
-                return this.companyIdHintVisible ? 'hidden' : '';
-            },
-
             fillCompanyData(companyId = '', companyName = '', triggerOrderIntent = true) {
                 companyName = typeof companyName === 'string' && companyName ? companyName : '';
                 companyId = typeof companyId === 'string' ? companyId : '';
@@ -3793,10 +3697,6 @@ $quoteDetails = json_encode(
                 if (companyName) {
                     this.companyName = companyName;
                     this.companyId = companyId;
-                    // A hand-typed number stays the buyer's to correct, so the lock
-                    // is re-derived from what was just committed.
-                    this.companyIdEntryRequired = !this.hasVouchedCompanyId();
-                    this.applyCompanyIdEditability();
                 }
 
                 const invoiceCompany = window.twoGatewayApplyInvoiceCompanyFields(this);
@@ -4376,12 +4276,11 @@ $quoteDetails = json_encode(
      *
      * which evaluated each of PaymentMethodBase()'s getters once and copied
      * the frozen result, so on the component the form actually mounted
-     * `orderIntentMessageVisible`, `companyTileLabelText`,
-     * `companyIdHintVisible`, `companyIdHiddenClass` and
-     * `companyNumberBlockHiddenClass` were all dead data properties holding
-     * their pre-interaction value. Every company-search behaviour tied to
-     * them was inert in production, and no test saw it because the suites
-     * mounted the BASE component, where the getters are real.
+     * `orderIntentMessageVisible` and `companyTileLabelText` were dead data
+     * properties holding their pre-interaction value. Every company-search
+     * behaviour tied to them was inert in production, and no test saw it
+     * because the suites mounted the BASE component, where the getters are
+     * real.
      * `payment-form-composition.test.js` mounts THIS factory for that reason
      * — do not let that suite go away.
      *
