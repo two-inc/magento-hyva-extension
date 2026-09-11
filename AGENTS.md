@@ -324,6 +324,17 @@ lands after the chip does — which is why the chip binds its `title` and
 `aria-label` to a getter rather than taking the rendered literals and stopping
 there.
 
+### The sole offered term is a disabled button
+
+One offered term is not a choice, but it still carries the name spelling the term
+out, and ARIA prohibits naming a role-less element — which a bare `span` is. So
+the sole chip is a `button` with the native `disabled` attribute: naming works,
+and a natively disabled button is not focusable, so the tab order skips a chip
+with nothing to select. Its appearance is unchanged, which takes one CSS
+exclusion: the rule that fades a chip while any term round-trip is in flight
+keys off `[disabled]`, and the sole chip is permanently disabled rather than
+busy.
+
 ### A term change is never left unpriced
 
 `selectTerm()` writes the session term and reprices; a failed save restores the

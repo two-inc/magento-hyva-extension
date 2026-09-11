@@ -345,3 +345,55 @@ describe("term chip accessible name", () => {
     expect(el.getAttribute(":title")).toBe("accessibleName");
   });
 });
+
+/**
+ * ABN-554. A sole offered term is not a choice, but it still carries the name
+ * that spells the term out — and ARIA prohibits naming a role-less element,
+ * which a bare span is. Whether Tab actually skips it is a browser check: jsdom
+ * has no sequential focus navigation.
+ */
+describe("the sole offered term chip", () => {
+  /** @returns {HTMLElement} the sole-term chip as rendered */
+  function soleChip() {
+    return new DOMParser()
+      .parseFromString(
+        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
+        "text/html",
+      )
+      .querySelector('.two-term-chips [data-single="1"]');
+  }
+
+  it.each([
+    { read: (el) => el.tagName, expected: "BUTTON", case: "is a button" },
+    { read: (el) => el.disabled, expected: true, case: "is natively disabled" },
+    {
+      read: (el) => el.getAttribute("type"),
+      expected: "button",
+      case: "never submits the checkout form it sits in",
+    },
+    {
+      read: (el) => el.getAttribute(":class"),
+      expected: "chipClasses",
+      case: "still takes its whole appearance from the chip component",
+    },
+  ])("the sole chip $case", ({ read, expected }) => {
+    expect(read(soleChip())).toBe(expected);
+  });
+
+  it("is not dimmed by the mid-round-trip styling every other chip takes", () => {
+    const css = require("fs").readFileSync(
+      require("path").join(
+        __dirname,
+        "..",
+        "..",
+        "view/frontend/web/css/custom.css",
+      ),
+      "utf8",
+    );
+
+    // The busy rule would otherwise fade the one permanently disabled chip.
+    expect(css).toContain(
+      ".two-term-chip[disabled]:not(.two-term-chip--single)",
+    );
+  });
+});

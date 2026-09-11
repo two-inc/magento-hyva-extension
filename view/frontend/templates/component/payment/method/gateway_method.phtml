@@ -136,7 +136,13 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         ?>
         <div class="two-term-chips field">
             <div class="two-term-chips__container">
-                <span x-data="<?= $gwBase ?>TermChip"
+                <?php /* A disabled button, not a span: ARIA prohibits naming a role-less
+                         element, so the name spelling the term out reached a tooltip and
+                         never a screen reader. Natively disabled, so Tab skips a chip that
+                         has nothing to select (ABN-554). */ ?>
+                <button type="button"
+                      disabled
+                      x-data="<?= $gwBase ?>TermChip"
                       data-days="<?= $singleDay ?>"
                       data-single="1"
                       data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
@@ -158,7 +164,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                     <template x-if="surchargeTextWhenNotLoading">
                         <span class="two-term-chip__surcharge" x-text="surchargeTextWhenNotLoading"></span>
                     </template>
-                </span>
+                </button>
             </div>
         </div>
     <?php endif ?>

@@ -109,7 +109,9 @@ summary::marker {
 .two-term-chip:focus {
   outline: none;
 }
-.two-term-chip[disabled] {
+/* Busy: every chip is disabled while any one is mid-round-trip. The sole-term
+   chip is disabled permanently and is not busy, so it keeps its own look. */
+.two-term-chip[disabled]:not(.two-term-chip--single) {
   cursor: wait;
   opacity: 0.7;
 }
