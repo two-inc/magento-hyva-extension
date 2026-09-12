@@ -1791,7 +1791,7 @@ $quoteDetails = json_encode(
 
     window.twoGatewayReapCaptureIdentityWatchers = twoGatewayReapCaptureIdentityWatchers;
 
-    /** The company control the buyer's caret was last inside. */
+    /** The company control holding the caret when the current re-render began. */
     window.twoGatewayCaptureFocusRoot = window.twoGatewayCaptureFocusRoot || null;
 
     /** @returns {?Object} the registered mount whose root contains `node` */
@@ -1804,14 +1804,13 @@ $quoteDetails = json_encode(
     }
 
     /**
-     * Put the caret back on the company field when a morph dropped it.
+     * Put the caret back on the company field when this re-render dropped it.
      *
-     * A morph patches the company input in place, and Chrome blurs a replaced
-     * element to NOTHING, so the buyer is left on `document.body` mid-capture
-     * and the next character they type reaches no control at all (ABN-554).
-     * Repairs a DROP only, and only for the control the last `focusin` put the
-     * buyer in — which is the same rule the panel's own outside-press recovery
-     * follows.
+     * A morph patches the company input in place and the browser blurs it to
+     * NOTHING, so the buyer is left on `document.body` mid-capture and the next
+     * character they type reaches no control at all (ABN-554). Scoped to the
+     * control that still held the caret when the message arrived, so a
+     * re-render that finds focus already gone never claims it.
      */
     function twoGatewayRestoreCaptureFocus() {
         const root = window.twoGatewayCaptureFocusRoot;
@@ -1860,12 +1859,10 @@ $quoteDetails = json_encode(
             return;
         }
         window.twoGatewayCompanyMorphHooked = true;
-        // Capture phase: the record has to survive a morph that removes the
-        // node the event would otherwise bubble through.
-        document.addEventListener('focusin', function (event) {
-            const mount = twoGatewayMountContaining(event.target);
+        window.Magewire.hook('message.received', function () {
+            const mount = twoGatewayMountContaining(document.activeElement);
             window.twoGatewayCaptureFocusRoot = mount ? mount.root : null;
-        }, true);
+        });
         window.Magewire.hook('element.updated', twoGatewayRemountCompanyPopovers);
     }
 
