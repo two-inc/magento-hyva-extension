@@ -7,10 +7,8 @@
  * whose own fee is zero, or that the quote map does not answer for, then shows
  * a zero amount — and every term ~zero shows none anywhere.
  *
- * Same rule, threshold and prefix as the Luma renderer
- * (magento-plugin view/frontend/web/js/view/payment/method-renderer/gateway_method.js
- * `termOptions`), so the two checkouts display identically for one merchant
- * configuration.
+ * The other checkouts apply the same rule, threshold and prefix, so all of them
+ * display identically for one merchant configuration.
  */
 
 "use strict";

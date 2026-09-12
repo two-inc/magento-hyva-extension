@@ -17,6 +17,7 @@ use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Magewirephp\Magewire\Component;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\TermSurchargePreview;
@@ -67,6 +68,13 @@ class GatewayMethod extends Component
     public bool $showChip = false;
 
     public bool $showSingleTerm = false;
+
+    /**
+     * Whether the merchant offers end-of-month terms, which fall due that many
+     * days after the end of the month rather than from the invoice. The chip
+     * text depends on it: a bare day count states the wrong due date for one.
+     */
+    public bool $isEndOfMonth = false;
 
     protected $loader = true;
 
@@ -234,6 +242,8 @@ class GatewayMethod extends Component
             $terms = array_values(array_map('intval', $this->configRepository->getAllBuyerTerms($storeId)));
 
             $this->availableTerms = $terms;
+            $this->isEndOfMonth = $this->configRepository->getPaymentTermsType($storeId)
+                === PaymentTermsType::END_OF_MONTH;
             $this->surchargeDescription = (string) $this->configRepository->getSurchargeLineDescription($storeId);
             $this->currencyCode = (string) ($quote->getQuoteCurrencyCode() ?: $quote->getStore()->getBaseCurrencyCode());
             // Magento stores locale as `nl_NL`; Intl.NumberFormat expects
@@ -258,11 +268,69 @@ class GatewayMethod extends Component
             $this->logRepository->addErrorLog('Hyva chip: hydrate failed', $e->getMessage());
             $this->showChip = false;
             $this->showSingleTerm = false;
+            $this->isEndOfMonth = false;
             $this->availableTerms = [];
             $this->termSurcharges = [];
             $this->currencyCode = '';
             $this->currencyLocale = '';
         }
+    }
+
+    /**
+     * A chip's visible-text template, with `%1` standing for the day count.
+     */
+    public function chipLabelTemplate(): string
+    {
+        return (string) ($this->isEndOfMonth ? __('EOM+%1') : __('%1 days'));
+    }
+
+    /**
+     * The one-day form of the above. Standard terms prepend the numeral to the
+     * translated unit, which saves a '1 day' catalogue key because the numeral
+     * is language-invariant; an end-of-month token needs no separate form.
+     */
+    public function chipSingularLabel(): string
+    {
+        return $this->isEndOfMonth
+            ? str_replace('%1', '1', (string) __('EOM+%1'))
+            : '1 ' . (string) __('day');
+    }
+
+    /**
+     * What `EOM+30` means, spelled out, and empty under standard terms where the
+     * visible text already says it. Opens with the visible token: WCAG 2.5.3
+     * requires the accessible name to contain the visible text.
+     */
+    public function chipExplanation(int $days): string
+    {
+        if (!$this->isEndOfMonth) {
+            return '';
+        }
+
+        return str_replace(
+            '%1',
+            (string) $days,
+            (string) __('EOM+%1: pay %1 days after the end of the month')
+        );
+    }
+
+    /**
+     * The same sentence stating the surcharge as well, `%2` left for the browser
+     * to substitute once the quote lands. An `aria-label` replaces the whole
+     * accessible name, so the amount rendered inside the chip is announced
+     * nowhere unless the name carries it too.
+     */
+    public function chipExplanationWithFee(int $days): string
+    {
+        if (!$this->isEndOfMonth) {
+            return '';
+        }
+
+        return str_replace(
+            '%1',
+            (string) $days,
+            (string) __('EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge')
+        );
     }
 
     /**

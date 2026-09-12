@@ -13,6 +13,7 @@ use Magento\Quote\Model\Quote;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\PaymentTermsType;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\GatewayHyva\Magewire\Checkout\Payment\GatewayMethod;
@@ -146,6 +147,11 @@ class GatewayMethodTermSelectionTest extends TestCase
             public function isCompanySearchEnabled(?int $storeId = null): bool
             {
                 return false;
+            }
+
+            public function getPaymentTermsType(?int $storeId = null): string
+            {
+                return PaymentTermsType::STANDARD;
             }
 
             public function getSurchargeType(?int $storeId = null): string

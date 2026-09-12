@@ -106,10 +106,15 @@ summary::marker {
 .two-term-chip:hover {
   border-color: #3043d1;
 }
-.two-term-chip:focus {
-  outline: none;
+/* A focused chip has to be identifiable against its own blue fill, so the ring
+   sits outside it. Keyboard only: a clicked chip gets no ring (WCAG 2.4.7). */
+.two-term-chip:focus-visible {
+  outline: 2px solid #3043d1;
+  outline-offset: 2px;
 }
-.two-term-chip[disabled] {
+/* Busy: every chip is disabled while any one is mid-round-trip. The sole-term
+   chip is disabled permanently and is not busy, so it keeps its own look. */
+.two-term-chip[disabled]:not(.two-term-chip--single) {
   cursor: wait;
   opacity: 0.7;
 }

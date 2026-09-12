@@ -132,13 +132,13 @@ const PHP_VALUE_RULES = [
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$subtitleHtml$/, ""],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
-  // The sole-term chip's format string and day count get values of their own,
-  // ahead of the shared group below. Folding them in with `$pluralLabel` and
-  // `$singularLabel` gave the chip four attributes carrying the identical
-  // literal `day`, which made a test that reads one of them unable to tell it
-  // apart from the others — so sourcing an attribute from the WRONG variable,
-  // the actual defect TWO-25266 fixes, rendered a green suite.
-  [/^\$singleLabel$/, "Payment Terms %1 days"],
+  // The end-of-month chip's accessible name, distinct from every label above so
+  // a test reading it can tell it apart from the visible-text templates.
+  [/^\$chipName$/, "EOM+%1: pay %1 days after the end of the month"],
+  [
+    /^\$chipNameWithFee$/,
+    "EOM+%1: pay %1 days after the end of the month, plus a %2 surcharge",
+  ],
   [/^\$singleDay$/, "30"],
   [/^\$(pluralLabel|singularLabel)$/, "day"],
   [/^\(int\) \$days$/, "14"],
