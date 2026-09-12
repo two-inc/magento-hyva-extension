@@ -1791,10 +1791,7 @@ $quoteDetails = json_encode(
 
     window.twoGatewayReapCaptureIdentityWatchers = twoGatewayReapCaptureIdentityWatchers;
 
-    /**
-     * The company control focus was last inside, so a morph that takes the
-     * caret with it can be told where to put it back.
-     */
+    /** The company control the buyer's caret was last inside. */
     window.twoGatewayCaptureFocusRoot = window.twoGatewayCaptureFocusRoot || null;
 
     /** @returns {?Object} the registered mount whose root contains `node` */
@@ -1810,10 +1807,11 @@ $quoteDetails = json_encode(
      * Put the caret back on the company field when a morph dropped it.
      *
      * A morph patches the company input in place, and Chrome blurs a replaced
-     * element to NOTHING — so the buyer is left on `document.body` mid-capture
+     * element to NOTHING, so the buyer is left on `document.body` mid-capture
      * and the next character they type reaches no control at all (ABN-554).
-     * Only ever repairs a DROP: focus that has settled on another control is
-     * the buyer's own and is left alone.
+     * Repairs a DROP only, and only for the control the last `focusin` put the
+     * buyer in — which is the same rule the panel's own outside-press recovery
+     * follows.
      */
     function twoGatewayRestoreCaptureFocus() {
         const root = window.twoGatewayCaptureFocusRoot;
@@ -2507,8 +2505,10 @@ $quoteDetails = json_encode(
                 if (watched) return;
                 window.twoGatewayCompanyMounts.push({
                     root: root,
+                    // Off the root, not `companyNameField()`: that reads the
+                    // component's `$el` first, which a morph leaves detached.
                     field: function () {
-                        return self.companyNameField();
+                        return root.querySelector("input[data-two-capture-field]");
                     },
                     // Through the surface's mount, not the controller's
                     // refreshMount(): a morph reinstates the server markup, which
