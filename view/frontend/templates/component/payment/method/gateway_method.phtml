@@ -80,7 +80,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                 $errorMessage = __('Could not update payment term.') . ' ' . __('Please try again.');
                 ?>
                 <?php foreach ($magewire->availableTerms as $days): ?>
-                    <?php $chipName = $magewire->chipExplanation((int) $days); ?>
+                    <?php
+                    $chipName = $magewire->chipExplanation((int) $days);
+                    $chipNameWithFee = $magewire->chipExplanationWithFee((int) $days);
+                    ?>
                     <button type="button"
                             x-data="<?= $gwBase ?>TermChip"
                             data-days="<?= (int) $days ?>"
@@ -89,10 +92,16 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                             data-error-message="<?= $escaper->escapeHtmlAttr($errorMessage) ?>"
                             <?php /* Only under end-of-month terms: a standard chip's visible text
                                      already reads as its name, and a second one restating it risks
-                                     WCAG 2.5.3 (ABN-554). */ ?>
+                                     WCAG 2.5.3 (ABN-554). The bound pair restates the name once the
+                                     fee quote lands; the literal pair is what stands before Alpine
+                                     initialises. */ ?>
                             <?php if ($chipName !== ''): ?>
+                            data-name="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                            data-name-fee="<?= $escaper->escapeHtmlAttr($chipNameWithFee) ?>"
                             title="<?= $escaper->escapeHtmlAttr($chipName) ?>"
                             aria-label="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                            :title="accessibleName"
+                            :aria-label="accessibleName"
                             <?php endif ?>
                             :class="chipClasses"
                             :aria-pressed="ariaPressed"
@@ -123,18 +132,29 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         $pluralLabel = $magewire->chipLabelTemplate();
         $singleLabel = $magewire->singleChipLabelTemplate();
         $chipName = $magewire->chipExplanation($singleDay);
+        $chipNameWithFee = $magewire->chipExplanationWithFee($singleDay);
         ?>
         <div class="two-term-chips field">
             <div class="two-term-chips__container">
-                <span x-data="<?= $gwBase ?>TermChip"
+                <?php /* A disabled button, not a span: ARIA prohibits naming a role-less
+                         element, so the name spelling the term out reached a tooltip and
+                         never a screen reader. Natively disabled, so Tab skips a chip that
+                         has nothing to select (ABN-554). */ ?>
+                <button type="button"
+                      disabled
+                      x-data="<?= $gwBase ?>TermChip"
                       data-days="<?= $singleDay ?>"
                       data-single="1"
                       data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
                       data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
                       data-label-single="<?= $escaper->escapeHtmlAttr($singleLabel) ?>"
                       <?php if ($chipName !== ''): ?>
+                      data-name="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                      data-name-fee="<?= $escaper->escapeHtmlAttr($chipNameWithFee) ?>"
                       title="<?= $escaper->escapeHtmlAttr($chipName) ?>"
                       aria-label="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                      :title="accessibleName"
+                      :aria-label="accessibleName"
                       <?php endif ?>
                       :class="chipClasses">
                     <span class="two-term-chip__days" x-text="label"></span>
@@ -144,7 +164,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                     <template x-if="surchargeTextWhenNotLoading">
                         <span class="two-term-chip__surcharge" x-text="surchargeTextWhenNotLoading"></span>
                     </template>
-                </span>
+                </button>
             </div>
         </div>
     <?php endif ?>

@@ -92,6 +92,52 @@ class GatewayMethodChipLabelTest extends TestCase
         $this->assertStringContainsString($visible, $component->chipExplanation($days), $because);
     }
     /**
+     * @return array<int, array{0: bool, 1: int, 2: string, 3: string}>
+     */
+    public static function feeNameProvider(): array
+    {
+        return [
+            [false, 30, '', 'a standard chip needs no name of its own'],
+            [
+                true,
+                30,
+                'EOM+30: pay 30 days after the end of the month, plus a %2 surcharge',
+                'an end-of-month chip leaves the amount for the browser to substitute',
+            ],
+            [
+                true,
+                1,
+                'EOM+1: pay 1 days after the end of the month, plus a %2 surcharge',
+                'so does the shortest one',
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider feeNameProvider
+     */
+    public function testTheAccessibleNameStatingTheSurcharge(
+        bool $isEndOfMonth,
+        int $days,
+        string $expected,
+        string $because
+    ): void {
+        $component = $this->component($isEndOfMonth);
+
+        $this->assertSame($expected, $component->chipExplanationWithFee($days), $because);
+
+        if ($isEndOfMonth) {
+            // The browser substitutes the amount, so the placeholder has to survive.
+            $this->assertStringContainsString('%2', $component->chipExplanationWithFee($days), $because);
+            $this->assertStringStartsWith(
+                str_replace('%1', (string) $days, $component->chipLabelTemplate()),
+                $component->chipExplanationWithFee($days),
+                $because
+            );
+        }
+    }
+
+    /**
      * The accessors above are only as good as the flag they read, and nothing
      * else in this suite would notice hydration never setting it.
      */

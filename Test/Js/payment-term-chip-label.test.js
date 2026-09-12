@@ -219,3 +219,181 @@ describe("term chip caption", () => {
     expect(caption.textContent).toContain(H.ESCAPED_STRING);
   });
 });
+
+/**
+ * ABN-554. An `aria-label` replaces the whole accessible name, so the `+€n.nn`
+ * rendered inside an end-of-month chip is announced nowhere unless the name
+ * states it too. The name is bound rather than fixed at render time because the
+ * fee quote lands after the chip does.
+ */
+describe("term chip accessible name", () => {
+  let env;
+
+  const NAME = "EOM+30: pay 30 days after the end of the month";
+  const NAME_FEE =
+    "EOM+30: pay 30 days after the end of the month, plus a %2 surcharge";
+  const NAMED = { days: "30", name: NAME, "name-fee": NAME_FEE };
+
+  beforeEach(() => {
+    env = H.installHyvaEnvironment();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+  });
+
+  afterEach(() => {
+    env.restore();
+  });
+
+  /**
+   * @param {Object} dataset data-* attributes, without the prefix
+   * @param {Object} surcharges the Magewire termSurcharges map
+   * @param {boolean} updating whether a term round-trip is in flight
+   * @returns {Object} the mounted chip
+   */
+  function chip(dataset, surcharges, updating) {
+    const el = document.createElement("button");
+    Object.keys(dataset).forEach(function (key) {
+      el.setAttribute("data-" + key, dataset[key]);
+    });
+    const mounted = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+      el: el,
+      wire: {
+        termSurcharges: surcharges,
+        currencyCode: "EUR",
+        currencyLocale: "en-GB",
+      },
+    });
+    mounted.init();
+    mounted.isUpdating = !!updating;
+
+    return mounted;
+  }
+
+  it.each([
+    {
+      dataset: NAMED,
+      surcharges: { 30: "7.25", 60: "9.00" },
+      updating: false,
+      expected:
+        "EOM+30: pay 30 days after the end of the month, plus a €7.25 surcharge",
+      description:
+        "a priced term states the fee the label would otherwise silence",
+    },
+    {
+      dataset: NAMED,
+      surcharges: { 30: "0", 60: "0" },
+      updating: false,
+      expected: NAME,
+      description: "a set quoting nothing states no amount",
+    },
+    {
+      dataset: NAMED,
+      surcharges: {},
+      updating: false,
+      expected: NAME,
+      description: "a quote still in flight states no amount either",
+    },
+    {
+      dataset: NAMED,
+      surcharges: { 30: "7.25" },
+      updating: true,
+      expected: NAME,
+      description: "a term mid-round-trip states none while the loader shows",
+    },
+    {
+      dataset: { days: "30" },
+      surcharges: { 30: "7.25" },
+      updating: false,
+      expected: "",
+      description: "a standard term is left unnamed whatever it costs",
+    },
+  ])("$description", ({ dataset, surcharges, updating, expected }) => {
+    expect(chip(dataset, surcharges, updating).accessibleName).toBe(expected);
+  });
+
+  it("names the amount the chip itself displays", () => {
+    const mounted = chip(NAMED, { 30: "7.25", 60: "9.00" }, false);
+
+    expect(mounted.surchargeText).toBe("+€7.25");
+    expect(mounted.accessibleName).toContain("€7.25");
+    // WCAG 2.5.3 Label in Name: the visible token opens the name.
+    expect(mounted.accessibleName.indexOf("EOM+30")).toBe(0);
+  });
+
+  it.each([
+    {
+      selector: '.two-term-chips [data-single="1"]',
+      case: "the sole-term chip",
+    },
+    {
+      selector: '.two-term-chips [role="group"] button',
+      case: "a selectable chip",
+    },
+  ])("binds the name so the fee reaches it on $case", ({ selector }) => {
+    const el = new DOMParser()
+      .parseFromString(
+        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
+        "text/html",
+      )
+      .querySelector(selector);
+
+    expect(el).not.toBeNull();
+    expect(el.getAttribute("data-name")).toBe(NAME.replace(/30/g, "%1"));
+    expect(el.getAttribute("data-name-fee")).toBe(NAME_FEE.replace(/30/g, "%1"));
+    // Without the bound pair the name is fixed at render time, before the quote.
+    expect(el.getAttribute(":aria-label")).toBe("accessibleName");
+    expect(el.getAttribute(":title")).toBe("accessibleName");
+  });
+});
+
+/**
+ * ABN-554. A sole offered term is not a choice, but it still carries the name
+ * that spells the term out — and ARIA prohibits naming a role-less element,
+ * which a bare span is. Whether Tab actually skips it is a browser check: jsdom
+ * has no sequential focus navigation.
+ */
+describe("the sole offered term chip", () => {
+  /** @returns {HTMLElement} the sole-term chip as rendered */
+  function soleChip() {
+    return new DOMParser()
+      .parseFromString(
+        H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE),
+        "text/html",
+      )
+      .querySelector('.two-term-chips [data-single="1"]');
+  }
+
+  it.each([
+    { read: (el) => el.tagName, expected: "BUTTON", case: "is a button" },
+    { read: (el) => el.disabled, expected: true, case: "is natively disabled" },
+    {
+      read: (el) => el.getAttribute("type"),
+      expected: "button",
+      case: "never submits the checkout form it sits in",
+    },
+    {
+      read: (el) => el.getAttribute(":class"),
+      expected: "chipClasses",
+      case: "still takes its whole appearance from the chip component",
+    },
+  ])("the sole chip $case", ({ read, expected }) => {
+    expect(read(soleChip())).toBe(expected);
+  });
+
+  it("is not dimmed by the mid-round-trip styling every other chip takes", () => {
+    const css = require("fs").readFileSync(
+      require("path").join(
+        __dirname,
+        "..",
+        "..",
+        "view/frontend/web/css/custom.css",
+      ),
+      "utf8",
+    );
+
+    // The busy rule would otherwise fade the one permanently disabled chip.
+    expect(css).toContain(
+      ".two-term-chip[disabled]:not(.two-term-chip--single)",
+    );
+  });
+});

@@ -307,12 +307,33 @@ to contain the visible text, so the phrase may not be reordered to lead with the
 explanation. A standard chip carries neither, since a name restating its visible
 text would risk the same criterion.
 
-**The templates and the name come from the Magewire component, not from the
-template file.** Alpine's CSP build forbids expressions in attribute bindings, so
-the chip's own script can only read a bare identifier; the day count and the
-stored term type are both known server-side, which leaves nothing for the browser
-to decide. That also makes each of them directly unit-testable, where a
-conditional buried in the `.phtml` is not.
+The name states the surcharge too, because an `aria-label` replaces the whole
+accessible name and the `+€n.nn` rendered inside the chip is then announced
+nowhere: `EOM+30: pay 30 days after the end of the month, plus a €7.25
+surcharge`. Each wording is one translated sentence rather than an assembled
+one, so a translator can order the clauses. A term carrying no surcharge, a set
+where every term quotes nothing, and a chip mid-round-trip all name no amount.
+
+**The templates and both name sentences come from the Magewire component, not
+from the template file.** Alpine's CSP build forbids expressions in attribute
+bindings, so the chip's own script can only read a bare identifier; the day count
+and the stored term type are both known server-side. That also makes each of them
+directly unit-testable, where a conditional buried in the `.phtml` is not. Only
+the amount is left for the browser, as `%2` in the fee sentence, because the quote
+lands after the chip does — which is why the chip binds its `title` and
+`aria-label` to a getter rather than taking the rendered literals and stopping
+there.
+
+### The sole offered term is a disabled button
+
+One offered term is not a choice, but it still carries the name spelling the term
+out, and ARIA prohibits naming a role-less element — which a bare `span` is. So
+the sole chip is a `button` with the native `disabled` attribute: naming works,
+and a natively disabled button is not focusable, so the tab order skips a chip
+with nothing to select. Its appearance is unchanged, which takes one CSS
+exclusion: the rule that fades a chip while any term round-trip is in flight
+keys off `[disabled]`, and the sole chip is permanently disabled rather than
+busy.
 
 ### A term change is never left unpriced
 
