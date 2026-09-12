@@ -69,15 +69,25 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         <div class="two-payment-subtitle"><?= /* @noEscape */ $subtitleHtml ?></div>
     <?php endif; ?>
     <?php if ($showChip || $magewire->showSingleTerm): ?>
+        <?php $termGroupLabelId = $methodCode . '_term_group_label'; ?>
         <div class="two-term-chips field">
             <?php /* Outside both branches: the chip text states only the term, so a
-                     lone chip is unnamed without this heading (ABN-554). */ ?>
-            <label class="label block text-sm font-medium text-gray-700 mb-1">
+                     lone chip is unnamed without this heading (ABN-554). A `span`,
+                     not a `label`: it names the chip group through aria-labelledby,
+                     and a `label` names a single form control. */ ?>
+            <span class="label block text-sm font-medium text-gray-700 mb-1"
+                  id="<?= $escaper->escapeHtmlAttr($termGroupLabelId) ?>">
                 <span><?= $escaper->escapeHtml(__('Selected payment terms')) ?></span>
-            </label>
+            </span>
         <?php if ($showChip): ?>
-            <div class="two-term-chips__container" role="group"
-                 aria-label="<?= $escaper->escapeHtmlAttr(__('Payment Terms')) ?>">
+            <?php /* A radio group, not a row of buttons: the roles come with the
+                     single tab stop and the arrow keys, or they describe nothing
+                     (ABN-554). */ ?>
+            <div class="two-term-chips__container" role="radiogroup"
+                 aria-labelledby="<?= $escaper->escapeHtmlAttr($termGroupLabelId) ?>"
+                 data-terms="<?= $escaper->escapeHtmlAttr(implode(',', array_map('intval', $magewire->availableTerms))) ?>"
+                 x-data="<?= $gwBase ?>TermChipGroup"
+                 @keydown="onKeydown">
                 <?php
                 $singularLabel = $magewire->chipSingularLabel();
                 $pluralLabel = $magewire->chipLabelTemplate();
@@ -107,8 +117,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                             :title="accessibleName"
                             :aria-label="accessibleName"
                             <?php endif ?>
+                            role="radio"
                             :class="chipClasses"
-                            :aria-pressed="ariaPressed"
+                            :aria-checked="ariaChecked"
+                            :tabindex="tabIndex"
                             :disabled="anyUpdating"
                             @click="select">
                         <span class="two-term-chip__days" x-text="label"></span>
@@ -133,7 +145,7 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         $chipNameWithFee = $magewire->chipExplanationWithFee($singleDay);
         ?>
             <div class="two-term-chips__container" role="group"
-                 aria-label="<?= $escaper->escapeHtmlAttr(__('Payment Terms')) ?>">
+                 aria-labelledby="<?= $escaper->escapeHtmlAttr($termGroupLabelId) ?>">
                 <?php /* A disabled button, not a span: ARIA prohibits naming a role-less
                          element, so the name spelling the term out reached a tooltip and
                          never a screen reader. Natively disabled, so Tab skips a chip that
