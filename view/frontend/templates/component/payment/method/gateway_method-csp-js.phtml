@@ -1809,8 +1809,9 @@ $quoteDetails = json_encode(
      * A morph patches the company input in place and the browser blurs it to
      * NOTHING, so the buyer is left on `document.body` mid-capture and the next
      * character they type reaches no control at all (ABN-554). Scoped to the
-     * control that still held the caret when the message arrived, so a
-     * re-render that finds focus already gone never claims it.
+     * control that still held the caret when the message arrived, and the
+     * record is spent here, so no later re-render reclaims a caret the buyer
+     * dropped after it.
      */
     function twoGatewayRestoreCaptureFocus() {
         const root = window.twoGatewayCaptureFocusRoot;
@@ -1819,7 +1820,9 @@ $quoteDetails = json_encode(
         if (active && active !== document.body && active !== document.documentElement) return;
         const mount = twoGatewayMountContaining(root);
         const field = mount && typeof mount.field === 'function' ? mount.field() : null;
-        if (field) field.focus();
+        if (!field) return;
+        window.twoGatewayCaptureFocusRoot = null;
+        field.focus();
     }
 
     /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */

@@ -189,6 +189,21 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(document.activeElement).toBe(replacement);
   });
 
+  test("the record is spent by the repair, so a later re-render cannot reclaim the caret", () => {
+    field.focus();
+    env.fireMagewireHook("message.received");
+    field.blur();
+    morphServerMarkupOverControl();
+    env.fireMagewireHook("element.updated");
+    expect(document.activeElement).toBe(field);
+    // A press on non-focusable chrome: no focusin, and no new message either.
+    field.blur();
+
+    env.fireMagewireHook("element.updated");
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
   test("a re-render that began with the caret already gone does not claim it", () => {
     field.focus();
     field.blur();
