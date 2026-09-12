@@ -297,15 +297,6 @@ class GatewayMethod extends Component
     }
 
     /**
-     * The sole-offered-term chip's template, which names the term because that
-     * branch renders no heading above it.
-     */
-    public function singleChipLabelTemplate(): string
-    {
-        return (string) ($this->isEndOfMonth ? __('Payment Terms EOM+%1') : __('Payment Terms %1 days'));
-    }
-
-    /**
      * What `EOM+30` means, spelled out, and empty under standard terms where the
      * visible text already says it. Opens with the visible token: WCAG 2.5.3
      * requires the accessible name to contain the visible text.

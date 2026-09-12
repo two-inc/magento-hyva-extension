@@ -23,13 +23,13 @@ class GatewayMethodChipLabelTest extends TestCase
     }
 
     /**
-     * @return array<int, array{0: bool, 1: string, 2: string, 3: string, 4: string}>
+     * @return array<int, array{0: bool, 1: string, 2: string, 3: string}>
      */
     public static function labelProvider(): array
     {
         return [
-            [false, '%1 days', '1 day', 'Payment Terms %1 days', 'a standard term states the days from invoice'],
-            [true, 'EOM+%1', 'EOM+1', 'Payment Terms EOM+%1', 'an end-of-month term names the month end'],
+            [false, '%1 days', '1 day', 'a standard term states the days from invoice'],
+            [true, 'EOM+%1', 'EOM+1', 'an end-of-month term names the month end'],
         ];
     }
 
@@ -40,14 +40,24 @@ class GatewayMethodChipLabelTest extends TestCase
         bool $isEndOfMonth,
         string $plural,
         string $singular,
-        string $single,
         string $because
     ): void {
         $component = $this->component($isEndOfMonth);
 
         $this->assertSame($plural, $component->chipLabelTemplate(), $because);
         $this->assertSame($singular, $component->chipSingularLabel(), $because);
-        $this->assertSame($single, $component->singleChipLabelTemplate(), $because);
+    }
+
+    /**
+     * A sole offered term is the same term, so there is no second visible-text
+     * accessor for it to diverge through.
+     */
+    public function testNoSoleTermTextAccessorExists(): void
+    {
+        $this->assertFalse(
+            method_exists(GatewayMethod::class, 'singleChipLabelTemplate'),
+            'the sole-term chip reads chipLabelTemplate() like every other chip'
+        );
     }
 
     /**
