@@ -187,6 +187,8 @@ namespace Two\Gateway\Api\Config {
             /** @return int[] */
             public function getAllBuyerTerms(?int $storeId = null): array;
 
+            public function getPaymentTermsType(?int $storeId = null): string;
+
             public function isCompanySearchEnabled(?int $storeId = null): bool;
         }
     }

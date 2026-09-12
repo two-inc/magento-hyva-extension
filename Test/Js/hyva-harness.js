@@ -139,6 +139,9 @@ const PHP_VALUE_RULES = [
   // apart from the others — so sourcing an attribute from the WRONG variable,
   // the actual defect TWO-25266 fixes, rendered a green suite.
   [/^\$singleLabel$/, "Payment Terms %1 days"],
+  // The end-of-month chip's accessible name, distinct from every label above so
+  // a test reading it can tell it apart from the visible-text templates.
+  [/^\$chipName$/, "EOM+%1: pay %1 days after the end of the month"],
   [/^\$singleDay$/, "30"],
   [/^\$(pluralLabel|singularLabel)$/, "day"],
   [/^\(int\) \$days$/, "14"],

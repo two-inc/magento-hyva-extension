@@ -43,6 +43,11 @@ class TermStillAvailablePluginTest extends TestCase
             {
                 return $this->offeredTerms;
             }
+
+            public function getPaymentTermsType(?int $storeId = null): string
+            {
+                return 'standard';
+            }
         };
 
         $plugin = new TermStillAvailablePlugin($checkoutSession, $configRepository);

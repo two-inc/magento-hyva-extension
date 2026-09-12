@@ -44,6 +44,14 @@ namespace Two\Gateway\Model\Config\Source {
             public const FIXED_AND_PERCENTAGE = 'fixed_and_percentage';
         }
     }
+
+    if (!class_exists(PaymentTermsType::class, false)) {
+        class PaymentTermsType
+        {
+            public const STANDARD = 'standard';
+            public const END_OF_MONTH = 'end_of_month';
+        }
+    }
 }
 
 namespace Two\Gateway\Service\Order {

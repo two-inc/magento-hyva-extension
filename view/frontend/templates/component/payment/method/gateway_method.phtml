@@ -75,20 +75,25 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <div class="two-term-chips__container" role="group"
                  aria-label="<?= $escaper->escapeHtmlAttr(__('Payment Terms')) ?>">
                 <?php
-                // Singular is built by prepending '1' to the translated 'day'
-                // unit; saves a separate '1 day' CSV key since the numeral is
-                // language-invariant.
-                $singularLabel = '1 ' . __('day');
-                $pluralLabel = __('%1 days');
+                $singularLabel = $magewire->chipSingularLabel();
+                $pluralLabel = $magewire->chipLabelTemplate();
                 $errorMessage = __('Could not update payment term.') . ' ' . __('Please try again.');
                 ?>
                 <?php foreach ($magewire->availableTerms as $days): ?>
+                    <?php $chipName = $magewire->chipExplanation((int) $days); ?>
                     <button type="button"
                             x-data="<?= $gwBase ?>TermChip"
                             data-days="<?= (int) $days ?>"
                             data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
                             data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
                             data-error-message="<?= $escaper->escapeHtmlAttr($errorMessage) ?>"
+                            <?php /* Only under end-of-month terms: a standard chip's visible text
+                                     already reads as its name, and a second one restating it risks
+                                     WCAG 2.5.3 (ABN-554). */ ?>
+                            <?php if ($chipName !== ''): ?>
+                            title="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                            aria-label="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                            <?php endif ?>
                             :class="chipClasses"
                             :aria-pressed="ariaPressed"
                             :disabled="anyUpdating"
@@ -112,13 +117,12 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         //
         // There is deliberately NO "Selected payment terms" heading here: with
         // nothing to select, the selector wording is wrong, so the term is
-        // named inside the chip instead ("Payment Terms 30 days"). Luma does
-        // exactly this — `showSingleTerm` has no <label> and binds
-        // `singleTermLabel` = $t('Payment Terms %1 days'). Keep the two in step.
+        // named inside the chip instead ("Payment Terms 30 days").
         $singleDay = (int) ($magewire->availableTerms[0] ?? 0);
-        $singularLabel = '1 ' . __('day');
-        $pluralLabel = __('%1 days');
-        $singleLabel = __('Payment Terms %1 days');
+        $singularLabel = $magewire->chipSingularLabel();
+        $pluralLabel = $magewire->chipLabelTemplate();
+        $singleLabel = $magewire->singleChipLabelTemplate();
+        $chipName = $magewire->chipExplanation($singleDay);
         ?>
         <div class="two-term-chips field">
             <div class="two-term-chips__container">
@@ -128,6 +132,10 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
                       data-label-singular="<?= $escaper->escapeHtmlAttr($singularLabel) ?>"
                       data-label-plural="<?= $escaper->escapeHtmlAttr($pluralLabel) ?>"
                       data-label-single="<?= $escaper->escapeHtmlAttr($singleLabel) ?>"
+                      <?php if ($chipName !== ''): ?>
+                      title="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                      aria-label="<?= $escaper->escapeHtmlAttr($chipName) ?>"
+                      <?php endif ?>
                       :class="chipClasses">
                     <span class="two-term-chip__days" x-text="label"></span>
                     <template x-if="isLoading">

@@ -178,6 +178,34 @@ describe("term chip caption", () => {
     expect(chip.getAttribute("data-days")).toBe("30");
   });
 
+  /**
+   * The chip's name and tooltip are rendered PHP-side, so the harness strips the
+   * condition that withholds them under standard terms — that half is pinned in
+   * GatewayMethodChipLabelTest. What is pinned here is the wire: both branches
+   * emit both attributes, from the accessible-name variable rather than from one
+   * of the visible-text templates.
+   */
+  it.each([
+    {
+      selector: '.two-term-chips [data-single="1"]',
+      case: "the sole-term chip",
+    },
+    {
+      selector: '.two-term-chips [role="group"] button',
+      case: "a selectable chip",
+    },
+  ])("names the end-of-month term on $case", ({ selector }) => {
+    const chip = renderDoc().querySelector(selector);
+
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute("aria-label")).toBe(
+      "EOM+%1: pay %1 days after the end of the month",
+    );
+    expect(chip.getAttribute("title")).toBe(
+      "EOM+%1: pay %1 days after the end of the month",
+    );
+  });
+
   it("still captions the selectable chip strip", () => {
     const multi = branch(renderDoc(), '.two-term-chips [role="group"]');
 
