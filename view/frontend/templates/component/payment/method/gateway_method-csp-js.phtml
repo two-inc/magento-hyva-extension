@@ -4299,8 +4299,6 @@ $quoteDetails = json_encode(
     }
 
     // The radio-group keyboard contract the chips' roles advertise (ABN-554).
-    // Selection follows focus, so the arrow key clicks the chip it moves to
-    // rather than duplicating TermChip's Magewire round-trip.
     function <?= $gwBase ?>TermChipGroup() {
         return {
             onKeydown(event) {
@@ -4366,8 +4364,7 @@ $quoteDetails = json_encode(
 
             init() {
                 this.days = parseInt(this.$el.dataset.days, 10) || 0;
-                // The offered set, published once on the group: a chip needs it
-                // to know whether it holds the group's single tab stop.
+                // A chip needs the offered set to know if it holds the tab stop.
                 const group = this.$el.closest('.two-term-chips__container');
                 const terms = group && group.dataset.terms ? group.dataset.terms : '';
                 this.terms = terms ? terms.split(',').map(Number) : [];
@@ -4419,9 +4416,7 @@ $quoteDetails = json_encode(
                 return this.isSelected ? 'true' : 'false';
             },
 
-            // The term the group's single tab stop sits on. A selection matching
-            // no chip falls back to the first, so the group cannot leave the tab
-            // order.
+            // Falls back to the first term, so the group cannot leave the tab order.
             get tabIndex() {
                 const selected = parseInt(this.$wire.selectedTerm, 10) || 0;
                 const focusable = this.terms.indexOf(selected) === -1
@@ -4520,9 +4515,7 @@ $quoteDetails = json_encode(
                 }
             },
 
-            // Magewire's re-render replaces the chip row, so an arrow key would
-            // otherwise drop the buyer back at the top of the document. Skipped
-            // once focus has moved on to something outside the row.
+            // The re-render replaces the row, dropping focus to the document.
             restoreFocus() {
                 const active = document.activeElement;
 
