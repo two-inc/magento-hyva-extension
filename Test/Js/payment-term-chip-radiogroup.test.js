@@ -246,3 +246,78 @@ describe("arrow keys move within the group (ABN-554)", () => {
     expect(g.clicks).toEqual([]);
   });
 });
+
+describe("focus survives the re-render a selection triggers (ABN-554)", () => {
+  let env;
+
+  beforeEach(() => {
+    env = H.installHyvaEnvironment();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+  });
+
+  afterEach(() => {
+    env.restore();
+    document.body.innerHTML = "";
+  });
+
+  /**
+   * A chip row plus one unrelated field, with a chip component mounted over the
+   * chip the buyer arrowed onto.
+   *
+   * @param {number} days the term that chip carries
+   * @returns {Object} the mounted chip and the elements around it
+   */
+  function row(days) {
+    document.body.innerHTML = [
+      '<div class="two-term-chips__container" data-terms="14,30">',
+      '  <button class="two-term-chip" data-days="14"></button>',
+      '  <button class="two-term-chip" data-days="30"></button>',
+      "</div>",
+      '<input id="outside">',
+    ].join("");
+    const el = document.querySelector('[data-days="' + days + '"]');
+    const mounted = H.mountComponent(env.alpineComponents[CHIP], {
+      el: el,
+      wire: { selectedTerm: days },
+    });
+    mounted.init();
+
+    return {
+      chip: mounted,
+      el: el,
+      outside: document.getElementById("outside"),
+    };
+  }
+
+  it("a completed selection is what restores it", async () => {
+    const r = row(30);
+    r.chip.days = 30;
+    r.chip.$wire = { selectedTerm: 14, selectTerm: () => Promise.resolve() };
+    document.body.focus();
+
+    await r.chip.select();
+
+    expect(document.activeElement.dataset.days).toBe("30");
+  });
+
+  it.each([
+    ["body", "30", "the re-render dropped focus to the document"],
+    ["other-chip", "30", "focus is still on a chip the morph replaced"],
+    ["outside", "outside", "the buyer has moved on, so focus is left alone"],
+  ])("focus at %s ends on %s — %s", (start, expected) => {
+    const r = row(30);
+    if (start === "outside") {
+      r.outside.focus();
+    } else if (start === "other-chip") {
+      document.querySelector('[data-days="14"]').focus();
+    } else {
+      document.body.focus();
+    }
+
+    r.chip.restoreFocus();
+
+    const landed = document.activeElement;
+    expect(landed.id || landed.dataset.days).toBe(expected);
+  });
+});

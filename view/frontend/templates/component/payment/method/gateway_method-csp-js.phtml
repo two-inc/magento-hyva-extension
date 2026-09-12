@@ -4516,6 +4516,27 @@ $quoteDetails = json_encode(
                 } finally {
                     this.isUpdating = false;
                     Alpine.store('twoChip').busy = false;
+                    this.$nextTick(() => this.restoreFocus());
+                }
+            },
+
+            // Magewire's re-render replaces the chip row, so an arrow key would
+            // otherwise drop the buyer back at the top of the document. Skipped
+            // once focus has moved on to something outside the row.
+            restoreFocus() {
+                const active = document.activeElement;
+
+                if (active && active !== document.body
+                    && !active.classList.contains('two-term-chip')) {
+                    return;
+                }
+
+                const chip = document.querySelector(
+                    '.two-term-chips__container [data-days="' + this.days + '"]'
+                );
+
+                if (chip) {
+                    chip.focus();
                 }
             }
         };
