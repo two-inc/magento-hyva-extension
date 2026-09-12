@@ -1791,6 +1791,40 @@ $quoteDetails = json_encode(
 
     window.twoGatewayReapCaptureIdentityWatchers = twoGatewayReapCaptureIdentityWatchers;
 
+    /**
+     * The company control focus was last inside, so a morph that takes the
+     * caret with it can be told where to put it back.
+     */
+    window.twoGatewayCaptureFocusRoot = window.twoGatewayCaptureFocusRoot || null;
+
+    /** @returns {?Object} the registered mount whose root contains `node` */
+    function twoGatewayMountContaining(node) {
+        let found = null;
+        window.twoGatewayCompanyMounts.forEach(function (mount) {
+            if (!found && node && mount.root.contains(node)) found = mount;
+        });
+        return found;
+    }
+
+    /**
+     * Put the caret back on the company field when a morph dropped it.
+     *
+     * A morph patches the company input in place, and Chrome blurs a replaced
+     * element to NOTHING — so the buyer is left on `document.body` mid-capture
+     * and the next character they type reaches no control at all (ABN-554).
+     * Only ever repairs a DROP: focus that has settled on another control is
+     * the buyer's own and is left alone.
+     */
+    function twoGatewayRestoreCaptureFocus() {
+        const root = window.twoGatewayCaptureFocusRoot;
+        if (!root || !root.isConnected) return;
+        const active = document.activeElement;
+        if (active && active !== document.body && active !== document.documentElement) return;
+        const mount = twoGatewayMountContaining(root);
+        const field = mount && typeof mount.field === 'function' ? mount.field() : null;
+        if (field) field.focus();
+    }
+
     /** Rebuild every popover a re-render has just swept away, and drop dead mounts. */
     function twoGatewayRemountCompanyPopovers() {
         twoGatewayReapCaptureIdentityWatchers();
@@ -1806,6 +1840,7 @@ $quoteDetails = json_encode(
             .filter(function (mount) {
                 return live.indexOf(mount) !== -1 || mount.root.isConnected;
             });
+        twoGatewayRestoreCaptureFocus();
     }
 
     /**
@@ -1827,6 +1862,12 @@ $quoteDetails = json_encode(
             return;
         }
         window.twoGatewayCompanyMorphHooked = true;
+        // Capture phase: the record has to survive a morph that removes the
+        // node the event would otherwise bubble through.
+        document.addEventListener('focusin', function (event) {
+            const mount = twoGatewayMountContaining(event.target);
+            window.twoGatewayCaptureFocusRoot = mount ? mount.root : null;
+        }, true);
         window.Magewire.hook('element.updated', twoGatewayRemountCompanyPopovers);
     }
 
@@ -2466,6 +2507,9 @@ $quoteDetails = json_encode(
                 if (watched) return;
                 window.twoGatewayCompanyMounts.push({
                     root: root,
+                    field: function () {
+                        return self.companyNameField();
+                    },
                     // Through the surface's mount, not the controller's
                     // refreshMount(): a morph reinstates the server markup, which
                     // carries no `data-two-capture-role`, so the selector matches

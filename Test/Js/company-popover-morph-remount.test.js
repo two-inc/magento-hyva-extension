@@ -134,6 +134,58 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(panel().isBound()).toBe(true);
   });
 
+  test.each([
+    {
+      park: () => {
+        field.focus();
+        field.blur();
+      },
+      focused: () => field,
+      description:
+        "a morph that took the caret with it puts the buyer back on the company field",
+    },
+    {
+      park: () => {
+        field.focus();
+        document.getElementById("inside").focus();
+      },
+      focused: () => document.getElementById("inside"),
+      description: "a caret still inside the control, such as the query row, is left alone",
+    },
+    {
+      park: () => {
+        field.focus();
+        document.getElementById("elsewhere").focus();
+      },
+      focused: () => document.getElementById("elsewhere"),
+      description: "focus the buyer moved to another control is left where it is",
+    },
+    {
+      park: () => {
+        const elsewhere = document.getElementById("elsewhere");
+        elsewhere.focus();
+        elsewhere.blur();
+      },
+      focused: () => document.body,
+      description: "a caret dropped somewhere this control never held is not claimed",
+    },
+  ])("$description", ({ park, focused }) => {
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<button type="button" id="elsewhere">elsewhere</button>',
+    );
+    root.insertAdjacentHTML(
+      "beforeend",
+      '<button type="button" id="inside">inside</button>',
+    );
+    park();
+    morphServerMarkupOverControl();
+
+    env.fireMagewireHook("element.updated");
+
+    expect(document.activeElement).toBe(focused());
+  });
+
   test("the rebuild re-points the one panel rather than building a second", () => {
     morphServerMarkupOverControl();
 
