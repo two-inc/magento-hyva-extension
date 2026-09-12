@@ -4298,6 +4298,53 @@ $quoteDetails = json_encode(
         return <?= $gwBase ?>PaymentMethodBase();
     }
 
+    // The radio-group keyboard contract the chips' roles advertise (ABN-554).
+    function <?= $gwBase ?>TermChipGroup() {
+        return {
+            onKeydown(event) {
+                const chips = Array.prototype.slice.call(
+                    this.$el.querySelectorAll('.two-term-chip')
+                );
+
+                if (chips.length < 2 || event.altKey || event.ctrlKey || event.metaKey) {
+                    return;
+                }
+
+                let current = chips.indexOf(document.activeElement);
+                let next;
+
+                if (current === -1) {
+                    current = Math.max(chips.findIndex(function (chip) {
+                        return chip.getAttribute('tabindex') === '0';
+                    }), 0);
+                }
+
+                switch (event.key) {
+                    case 'ArrowRight':
+                    case 'ArrowDown':
+                        next = (current + 1) % chips.length;
+                        break;
+                    case 'ArrowLeft':
+                    case 'ArrowUp':
+                        next = (current - 1 + chips.length) % chips.length;
+                        break;
+                    case 'Home':
+                        next = 0;
+                        break;
+                    case 'End':
+                        next = chips.length - 1;
+                        break;
+                    default:
+                        return;
+                }
+
+                event.preventDefault();
+                chips[next].focus();
+                chips[next].click();
+            }
+        };
+    }
+
     // Per-chip component. Hyva loads alpine3-csp.min.js which forbids
     // function calls, comparisons, object literals, and boolean operators
     // in attribute expressions — so every chip is its own Alpine.data
@@ -4306,6 +4353,7 @@ $quoteDetails = json_encode(
     function <?= $gwBase ?>TermChip() {
         return {
             days: 0,
+            terms: [],
             labelSingular: '1 day',
             labelPlural: '%1 days',
             errorMessage: 'Could not update payment term. Please try again.',
@@ -4316,6 +4364,10 @@ $quoteDetails = json_encode(
 
             init() {
                 this.days = parseInt(this.$el.dataset.days, 10) || 0;
+                // A chip needs the offered set to know if it holds the tab stop.
+                const group = this.$el.closest('.two-term-chips__container');
+                const terms = group && group.dataset.terms ? group.dataset.terms : '';
+                this.terms = terms ? terms.split(',').map(Number) : [];
                 // `single` marks the sole-available-term chip: informational,
                 // not clickable, distinct --single styling (matches Luma).
                 this.single = this.$el.dataset.single === '1';
@@ -4360,8 +4412,18 @@ $quoteDetails = json_encode(
                     : 'two-term-chip';
             },
 
-            get ariaPressed() {
+            get ariaChecked() {
                 return this.isSelected ? 'true' : 'false';
+            },
+
+            // Falls back to the first term, so the group cannot leave the tab order.
+            get tabIndex() {
+                const selected = parseInt(this.$wire.selectedTerm, 10) || 0;
+                const focusable = this.terms.indexOf(selected) === -1
+                    ? this.terms[0]
+                    : selected;
+
+                return this.days === focusable ? 0 : -1;
             },
 
             get surchargeAmountText() {
@@ -4449,6 +4511,25 @@ $quoteDetails = json_encode(
                 } finally {
                     this.isUpdating = false;
                     Alpine.store('twoChip').busy = false;
+                    this.$nextTick(() => this.restoreFocus());
+                }
+            },
+
+            // The re-render replaces the row, dropping focus to the document.
+            restoreFocus() {
+                const active = document.activeElement;
+
+                if (active && active !== document.body
+                    && !active.classList.contains('two-term-chip')) {
+                    return;
+                }
+
+                const chip = document.querySelector(
+                    '.two-term-chips__container [data-days="' + this.days + '"]'
+                );
+
+                if (chip) {
+                    chip.focus();
                 }
             }
         };
@@ -4460,6 +4541,7 @@ $quoteDetails = json_encode(
         Alpine.data('<?= $gwBase ?>PaymentFormWithValidation', <?= $gwBase ?>PaymentFormWithValidation);
         Alpine.data('<?= $gwBase ?>PaymentTermsComponent', <?= $gwBase ?>PaymentTermsComponent);
         Alpine.data('<?= $gwBase ?>TermChip', <?= $gwBase ?>TermChip);
+        Alpine.data('<?= $gwBase ?>TermChipGroup', <?= $gwBase ?>TermChipGroup);
     });
 
     // Global reference to the payment component instance
