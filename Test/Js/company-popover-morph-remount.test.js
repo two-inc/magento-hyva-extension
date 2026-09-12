@@ -150,7 +150,7 @@ describe("a Magewire re-render that morphs the popover away", () => {
         document.getElementById("inside").focus();
       },
       focused: () => document.getElementById("inside"),
-      description: "a caret still inside the control, such as the query row, is left alone",
+      description: "a caret the morph left standing inside the control is not moved",
     },
     {
       park: () => {

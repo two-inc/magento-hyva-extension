@@ -558,10 +558,12 @@ therefore registers itself in `window.twoGatewayCompanyMounts`, and one
 page-level `element.updated` hook remounts any control whose panel reports
 `isBound()` false — each entry through its own root's surface, so one role's
 remount can never write the other's state. That is also the answer to "why does a shipping-method change
-survive": its re-render never touches this form. The same hook puts the caret back: a morph
-patches the company input in place and Chrome blurs the replaced element to
-nothing, so the sweep re-focuses the company field — only where the drop left
-focus unplaced, and only for the control that was holding it (ABN-554).
+survive": its re-render never touches this form. The same hook puts the caret
+back: a morph patches the company input in place and Chrome blurs the replaced
+element to nothing, so the sweep re-focuses the company field of whichever
+control a page-level `focusin` last put the buyer in, and only where the drop
+left focus unplaced — the same rule the panel's own outside-press recovery
+follows (ABN-554).
 
 **The panel instance lives in a closure, never in Alpine state.** Alpine wraps
 component data in reactive proxies and the panel compares DOM nodes by identity;
