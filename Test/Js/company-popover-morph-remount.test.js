@@ -136,38 +136,20 @@ describe("a Magewire re-render that morphs the popover away", () => {
 
   test.each([
     {
-      park: () => {
-        field.focus();
-        field.blur();
-      },
+      park: () => field.blur(),
       focused: () => field,
       description:
         "a morph that took the caret with it puts the buyer back on the company field",
     },
     {
-      park: () => {
-        field.focus();
-        document.getElementById("inside").focus();
-      },
+      park: () => document.getElementById("inside").focus(),
       focused: () => document.getElementById("inside"),
       description: "a caret the morph left standing inside the control is not moved",
     },
     {
-      park: () => {
-        field.focus();
-        document.getElementById("elsewhere").focus();
-      },
+      park: () => document.getElementById("elsewhere").focus(),
       focused: () => document.getElementById("elsewhere"),
       description: "focus the buyer moved to another control is left where it is",
-    },
-    {
-      park: () => {
-        const elsewhere = document.getElementById("elsewhere");
-        elsewhere.focus();
-        elsewhere.blur();
-      },
-      focused: () => document.body,
-      description: "a caret dropped somewhere this control never held is not claimed",
     },
   ])("$description", ({ park, focused }) => {
     document.body.insertAdjacentHTML(
@@ -178,12 +160,44 @@ describe("a Magewire re-render that morphs the popover away", () => {
       "beforeend",
       '<button type="button" id="inside">inside</button>',
     );
+    field.focus();
+    // The re-render's own start, which is where the record of who held the
+    // caret is taken.
+    env.fireMagewireHook("message.received");
     park();
     morphServerMarkupOverControl();
 
     env.fireMagewireHook("element.updated");
 
     expect(document.activeElement).toBe(focused());
+  });
+
+  test("the repair takes the input the morph put back, not the one the component still names", () => {
+    field.focus();
+    env.fireMagewireHook("message.received");
+    const replacement = field.cloneNode(true);
+    const wrap = field.parentElement;
+    root.insertBefore(replacement, wrap);
+    wrap.remove();
+    root.removeAttribute("data-two-capture-role");
+    // The premise: the discarded node is what `$el` still names.
+    expect(field.isConnected).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+
+    env.fireMagewireHook("element.updated");
+
+    expect(document.activeElement).toBe(replacement);
+  });
+
+  test("a re-render that began with the caret already gone does not claim it", () => {
+    field.focus();
+    field.blur();
+
+    env.fireMagewireHook("message.received");
+    morphServerMarkupOverControl();
+    env.fireMagewireHook("element.updated");
+
+    expect(document.activeElement).toBe(document.body);
   });
 
   test("the rebuild re-points the one panel rather than building a second", () => {
