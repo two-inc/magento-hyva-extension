@@ -182,6 +182,19 @@ not execute" through `bash`**: run as `./script.sh` it depends on the committed
 mode, and a `100644` script exits 126 — on a CI dashboard indistinguishable from a
 check that ran and failed, so the guard's own absence reads as its verdict.
 
+### The consent checkbox is named by reference, never by a label
+
+The payment-terms checkbox takes its accessible name from an `aria-labelledby`
+pointing at the element that holds the consent sentence (ABN-554). The sentence
+is deliberately not wrapped in a `label`: it carries the link to the terms
+document, and activating a label activates its control, so a label would leave
+the link hard to reach. No `aria-label` either — the visible sentence is the
+name, and a second copy of it is a second string to keep in step (WCAG 2.5.3).
+
+Both ids are keyed on `BrandedHyvaViewModelInterface::getMethodCode()`, so a
+second brand's tile on the same page names its own sentence rather than this
+one's.
+
 ### Order intent: one box, and a verdict that can be repainted
 
 The tile shows **at most one VERDICT** — available, not available, could not be

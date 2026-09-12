@@ -22,6 +22,7 @@ use Magento\Framework\Escaper;
 $brandedViewModel = $block->getData('branded_view_model');
 $fnPrefix = $brandedViewModel->getAlpineFnPrefix();
 $gwBase = $fnPrefix . 'GatewayHyva';
+$methodCode = $brandedViewModel->getMethodCode();
 
 $configModel = $viewModels->require(CheckoutConfig::class);
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
@@ -605,16 +606,19 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             <div x-data="<?= $gwBase ?>PaymentTermsComponent" class="payment-method-content terms-container flex items-center space-x-2" x-show="isPaymentTermsEnabled">
               <div class="field field-reserved required">
                 <div class="bg-gray-100 text-xs font-normal p-2 rounded-md">
+                  <?php /* Named by reference, not by a wrapping label (ABN-554): the sentence
+                           carries the terms link, whose activation a label would capture. */ ?>
                   <input type="checkbox"
+                      id="<?= $escaper->escapeHtmlAttr($methodCode) ?>_terms_accepted"
                       name="payment[terms_accepted]"
+                      aria-labelledby="<?= $escaper->escapeHtmlAttr($methodCode) ?>_terms_text"
                       :checked="isPaymentTermsAccepted" @change="<?= $gwBase ?>OnPaymentTermsChange"
                       class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring focus:ring-blue-300"
                       required
                       data-validate='{"required": true}'
                       data-msg-required="<?= $termsNotAcceptedMessage ?>"
                       />
-                  <!-- Terms Text -->
-                  <span class="terms-text text-gray-700"><?= $paymentTermsMessage ?></span>
+                  <span id="<?= $escaper->escapeHtmlAttr($methodCode) ?>_terms_text" class="terms-text text-gray-700"><?= $paymentTermsMessage ?></span>
                 </div>
               </div>
             </div>
