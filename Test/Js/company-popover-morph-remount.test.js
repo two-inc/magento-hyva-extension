@@ -189,6 +189,20 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(document.activeElement).toBe(replacement);
   });
 
+  test("a drop later in the same re-render is still repaired", () => {
+    field.focus();
+    env.fireMagewireHook("message.received");
+    // An update that dropped nothing: the record has to survive it.
+    env.fireMagewireHook("element.updated");
+    expect(document.activeElement).toBe(field);
+    field.blur();
+    morphServerMarkupOverControl();
+
+    env.fireMagewireHook("element.updated");
+
+    expect(document.activeElement).toBe(field);
+  });
+
   test("the record is spent by the repair, so a later re-render cannot reclaim the caret", () => {
     field.focus();
     env.fireMagewireHook("message.received");
