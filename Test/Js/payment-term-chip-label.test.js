@@ -126,28 +126,46 @@ describe("term chip caption", () => {
 
   it.each([
     { selector: '[data-single="1"]', case: "the sole-term chip" },
-    { selector: '[role="group"] [data-days="14"]', case: "a selectable chip" },
+    {
+      selector: '[role="radiogroup"] [data-days="14"]',
+      case: "a selectable chip",
+    },
   ])("one caption sits above $case", ({ selector }) => {
     // Both branches are present in the rendered markup — the harness strips PHP
     // control flow — so this is the shared wrapper, which is the point: the
     // caption cannot be emitted for one branch and not the other.
-    const caption = branch(renderDoc(), selector).querySelector("label.label");
+    const caption = branch(renderDoc(), selector).querySelector("span.label");
 
     expect(caption).not.toBeNull();
     expect(caption.textContent).toContain(H.ESCAPED_STRING);
   });
 
   it.each([
-    { selector: '[data-single="1"]', case: "the sole chip" },
-    { selector: '[data-days="14"]', case: "a selectable chip" },
-  ])("the group holding $case is named", ({ selector }) => {
-    const container = renderDoc()
-      .querySelector('.two-term-chips ' + selector)
-      .closest(".two-term-chips__container");
+    {
+      selector: '[data-single="1"]',
+      role: "group",
+      case: "the sole chip, which is not a choice",
+    },
+    {
+      selector: '[data-days="14"]',
+      role: "radiogroup",
+      case: "a selectable chip",
+    },
+  ])(
+    "the group holding $case is a $role named by the caption",
+    ({ selector, role }) => {
+      const doc = renderDoc();
+      const container = doc
+        .querySelector(".two-term-chips " + selector)
+        .closest(".two-term-chips__container");
 
-    expect(container.getAttribute("role")).toBe("group");
-    expect(container.getAttribute("aria-label")).toBe(H.ESCAPED_STRING);
-  });
+      expect(container.getAttribute("role")).toBe(role);
+      expect(container.hasAttribute("aria-label")).toBe(false);
+      expect(container.getAttribute("aria-labelledby")).toBe(
+        doc.querySelector(".two-term-chips span.label").id,
+      );
+    },
+  );
 
   /**
    * The harness strips PHP control flow, so the rendered markup cannot tell a
@@ -161,7 +179,7 @@ describe("term chip caption", () => {
     },
     {
       pattern:
-        /<label class="label[^"]*">\s*<span><\?= \$escaper->escapeHtml\(__\('Selected payment terms'\)\) \?><\/span>\s*<\/label>\s*<\?php if \(\$showChip\): \?>/,
+        /<span class="label[^"]*"\s+id="[^"]*">\s*<span><\?= \$escaper->escapeHtml\(__\('Selected payment terms'\)\) \?><\/span>\s*<\/span>\s*<\?php if \(\$showChip\): \?>/,
       case: "the caption ahead of the multi-term branch, not inside it",
     },
   ])("the caption is emitted for both branches: $case", ({ pattern }) => {
@@ -195,7 +213,7 @@ describe("term chip caption", () => {
       case: "the sole-term chip",
     },
     {
-      selector: '.two-term-chips [role="group"] button',
+      selector: '.two-term-chips [role="radiogroup"] button',
       case: "a selectable chip",
     },
   ])("names the end-of-month term on $case", ({ selector }) => {
@@ -318,7 +336,7 @@ describe("term chip accessible name", () => {
       case: "the sole-term chip",
     },
     {
-      selector: '.two-term-chips [role="group"] button',
+      selector: '.two-term-chips [role="radiogroup"] button',
       case: "a selectable chip",
     },
   ])("binds the name so the fee reaches it on $case", ({ selector }) => {

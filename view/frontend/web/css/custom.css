@@ -225,9 +225,9 @@ summary::marker {
 }
 
 /* QA polish: more breathing room between the "Selected payment terms"
-   caption and the chip strip. Tailwind utility `mb-1` on the label is
+   caption and the chip strip. Tailwind utility `mb-1` on the caption is
    too tight visually. */
-.two-term-chips > label.label {
+.two-term-chips > .label {
   margin-bottom: 20px;
 }
 
