@@ -36,10 +36,18 @@ summary::marker {
   display: inline-block;
 }
 
+.two-about-icon {
+  display: inline-block;
+  /* WCAG 2.5.8: the 20px icon is the whole target, so it is padded to 24px. */
+  padding: 2px;
+}
+
 .two-tooltip-box {
   visibility: hidden;
   width: 200px;
-  top: 40px;
+  /* Flush to the trigger: a gap between them is a tooltip the pointer cannot
+     travel to without closing it (WCAG 1.4.13). */
+  top: 100%;
   right: 0;
   background-color: black;
   padding: 10px;

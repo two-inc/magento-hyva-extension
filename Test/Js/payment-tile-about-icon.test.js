@@ -2,11 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-554. "What is Two" is ONE control on every checkout: an icon that is
- * itself the link to the brand's about page, describing itself through a
- * tooltip. Every value it carries — URL, accessible name, tooltip copy — comes
- * from the base module's tile-copy service through `CheckoutConfig`, so this
- * suite asserts delegation and markup, never wording.
+ * ABN-554. The explainer is ONE control — a linked icon with a tooltip — and
+ * every value it carries comes from the base module, so this suite asserts
+ * delegation and markup, never wording.
  */
 
 "use strict";
@@ -51,7 +49,6 @@ describe("the explainer is an anchor-wrapped icon (ABN-554)", () => {
   it.each([
     ["role", "tooltip", "the body declares what it is"],
     ["id", "two-about-tooltip-two_payment", "it carries the id the anchor points at"],
-    ["aria-hidden", "true", "the closed body is not read as stray text in flow"],
   ])("the tooltip body's %s is %s — %s", (attribute, expected) => {
     expect(
       render().querySelector(".two-tooltip-box").getAttribute(attribute),
@@ -64,8 +61,14 @@ describe("the explainer is an anchor-wrapped icon (ABN-554)", () => {
     );
   });
 
-  it("holds no second link — the icon is the link", () => {
-    expect(render().querySelectorAll("a")).toHaveLength(1);
+  it("declares exactly one anchor — the icon is the link", () => {
+    // The harness fixture carries no anchor, so the rendered DOM cannot show a
+    // second one the base's copy might contain; the template's own text can.
+    expect(
+      templateSource("view/frontend/templates/component/tooltip.phtml").match(
+        /<a\b/g,
+      ),
+    ).toHaveLength(1);
   });
 });
 
@@ -85,6 +88,14 @@ describe("the explainer keeps no copy or rule of its own (ABN-554)", () => {
     expect(templateSource(relPath)).not.toMatch(pattern);
   });
 
+  it("renders nothing at all when the base withholds the link", () => {
+    // The harness strips `<?php ?>` tags without resolving them, so the gate is
+    // pinned as source rather than by rendering it both ways.
+    expect(
+      templateSource("view/frontend/templates/component/tooltip.phtml"),
+    ).toMatch(/<\?php if \(\$configModel->getShowAboutLink\(\)\): \?>/);
+  });
+
   it.each([
     ["getAboutLinkUrl", "the URL"],
     ["getAboutLinkText", "the accessible name"],
@@ -97,10 +108,20 @@ describe("the explainer keeps no copy or rule of its own (ABN-554)", () => {
   });
 });
 
-describe("the tooltip opens on hover and on keyboard focus (ABN-554)", () => {
+describe("the tooltip is reachable by keyboard and by pointer (ABN-554)", () => {
   it.each([
-    [/\.tooltip-pay:hover \.two-tooltip-box/, "hover opens it"],
-    [/\.tooltip-pay:focus-within \.two-tooltip-box/, "focusing the anchor opens it"],
+    [
+      /\.tooltip-pay:focus-within \.two-tooltip-box/,
+      "focusing the anchor opens it, not only hovering",
+    ],
+    [
+      /\.two-tooltip-box \{[^}]*top: 100%;/,
+      "the box is flush to its trigger, so the pointer can travel to it",
+    ],
+    [
+      /\.two-about-icon \{[^}]*padding: 2px;/,
+      "the 20px icon is padded to a 24px target",
+    ],
   ])("%s — %s", (pattern) => {
     expect(templateSource("view/frontend/web/css/custom.css")).toMatch(pattern);
   });

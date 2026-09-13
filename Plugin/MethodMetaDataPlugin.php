@@ -61,10 +61,7 @@ class MethodMetaDataPlugin
         bool $result,
     ): bool {
         if ($subject->getData("additional_icon_provider")) {
-            // The explainer is not a payment-brand logo, so the theme's
-            // method-icon toggle is not its gate — the base module's about-link
-            // rule is (ABN-554). renderIcon() drops the logo when that toggle
-            // is off.
+            // The method-icon toggle gates the brand logo, not the explainer (ABN-554).
             return $this->checkoutTileCopy->isAboutLinkVisible()
                 || $this->systemConfigPayment->canDisplayMethodIcons();
         }
@@ -86,8 +83,6 @@ class MethodMetaDataPlugin
         MethodMetaData $subject,
         string $result,
     ): string {
-        $iconsProvider = $subject->getData("additional_icons_provider");
-        $storeId = (int) $this->storeManager->getStore()->getId();
         $iconProvider = $subject->getData("additional_icon_provider");
         if ($iconProvider) {
             if (!$this->systemConfigPayment->canDisplayMethodIcons()) {
@@ -97,12 +92,13 @@ class MethodMetaDataPlugin
             $blockHtml = $block
                 ->setTemplate($iconProvider["template"])
                 ->toHtml();
+            // Either half can be withheld, and an empty wrapper still occupies
+            // its padding and its share of the row.
             $result =
-                "<div class='flex tooltip-icon w-full items-center justify-between'><div class='tooltip-pay inline-block py-2 mr-4'>" .
-                $blockHtml .
-                "</div><div class='icon-pay inline-block'>" .
-                $result .
-                "</div></div>";
+                "<div class='flex tooltip-icon w-full items-center justify-between'>" .
+                ($blockHtml === "" ? "" : "<div class='tooltip-pay inline-block py-2 mr-4'>" . $blockHtml . "</div>") .
+                ($result === "" ? "" : "<div class='icon-pay inline-block'>" . $result . "</div>") .
+                "</div>";
         }
 
         return $result;

@@ -458,17 +458,12 @@ class CheckoutConfig implements ArgumentInterface
         return $this->checkoutTileCopy->getAboutLinkText();
     }
 
-    /** Escaped and assembled by the base module, contains HTML — render unescaped. */
     public function getAboutTooltipHtml(): string
     {
         return $this->checkoutTileCopy->getAboutTooltipHtml();
     }
 
-    /**
-     * Keyed on the payment code: a store offering several brands renders a tile
-     * each, and one id would point every tile's icon at the first tile's
-     * tooltip (ABN-554).
-     */
+    /** Keyed on the payment code, like every other ARIA association on this tile. */
     public function getAboutTooltipId(): string
     {
         return 'two-about-tooltip-' . $this->brandedViewModel->getMethodCode();

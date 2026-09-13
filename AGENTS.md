@@ -168,17 +168,15 @@ a translated string here or a re-derivation of brand data (ABN-496). A brand tha
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
 never an empty element.
 
-**The explainer is ONE control, and it is the icon** (ABN-554), rendered by
-`component/tooltip.phtml` into the method row through the icon-provider plugin.
-The icon is itself the anchor to the brand's about page; the tooltip beside it
-describes the method and is named as the anchor's description. There is no second
-explainer in the tile body: two controls saying the same thing is two strings to
-keep in step, and the icon alone is what the other checkouts render. That template
-translates nothing — every string it shows is the base service's.
+**The explainer is ONE control, and it is the icon** (ABN-554) — the icon IS the
+anchor to the brand's about page, describing itself through a `role="tooltip"`
+body it names with `aria-describedby`. `component/tooltip.phtml` renders it into
+the method row and translates nothing of its own; the tile body carries no second
+explainer.
 
-The theme's payment-method-icon toggle does not gate the explainer, which is not
-a payment-brand logo: `MethodMetaDataPlugin` renders it on the base module's
-about-link rule and drops the brand logo instead when the toggle is off.
+The theme's payment-method-icon toggle gates the brand logo, not the explainer:
+`MethodMetaDataPlugin` gates each half on its own rule and wraps neither when it
+is withheld, an empty wrapper still costing its padding and its share of the row.
 
 Whether the intent-declined notice renders at all, and its wording, come from two
 separate brand-registry declarations: only the switch suppresses it, and the copy
