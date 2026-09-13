@@ -67,22 +67,59 @@ class MethodMetaDataPluginTest extends TestCase
      */
     public function testNothingIsWrappedWhenBothHalvesAreWithheld(
         string $blockHtml,
+        string $logoHtml,
         string $description
     ): void {
-        $plugin = $this->plugin(false, false, $blockHtml);
+        $plugin = $this->plugin(false, true, $blockHtml);
         $subject = new MethodMetaData(['additional_icon_provider' => ['template' => 'Two::t.phtml']]);
 
-        $this->assertSame('', $plugin->afterRenderIcon($subject, ''), $description);
+        $this->assertSame('', $plugin->afterRenderIcon($subject, $logoHtml), $description);
     }
 
     /**
-     * @return array<array{0:string,1:string}>
+     * @return array<array{0:string,1:string,2:string}>
      */
     public static function emptyRowProvider(): array
     {
         return [
-            ['', 'a byte-empty render leaves no row'],
-            ["\n  \n", 'so does one a template hint or an observer has padded'],
+            ['', '', 'two byte-empty renders leave no row'],
+            ["\n  \n", '', 'so does an explainer a template hint or an observer has padded'],
+            ['', "\n  \n", 'and so does a padded logo render'],
+            ["\n  \n", "  ", 'and both padded together'],
+        ];
+    }
+
+    /**
+     * A surviving half keeps the edge it had when the row held both.
+     *
+     * @dataProvider rowLayoutProvider
+     */
+    public function testTheRowJustifiesOnWhatSurvives(
+        string $blockHtml,
+        string $logoHtml,
+        string $expectedJustify,
+        string $description
+    ): void {
+        $plugin = $this->plugin(true, true, $blockHtml);
+        $subject = new MethodMetaData(['additional_icon_provider' => ['template' => 'Two::t.phtml']]);
+
+        $this->assertStringContainsString(
+            "items-center " . $expectedJustify . "'",
+            $plugin->afterRenderIcon($subject, $logoHtml),
+            $description
+        );
+    }
+
+    /**
+     * @return array<array{0:string,1:string,2:string,3:string}>
+     */
+    public static function rowLayoutProvider(): array
+    {
+        return [
+            ['<span id="explainer"></span>', '<img id="logo">', 'justify-between', 'both halves sit at opposite edges'],
+            ['', '<img id="logo">', 'justify-end', 'a lone logo stays at the right edge it always had'],
+            ['<span id="explainer"></span>', '', 'justify-start', 'a lone explainer stays at the left'],
+            ['<span id="explainer"></span>', "\n ", 'justify-start', 'a whitespace-padded logo is no logo'],
         ];
     }
 

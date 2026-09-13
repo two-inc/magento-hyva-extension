@@ -31,8 +31,8 @@ $aboutIconUrl = $block->getViewFileUrl('Two_GatewayHyva::images/cc/tooltip-icon.
        aria-label="<?= $escaper->escapeHtmlAttr($aboutLinkText) ?>"
        aria-describedby="<?= $escaper->escapeHtmlAttr($aboutTooltipId) ?>"
     ><img alt="" width="20" src="<?= $escaper->escapeUrl($aboutIconUrl) ?>"></a>
-    <?php /* No aria-hidden: `visibility: hidden` already withholds the closed box, and
-             aria-hidden on an aria-describedby target is honoured inconsistently. */ ?>
+    <?php /* No aria-hidden: the closed box is kept in the accessibility tree on purpose
+             (custom.css fades it with opacity), so aria-describedby always resolves. */ ?>
     <?php /* Escaped and assembled by the base module — render unescaped. */ ?>
     <div class="two-tooltip-box"
          role="tooltip"

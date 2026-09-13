@@ -43,7 +43,10 @@ summary::marker {
 }
 
 .two-tooltip-box {
-  visibility: hidden;
+  /* Opacity, not visibility/display: the closed box stays in the accessibility
+     tree, so the icon's aria-describedby always resolves to a description. */
+  opacity: 0;
+  pointer-events: none;
   width: 200px;
   /* Flush to the trigger: a gap between them is a tooltip the pointer cannot
      travel to without closing it (WCAG 1.4.13). */
@@ -62,9 +65,20 @@ summary::marker {
   z-index: 100;
 }
 
+/* The base module's copy is three bare <p>s and this theme's preflight zeroes
+   their margins, so without this the phrases run together as one block. */
+.two-tooltip-box p {
+  margin: 0 0 8px;
+}
+
+.two-tooltip-box p:last-child {
+  margin-bottom: 0;
+}
+
 .tooltip-pay:hover .two-tooltip-box,
 .tooltip-pay:focus-within .two-tooltip-box {
-  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .text-blue-600 {

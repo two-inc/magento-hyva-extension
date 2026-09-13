@@ -90,13 +90,19 @@ class MethodMetaDataPlugin
             $explainer = trim($blockHtml) === ""
                 ? ""
                 : "<div class='tooltip-pay inline-block py-2 mr-4'>" . $blockHtml . "</div>";
-            $logo = $result === ""
+            $logo = trim($result) === ""
                 ? ""
                 : "<div class='icon-pay inline-block'>" . $result . "</div>";
-            $result = $explainer === "" && $logo === ""
-                ? ""
-                : "<div class='flex tooltip-icon w-full items-center justify-between'>"
-                    . $explainer . $logo . "</div>";
+            if ($explainer === "" && $logo === "") {
+                return "";
+            }
+            // A surviving half keeps the edge it had when the row held both;
+            // justify-between would pull a lone logo to the left of the row.
+            $justify = $explainer !== "" && $logo !== ""
+                ? "justify-between"
+                : ($logo !== "" ? "justify-end" : "justify-start");
+            $result = "<div class='flex tooltip-icon w-full items-center " . $justify . "'>"
+                . $explainer . $logo . "</div>";
         }
 
         return $result;

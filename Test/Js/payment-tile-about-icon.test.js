@@ -116,7 +116,31 @@ describe("the tooltip is reachable by keyboard and by pointer (ABN-554)", () => 
       /\.two-about-icon \{[^}]*padding: 2px;/,
       "the 20px icon is padded to a 24px target",
     ],
+    [
+      /\.two-tooltip-box \{[^}]*opacity: 0;/,
+      "the closed box is faded, so it stays in the accessibility tree and aria-describedby resolves",
+    ],
+    [
+      /\.two-tooltip-box \{[^}]*pointer-events: none;/,
+      "a faded box still takes clicks unless it is told not to",
+    ],
+    [
+      /\.two-tooltip-box p \{[^}]*margin: 0 0 8px;/,
+      "the base module's three bare <p>s are separated, not run together",
+    ],
+    [
+      /\.two-tooltip-box p:last-child \{[^}]*margin-bottom: 0;/,
+      "and the last one adds no trailing gap inside the box",
+    ],
   ])("%s — %s", (pattern) => {
     expect(templateSource("view/frontend/web/css/custom.css")).toMatch(pattern);
+  });
+
+  it("nothing hides the closed box outright", () => {
+    expect(
+      /\.two-tooltip-box[^{]*\{[^}]*visibility:/.test(
+        templateSource("view/frontend/web/css/custom.css"),
+      ),
+    ).toBe(false);
   });
 });
