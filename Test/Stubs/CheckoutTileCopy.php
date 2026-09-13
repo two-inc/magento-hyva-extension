@@ -31,6 +31,11 @@ namespace Two\Gateway\Model\Ui {
             {
                 return '';
             }
+
+            public function getAboutTooltipHtml(): string
+            {
+                return '';
+            }
         }
     }
 }

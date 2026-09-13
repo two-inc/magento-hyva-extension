@@ -13,6 +13,7 @@ use Hyva\Checkout\Model\MethodMetaData;
 use Magento\Framework\View\Element\Template as TemplateBlock;
 use Magento\Framework\View\Layout;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 
 class MethodMetaDataPlugin
 {
@@ -31,14 +32,21 @@ class MethodMetaDataPlugin
      */
     private $systemConfigPayment;
 
+    /**
+     * @var CheckoutTileCopy
+     */
+    private $checkoutTileCopy;
+
     public function __construct(
         Layout $layout,
         StoreManagerInterface $storeManager,
         SystemConfigPayment $systemConfigPayment,
+        CheckoutTileCopy $checkoutTileCopy,
     ) {
         $this->layout = $layout;
         $this->storeManager = $storeManager;
         $this->systemConfigPayment = $systemConfigPayment;
+        $this->checkoutTileCopy = $checkoutTileCopy;
     }
 
     /**
@@ -52,10 +60,15 @@ class MethodMetaDataPlugin
         MethodMetaData $subject,
         bool $result,
     ): bool {
-        if (
-            $subject->getData("additional_icons_provider") ||
-            $subject->getData("additional_icon_provider")
-        ) {
+        if ($subject->getData("additional_icon_provider")) {
+            // The explainer is not a payment-brand logo, so the theme's
+            // method-icon toggle is not its gate — the base module's about-link
+            // rule is (ABN-554). renderIcon() drops the logo when that toggle
+            // is off.
+            return $this->checkoutTileCopy->isAboutLinkVisible()
+                || $this->systemConfigPayment->canDisplayMethodIcons();
+        }
+        if ($subject->getData("additional_icons_provider")) {
             return $this->systemConfigPayment->canDisplayMethodIcons();
         }
         return $result;
@@ -77,6 +90,9 @@ class MethodMetaDataPlugin
         $storeId = (int) $this->storeManager->getStore()->getId();
         $iconProvider = $subject->getData("additional_icon_provider");
         if ($iconProvider) {
+            if (!$this->systemConfigPayment->canDisplayMethodIcons()) {
+                $result = "";
+            }
             $block = $this->layout->createBlock(TemplateBlock::class);
             $blockHtml = $block
                 ->setTemplate($iconProvider["template"])

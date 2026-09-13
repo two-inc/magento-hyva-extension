@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /**
@@ -808,18 +809,20 @@ class CheckoutConfigTest extends TestCase
         string $url,
         string $text,
         string $subtitle,
+        string $tooltip,
         string $description
     ): void {
-        $viewModel = $this->viewModelWithTileCopy($visible, $url, $text, $subtitle);
+        $viewModel = $this->viewModelWithTileCopy($visible, $url, $text, $subtitle, $tooltip);
 
         $this->assertSame($visible, $viewModel->getShowAboutLink(), $description);
         $this->assertSame($url, $viewModel->getAboutLinkUrl(), $description);
         $this->assertSame($text, $viewModel->getAboutLinkText(), $description);
         $this->assertSame($subtitle, $viewModel->getCheckoutSubtitleHtml(), $description);
+        $this->assertSame($tooltip, $viewModel->getAboutTooltipHtml(), $description);
     }
 
     /**
-     * @return array<array{0:bool,1:string,2:string,3:string,4:string}>
+     * @return array<array{0:bool,1:string,2:string,3:string,4:string,5:string}>
      */
     public static function aboutLinkAndSubtitleProvider(): array
     {
@@ -829,29 +832,47 @@ class CheckoutConfigTest extends TestCase
                 'https://example.test/explainer',
                 'What is Example?',
                 'Pay in 30 days',
-                'a visible link, its text and a subtitle reach the template unaltered',
+                '<p>Example explains itself</p><p>Click to find out more</p>',
+                'a visible link, its text, a subtitle and the tooltip reach the template unaltered',
             ],
             [
                 false,
                 '',
                 'What is Example?',
                 '',
-                'a brand with no URL yields no link and no subtitle, text regardless',
+                '',
+                'a brand with no URL yields no link, no subtitle and no tooltip, text regardless',
             ],
         ];
+    }
+
+    /**
+     * ABN-554: every icon in a multi-brand checkout must describe its own
+     * tooltip, so the id is keyed on the payment code.
+     */
+    public function testAboutTooltipIdIsKeyedOnThePaymentCode(): void
+    {
+        $viewModel = $this->viewModelWithTileCopy(true, 'https://example.test/x', 'What is Example?', '', '');
+        $branded = $this->createMock(BrandedHyvaViewModelInterface::class);
+        $branded->method('getMethodCode')->willReturn('acme_payment');
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $reflection->getProperty('brandedViewModel')->setValue($viewModel, $branded);
+
+        $this->assertSame('two-about-tooltip-acme_payment', $viewModel->getAboutTooltipId());
     }
 
     private function viewModelWithTileCopy(
         bool $visible,
         string $url,
         string $text,
-        string $subtitle
+        string $subtitle,
+        string $tooltip = ''
     ): CheckoutConfig
     {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
-        $tileCopy = new class ($visible, $url, $text, $subtitle) extends CheckoutTileCopy {
+        $tileCopy = new class ($visible, $url, $text, $subtitle, $tooltip) extends CheckoutTileCopy {
             /** @var bool */
             private $visible;
 
@@ -864,12 +885,21 @@ class CheckoutConfigTest extends TestCase
             /** @var string */
             private $subtitle;
 
-            public function __construct(bool $visible, string $url, string $text, string $subtitle)
-            {
+            /** @var string */
+            private $tooltip;
+
+            public function __construct(
+                bool $visible,
+                string $url,
+                string $text,
+                string $subtitle,
+                string $tooltip
+            ) {
                 $this->visible = $visible;
                 $this->url = $url;
                 $this->text = $text;
                 $this->subtitle = $subtitle;
+                $this->tooltip = $tooltip;
             }
 
             public function isAboutLinkVisible(): bool
@@ -890,6 +920,11 @@ class CheckoutConfigTest extends TestCase
             public function getSubtitleHtml(): string
             {
                 return $this->subtitle;
+            }
+
+            public function getAboutTooltipHtml(): string
+            {
+                return $this->tooltip;
             }
         };
 

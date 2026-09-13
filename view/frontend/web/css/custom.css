@@ -54,7 +54,8 @@ summary::marker {
   z-index: 100;
 }
 
-.tooltip-pay:hover .two-tooltip-box {
+.tooltip-pay:hover .two-tooltip-box,
+.tooltip-pay:focus-within .two-tooltip-box {
   visibility: visible;
 }
 
@@ -132,13 +133,6 @@ summary::marker {
   border-color: #3043d1;
   background: #3043d1;
   color: #fff;
-}
-
-/* This theme's reset strips link affordances, and this tile root carries no
-   `.two-payment-method` hook to inherit the base checkout's. */
-.two-about-link {
-  color: #0066cc;
-  text-decoration: underline;
 }
 
 .two-soletrader-link {

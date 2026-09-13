@@ -458,6 +458,22 @@ class CheckoutConfig implements ArgumentInterface
         return $this->checkoutTileCopy->getAboutLinkText();
     }
 
+    /** Escaped and assembled by the base module, contains HTML — render unescaped. */
+    public function getAboutTooltipHtml(): string
+    {
+        return $this->checkoutTileCopy->getAboutTooltipHtml();
+    }
+
+    /**
+     * Keyed on the payment code: a store offering several brands renders a tile
+     * each, and one id would point every tile's icon at the first tile's
+     * tooltip (ABN-554).
+     */
+    public function getAboutTooltipId(): string
+    {
+        return 'two-about-tooltip-' . $this->brandedViewModel->getMethodCode();
+    }
+
     /**
      * Buyer-facing "order intent approved" notice, or null when the active
      * brand has switched it off.

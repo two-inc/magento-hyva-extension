@@ -1,33 +1,40 @@
 <?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+declare(strict_types=1);
+
 use Hyva\Theme\Model\ViewModelRegistry;
-use Magento\Framework\View\Element\Template;
 use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /** @var Escaper $escaper */
 /** @var Template $block */
 /** @var ViewModelRegistry $viewModels */
 
-/**
- * Copyright © Two.inc All rights reserved.
- * See COPYING.txt for license details.
- */
-
-$aboutLinkUrl = $viewModels->require(CheckoutConfig::class)->getAboutLinkUrl();
+$configModel = $viewModels->require(CheckoutConfig::class);
+$aboutLinkUrl = $configModel->getAboutLinkUrl();
+$aboutLinkText = $configModel->getAboutLinkText();
+$aboutTooltipHtml = $configModel->getAboutTooltipHtml();
+$aboutTooltipId = $configModel->getAboutTooltipId();
+$aboutIconUrl = $block->getViewFileUrl('Two_GatewayHyva::images/cc/tooltip-icon.png');
 ?>
+<?php if ($configModel->getShowAboutLink()): ?>
 <div class="two-tooltip-icon">
-    <img width="20px" src="<?= $block->getViewFileUrl(
-        "Two_GatewayHyva::images/cc/tooltip-icon.png",
-    ) ?>">
-    <div class="two-tooltip-box z-40">
-        <p><?= $escaper->escapeHtml(
-            __("Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple."),
-        ) ?></p>
-        <br>
-        <p><strong><?= $escaper->escapeHtml(__("Buy now, receive your goods, pay your invoice later.")) ?></strong></p>
-        <?php if ($aboutLinkUrl !== ''): ?>
-            <br>
-            <p><a href="<?= $escaper->escapeUrl($aboutLinkUrl) ?>" target="_blank" rel="noopener"><?= $escaper->escapeHtml(__("Find out more")) ?></a></p>
-        <?php endif; ?>
-    </div>
+    <?php /* noopener without noreferrer: the Referer is how the brand's own about page attributes the visit. */ ?>
+    <a class="two-about-icon"
+       href="<?= $escaper->escapeUrl($aboutLinkUrl) ?>"
+       target="_blank"
+       rel="noopener"
+       aria-label="<?= $escaper->escapeHtmlAttr($aboutLinkText) ?>"
+       aria-describedby="<?= $escaper->escapeHtmlAttr($aboutTooltipId) ?>"
+    ><img alt="" width="20" src="<?= $escaper->escapeUrl($aboutIconUrl) ?>"></a>
+    <?php /* Escaped and assembled by the base module — render unescaped. */ ?>
+    <div class="two-tooltip-box z-40"
+         role="tooltip"
+         aria-hidden="true"
+         id="<?= $escaper->escapeHtmlAttr($aboutTooltipId) ?>"><?= /* @noEscape */ $aboutTooltipHtml ?></div>
 </div>
+<?php endif; ?>
