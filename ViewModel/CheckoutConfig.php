@@ -453,6 +453,11 @@ class CheckoutConfig implements ArgumentInterface
         return $this->checkoutTileCopy->getAboutLinkUrl();
     }
 
+    public function getAboutLinkText(): string
+    {
+        return $this->checkoutTileCopy->getAboutLinkText();
+    }
+
     /**
      * Buyer-facing "order intent approved" notice, or null when the active
      * brand has switched it off.

@@ -77,6 +77,12 @@ summary::marker {
   margin-top: 4px;
 }
 
+.two-term-chips__status:not(:empty) {
+  margin-top: 6px;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
 /*
  * Chip colour palette mirrors `.mode_item` on the Luma checkout
  * (Registered Organisation / Sole Trader toggle): solid Two-brand blue
@@ -128,6 +134,13 @@ summary::marker {
   color: #fff;
 }
 
+/* This theme's reset strips link affordances, and this tile root carries no
+   `.two-payment-method` hook to inherit the base checkout's. */
+.two-about-link {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
 .two-soletrader-link {
   background: none;
   border: 0;
@@ -169,8 +182,10 @@ summary::marker {
   gap: 4px;
 }
 
+/* Empty alternative text: aria-checked already states the selection, so the
+   tick must not reach the chip's accessible name (ABN-554). */
 .two-term-chip--selected .two-term-chip__days::before {
-  content: "\2713";
+  content: "\2713" / "";
   color: #fff;
   font-size: 14px;
   font-weight: 700;

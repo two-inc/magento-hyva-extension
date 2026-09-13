@@ -4342,6 +4342,25 @@ $quoteDetails = json_encode(
         return <?= $gwBase ?>PaymentMethodBase();
     }
 
+    // The chips' status region (ABN-554). The base checkout's third state — the
+    // chips disagreeing with the term the quote is priced on — has no counterpart
+    // here: `selectedTerm` is Magewire state the server rolls back on failure.
+    function <?= $gwBase ?>TermChipStatus() {
+        return {
+            applyingMessage: '',
+
+            init() {
+                this.applyingMessage = this.$el.dataset.applyingMessage || '';
+            },
+
+            get message() {
+                const store = Alpine.store('twoChip');
+
+                return store.busy ? this.applyingMessage : store.failureMessage;
+            }
+        };
+    }
+
     // The radio-group keyboard contract the chips' roles advertise (ABN-554).
     function <?= $gwBase ?>TermChipGroup() {
         return {
@@ -4531,14 +4550,26 @@ $quoteDetails = json_encode(
 
             async select() {
                 if (this.single) return; // sole term — nothing to switch to
-                if (Alpine.store('twoChip').busy) return;
+                const store = Alpine.store('twoChip');
+                if (store.busy) return;
                 if (this.isSelected) return;
 
+                store.failureMessage = '';
+                store.seq += 1;
+                const seq = store.seq;
                 this.isUpdating = true;
-                Alpine.store('twoChip').busy = true;
+                store.busy = true;
+                const call = this.$wire.selectTerm(this.days);
+                // A call landing after the race timed out did apply the term, so
+                // its refusal must not outlive it — unless a later selection has
+                // since put its own refusal there.
+                call.then(
+                    () => { if (store.seq === seq) { store.failureMessage = ''; } },
+                    () => {}
+                );
                 try {
                     await Promise.race([
-                        this.$wire.selectTerm(this.days),
+                        call,
                         new Promise((_, reject) => setTimeout(
                             () => reject(new Error('selectTerm timeout')),
                             15000
@@ -4546,15 +4577,10 @@ $quoteDetails = json_encode(
                     ]);
                 } catch (e) {
                     console.warn('Two_GatewayHyva: selectTerm failed', e);
-                    if (typeof window.dispatchMessages === 'function') {
-                        window.dispatchMessages(
-                            [{ type: 'error', text: this.errorMessage }],
-                            5000
-                        );
-                    }
+                    store.failureMessage = this.errorMessage;
                 } finally {
                     this.isUpdating = false;
-                    Alpine.store('twoChip').busy = false;
+                    store.busy = false;
                     this.$nextTick(() => this.restoreFocus());
                 }
             },
@@ -4580,12 +4606,13 @@ $quoteDetails = json_encode(
     }
 
     document.addEventListener('alpine:init', () => {
-        Alpine.store('twoChip', { busy: false });
+        Alpine.store('twoChip', { busy: false, failureMessage: '', seq: 0 });
         Alpine.data('<?= $gwBase ?>PaymentMethodBase', <?= $gwBase ?>PaymentMethodBase);
         Alpine.data('<?= $gwBase ?>PaymentFormWithValidation', <?= $gwBase ?>PaymentFormWithValidation);
         Alpine.data('<?= $gwBase ?>PaymentTermsComponent', <?= $gwBase ?>PaymentTermsComponent);
         Alpine.data('<?= $gwBase ?>TermChip', <?= $gwBase ?>TermChip);
         Alpine.data('<?= $gwBase ?>TermChipGroup', <?= $gwBase ?>TermChipGroup);
+        Alpine.data('<?= $gwBase ?>TermChipStatus', <?= $gwBase ?>TermChipStatus);
     });
 
     // Global reference to the payment component instance

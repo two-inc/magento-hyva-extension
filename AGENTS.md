@@ -162,9 +162,10 @@ the template.
 
 ### Buyer-facing copy and links come from the base module
 
-The payment tile's subtitle and the tooltip's explainer link come from the base
-module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
-hardcoded URL or a re-derivation of brand data here (ABN-496). A brand that
+The payment tile's subtitle, its explainer link and the tooltip's come from the
+base module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
+hardcoded URL or a re-derivation of brand data here (ABN-496). The tile's link
+carries the base's wording too, so the two checkouts name the method alike. A brand that
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
 never an empty element.
 
