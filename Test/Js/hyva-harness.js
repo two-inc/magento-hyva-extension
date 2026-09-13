@@ -141,7 +141,7 @@ const PHP_VALUE_RULES = [
   // Same reason, for the two values the explainer icon's tooltip carries. The
   // copy is the base module's, so the suite asserts it arrives whole rather
   // than on its wording.
-  [/^\$aboutTooltipHtml$/, "<p>Example explains itself</p><p>Click to find out more</p>"],
+  [/^\$aboutTooltipHtml$/, "<p>Example explains itself</p><p>Example closing line</p>"],
   [/^\$aboutTooltipId$/, "two-about-tooltip-two_payment"],
   [/^\$applyingMessage$/, "Applying the selected term"],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],

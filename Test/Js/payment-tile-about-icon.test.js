@@ -15,7 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const H = require("./hyva-harness");
 
-const TOOLTIP_HTML = "<p>Example explains itself</p><p>Click to find out more</p>";
+const TOOLTIP_HTML = "<p>Example explains itself</p><p>Example closing line</p>";
 
 function render(extraRules) {
   return new DOMParser().parseFromString(

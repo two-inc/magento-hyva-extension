@@ -832,7 +832,7 @@ class CheckoutConfigTest extends TestCase
                 'https://example.test/explainer',
                 'What is Example?',
                 'Pay in 30 days',
-                '<p>Example explains itself</p><p>Click to find out more</p>',
+                '<p>Example explains itself</p><p>Example closing line</p>',
                 'a visible link, its text, a subtitle and the tooltip reach the template unaltered',
             ],
             [
