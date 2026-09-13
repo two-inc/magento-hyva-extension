@@ -852,6 +852,26 @@ function installCompanyPanelStub() {
     this.calls.push("bind");
     this._field = document.querySelector(this.fieldSelector);
     this._panel = this._field ? wrapField(this._field) : null;
+    // The real panel opens on every focus it did not make itself (ABN-554).
+    // Flagged on a property, not an attribute a cloning morph would copy.
+    if (this._field && !this._field.twoStubOpenerBound) {
+      const self = this;
+      this._field.twoStubOpenerBound = true;
+      this._field.addEventListener("focus", function () {
+        if (self._closing) return;
+        self.open();
+      });
+    }
+  };
+  CompanySearchPanelStub.prototype.restoreFieldFocus = function () {
+    if (!this._field) return;
+    this.calls.push("restoreFieldFocus");
+    this._closing = true;
+    try {
+      this._field.focus();
+    } finally {
+      this._closing = false;
+    }
   };
   CompanySearchPanelStub.prototype.getField = function () {
     return this._field ? [this._field] : [];
