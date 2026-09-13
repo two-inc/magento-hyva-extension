@@ -806,18 +806,20 @@ class CheckoutConfigTest extends TestCase
     public function testAboutLinkAndSubtitleComeFromTheBaseService(
         bool $visible,
         string $url,
+        string $text,
         string $subtitle,
         string $description
     ): void {
-        $viewModel = $this->viewModelWithTileCopy($visible, $url, $subtitle);
+        $viewModel = $this->viewModelWithTileCopy($visible, $url, $text, $subtitle);
 
         $this->assertSame($visible, $viewModel->getShowAboutLink(), $description);
         $this->assertSame($url, $viewModel->getAboutLinkUrl(), $description);
+        $this->assertSame($text, $viewModel->getAboutLinkText(), $description);
         $this->assertSame($subtitle, $viewModel->getCheckoutSubtitleHtml(), $description);
     }
 
     /**
-     * @return array<array{0:bool,1:string,2:string,3:string}>
+     * @return array<array{0:bool,1:string,2:string,3:string,4:string}>
      */
     public static function aboutLinkAndSubtitleProvider(): array
     {
@@ -825,24 +827,31 @@ class CheckoutConfigTest extends TestCase
             [
                 true,
                 'https://example.test/explainer',
+                'What is Example?',
                 'Pay in 30 days',
-                'a visible link and a subtitle reach the template unaltered',
+                'a visible link, its text and a subtitle reach the template unaltered',
             ],
             [
                 false,
                 '',
+                'What is Example?',
                 '',
-                'a brand with no URL yields no link and no subtitle',
+                'a brand with no URL yields no link and no subtitle, text regardless',
             ],
         ];
     }
 
-    private function viewModelWithTileCopy(bool $visible, string $url, string $subtitle): CheckoutConfig
+    private function viewModelWithTileCopy(
+        bool $visible,
+        string $url,
+        string $text,
+        string $subtitle
+    ): CheckoutConfig
     {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
-        $tileCopy = new class ($visible, $url, $subtitle) extends CheckoutTileCopy {
+        $tileCopy = new class ($visible, $url, $text, $subtitle) extends CheckoutTileCopy {
             /** @var bool */
             private $visible;
 
@@ -850,12 +859,16 @@ class CheckoutConfigTest extends TestCase
             private $url;
 
             /** @var string */
+            private $text;
+
+            /** @var string */
             private $subtitle;
 
-            public function __construct(bool $visible, string $url, string $subtitle)
+            public function __construct(bool $visible, string $url, string $text, string $subtitle)
             {
                 $this->visible = $visible;
                 $this->url = $url;
+                $this->text = $text;
                 $this->subtitle = $subtitle;
             }
 
@@ -867,6 +880,11 @@ class CheckoutConfigTest extends TestCase
             public function getAboutLinkUrl(): string
             {
                 return $this->url;
+            }
+
+            public function getAboutLinkText(): string
+            {
+                return $this->text;
             }
 
             public function getSubtitleHtml(): string

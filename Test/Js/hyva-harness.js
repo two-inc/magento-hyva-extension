@@ -123,6 +123,9 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$orderIntentNotAvailableNotice[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     "null",
   ],
+  // Ahead of the catch-all escapeUrl() rule below, which would otherwise answer
+  // the tile's explainer href with the checkout's own URL.
+  [/^\$escaper->escapeUrl\(\$aboutLinkUrl\)$/, "https://example.test/explainer"],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
   // Markup-only values, for renderTemplateMarkup() over gateway_method.phtml.
   // `__()` resolves explicitly rather than falling through the escapeHtmlAttr
@@ -131,6 +134,10 @@ const PHP_VALUE_RULES = [
   [/^__\(.*\)$/, ESCAPED_STRING],
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$subtitleHtml$/, ""],
+  // Its own value, not ESCAPED_STRING: the about-link suite reads it back off
+  // the rendered anchor and has to tell it apart from every other copy string.
+  [/^\$aboutLinkText$/, "What is Example?"],
+  [/^\$applyingMessage$/, "Applying the selected term"],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
   // The end-of-month chip's accessible name, distinct from every label above so
   // a test reading it can tell it apart from the visible-text templates.
