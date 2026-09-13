@@ -38,18 +38,20 @@ summary::marker {
 
 .two-about-icon {
   display: inline-block;
-  /* WCAG 2.5.8: the 20px icon is the whole target, so it is padded to 24px. */
+  /* WCAG 2.5.8: the 20px-wide icon is the whole target, so it is padded to 24px. */
   padding: 2px;
 }
 
 .two-tooltip-box {
-  /* Opacity, not visibility/display: the closed box stays in the accessibility
-     tree, so the icon's aria-describedby always resolves to a description. */
+  /* Opacity, not visibility/display: the closed box stays in the layout and in
+     the accessibility tree, so the description the icon points at does not
+     depend on how an assistive technology treats a hidden referenced node.
+     Matches the other platforms' tooltips. */
   opacity: 0;
   pointer-events: none;
   width: 200px;
   /* Flush to the trigger: a gap between them is a tooltip the pointer cannot
-     travel to without closing it (WCAG 1.4.13). */
+     travel to without closing it (WCAG 1.4.13, hoverable). */
   top: 100%;
   right: 0;
   background-color: black;

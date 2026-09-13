@@ -118,7 +118,7 @@ describe("the tooltip is reachable by keyboard and by pointer (ABN-554)", () => 
     ],
     [
       /\.two-tooltip-box \{[^}]*opacity: 0;/,
-      "the closed box is faded, so it stays in the accessibility tree and aria-describedby resolves",
+      "the closed box is faded, so the description does not hinge on how an AT treats a hidden referenced node",
     ],
     [
       /\.two-tooltip-box \{[^}]*pointer-events: none;/,
