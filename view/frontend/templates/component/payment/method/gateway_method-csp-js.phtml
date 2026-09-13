@@ -2843,68 +2843,67 @@ $quoteDetails = json_encode(
                                 return;
                             }
                         }
-                        if (this.isOrderIntentEnabled) {
-                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
+                        // ABN-554: the quote's only copy of the captured company number — written whether or not order intent runs.
+                        const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
 
-                            if (activePaymentMethod) {
-                                const selectedPaymentValue = activePaymentMethod.value;
-                                const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
+                        if (activePaymentMethod) {
+                            const selectedPaymentValue = activePaymentMethod.value;
+                            const isTwoPaymentSelected = selectedPaymentValue === "<?= $brandedViewModel->getMethodCode() ?>";
 
-                                if (isTwoPaymentSelected) {
-                                    const formRef = form;
+                            if (isTwoPaymentSelected) {
+                                const formRef = form;
 
-                                    await new Promise((resolve, reject) => {
-                                        const timeoutId = setTimeout(() => {
-                                            reject("Order intent operation timed out");
-                                        }, 5000);
+                                await new Promise((resolve, reject) => {
+                                    const timeoutId = setTimeout(() => {
+                                        reject("Saving payment data timed out");
+                                    }, 5000);
 
-                                        const checkAndProceed = () => {
-                                            try {
-                                                window.twoGatewayApplyInvoiceCompanyFields();
+                                    const checkAndProceed = () => {
+                                        try {
+                                            window.twoGatewayApplyInvoiceCompanyFields();
 
-                                                const formElements = [
-                                                    'department',
-                                                    'project',
-                                                    'poNumber',
-                                                    'orderNote',
-                                                    'invoiceEmails',
-                                                    'company_name',
-                                                    'company_id'
-                                                ];
+                                            const formElements = [
+                                                'department',
+                                                'project',
+                                                'poNumber',
+                                                'orderNote',
+                                                'invoiceEmails',
+                                                'company_name',
+                                                'company_id'
+                                            ];
 
-                                                const paymentData = {
-                                                    additionalData: Object.fromEntries(
-                                                        formElements.map(field => {
-                                                            const element = formRef.querySelector(`[name="payment[${field}]"]`);
-                                                            return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
-                                                        })
-                                                    )
-                                                };
-
-                                                paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
-
-                                                Magewire.find("<?= $brandedViewModel->getMagewireBlockName() ?>")
-                                                    .call('setPaymentData', paymentData)
-                                                    .then(() => {
-                                                        clearTimeout(timeoutId);
-                                                        resolve();
+                                            const paymentData = {
+                                                additionalData: Object.fromEntries(
+                                                    formElements.map(field => {
+                                                        const element = formRef.querySelector(`[name="payment[${field}]"]`);
+                                                        return [field === 'company_name' ? 'companyName' : field === 'company_id' ? 'companyId' : field, element?.value || ""];
                                                     })
-                                                    .catch((error) => {
-                                                        console.error("Error setting payment data:", error);
-                                                        clearTimeout(timeoutId);
-                                                        resolve();
-                                                    });
+                                                )
+                                            };
 
-                                            } catch (error) {
-                                                console.error("Error in payment data processing:", error);
-                                                clearTimeout(timeoutId);
-                                                resolve();
-                                            }
-                                        };
+                                            paymentData.additionalData.organization_number = paymentData.additionalData.companyId;
 
-                                        setTimeout(checkAndProceed, 1000);
-                                    });
-                                }
+                                            Magewire.find("<?= $brandedViewModel->getMagewireBlockName() ?>")
+                                                .call('setPaymentData', paymentData)
+                                                .then(() => {
+                                                    clearTimeout(timeoutId);
+                                                    resolve();
+                                                })
+                                                .catch((error) => {
+                                                    console.error("Error setting payment data:", error);
+                                                    clearTimeout(timeoutId);
+                                                    resolve();
+                                                });
+
+                                        } catch (error) {
+                                            console.error("Error in payment data processing:", error);
+                                            clearTimeout(timeoutId);
+                                            resolve();
+                                        }
+                                    };
+
+                                    setTimeout(checkAndProceed, 1000);
+                                });
                             }
                         }
 
