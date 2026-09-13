@@ -117,10 +117,25 @@ class MethodMetaDataPluginTest extends TestCase
     {
         return [
             ['<span id="explainer"></span>', '<img id="logo">', 'justify-between', 'both halves sit at opposite edges'],
-            ['', '<img id="logo">', 'justify-end', 'a lone logo stays at the right edge it always had'],
-            ['<span id="explainer"></span>', '', 'justify-start', 'a lone explainer stays at the left'],
-            ['<span id="explainer"></span>', "\n ", 'justify-start', 'a whitespace-padded logo is no logo'],
+            ['', '<img id="logo">', 'justify-start', 'a lone logo stays at the inboard edge it always had'],
+            ['<span id="explainer"></span>', '', 'justify-end', 'a lone explainer stays at the outboard end'],
+            ['<span id="explainer"></span>', "\n ", 'justify-end', 'a whitespace-padded logo is no logo'],
         ];
+    }
+
+    /** The explainer icon takes the outboard end of the row, so the logo is emitted first. */
+    public function testTheLogoIsEmittedBeforeTheExplainer(): void
+    {
+        $plugin = $this->plugin(true, true, '<span id="explainer"></span>');
+        $subject = new MethodMetaData(['additional_icon_provider' => ['template' => 'Two::t.phtml']]);
+
+        $html = $plugin->afterRenderIcon($subject, '<img id="logo">');
+
+        $this->assertLessThan(
+            strpos($html, 'tooltip-pay'),
+            strpos($html, 'icon-pay'),
+            'the logo half precedes the explainer half in the DOM'
+        );
     }
 
     private function plugin(bool $aboutVisible, bool $iconsEnabled, string $blockHtml): MethodMetaDataPlugin

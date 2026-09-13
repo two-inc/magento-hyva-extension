@@ -89,7 +89,7 @@ class MethodMetaDataPlugin
             // render with whitespace.
             $explainer = trim($blockHtml) === ""
                 ? ""
-                : "<div class='tooltip-pay inline-block py-2 mr-4'>" . $blockHtml . "</div>";
+                : "<div class='tooltip-pay inline-block py-2 ml-4'>" . $blockHtml . "</div>";
             $logo = trim($result) === ""
                 ? ""
                 : "<div class='icon-pay inline-block'>" . $result . "</div>";
@@ -97,12 +97,13 @@ class MethodMetaDataPlugin
                 return "";
             }
             // A surviving half keeps the edge it had when the row held both;
-            // justify-between would pull a lone logo to the left of the row.
+            // justify-between would pull a lone child to the opposite edge.
             $justify = $explainer !== "" && $logo !== ""
                 ? "justify-between"
-                : ($logo !== "" ? "justify-end" : "justify-start");
+                : ($explainer !== "" ? "justify-end" : "justify-start");
+            // Logo first: the explainer icon takes the outboard end of the row.
             $result = "<div class='flex tooltip-icon w-full items-center " . $justify . "'>"
-                . $explainer . $logo . "</div>";
+                . $logo . $explainer . "</div>";
         }
 
         return $result;
