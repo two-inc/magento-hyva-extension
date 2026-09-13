@@ -96,8 +96,8 @@ class MethodMetaDataPlugin
             if ($explainer === "" && $logo === "") {
                 return "";
             }
-            // A surviving half keeps the edge it had when the row held both;
-            // justify-between would pull a lone child to the opposite edge.
+            // A surviving half keeps the edge it had when the row held both:
+            // justify-between would pull a lone explainer inboard.
             $justify = $explainer !== "" && $logo !== ""
                 ? "justify-between"
                 : ($explainer !== "" ? "justify-end" : "justify-start");

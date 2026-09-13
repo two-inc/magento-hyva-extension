@@ -33,7 +33,7 @@ $aboutIconUrl = $block->getViewFileUrl('Two_GatewayHyva::images/cc/tooltip-icon.
     ><img alt="" width="20" src="<?= $escaper->escapeUrl($aboutIconUrl) ?>"></a>
     <?php /* No aria-hidden: the closed box is kept in the accessibility tree on purpose
              (custom.css fades it with opacity) so the description resolves the same
-             way everywhere, and aria-hidden here would withhold it outright. */ ?>
+             way everywhere, and hiding it would contradict that. */ ?>
     <?php /* Escaped and assembled by the base module — render unescaped. */ ?>
     <div class="two-tooltip-box"
          role="tooltip"
