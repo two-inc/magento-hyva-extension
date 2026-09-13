@@ -172,6 +172,43 @@ describe("a Magewire re-render that morphs the popover away", () => {
     expect(document.activeElement).toBe(focused());
   });
 
+  test.each([
+    {
+      morph: () => morphServerMarkupOverControl(),
+      expectedField: () => field,
+      description: "a morph that patched the company input in place",
+    },
+    {
+      morph: () => {
+        const replacement = field.cloneNode(true);
+        const wrap = field.parentElement;
+        root.insertBefore(replacement, wrap);
+        wrap.remove();
+        root.removeAttribute("data-two-capture-role");
+      },
+      expectedField: () => root.querySelector("input[data-two-capture-field]"),
+      description: "a morph that swapped the company input for a new node",
+    },
+  ])(
+    "$description — the caret comes back and the popover stays shut",
+    async ({ morph, expectedField }) => {
+      // The opener is live, so the shut assertion below is not vacuous.
+      field.focus();
+      expect(panel().isOpen()).toBe(true);
+      panel().close();
+
+      env.fireMagewireHook("message.received");
+      field.blur();
+      morph();
+
+      env.fireMagewireHook("element.updated");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(document.activeElement).toBe(expectedField());
+      expect(panel().isOpen()).toBe(false);
+    },
+  );
+
   test("the repair takes the input the morph put back, not the one the component still names", () => {
     field.focus();
     env.fireMagewireHook("message.received");

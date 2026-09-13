@@ -1822,6 +1822,16 @@ $quoteDetails = json_encode(
         const field = mount && typeof mount.field === 'function' ? mount.field() : null;
         if (!field) return;
         window.twoGatewayCaptureFocusRoot = null;
+        const panel = mount && typeof mount.panel === 'function' ? mount.panel() : null;
+        // A plain focus() is an opener the panel answers; its own restore is not.
+        // Only the panel holding THIS field can place the caret on it.
+        if (panel
+            && typeof panel.restoreFieldFocus === 'function'
+            && typeof panel.getField === 'function'
+            && panel.getField()[0] === field) {
+            panel.restoreFieldFocus();
+            return;
+        }
         field.focus();
     }
 
@@ -2516,6 +2526,9 @@ $quoteDetails = json_encode(
                     // nothing until this surface has stamped it again.
                     remount: function () {
                         self.mountCompanyPopover();
+                    },
+                    panel: function () {
+                        return self.companyPopover();
                     }
                 });
             },
