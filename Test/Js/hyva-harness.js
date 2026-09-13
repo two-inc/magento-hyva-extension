@@ -124,8 +124,9 @@ const PHP_VALUE_RULES = [
     "null",
   ],
   // Ahead of the catch-all escapeUrl() rule below, which would otherwise answer
-  // the tile's explainer href with the checkout's own URL.
+  // the explainer href and its icon asset with the checkout's own URL.
   [/^\$escaper->escapeUrl\(\$aboutLinkUrl\)$/, "https://example.test/explainer"],
+  [/^\$escaper->escapeUrl\(\$aboutIconUrl\)$/, "/static/tooltip-icon.png"],
   [/^\$escaper->escapeUrl\(.*\)$/, "/checkout"],
   // Markup-only values, for renderTemplateMarkup() over gateway_method.phtml.
   // `__()` resolves explicitly rather than falling through the escapeHtmlAttr
@@ -134,9 +135,14 @@ const PHP_VALUE_RULES = [
   [/^__\(.*\)$/, ESCAPED_STRING],
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$subtitleHtml$/, ""],
-  // Its own value, not ESCAPED_STRING: the about-link suite reads it back off
+  // Its own value, not ESCAPED_STRING: the about-icon suite reads it back off
   // the rendered anchor and has to tell it apart from every other copy string.
   [/^\$aboutLinkText$/, "What is Example?"],
+  // Same reason, for the two values the explainer icon's tooltip carries. The
+  // copy is the base module's, so the suite asserts it arrives whole rather
+  // than on its wording.
+  [/^\$aboutTooltipHtml$/, "<p>Example explains itself</p><p>Example closing line</p>"],
+  [/^\$aboutTooltipId$/, "two-about-tooltip-two_payment"],
   [/^\$applyingMessage$/, "Applying the selected term"],
   [/^\$(errorMessage|paymentTermsMessage|termsNotAcceptedMessage)$/, "Message"],
   // The end-of-month chip's accessible name, distinct from every label above so
@@ -612,6 +618,9 @@ const COMPANY_NAME_MARKUP_TEMPLATE =
   "view/frontend/templates/form/field/companyName.phtml";
 const COMPANY_NAME_TEMPLATE =
   "view/frontend/templates/form/field/companyName-csp-js.phtml";
+/** The explainer icon, mounted into the method row by the icon-provider plugin. */
+const ABOUT_TOOLTIP_MARKUP_TEMPLATE =
+  "view/frontend/templates/component/tooltip.phtml";
 const SHIPPING_COMPANY_TEMPLATE =
   "view/frontend/templates/component/payment/method/shipping_company.phtml";
 const PAYMENT_FIELDS_TEMPLATE =
@@ -1952,6 +1961,7 @@ module.exports = {
   PAYMENT_FIELDS_TEMPLATE: PAYMENT_FIELDS_TEMPLATE,
   GATEWAY_METHOD_TEMPLATE: GATEWAY_METHOD_TEMPLATE,
   GATEWAY_METHOD_MARKUP_TEMPLATE: GATEWAY_METHOD_MARKUP_TEMPLATE,
+  ABOUT_TOOLTIP_MARKUP_TEMPLATE: ABOUT_TOOLTIP_MARKUP_TEMPLATE,
   COMPANY_NAME_TEMPLATE: COMPANY_NAME_TEMPLATE,
   COMPANY_NAME_MARKUP_TEMPLATE: COMPANY_NAME_MARKUP_TEMPLATE,
   SHIPPING_COMPANY_TEMPLATE: SHIPPING_COMPANY_TEMPLATE,

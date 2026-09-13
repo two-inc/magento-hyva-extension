@@ -162,12 +162,21 @@ the template.
 
 ### Buyer-facing copy and links come from the base module
 
-The payment tile's subtitle, its explainer link and the tooltip's come from the
-base module's `CheckoutTileCopy` service through `CheckoutConfig`, never from a
-hardcoded URL or a re-derivation of brand data here (ABN-496). The tile's link
-carries the base's wording too, so the two checkouts name the method alike. A brand that
+The payment tile's subtitle and the explainer come from the base module's
+`CheckoutTileCopy` service through `CheckoutConfig`, never from a hardcoded URL,
+a translated string here or a re-derivation of brand data (ABN-496). A brand that
 supplies no URL gets no anchor and no tagline at all — never an empty `href`,
 never an empty element.
+
+**The explainer is ONE control, and it is the icon** (ABN-554) — the icon IS the
+anchor to the brand's about page, describing itself through a `role="tooltip"`
+body it names with `aria-describedby`. `component/tooltip.phtml` renders it into
+the method row and translates nothing of its own; the tile body carries no second
+explainer.
+
+The theme's payment-method-icon toggle gates the brand logo, not the explainer:
+`MethodMetaDataPlugin` gates each half on its own rule and wraps neither when it
+is withheld, an empty wrapper still costing its padding and its share of the row.
 
 Whether the intent-declined notice renders at all, and its wording, come from two
 separate brand-registry declarations: only the switch suppresses it, and the copy
@@ -176,7 +185,7 @@ override is inert when empty — an empty override never doubles as an off switc
 notice's switch, so a brand that turned that one off gets neither; a base
 declaring no switch of either kind leaves the notice on.
 
-`dev/base-tile-copy-parity.sh` pins the four tile-copy methods this checkout calls
+`dev/base-tile-copy-parity.sh` pins the tile-copy methods this checkout calls
 against the base module's declarations, and `ci.yml` invokes it as
 `bash dev/base-tile-copy-parity.sh`. **Invoke anything whose failure mode is "did
 not execute" through `bash`**: run as `./script.sh` it depends on the committed

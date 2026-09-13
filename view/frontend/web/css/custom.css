@@ -36,10 +36,23 @@ summary::marker {
   display: inline-block;
 }
 
+.two-about-icon {
+  display: inline-block;
+  /* WCAG 2.5.8: the 20px-wide icon is the whole target, so it is padded to 24px. */
+  padding: 2px;
+}
+
 .two-tooltip-box {
-  visibility: hidden;
+  /* Opacity, not visibility/display: the closed box stays in the layout and in
+     the accessibility tree, so the description the icon points at does not
+     depend on how an assistive technology treats a hidden referenced node.
+     Matches the other platforms' tooltips. */
+  opacity: 0;
+  pointer-events: none;
   width: 200px;
-  top: 40px;
+  /* Flush to the trigger: a gap between them is a tooltip the pointer cannot
+     travel to without closing it (WCAG 1.4.13, hoverable). */
+  top: 100%;
   right: 0;
   background-color: black;
   padding: 10px;
@@ -54,8 +67,20 @@ summary::marker {
   z-index: 100;
 }
 
-.tooltip-pay:hover .two-tooltip-box {
-  visibility: visible;
+/* The base module's copy is three bare <p>s and this theme's preflight zeroes
+   their margins, so without this the phrases run together as one block. */
+.two-tooltip-box p {
+  margin: 0 0 8px;
+}
+
+.two-tooltip-box p:last-child {
+  margin-bottom: 0;
+}
+
+.tooltip-pay:hover .two-tooltip-box,
+.tooltip-pay:focus-within .two-tooltip-box {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .text-blue-600 {
@@ -132,13 +157,6 @@ summary::marker {
   border-color: #3043d1;
   background: #3043d1;
   color: #fff;
-}
-
-/* This theme's reset strips link affordances, and this tile root carries no
-   `.two-payment-method` hook to inherit the base checkout's. */
-.two-about-link {
-  color: #0066cc;
-  text-decoration: underline;
 }
 
 .two-soletrader-link {

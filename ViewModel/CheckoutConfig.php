@@ -458,6 +458,17 @@ class CheckoutConfig implements ArgumentInterface
         return $this->checkoutTileCopy->getAboutLinkText();
     }
 
+    public function getAboutTooltipHtml(): string
+    {
+        return $this->checkoutTileCopy->getAboutTooltipHtml();
+    }
+
+    /** Keyed on the payment code, like every other ARIA association on this tile. */
+    public function getAboutTooltipId(): string
+    {
+        return 'two-about-tooltip-' . $this->brandedViewModel->getMethodCode();
+    }
+
     /**
      * Buyer-facing "order intent approved" notice, or null when the active
      * brand has switched it off.

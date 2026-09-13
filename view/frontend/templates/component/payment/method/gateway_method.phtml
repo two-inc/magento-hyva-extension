@@ -68,12 +68,6 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
     <?php if ($subtitleHtml !== ''): ?>
         <div class="two-payment-subtitle"><?= /* @noEscape */ $subtitleHtml ?></div>
     <?php endif; ?>
-    <?php if ($configModel->getShowAboutLink()): ?>
-        <?php $aboutLinkUrl = $configModel->getAboutLinkUrl(); ?>
-        <?php $aboutLinkText = $configModel->getAboutLinkText(); ?>
-        <a class="two-about-link" target="_blank" rel="noopener"
-           href="<?= $escaper->escapeUrl($aboutLinkUrl) ?>"><?= $escaper->escapeHtml($aboutLinkText) ?></a>
-    <?php endif; ?>
     <?php if ($showChip || $magewire->showSingleTerm): ?>
         <?php $termGroupLabelId = $methodCode . '_term_group_label'; ?>
         <div class="two-term-chips field">

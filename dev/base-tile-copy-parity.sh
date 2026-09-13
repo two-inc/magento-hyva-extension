@@ -20,6 +20,7 @@ required_methods=(
     isAboutLinkVisible
     getAboutLinkUrl
     getAboutLinkText
+    getAboutTooltipHtml
 )
 
 command -v gh >/dev/null 2>&1 \
