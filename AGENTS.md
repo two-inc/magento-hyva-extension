@@ -279,6 +279,10 @@ be up alongside nothing. All four are one box style in one place. The rules that
   field either way. Both markup modes keep
   `data-name` on the company pair so a surface that is not the payment form can
   resolve it without a document-wide id lookup.
+- **The payload assembly is NOT part of the check.** `setPaymentData` carries the
+  captured company number onto the quote payment, and that is the only thing that
+  puts it there — the server refuses placement without it — so it runs whether or
+  not the merchant has the intent call switched on (ABN-554).
 - **A DECLINE REFUSES PLACEMENT** (TWO-25657). The `hyvaCheckout.validation` callback
   returns false for a recorded `approved: false` on the company being placed for; no
   record and a recorded FAILURE both place normally. The declined message is toasted
@@ -298,10 +302,9 @@ it the payload carried no term at all, the composer substituted the configured
 default, and every other offered term was refused as unavailable (ABN-556).
 
 It belongs at placement rather than in the tile's payload assembly: that
-assembly runs only while order intent is enabled, and a round trip earlier, so
-a chip clicked afterwards would leave the recorded term behind. Both brands
-route placement through the same plugged service, so the plugin is the one place
-that covers every store view.
+assembly runs a round trip earlier, so a chip clicked afterwards would leave the
+recorded term behind. Both brands route placement through the same plugged
+service, so the plugin is the one place that covers every store view.
 
 **The chip state stays the buyer's raw choice, not the resolved one.** A term the
 merchant withdraws mid-checkout matches no chip, which is what leaves the default
