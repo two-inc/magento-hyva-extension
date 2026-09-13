@@ -7,7 +7,6 @@ namespace Two\GatewayHyva\Test\Unit\Plugin;
 use Hyva\Checkout\Model\ConfigData\HyvaThemes\SystemConfigPayment;
 use Hyva\Checkout\Model\MethodMetaData;
 use Magento\Framework\View\Layout;
-use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\GatewayHyva\Plugin\MethodMetaDataPlugin;
@@ -63,16 +62,28 @@ class MethodMetaDataPluginTest extends TestCase
         ];
     }
 
-    /** An empty wrapper still occupies its padding and its share of the row. */
-    public function testAWithheldHalfLeavesNoEmptyWrapper(): void
-    {
-        $plugin = $this->plugin(true, false, '<span id="explainer"></span>');
+    /**
+     * @dataProvider emptyRowProvider
+     */
+    public function testNothingIsWrappedWhenBothHalvesAreWithheld(
+        string $blockHtml,
+        string $description
+    ): void {
+        $plugin = $this->plugin(false, false, $blockHtml);
         $subject = new MethodMetaData(['additional_icon_provider' => ['template' => 'Two::t.phtml']]);
 
-        $this->assertStringNotContainsString(
-            "<div class='icon-pay inline-block'></div>",
-            $plugin->afterRenderIcon($subject, '<img id="logo">')
-        );
+        $this->assertSame('', $plugin->afterRenderIcon($subject, ''), $description);
+    }
+
+    /**
+     * @return array<array{0:string,1:string}>
+     */
+    public static function emptyRowProvider(): array
+    {
+        return [
+            ['', 'a byte-empty render leaves no row'],
+            ["\n  \n", 'so does one a template hint or an observer has padded'],
+        ];
     }
 
     private function plugin(bool $aboutVisible, bool $iconsEnabled, string $blockHtml): MethodMetaDataPlugin
@@ -98,11 +109,6 @@ class MethodMetaDataPluginTest extends TestCase
             }
         };
 
-        return new MethodMetaDataPlugin(
-            $layout,
-            $this->createMock(StoreManagerInterface::class),
-            $systemConfigPayment,
-            $tileCopy
-        );
+        return new MethodMetaDataPlugin($layout, $systemConfigPayment, $tileCopy);
     }
 }

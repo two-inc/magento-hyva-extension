@@ -12,7 +12,6 @@ use Hyva\Checkout\Model\ConfigData\HyvaThemes\SystemConfigPayment;
 use Hyva\Checkout\Model\MethodMetaData;
 use Magento\Framework\View\Element\Template as TemplateBlock;
 use Magento\Framework\View\Layout;
-use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 
 class MethodMetaDataPlugin
@@ -21,11 +20,6 @@ class MethodMetaDataPlugin
      * @var Layout
      */
     private $layout;
-
-    /**
-     * @var StoreManagerInterface
-     */
-    private $storeManager;
 
     /**
      * @var SystemConfigPayment
@@ -39,12 +33,10 @@ class MethodMetaDataPlugin
 
     public function __construct(
         Layout $layout,
-        StoreManagerInterface $storeManager,
         SystemConfigPayment $systemConfigPayment,
         CheckoutTileCopy $checkoutTileCopy,
     ) {
         $this->layout = $layout;
-        $this->storeManager = $storeManager;
         $this->systemConfigPayment = $systemConfigPayment;
         $this->checkoutTileCopy = $checkoutTileCopy;
     }
@@ -77,7 +69,6 @@ class MethodMetaDataPlugin
      * @param MethodMetaData $subject
      * @param string $result
      * @return string
-     * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
     public function afterRenderIcon(
         MethodMetaData $subject,
@@ -93,12 +84,19 @@ class MethodMetaDataPlugin
                 ->setTemplate($iconProvider["template"])
                 ->toHtml();
             // Either half can be withheld, and an empty wrapper still occupies
-            // its padding and its share of the row.
-            $result =
-                "<div class='flex tooltip-icon w-full items-center justify-between'>" .
-                ($blockHtml === "" ? "" : "<div class='tooltip-pay inline-block py-2 mr-4'>" . $blockHtml . "</div>") .
-                ($result === "" ? "" : "<div class='icon-pay inline-block'>" . $result . "</div>") .
-                "</div>";
+            // its padding and its share of the row. trim(), not a byte compare:
+            // a template hint or an html-after observer can pad a withheld
+            // render with whitespace.
+            $explainer = trim($blockHtml) === ""
+                ? ""
+                : "<div class='tooltip-pay inline-block py-2 mr-4'>" . $blockHtml . "</div>";
+            $logo = $result === ""
+                ? ""
+                : "<div class='icon-pay inline-block'>" . $result . "</div>";
+            $result = $explainer === "" && $logo === ""
+                ? ""
+                : "<div class='flex tooltip-icon w-full items-center justify-between'>"
+                    . $explainer . $logo . "</div>";
         }
 
         return $result;

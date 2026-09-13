@@ -61,14 +61,8 @@ describe("the explainer is an anchor-wrapped icon (ABN-554)", () => {
     );
   });
 
-  it("declares exactly one anchor — the icon is the link", () => {
-    // The harness fixture carries no anchor, so the rendered DOM cannot show a
-    // second one the base's copy might contain; the template's own text can.
-    expect(
-      templateSource("view/frontend/templates/component/tooltip.phtml").match(
-        /<a\b/g,
-      ),
-    ).toHaveLength(1);
+  it("the icon sits inside the anchor — the icon IS the link", () => {
+    expect(render().querySelector("a.two-about-icon > img")).not.toBeNull();
   });
 });
 

@@ -135,7 +135,7 @@ const PHP_VALUE_RULES = [
   [/^__\(.*\)$/, ESCAPED_STRING],
   [/^\$brandedViewModel->getFormId\(\)$/, "two_payment_form"],
   [/^\$subtitleHtml$/, ""],
-  // Its own value, not ESCAPED_STRING: the about-link suite reads it back off
+  // Its own value, not ESCAPED_STRING: the about-icon suite reads it back off
   // the rendered anchor and has to tell it apart from every other copy string.
   [/^\$aboutLinkText$/, "What is Example?"],
   // Same reason, for the two values the explainer icon's tooltip carries. The
