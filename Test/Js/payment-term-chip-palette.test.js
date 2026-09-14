@@ -523,3 +523,21 @@ describe("no chip state is settled by source order", () => {
     },
   );
 });
+
+/*
+ * The base plugin's stylesheet declares the very same chips one class deep, and
+ * loads first. A rule here that dropped back to that weight would look identical
+ * in this file and lose outright on the page, so the weight is asserted.
+ */
+describe("the palette outweighs the base plugin's own chip rules", () => {
+  const CHIP = /\.two-term-chip(?![\w-])|\.two-company-mode-chip(?![\w-])/;
+  const MODIFIER = /--(selected|single)(?![\w-])/;
+
+  it("every chip selector carries more than one class", () => {
+    const underweight = RULES.filter((rule) => CHIP.test(rule.selector))
+      .filter((rule) => rule.score[1] < (MODIFIER.test(rule.selector) ? 3 : 2))
+      .map((rule) => `${rule.selector} scores ${rule.score.join(",")}`);
+
+    expect(underweight).toEqual([]);
+  });
+});

@@ -131,12 +131,12 @@ summary::marker {
 }
 
 /* A disabled chip keeps its resting look: the wash would promise a dead click. */
-.two-term-chip.two-term-chip:hover:where(
-    :not(.two-term-chip--selected):not(.two-term-chip--single)
-  ):not(:disabled),
-.two-term-chip.two-term-chip:focus:where(
-    :not(.two-term-chip--selected):not(.two-term-chip--single)
-  ):not(:disabled) {
+.two-term-chip.two-term-chip:hover:where(:not(.two-term-chip--selected)):not(
+    :disabled
+  ),
+.two-term-chip.two-term-chip:focus:where(:not(.two-term-chip--selected)):not(
+    :disabled
+  ) {
   padding: 9px 17px; /* absorbs the pixel the border gives up */
   border: 1px solid #091030;
   background: #e3e3e3;
@@ -185,12 +185,7 @@ summary::marker {
 
 /* Neither hover nor focus changes a filled chip. */
 .two-term-chip.two-term-chip.two-term-chip--selected,
-.two-term-chip.two-term-chip.two-term-chip--selected:hover,
-.two-term-chip.two-term-chip.two-term-chip--selected:focus,
-.two-term-chip.two-term-chip.two-term-chip--selected:active,
-.two-company-mode-chip.two-company-mode-chip.two-company-mode-chip--selected,
-.two-company-mode-chip.two-company-mode-chip.two-company-mode-chip--selected:hover,
-.two-company-mode-chip.two-company-mode-chip.two-company-mode-chip--selected:focus {
+.two-company-mode-chip.two-company-mode-chip.two-company-mode-chip--selected {
   border-color: #091030;
   background: #091030;
   color: #fff;
@@ -209,11 +204,9 @@ summary::marker {
 }
 
 /* Sole offered term: informational, not interactive — filled like a selected chip, no checkmark.
-   `:disabled` on every selector, because the base sheet scores its own that way. */
+   The hover arm is carried because the base sheet scores its own with `:disabled`. */
 .two-term-chip.two-term-chip.two-term-chip--single,
-.two-term-chip.two-term-chip.two-term-chip--single:disabled,
-.two-term-chip.two-term-chip.two-term-chip--single:hover,
-.two-term-chip.two-term-chip.two-term-chip--single:disabled:hover {
+.two-term-chip.two-term-chip.two-term-chip--single:hover {
   border-color: #091030;
   background: #091030;
   color: #fff;
