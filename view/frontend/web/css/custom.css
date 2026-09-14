@@ -131,8 +131,9 @@ summary::marker {
 }
 
 /* A disabled chip keeps its resting look: the wash would promise a dead click.
-   The label colour is restated because a theme's own `button:hover` rule
-   outranks the resting rule and would otherwise repaint it (ABN-598). */
+   The label is stated rather than left to the resting rule (0-2-0), which a
+   theme rule as ordinary as `.checkout button:hover` (0-2-1) outranks for as
+   long as the state lasts (ABN-598). */
 .two-term-chip.two-term-chip:hover:where(:not(.two-term-chip--selected)):not(
     :disabled
   ),
@@ -163,8 +164,7 @@ summary::marker {
   color: #091030;
 }
 
-/* The label colour is restated because a theme's own `button:hover` rule
-   outranks the resting rule and would otherwise repaint it (ABN-598). */
+/* The label is stated for the same reason as the term chip's wash (ABN-598). */
 .two-company-mode-chip.two-company-mode-chip:hover:where(
     :not(.two-company-mode-chip--selected)
   ),
