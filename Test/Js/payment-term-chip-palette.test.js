@@ -141,6 +141,10 @@ beforeAll(() => {
           selector,
           match: unwrapWhere(selector),
           body: rule.style.cssText,
+          declarations: Array.from(rule.style).map((property) => [
+            property,
+            rule.style.getPropertyValue(property),
+          ]),
         });
       });
   });
@@ -242,12 +246,6 @@ const FILLED = {
   text: WHITE,
 };
 const WASHED = { width: "1px", border: ACCENT, background: GREY, text: ACCENT };
-const FILLED_WASHED = {
-  width: "2px",
-  border: ACCENT,
-  background: GREY,
-  text: WHITE,
-};
 
 describe("the unbranded chip palette", () => {
   it.each([
@@ -286,14 +284,14 @@ describe("the unbranded chip palette", () => {
     {
       classes: [TERM, TERM_SELECTED],
       focused: true,
-      ...FILLED_WASHED,
-      case: "focus washes a selected term chip but keeps its 2px edge",
+      ...FILLED,
+      case: "focus leaves a selected term chip filled",
     },
     {
       classes: [TERM, TERM_SELECTED, HOVER],
       focused: true,
-      ...FILLED_WASHED,
-      case: "focus decides a selected term chip that is hovered too",
+      ...FILLED,
+      case: "hover and focus together leave a selected term chip filled",
     },
     {
       classes: [TERM, TERM_SINGLE],
@@ -347,14 +345,14 @@ describe("the unbranded chip palette", () => {
     {
       classes: [MODE, MODE_SELECTED],
       focused: true,
-      ...FILLED_WASHED,
-      case: "focus washes a selected mode chip but keeps its 2px edge",
+      ...FILLED,
+      case: "focus leaves a selected mode chip filled",
     },
     {
       classes: [MODE, MODE_SELECTED, HOVER],
       focused: true,
-      ...FILLED_WASHED,
-      case: "focus decides a selected mode chip that is hovered too",
+      ...FILLED,
+      case: "hover and focus together leave a selected mode chip filled",
     },
   ])(
     "$case",
@@ -417,4 +415,111 @@ describe("the unbranded chip palette", () => {
 
     expect(style.opacity || "1").toBe(opacity);
   });
+});
+
+/*
+ * jsdom cascades by source position and ignores specificity, so no computed
+ * style can show which rule a browser would pick. This walks the matches
+ * instead: for every property a chip state contests, the strongest selector
+ * that declares it has to agree with every other selector of that strength.
+ */
+describe("no chip state is settled by source order", () => {
+  it.each([
+    { classes: [TERM], case: "a term chip at rest" },
+    { classes: [TERM, HOVER], case: "a hovered term chip" },
+    { classes: [TERM], focused: true, case: "a focused term chip" },
+    {
+      classes: [TERM, HOVER],
+      focused: true,
+      case: "a hovered, focused term chip",
+    },
+    {
+      classes: [TERM, FOCUS_VISIBLE],
+      focused: true,
+      case: "a keyboard-focused term chip",
+    },
+    { classes: [TERM], disabled: true, case: "a busy term chip" },
+    {
+      classes: [TERM, HOVER],
+      disabled: true,
+      case: "a hovered busy term chip",
+    },
+    { classes: [TERM, TERM_SELECTED], case: "a selected term chip" },
+    {
+      classes: [TERM, TERM_SELECTED, HOVER],
+      case: "a hovered selected term chip",
+    },
+    {
+      classes: [TERM, TERM_SELECTED],
+      focused: true,
+      case: "a focused selected term chip",
+    },
+    {
+      classes: [TERM, TERM_SINGLE],
+      disabled: true,
+      case: "the sole offered term",
+    },
+    {
+      classes: [TERM, TERM_SINGLE, HOVER],
+      disabled: true,
+      case: "the hovered sole offered term",
+    },
+    { classes: [MODE], case: "a mode chip at rest" },
+    { classes: [MODE, HOVER], case: "a hovered mode chip" },
+    { classes: [MODE], focused: true, case: "a focused mode chip" },
+    {
+      classes: [MODE, HOVER],
+      focused: true,
+      case: "a hovered, focused mode chip",
+    },
+    {
+      classes: [MODE, FOCUS_VISIBLE],
+      focused: true,
+      case: "a keyboard-focused mode chip",
+    },
+    { classes: [MODE, MODE_SELECTED], case: "a selected mode chip" },
+    {
+      classes: [MODE, MODE_SELECTED, HOVER],
+      case: "a hovered selected mode chip",
+    },
+    {
+      classes: [MODE, MODE_SELECTED],
+      focused: true,
+      case: "a focused selected mode chip",
+    },
+  ])(
+    "$case has one strongest rule per property",
+    ({ classes, disabled, focused }) => {
+      const el = document.createElement("button");
+      el.className = classes.join(" ");
+      el.disabled = !!disabled;
+      document.body.appendChild(el);
+      if (focused) {
+        el.focus();
+      }
+
+      const strongest = new Map();
+      RULES.filter((rule) => el.matches(rule.match)).forEach((rule) => {
+        rule.declarations.forEach(([property, value]) => {
+          const held = strongest.get(property);
+          if (!held || compare(rule.score, held.score) > 0) {
+            strongest.set(property, {
+              score: rule.score,
+              values: new Set([value]),
+            });
+          } else if (compare(rule.score, held.score) === 0) {
+            held.values.add(value);
+          }
+        });
+      });
+
+      const ties = [...strongest]
+        .filter(([, held]) => held.values.size > 1)
+        .map(
+          ([property, held]) => `${property}: ${[...held.values].join(" vs ")}`,
+        );
+
+      expect(ties).toEqual([]);
+    },
+  );
 });
