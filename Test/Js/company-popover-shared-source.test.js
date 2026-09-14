@@ -193,10 +193,13 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
                     throw new Error(`border-width is per-side: ${rule.selectorText}`);
                 }
                 const width = parseFloat(lengths[0]);
-                const [top, left] = rule.style
-                    .getPropertyValue('padding')
-                    .split(/\s+/)
-                    .map(parseFloat);
+                const sides = rule.style.getPropertyValue('padding').trim().split(/\s+/);
+                // Three or four sides put the left edge somewhere other than
+                // the second value, which is where this reads it from.
+                if (sides.length > 2) {
+                    throw new Error(`padding is per-side: ${rule.selectorText}`);
+                }
+                const [top, left] = sides.map(parseFloat);
 
                 return { selector: rule.selectorText, top: top + width, left: left + width };
             });

@@ -92,13 +92,15 @@ const WHERE = /:where\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
 
 /** @returns {number[]} [ids, classes, types] per the selectors spec */
 function specificity(selector) {
-  // An attribute value can hold anything, including a space that would read as
-  // a descendant type selector, and a pseudo-element scores in a column this
-  // does not track. Neither is guessed at.
-  if (/\[[^\]]*=/.test(selector) || selector.includes("::")) {
+  // A pseudo-element scores in a column this does not track, so it is refused
+  // rather than guessed at. An attribute is emptied instead: whatever its value
+  // held, including a space that would otherwise read as a type selector, the
+  // whole of it scores as one class.
+  if (selector.includes("::")) {
     throw new Error(`specificity() cannot score: ${selector}`);
   }
   const score = [0, 0, 0];
+  selector = selector.replace(/\[[^\]]*\]/g, "[]");
   // `:where()` contributes nothing; `:not()`/`:is()`/`:has()` contribute the
   // highest specificity among their arguments.
   let rest = selector.replace(WHERE, " ");
@@ -112,7 +114,7 @@ function specificity(selector) {
   score[0] += (rest.match(/#[\w-]+/g) || []).length;
   score[1] +=
     (rest.match(/\.[\w-]+/g) || []).length +
-    (rest.match(/\[[^\]]*\]/g) || []).length +
+    (rest.match(/\[\]/g) || []).length +
     (rest.match(/:[\w-]+/g) || []).length;
   score[2] += (rest.match(/(^|[\s>+~])[a-z][\w-]*/gi) || []).length;
   return score;
@@ -132,30 +134,35 @@ const GUARD = /:(where|not|is|has)\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
 
 /**
  * An attribute value can hold a space, which would then read as a descendant
- * combinator and drop the rule out of the chip set unscored, so it is emptied
- * before the guards are.
+ * combinator, so it is emptied first. Guards come out entirely rather than
+ * becoming a space, which would split one compound into two.
  *
  * @returns {string} the selector with its attribute values and guards blanked
  */
 function bareOf(selector) {
   return selector
     .replace(/\[[^\]]*\]/g, "[]")
-    .replace(GUARD, " ")
+    .replace(GUARD, "")
     .trim();
 }
 
-/** @returns {number} chip classes the selector names outside its guards */
-function names(bare) {
+/** @returns {string} the compound the selector actually paints */
+function subjectOf(selector) {
+  return bareOf(selector)
+    .split(/[\s>+~]+/)
+    .pop();
+}
+
+/** @returns {number} chip classes the compound names */
+function names(compound) {
   return Math.max(
-    ...FAMILIES.map((family) => (bare.match(family) || []).length),
+    ...FAMILIES.map((family) => (compound.match(family) || []).length),
   );
 }
 
 /** @returns {boolean} whether the rule paints a chip's own box */
 function aimsAtAChip(selector) {
-  const bare = bareOf(selector);
-  // A descendant rule paints something inside the chip, not the chip itself.
-  return names(bare) > 0 && !/[\s>+~]/.test(bare);
+  return names(subjectOf(selector)) > 0;
 }
 
 const STYLE_RULE = 1;
@@ -224,9 +231,7 @@ beforeAll(() => {
    * so never refused. Rules that aim at no chip are left alone — the sheet also
    * holds shapes `specificity()` will not score, and none of them paints a chip.
    */
-  RULES.filter((rule) => aimsAtAChip(rule.selector)).forEach((rule) => {
-    rule.score = specificity(rule.selector);
-  });
+  RULES.filter((rule) => aimsAtAChip(rule.selector)).forEach(scoreOf);
 
   applied = document.createElement("style");
   document.head.appendChild(applied);
@@ -234,6 +239,21 @@ beforeAll(() => {
   probe.className = "two-probe";
   document.body.appendChild(probe);
 });
+
+/**
+ * Every rule aimed at a chip is scored up front, so an unscoreable one is
+ * refused whether or not a modelled state happens to match it. A rule aimed
+ * elsewhere is scored here, when it turns out to reach a chip after all — being
+ * unscored must never quietly mean being left out of the cascade.
+ *
+ * @returns {number[]} the selector's specificity
+ */
+function scoreOf(rule) {
+  if (!rule.score) {
+    rule.score = specificity(rule.selector);
+  }
+  return rule.score;
+}
 
 /**
  * jsdom resolves the cascade by source position alone, so `getComputedStyle` on
@@ -252,10 +272,8 @@ function styleOf(classes, { disabled = false, focused = false } = {}) {
     el.focus();
   }
 
-  applied.textContent = RULES.filter(
-    (rule) => rule.score && el.matches(rule.match),
-  )
-    .sort((a, b) => compare(a.score, b.score) || a.index - b.index)
+  applied.textContent = RULES.filter((rule) => el.matches(rule.match))
+    .sort((a, b) => compare(scoreOf(a), scoreOf(b)) || a.index - b.index)
     .map((rule) => `.two-probe { ${rule.body} }`)
     .join("\n");
 
@@ -326,15 +344,22 @@ describe("the specificity the palette is ordered by", () => {
       score: [1, 1, 0],
       case: "an id outranks every class",
     },
+    {
+      selector: '.two-term-chip[data-single="1"]',
+      score: [0, 2, 0],
+      case: "an attribute value scores as one class",
+    },
+    {
+      selector: '.two-term-chip[data-name="a b"]',
+      score: [0, 2, 0],
+      case: "a space inside an attribute value is not a type selector",
+    },
   ])("$case", ({ selector, score }) => {
     expect(specificity(selector)).toEqual(score);
   });
 
-  it.each([
-    { selector: '.two-term-chip[data-x="y z"]', case: "an attribute value" },
-    { selector: ".two-term-chip::before", case: "a pseudo-element" },
-  ])("refuses to score $case", ({ selector }) => {
-    expect(() => specificity(selector)).toThrow(/cannot score/);
+  it("refuses to score a pseudo-element", () => {
+    expect(() => specificity(".two-term-chip::before")).toThrow(/cannot score/);
   });
 
   it("refuses to unwrap a :where() selector list", () => {
@@ -603,21 +628,19 @@ describe("no chip state is settled by source order", () => {
       }
 
       const strongest = new Map();
-      RULES.filter((rule) => rule.score && el.matches(rule.match)).forEach(
-        (rule) => {
-          rule.declarations.forEach(([property, value]) => {
-            const held = strongest.get(property);
-            if (!held || compare(rule.score, held.score) > 0) {
-              strongest.set(property, {
-                score: rule.score,
-                values: new Set([value]),
-              });
-            } else if (compare(rule.score, held.score) === 0) {
-              held.values.add(value);
-            }
-          });
-        },
-      );
+      RULES.filter((rule) => el.matches(rule.match)).forEach((rule) => {
+        rule.declarations.forEach(([property, value]) => {
+          const held = strongest.get(property);
+          if (!held || compare(scoreOf(rule), held.score) > 0) {
+            strongest.set(property, {
+              score: scoreOf(rule),
+              values: new Set([value]),
+            });
+          } else if (compare(scoreOf(rule), held.score) === 0) {
+            held.values.add(value);
+          }
+        });
+      });
 
       const ties = [...strongest]
         .filter(([, held]) => held.values.size > 1)
@@ -639,8 +662,8 @@ describe("the palette outweighs the base plugin's own chip rules", () => {
   it("every chip selector names its class often enough to outweigh one", () => {
     const underweight = RULES.filter((rule) => aimsAtAChip(rule.selector))
       .filter((rule) => {
-        const bare = bareOf(rule.selector);
-        return names(bare) < (MODIFIER.test(bare) ? 3 : 2);
+        const subject = subjectOf(rule.selector);
+        return names(subject) < (MODIFIER.test(subject) ? 3 : 2);
       })
       .map((rule) => rule.selector);
 
