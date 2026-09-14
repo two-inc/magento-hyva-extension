@@ -123,6 +123,41 @@ function compare(a, b) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+const FAMILIES = [
+  /\.two-term-chip(?:--[\w-]+)?(?![\w-])/g,
+  /\.two-company-mode-chip(?:--[\w-]+)?(?![\w-])/g,
+];
+const MODIFIER = /--(selected|single)(?![\w-])/;
+const GUARD = /:(where|not|is|has)\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
+
+/**
+ * An attribute value can hold a space, which would then read as a descendant
+ * combinator and drop the rule out of the chip set unscored, so it is emptied
+ * before the guards are.
+ *
+ * @returns {string} the selector with its attribute values and guards blanked
+ */
+function bareOf(selector) {
+  return selector
+    .replace(/\[[^\]]*\]/g, "[]")
+    .replace(GUARD, " ")
+    .trim();
+}
+
+/** @returns {number} chip classes the selector names outside its guards */
+function names(bare) {
+  return Math.max(
+    ...FAMILIES.map((family) => (bare.match(family) || []).length),
+  );
+}
+
+/** @returns {boolean} whether the rule paints a chip's own box */
+function aimsAtAChip(selector) {
+  const bare = bareOf(selector);
+  // A descendant rule paints something inside the chip, not the chip itself.
+  return names(bare) > 0 && !/[\s>+~]/.test(bare);
+}
+
 const STYLE_RULE = 1;
 const KEYFRAMES_RULE = 7;
 const GROUPING_RULES = [4, 12]; // @media, @supports
@@ -183,25 +218,22 @@ beforeAll(() => {
   });
   parsed.remove();
 
+  /*
+   * Scored here, not when a rule first reaches a chip: a rule keyed on an
+   * attribute no modelled element carries would otherwise never be scored and
+   * so never refused. Rules that aim at no chip are left alone — the sheet also
+   * holds shapes `specificity()` will not score, and none of them paints a chip.
+   */
+  RULES.filter((rule) => aimsAtAChip(rule.selector)).forEach((rule) => {
+    rule.score = specificity(rule.selector);
+  });
+
   applied = document.createElement("style");
   document.head.appendChild(applied);
   probe = document.createElement("button");
   probe.className = "two-probe";
   document.body.appendChild(probe);
 });
-
-/**
- * Scored when a rule first reaches a chip, never before: the sheet also carries
- * rules no chip can match, and some of those are shapes `specificity()` refuses.
- *
- * @returns {number[]} the selector's specificity
- */
-function scoreOf(rule) {
-  if (!rule.score) {
-    rule.score = specificity(rule.selector);
-  }
-  return rule.score;
-}
 
 /**
  * jsdom resolves the cascade by source position alone, so `getComputedStyle` on
@@ -220,8 +252,10 @@ function styleOf(classes, { disabled = false, focused = false } = {}) {
     el.focus();
   }
 
-  applied.textContent = RULES.filter((rule) => el.matches(rule.match))
-    .sort((a, b) => compare(scoreOf(a), scoreOf(b)) || a.index - b.index)
+  applied.textContent = RULES.filter(
+    (rule) => rule.score && el.matches(rule.match),
+  )
+    .sort((a, b) => compare(a.score, b.score) || a.index - b.index)
     .map((rule) => `.two-probe { ${rule.body} }`)
     .join("\n");
 
@@ -569,19 +603,21 @@ describe("no chip state is settled by source order", () => {
       }
 
       const strongest = new Map();
-      RULES.filter((rule) => el.matches(rule.match)).forEach((rule) => {
-        rule.declarations.forEach(([property, value]) => {
-          const held = strongest.get(property);
-          if (!held || compare(scoreOf(rule), held.score) > 0) {
-            strongest.set(property, {
-              score: scoreOf(rule),
-              values: new Set([value]),
-            });
-          } else if (compare(scoreOf(rule), held.score) === 0) {
-            held.values.add(value);
-          }
-        });
-      });
+      RULES.filter((rule) => rule.score && el.matches(rule.match)).forEach(
+        (rule) => {
+          rule.declarations.forEach(([property, value]) => {
+            const held = strongest.get(property);
+            if (!held || compare(rule.score, held.score) > 0) {
+              strongest.set(property, {
+                score: rule.score,
+                values: new Set([value]),
+              });
+            } else if (compare(rule.score, held.score) === 0) {
+              held.values.add(value);
+            }
+          });
+        },
+      );
 
       const ties = [...strongest]
         .filter(([, held]) => held.values.size > 1)
@@ -600,30 +636,13 @@ describe("no chip state is settled by source order", () => {
  * in this file and lose outright on the page, so the weight is asserted.
  */
 describe("the palette outweighs the base plugin's own chip rules", () => {
-  const FAMILIES = [
-    /\.two-term-chip(?:--[\w-]+)?(?![\w-])/g,
-    /\.two-company-mode-chip(?:--[\w-]+)?(?![\w-])/g,
-  ];
-  const MODIFIER = /--(selected|single)(?![\w-])/;
-  const GUARD = /:(where|not|is|has)\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
-
-  /** @returns {number} chip classes the selector names outside its guards */
-  function names(bare) {
-    return Math.max(
-      ...FAMILIES.map((family) => (bare.match(family) || []).length),
-    );
-  }
-
   it("every chip selector names its class often enough to outweigh one", () => {
-    const underweight = RULES.map((rule) => ({
-      selector: rule.selector,
-      // Guards carry no weight of their own, and a descendant rule paints
-      // something inside the chip rather than the chip's own box.
-      bare: rule.selector.replace(GUARD, " ").trim(),
-    }))
-      .filter(({ bare }) => names(bare) > 0 && !/[\s>+~]/.test(bare))
-      .filter(({ bare }) => names(bare) < (MODIFIER.test(bare) ? 3 : 2))
-      .map(({ selector }) => selector);
+    const underweight = RULES.filter((rule) => aimsAtAChip(rule.selector))
+      .filter((rule) => {
+        const bare = bareOf(rule.selector);
+        return names(bare) < (MODIFIER.test(bare) ? 3 : 2);
+      })
+      .map((rule) => rule.selector);
 
     expect(underweight).toEqual([]);
   });

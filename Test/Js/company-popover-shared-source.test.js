@@ -132,8 +132,14 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         'padding'
     ];
 
-    // The base stylesheet's own 5px/10px, plus the 2px edge ABN-593 specifies.
+    /*
+     * This module out-scores the base stylesheet on the mode chip, so it owns
+     * the chip's box outright — moving the base's padding no longer moves the
+     * Hyva chip, and nothing else pins this. 7/12 IS that box.
+     */
     const EDGE = { top: 7, left: 12 };
+
+    const LENGTH = /^[\d.]+(px|em|rem)?$/;
 
     const STYLE_RULE = 1;
     const KEYFRAMES_RULE = 7;
@@ -178,8 +184,15 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         const boxes = modeChipRules()
             .filter((rule) => rule.style.getPropertyValue('padding'))
             .map((rule) => {
-                const width = parseFloat(rule.style.getPropertyValue('border-width'))
-                    || parseFloat(rule.style.getPropertyValue('border'));
+                const edge = rule.style.getPropertyValue('border-width')
+                    || rule.style.getPropertyValue('border');
+                // Per-side widths would make one number per edge, and the sum
+                // below would silently pin only the first of them.
+                const lengths = edge.trim().split(/\s+/).filter((part) => LENGTH.test(part));
+                if (lengths.length > 1) {
+                    throw new Error(`border-width is per-side: ${rule.selectorText}`);
+                }
+                const width = parseFloat(lengths[0]);
                 const [top, left] = rule.style
                     .getPropertyValue('padding')
                     .split(/\s+/)

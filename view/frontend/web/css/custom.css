@@ -151,7 +151,10 @@ summary::marker {
 }
 
 .two-company-mode-chip.two-company-mode-chip {
-  padding: 5px 10px; /* pinned here against the 2px border above */
+  /* This module out-scores the base sheet here, so it owns the mode chip's
+     box: 5px + the 2px edge below, pinned by TWO-25503's guard. The term chip
+     was always this module's own, so only its stability is asserted. */
+  padding: 5px 10px;
   border: 2px solid #e3e3e3;
   background: #fff;
   color: #091030;
