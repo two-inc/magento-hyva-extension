@@ -100,7 +100,6 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
     test.each([
         ['.two-company-field-wrap', 'the positioning context the panel anchors against'],
         ['.two-company-dropdown', 'the panel and every part of it'],
-        ['.two-company-mode-chip', 'the chips, and the row they sit in'],
         ['.two-company-search-back', 'the route back out of manual entry'],
         ['.two-field-action-link', 'the appearance the shared chrome gives an action link'],
         ['.two-hidden', 'the panel\'s own hiding class, which no theme defines']
@@ -111,5 +110,37 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
         );
 
         expect(read(CUSTOM_CSS)).not.toMatch(ownRule);
+    });
+
+    /*
+     * The mode chips are the one exception (ABN-593): they share the term
+     * chips' palette, which this module already owns, so they are repainted
+     * here. Padding rides along only as the counterweight to the border width
+     * declared beside it — anything that lays the chips out is still the base
+     * stylesheet's alone.
+     */
+    test('the mode chips are repainted here, never re-laid-out', () => {
+        const PALETTE = [
+            'color',
+            'background',
+            'background-color',
+            'border',
+            'border-color',
+            'border-width',
+            'border-style',
+            'outline',
+            'outline-offset',
+            'padding'
+        ];
+        const style = document.createElement('style');
+        style.textContent = read(CUSTOM_CSS);
+        document.head.appendChild(style);
+
+        const declared = Array.from(style.sheet.cssRules)
+            .filter((rule) => (rule.selectorText || '').includes('.two-company-mode-chip'))
+            .flatMap((rule) => Array.from(rule.style));
+
+        expect(declared.length).toBeGreaterThan(0);
+        expect(declared.filter((property) => !PALETTE.includes(property))).toEqual([]);
     });
 });

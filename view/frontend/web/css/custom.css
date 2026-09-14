@@ -108,22 +108,16 @@ summary::marker {
   opacity: 0.8;
 }
 
-/*
- * Chip colour palette mirrors `.mode_item` on the Luma checkout
- * (Registered Organisation / Sole Trader toggle): solid Two-brand blue
- * (#3043d1) for the selected state, white fill with blue text for
- * unselected. Brand overlays that ship a different palette override
- * these rules from their own custom.css which loads after this one.
- */
+/* Brand overlays repaint these chips from their own custom.css, loaded after this one. */
 .two-term-chip {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 8px 16px;
-  border: 2px solid #e0e0e0;
+  border: 2px solid #e3e3e3;
   border-radius: 8px;
   background: #fff;
-  color: #3043d1;
+  color: #091030;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
@@ -134,13 +128,45 @@ summary::marker {
   position: relative;
 }
 
-.two-term-chip:hover {
-  border-color: #3043d1;
+/* A disabled chip keeps its resting look: the wash would promise a dead click.
+   `:where()` leaves a brand overlay's own hover rule able to outrank this. */
+.two-term-chip:hover:where(
+    :not(.two-term-chip--selected):not(.two-term-chip--single):not(:disabled)
+  ),
+.two-term-chip:focus:where(
+    :not(.two-term-chip--selected):not(.two-term-chip--single):not(:disabled)
+  ) {
+  padding: 9px 17px; /* absorbs the pixel the border gives up */
+  border: 1px solid #091030;
+  background: #e3e3e3;
 }
-/* A focused chip has to be identifiable against its own blue fill, so the ring
-   sits outside it. Keyboard only: a clicked chip gets no ring (WCAG 2.4.7). */
-.two-term-chip:focus-visible {
-  outline: 2px solid #3043d1;
+
+/* The base sheet's hover rule carries no disabled guard, so the resting edge has
+   to be restated for the chips the wash above deliberately skips. */
+.two-term-chip:hover:disabled:where(:not(.two-term-chip--selected)) {
+  border-color: #e3e3e3;
+}
+
+/* The base plugin's sheet loads first; these repaint its capture-mode chips. */
+.two-company-mode-chip {
+  padding: 5px 10px; /* pinned here against the 2px border below */
+  border: 2px solid #e3e3e3;
+  background: #fff;
+  color: #091030;
+}
+
+/* Nothing ever disables a mode chip, so there is no exemption to carve out. */
+.two-company-mode-chip:hover:where(:not(.two-company-mode-chip--selected)),
+.two-company-mode-chip:focus:where(:not(.two-company-mode-chip--selected)) {
+  padding: 6px 11px;
+  border: 1px solid #091030;
+  background: #e3e3e3;
+}
+
+/* Ring sits outside the chip so it reads against the filled selected state. */
+.two-term-chip:focus-visible,
+.two-company-mode-chip:focus-visible {
+  outline: 2px solid #091030;
   outline-offset: 2px;
 }
 /* Busy: every chip is disabled while any one is mid-round-trip. The sole-term
@@ -153,10 +179,27 @@ summary::marker {
 .two-term-chip--selected,
 .two-term-chip--selected:hover,
 .two-term-chip--selected:focus,
-.two-term-chip--selected:active {
-  border-color: #3043d1;
-  background: #3043d1;
+.two-term-chip--selected:active,
+.two-company-mode-chip--selected,
+.two-company-mode-chip--selected:hover,
+.two-company-mode-chip--selected:focus {
+  border-color: #091030;
   color: #fff;
+}
+
+/* Split from the edge above so focus decides the fill by matching, never by
+   source order, on a chip that is hovered and focused at once. */
+.two-term-chip--selected:not(:focus),
+.two-term-chip--selected:hover:not(:focus),
+.two-company-mode-chip--selected:not(:focus),
+.two-company-mode-chip--selected:hover:not(:focus) {
+  background: #091030;
+}
+
+/* Focused, the 2px accent edge is what delineates the chip. */
+.two-term-chip.two-term-chip--selected:focus,
+.two-company-mode-chip.two-company-mode-chip--selected:focus {
+  background: #e3e3e3;
 }
 
 .two-soletrader-link {
@@ -171,14 +214,14 @@ summary::marker {
   text-align: left;
 }
 
-/* Sole-available-term chip: informational, not interactive. Filled blue
-   like the selected chip but no checkmark; days stack above the surcharge
-   like the multi-term chips — matches Luma's
-   two-term-chip--single. */
-.two-term-chip--single,
-.two-term-chip--single:hover {
-  border-color: #3043d1;
-  background: #3043d1;
+/* Sole offered term: informational, not interactive — filled like a selected chip, no checkmark.
+   `:disabled` on every selector, because the base sheet scores its own that way. */
+.two-term-chip.two-term-chip--single,
+.two-term-chip.two-term-chip--single:disabled,
+.two-term-chip.two-term-chip--single:hover,
+.two-term-chip.two-term-chip--single:disabled:hover {
+  border-color: #091030;
+  background: #091030;
   color: #fff;
   cursor: default;
   font-size: 14px;
