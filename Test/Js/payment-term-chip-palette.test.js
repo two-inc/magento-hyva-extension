@@ -670,3 +670,34 @@ describe("the palette outweighs the base plugin's own chip rules", () => {
     expect(underweight).toEqual([]);
   });
 });
+
+/*
+ * ABN-598. A state rule that washes the box but leaves `color` to the resting
+ * rule hands the label to any theme rule scoring above the resting rule for as
+ * long as the state lasts. The computed styles above cannot see that: jsdom
+ * injects only this stylesheet, with no theme in the cascade to lose to.
+ */
+describe("an unselected chip's label is pinned by the state's own rule", () => {
+  it.each([
+    { classes: [TERM, HOVER], case: "a hovered term chip" },
+    { classes: [TERM], focused: true, case: "a focused term chip" },
+    { classes: [MODE, HOVER], case: "a hovered mode chip" },
+    { classes: [MODE], focused: true, case: "a focused mode chip" },
+  ])("$case declares the label colour itself", ({ classes, focused }) => {
+    const el = document.createElement("button");
+    el.className = classes.join(" ");
+    document.body.appendChild(el);
+    if (focused) {
+      el.focus();
+    }
+
+    const winner = RULES.filter((rule) => el.matches(rule.match))
+      .filter((rule) =>
+        rule.declarations.some(([property]) => property === "color"),
+      )
+      .sort((a, b) => compare(scoreOf(a), scoreOf(b)) || a.index - b.index)
+      .pop();
+
+    expect(winner.selector).toMatch(new RegExp(`\\.${HOVER}|:focus(?![\\w-])`));
+  });
+});
