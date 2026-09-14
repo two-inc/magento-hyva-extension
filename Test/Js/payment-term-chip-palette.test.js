@@ -55,9 +55,11 @@ function splitSelectors(selectorText) {
 }
 
 /**
- * nwsapi cannot match `:not()` nested in `:where()`, and `:where(X)` selects
- * exactly what X does — only its specificity differs, and that is scored from
- * the untouched selector.
+ * nwsapi answers `.c:where(:not(.d))` false for `<button class="c">`, which is
+ * wrong, so the guard is unwrapped before matching: `:where(X)` selects exactly
+ * what X does, and its specificity is scored from the untouched selector.
+ * Unwrapping a selector list would splice a comma into the middle of a
+ * compound, so that shape is refused rather than mangled.
  *
  * @returns {string} the same selector with every `:where()` wrapper unwrapped
  */
@@ -76,7 +78,11 @@ function unwrapWhere(selector) {
       else if (out[close] === ")") depth--;
       if (depth > 0) close++;
     }
-    out = out.slice(0, at) + out.slice(open, close) + out.slice(close + 1);
+    const inner = out.slice(open, close);
+    if (splitSelectors(inner).length > 1) {
+      throw new Error(`:where() carries a selector list: ${selector}`);
+    }
+    out = out.slice(0, at) + inner + out.slice(close + 1);
   }
   return out;
 }
@@ -86,6 +92,12 @@ const WHERE = /:where\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
 
 /** @returns {number[]} [ids, classes, types] per the selectors spec */
 function specificity(selector) {
+  // An attribute value can hold anything, including a space that would read as
+  // a descendant type selector, and a pseudo-element scores in a column this
+  // does not track. Neither is guessed at.
+  if (/\[[^\]]*=/.test(selector) || selector.includes("::")) {
+    throw new Error(`specificity() cannot score: ${selector}`);
+  }
   const score = [0, 0, 0];
   // `:where()` contributes nothing; `:not()`/`:is()`/`:has()` contribute the
   // highest specificity among their arguments.
@@ -111,6 +123,30 @@ function compare(a, b) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
+const STYLE_RULE = 1;
+const KEYFRAMES_RULE = 7;
+const GROUPING_RULES = [4, 12]; // @media, @supports
+
+/**
+ * A rule nested in an at-rule paints exactly as one at the top level does, so
+ * skipping the wrapper would let a repaint through unseen. Anything this model
+ * has no reading for stops the suite rather than being dropped.
+ *
+ * @returns {CSSStyleRule[]} every style rule, in document order
+ */
+function styleRules(rules, into = []) {
+  Array.from(rules).forEach((rule) => {
+    if (rule.type === STYLE_RULE) {
+      into.push(rule);
+    } else if (GROUPING_RULES.includes(rule.type)) {
+      styleRules(rule.cssRules, into);
+    } else if (rule.type !== KEYFRAMES_RULE) {
+      throw new Error(`unreadable at-rule: ${rule.cssText.slice(0, 60)}`);
+    }
+  });
+  return into;
+}
+
 const RULES = [];
 let probe;
 let applied;
@@ -127,10 +163,7 @@ beforeAll(() => {
   const parsed = document.createElement("style");
   parsed.textContent = source;
   document.head.appendChild(parsed);
-  Array.from(parsed.sheet.cssRules).forEach((rule, index) => {
-    if (!rule.selectorText) {
-      return;
-    }
+  styleRules(parsed.sheet.cssRules).forEach((rule, index) => {
     splitSelectors(rule.selectorText)
       // A pseudo-element paints beside the chip box, never it, and nwsapi
       // refuses to compile one.
@@ -148,7 +181,6 @@ beforeAll(() => {
         });
       });
   });
-  RULES.forEach((rule) => (rule.score = specificity(rule.selector)));
   parsed.remove();
 
   applied = document.createElement("style");
@@ -159,11 +191,23 @@ beforeAll(() => {
 });
 
 /**
- * jsdom resolves the cascade by source position alone and mismatches `:where()`
- * while doing it, so `getComputedStyle` on the chip itself reports values no
- * browser paints. `Element.matches()` is accurate, so the winners are chosen
- * here — by specificity, then position — and replayed onto one probe element,
- * where position order is the answer.
+ * Scored when a rule first reaches a chip, never before: the sheet also carries
+ * rules no chip can match, and some of those are shapes `specificity()` refuses.
+ *
+ * @returns {number[]} the selector's specificity
+ */
+function scoreOf(rule) {
+  if (!rule.score) {
+    rule.score = specificity(rule.selector);
+  }
+  return rule.score;
+}
+
+/**
+ * jsdom resolves the cascade by source position alone, so `getComputedStyle` on
+ * the chip itself reports values no browser paints. The winners are chosen here
+ * instead — by specificity, then position — and replayed onto one probe
+ * element, where position order is the answer.
  *
  * @returns {Object<string, string>} the properties a chip in this state paints
  */
@@ -177,7 +221,7 @@ function styleOf(classes, { disabled = false, focused = false } = {}) {
   }
 
   applied.textContent = RULES.filter((rule) => el.matches(rule.match))
-    .sort((a, b) => compare(a.score, b.score) || a.index - b.index)
+    .sort((a, b) => compare(scoreOf(a), scoreOf(b)) || a.index - b.index)
     .map((rule) => `.two-probe { ${rule.body} }`)
     .join("\n");
 
@@ -233,8 +277,34 @@ describe("the specificity the palette is ordered by", () => {
       score: [0, 3, 0],
       case: "an attribute scores as a class",
     },
+    {
+      selector: "button.two-term-chip",
+      score: [0, 1, 1],
+      case: "a type selector scores in its own column",
+    },
+    {
+      selector: "body button.two-term-chip",
+      score: [0, 1, 2],
+      case: "a descendant type selector scores again",
+    },
+    {
+      selector: "#checkout .two-term-chip",
+      score: [1, 1, 0],
+      case: "an id outranks every class",
+    },
   ])("$case", ({ selector, score }) => {
     expect(specificity(selector)).toEqual(score);
+  });
+
+  it.each([
+    { selector: '.two-term-chip[data-x="y z"]', case: "an attribute value" },
+    { selector: ".two-term-chip::before", case: "a pseudo-element" },
+  ])("refuses to score $case", ({ selector }) => {
+    expect(() => specificity(selector)).toThrow(/cannot score/);
+  });
+
+  it("refuses to unwrap a :where() selector list", () => {
+    expect(() => unwrapWhere(".a:where(.x, .y)")).toThrow(/selector list/);
   });
 });
 
@@ -502,12 +572,12 @@ describe("no chip state is settled by source order", () => {
       RULES.filter((rule) => el.matches(rule.match)).forEach((rule) => {
         rule.declarations.forEach(([property, value]) => {
           const held = strongest.get(property);
-          if (!held || compare(rule.score, held.score) > 0) {
+          if (!held || compare(scoreOf(rule), held.score) > 0) {
             strongest.set(property, {
-              score: rule.score,
+              score: scoreOf(rule),
               values: new Set([value]),
             });
-          } else if (compare(rule.score, held.score) === 0) {
+          } else if (compare(scoreOf(rule), held.score) === 0) {
             held.values.add(value);
           }
         });
@@ -530,22 +600,30 @@ describe("no chip state is settled by source order", () => {
  * in this file and lose outright on the page, so the weight is asserted.
  */
 describe("the palette outweighs the base plugin's own chip rules", () => {
-  const TOKENS = [
-    /\.two-term-chip(?![\w-])/g,
-    /\.two-company-mode-chip(?![\w-])/g,
+  const FAMILIES = [
+    /\.two-term-chip(?:--[\w-]+)?(?![\w-])/g,
+    /\.two-company-mode-chip(?:--[\w-]+)?(?![\w-])/g,
   ];
+  const MODIFIER = /--(selected|single)(?![\w-])/;
+  const GUARD = /:(where|not|is|has)\([^()]*(?:\([^()]*\)[^()]*)*\)/g;
 
-  /** @returns {number} times the selector names the chip's own class */
-  function repeats(selector) {
+  /** @returns {number} chip classes the selector names outside its guards */
+  function names(bare) {
     return Math.max(
-      ...TOKENS.map((token) => (selector.match(token) || []).length),
+      ...FAMILIES.map((family) => (bare.match(family) || []).length),
     );
   }
 
-  it("every chip selector names its class at least twice", () => {
-    const underweight = RULES.filter(
-      (rule) => repeats(rule.selector) === 1,
-    ).map((rule) => rule.selector);
+  it("every chip selector names its class often enough to outweigh one", () => {
+    const underweight = RULES.map((rule) => ({
+      selector: rule.selector,
+      // Guards carry no weight of their own, and a descendant rule paints
+      // something inside the chip rather than the chip's own box.
+      bare: rule.selector.replace(GUARD, " ").trim(),
+    }))
+      .filter(({ bare }) => names(bare) > 0 && !/[\s>+~]/.test(bare))
+      .filter(({ bare }) => names(bare) < (MODIFIER.test(bare) ? 3 : 2))
+      .map(({ selector }) => selector);
 
     expect(underweight).toEqual([]);
   });

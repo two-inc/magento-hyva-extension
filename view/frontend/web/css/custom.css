@@ -157,7 +157,6 @@ summary::marker {
   color: #091030;
 }
 
-/* Nothing ever disables a mode chip, so there is no exemption to carve out. */
 .two-company-mode-chip.two-company-mode-chip:hover:where(
     :not(.two-company-mode-chip--selected)
   ),
@@ -183,7 +182,6 @@ summary::marker {
   opacity: 0.7;
 }
 
-/* Neither hover nor focus changes a filled chip. */
 .two-term-chip.two-term-chip.two-term-chip--selected,
 .two-company-mode-chip.two-company-mode-chip.two-company-mode-chip--selected {
   border-color: #091030;

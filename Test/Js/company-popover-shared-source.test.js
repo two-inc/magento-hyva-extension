@@ -115,32 +115,82 @@ describe('no copy of the popover\'s styling creeps back in here', () => {
     /*
      * The mode chips are the one exception (ABN-593): they share the term
      * chips' palette, which this module already owns, so they are repainted
-     * here. Padding rides along only as the counterweight to the border width
-     * declared beside it — anything that lays the chips out is still the base
-     * stylesheet's alone.
+     * here. Padding is allowed only as the counterweight to the border width
+     * declared beside it, and only at the one box size below — anything that
+     * re-lays-out the chips is still the base stylesheet's alone.
      */
-    test('the mode chips are repainted here, never re-laid-out', () => {
-        const PALETTE = [
-            'color',
-            'background',
-            'background-color',
-            'border',
-            'border-color',
-            'border-width',
-            'border-style',
-            'outline',
-            'outline-offset',
-            'padding'
-        ];
+    const PALETTE = [
+        'color',
+        'background',
+        'background-color',
+        'border',
+        'border-color',
+        'border-width',
+        'border-style',
+        'outline',
+        'outline-offset',
+        'padding'
+    ];
+
+    // The base stylesheet's own 5px/10px, plus the 2px edge ABN-593 specifies.
+    const EDGE = { top: 7, left: 12 };
+
+    const STYLE_RULE = 1;
+    const KEYFRAMES_RULE = 7;
+    const GROUPING_RULES = [4, 12]; // @media, @supports
+
+    /**
+     * A rule nested in an at-rule paints exactly as one at the top level does.
+     * @returns {CSSStyleRule[]} every style rule, in document order
+     */
+    function styleRules(rules, into = []) {
+        Array.from(rules).forEach((rule) => {
+            if (rule.type === STYLE_RULE) {
+                into.push(rule);
+            } else if (GROUPING_RULES.includes(rule.type)) {
+                styleRules(rule.cssRules, into);
+            } else if (rule.type !== KEYFRAMES_RULE) {
+                throw new Error(`unreadable at-rule: ${rule.cssText.slice(0, 60)}`);
+            }
+        });
+        return into;
+    }
+
+    /** @returns {CSSStyleRule[]} the rules this module aims at a mode chip */
+    function modeChipRules() {
         const style = document.createElement('style');
         style.textContent = read(CUSTOM_CSS);
         document.head.appendChild(style);
 
-        const declared = Array.from(style.sheet.cssRules)
-            .filter((rule) => (rule.selectorText || '').includes('.two-company-mode-chip'))
-            .flatMap((rule) => Array.from(rule.style));
+        return styleRules(style.sheet.cssRules).filter((rule) =>
+            rule.selectorText.includes('.two-company-mode-chip')
+        );
+    }
+
+    test('the mode chips are repainted here, never re-laid-out', () => {
+        const declared = modeChipRules().flatMap((rule) => Array.from(rule.style));
 
         expect(declared.length).toBeGreaterThan(0);
         expect(declared.filter((property) => !PALETTE.includes(property))).toEqual([]);
+    });
+
+    test('a mode chip rule that pads also pins the border it pads against', () => {
+        const boxes = modeChipRules()
+            .filter((rule) => rule.style.getPropertyValue('padding'))
+            .map((rule) => {
+                const width = parseFloat(rule.style.getPropertyValue('border-width'))
+                    || parseFloat(rule.style.getPropertyValue('border'));
+                const [top, left] = rule.style
+                    .getPropertyValue('padding')
+                    .split(/\s+/)
+                    .map(parseFloat);
+
+                return { selector: rule.selectorText, top: top + width, left: left + width };
+            });
+
+        expect(boxes.length).toBeGreaterThan(0);
+        boxes.forEach(({ selector, top, left }) => {
+            expect({ selector, top, left }).toEqual({ selector, ...EDGE });
+        });
     });
 });
