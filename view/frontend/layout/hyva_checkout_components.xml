@@ -49,8 +49,16 @@
             </block>
         </referenceBlock>
         <referenceBlock name="price-summary.total-segments">
+            <!-- Same template registered under both codes: "both" display
+                 mode emits both segments (excl-tax + incl-tax rows), any
+                 other mode emits only two_surcharge. The block's `as` alias
+                 is how Hyva Checkout's TotalSegment block resolves its
+                 segment, so the incl row needs its own block/alias pair. -->
             <block name="price-summary.total-segment.two_surcharge"
                    as="two_surcharge"
+                   template="Two_GatewayHyva::checkout/price-summary/total-segments/two_surcharge.phtml"/>
+            <block name="price-summary.total-segment.two_surcharge_incl"
+                   as="two_surcharge_incl"
                    template="Two_GatewayHyva::checkout/price-summary/total-segments/two_surcharge.phtml"/>
         </referenceBlock>
     </body>

@@ -7,8 +7,8 @@ namespace Two\GatewayHyva\Test\Unit\Etc;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Sanity check on etc/module.xml. Catches namespace drift like ABN-362 where the
- * ABN-layer commit renamed every PHP class but missed the module declaration.
+ * Sanity check on etc/module.xml. Catches namespace drift where an overlay-layer
+ * commit renamed every PHP class but missed the module declaration.
  */
 class ModuleConfigTest extends TestCase
 {
@@ -47,7 +47,7 @@ class ModuleConfigTest extends TestCase
 
     /**
      * Read the PSR-4 namespace from composer.json to derive the expected module
-     * name. Two\GatewayHyva → Two_GatewayHyva, ABN\GatewayHyva → ABN_GatewayHyva.
+     * name. Two\GatewayHyva → Two_GatewayHyva, Overlay\GatewayHyva → Overlay_GatewayHyva.
      */
     private function expectedModuleName(): string
     {
@@ -62,7 +62,7 @@ class ModuleConfigTest extends TestCase
         $composer = json_decode(file_get_contents(__DIR__ . '/../../../composer.json'), true);
         $namespaces = array_keys($composer['autoload']['psr-4']);
         $primary = rtrim($namespaces[0], '\\');
-        // Two\GatewayHyva → Two_Gateway, ABN\GatewayHyva → ABN_Gateway
+        // Two\GatewayHyva → Two_Gateway, Overlay\GatewayHyva → Overlay_Gateway
         $parts = explode('\\', $primary);
         return $parts[0] . '_Gateway';
     }

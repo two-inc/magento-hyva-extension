@@ -17,7 +17,7 @@ TWO_STORE_COUNTRY    ?= NO
 HYVA_PACKAGIST_URL   ?= https://hyva-themes.repo.packagist.com
 export PORT
 
-.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-js
 
 .DEFAULT_GOAL := help
 
@@ -53,7 +53,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	# di:compile before deploy:mode:set developer — di:compile resets Magento
 	# to production mode as a side effect, so setting developer mode first
-	# gets silently wiped. Ordering bug originally caught on abn-develop
+	# gets silently wiped. Ordering bug originally caught on an overlay branch
 	# (commit 28a55d8), ported forward here.
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
@@ -164,8 +164,24 @@ logs:
 # ==============================================================================
 
 ## Create a versioned zip archive
+#
+# The zip is stamped with a `.two-deployed-commit` file at the module root
+# (TWO-25205). A zip-dropped install carries neither a `.git` gitlink nor a
+# Composer registry entry, so the stamp is the ONLY way
+# Two\GatewayHyva\Model\Provenance can report which commit that shop is
+# running. `git archive --add-file` injects it straight into the zip, so the
+# working tree is never touched (the stamp is written to a temp dir and the
+# temp dir is removed whether the archive succeeds or fails).
 archive:
-	eval $$(bumpver show --environ) && git archive --format zip HEAD > two-gateway-hyva-extension-$${CURRENT_VERSION}.zip
+	@set -e; \
+	eval $$(bumpver show --environ); \
+	stampdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$stampdir"' EXIT INT TERM; \
+	git rev-parse --short=7 HEAD > "$$stampdir/.two-deployed-commit"; \
+	git archive --format zip \
+		--add-file="$$stampdir/.two-deployed-commit" \
+		HEAD > two-gateway-hyva-extension-$${CURRENT_VERSION}.zip; \
+	echo "stamped $$(cat "$$stampdir/.two-deployed-commit") into two-gateway-hyva-extension-$${CURRENT_VERSION}.zip"
 bumpver-%:
 	SKIP=commit-msg bumpver update --$*
 ## Bump patch version
@@ -195,3 +211,10 @@ test:
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
+
+## Run the browser JS test suite (Jest + jsdom, needs host Node 20+)
+test-js:
+	@if [ ! -d node_modules ] || [ package-lock.json -nt node_modules ]; then \
+		npm ci --no-audit --no-fund; \
+	fi
+	npm run test:js

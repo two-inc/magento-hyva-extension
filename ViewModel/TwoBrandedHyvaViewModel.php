@@ -30,7 +30,7 @@ final class TwoBrandedHyvaViewModel implements BrandedHyvaViewModelInterface
 
     public function getPaymentTermsMessage(string $termsLink, string $brandFullName): Phrase
     {
-        // Mirror the Luma ConfigProvider's T&C-acceptance pattern so
+        // Mirror the Luma checkout's T&C-acceptance pattern so
         // Two-brand renders the same source phrase on both Luma and
         // Hyva checkouts — no Luma↔Hyva copy divergence. %1 is the
         // translated "payment terms" phrase wrapped in an anchor;

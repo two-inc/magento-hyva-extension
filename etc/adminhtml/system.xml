@@ -17,6 +17,12 @@
                     <label>Version</label>
                     <frontend_model>Two\GatewayHyva\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
+                <field id="company_search_status" translate="label comment" type="button" sortOrder="20" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Company search</label>
+                    <comment>Whether the company-search control is offered to buyers at checkout.</comment>
+                    <frontend_model>Two\GatewayHyva\Block\Adminhtml\System\Config\Field\CompanySearchStatus</frontend_model>
+                </field>
             </group>
         </section>
     </system>

@@ -12,8 +12,7 @@ use Hyva\Checkout\Magewire\Checkout\Payment\MethodList as HyvaMethodList;
 /**
  * Hyva's payment method list refreshes on address and coupon changes
  * but not on carrier selection, while the shipping cost is part of the
- * basket value Two's minimum-order gate compares
- * (Two\Gateway\Service\Order\MinimumOrderGate via Two::isAvailable()).
+ * basket value the base module's minimum-order availability gate compares.
  * Without this listener a carrier change that moves the basket across
  * the minimum leaves a stale method list on screen until some other
  * refresh event fires.

@@ -8,205 +8,136 @@
 declare(strict_types=1);
 
 use Hyva\Theme\ViewModel\HyvaCsp;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\GetQuoteDetails;
 use Hyva\Theme\Model\ViewModelRegistry;
 
 /** @var HyvaCsp $hyvaCsp */
 /** @var ViewModelRegistry $viewModels */
 
+/**
+ * The brand's own payment method code. Supplied as a layout argument — see
+ * hyva_checkout_index_index.xml, in this same commit, because without it
+ * getData() returns null and the first getMethodCode() call fatals.
+ *
+ * @var BrandedHyvaViewModelInterface $brandedViewModel
+ */
+$brandedViewModel = $block->getData('branded_view_model');
+
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $quoteDetails = $quoteModel->getQuoteDetails() ?? [];
 $currentQuoteId = $quoteDetails['quote_id'] ?? '';
+$methodCode = $brandedViewModel->getMethodCode();
 ?>
 <script>
-    /**
-     * Track initialization state to prevent duplicate order intents
+    /*
+     * Resolved AT CALL TIME, not at script-eval time, and never by calling
+     * `window.twoGatewayReadCompanySelection(...)` bare.
+     *
+     * Call-time matters: the accessors are published by
+     * gateway_method-csp-js.phtml, and this template does not reliably render
+     * after it. shipping_company.phtml goes into `head.additional` and so runs
+     * BEFORE the publisher; resolving at eval time there would bind the fallback
+     * permanently and silently disable carry-over. Deferring makes all three
+     * consumers order-independent instead of two-of-three-happen-to-be-fine.
+     *
+     * The fallback matters because these call sites sit inside the `alpine:init`
+     * / `DOMContentLoaded` handlers that also register the pickers: a bare call
+     * on a page without the publisher would throw BEFORE those registrations and
+     * leave a dead checkout step.
+     * Degrading to "no carry-over between steps" is survivable; that is not.
+     *
+     * Uniquely named per template because these share one global lexical scope,
+     * so a name reused across two templates is a redeclaration SyntaxError that
+     * kills whichever block is evaluated second.
+     *
+     * (Deliberately not writing the script start tag in that sentence: Hyva
+     * picks the element to sign with a LAST-occurrence, case-insensitive search
+     * for it, so a second literal anywhere in the file — a comment included —
+     * leaves the real tag unsigned and the enforced checkout CSP refuses the
+     * whole block. Test/Unit/View/CspInlineScriptTemplateTest guards it.)
      */
-    let paymentFieldsInitialized = false;
+    const twoPaymentReadSelection = function() {
+        return (window.twoGatewayReadCompanySelection
+            || function() { return {}; })();
+    };
+    const twoPaymentWriteSelection = function(patch) {
+        return (window.twoGatewayWriteCompanySelection
+            || function() { return {}; })(patch);
+    };
 
     /**
      * Current quote ID from PHP - used to detect new checkout sessions
      */
-    const currentQuoteId = '<?= $currentQuoteId ?>';
-
-    /**
-     * Check if billing address is set to be the same as shipping address.
-     * This respects Hyva Checkout's billingAsShipping checkbox state.
-     */
-    const isBillingAsShipping = () => {
-        const checkbox = document.querySelector('#billing-as-shipping');
-        return checkbox ? checkbox.checked : true; // Default to true if checkbox not found
-    };
-
-    /**
-     * Update payment fields with company data and handle event synchronization.
-     * Only updates if billing is same as shipping OR if forceUpdate is true.
-     */
-    const updatePaymentFields = (companyName, companyId, triggerOrderIntent = false, forceUpdate = false) => {
-        // Only sync if billing is same as shipping, unless force update is requested
-        if (!forceUpdate && !isBillingAsShipping()) {
-            return;
-        }
-        const companyNameInput = document.querySelector('[data-name="company_name"]');
-        const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-        if (companyNameInput && companyIdInput) {
-            // Update DOM elements
-            companyNameInput.value = companyName;
-            companyIdInput.disabled = false;
-            companyIdInput.value = companyId;
-            companyIdInput.disabled = true;
-            companyIdInput.style.backgroundColor = "#D3D3D3";
-
-            // Sync with Alpine.js component using event dispatch
-            const alpineComponent = companyNameInput.closest('[x-data]');
-            if (alpineComponent) {
-                alpineComponent.dispatchEvent(new CustomEvent('update-company-data', {
-                    detail: {
-                        companyName,
-                        companyId
-                    }
-                }));
-            }
-
-            // Update saved company details
-            const updatedCompanyDetails = {
-                company_name: companyName,
-                company_id: companyId
-            };
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify(updatedCompanyDetails));
-
-            // Trigger order intent if requested
-            if (triggerOrderIntent) {
-                window.dispatchEvent(new Event("dispatch-order-intent"));
-            }
-        }
-    };
+    const currentQuoteId = '<?= $escaper->escapeJs((string) $currentQuoteId) ?>';
 
     document.addEventListener("DOMContentLoaded", () => {
 
         /**
-         * Clear stale company data when a new checkout session is detected.
-         * This prevents the "Please select a country" error when ordering again in the same browser session.
+         * Drop the previous ORDER's company from this store view's selection.
+         *
+         * Quote only. The storage key carries the store view, so a store change
+         * needs no comparison — each view keeps its own selection.
+         *
+         * Byte-identical in shape to the sibling in shipping_company.phtml, and
+         * deliberately so: that template is behind the company-search config
+         * flag, so on a store with the flag OFF this is the only clearer there
+         * is and it has to behave the same.
          */
         const clearStaleCompanyDataIfNeeded = () => {
-            const storedData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const storedQuoteId = storedData.quote_id || '';
+            const storedData = twoPaymentReadSelection();
+            const storedQuoteId = String(storedData.quote_id || '');
 
-            // If quote ID changed (new order started), clear company data
             if (currentQuoteId && storedQuoteId && storedQuoteId !== currentQuoteId) {
-                hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify({
+                twoPaymentWriteSelection({
                     quote_id: currentQuoteId,
                     company_name: '',
                     company_id: '',
                     manual_mode: false
-                }));
-                hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
+                });
+                return;
+            }
+
+            if (!storedQuoteId && currentQuoteId) {
+                twoPaymentWriteSelection({ quote_id: currentQuoteId });
             }
         };
         clearStaleCompanyDataIfNeeded();
 
-        /**
-         * Initialize previously saved company details only if it doesn't exist.
-         * This preserves company information across page reloads while allowing clean state for new sessions.
+        /*
+         * The same new-order clear for the BILLING company record
+         * (TWO-25326).
+         *
+         * Not optional housekeeping: the billing record is a second storage key
+         * with the same lifetime problem as the first, and without this a
+         * company named on one order's payment step would be restored, as a
+         * captured read-only label, onto the NEXT order — for a buyer who never
+         * chose it and cannot see where it came from.
+         *
+         * Guarded on the helpers existing: this template runs before
+         * gateway_method-csp-js.phtml publishes them, so the call happens on
+         * DOMContentLoaded, by which point it has.
          */
-        if (!hyva.getBrowserStorage().getItem('already_saved_company_details')) {
-            hyva.getBrowserStorage().setItem('already_saved_company_details', JSON.stringify({}));
-        }
-
-        /**
-         * Initialize payment fields with persisted shipping company data on page load.
-         * This ensures payment section reflects the current shipping selection after page refresh.
-         */
-        const initializePaymentFieldsFromShipping = () => {
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const shippingCompany = shippingCompanySelectionData.company_name || "";
-            const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-
-            // Also check if shipping field has persisted data (backend persistence)
-            const shippingField = document.getElementById('shipping-company');
-            const persistedShippingValue = shippingField ? shippingField.value : "";
-
-
-            if (shippingCompany && shippingCompanyId) {
-                // Use stored shipping selection data
-                updatePaymentFields(shippingCompany, shippingCompanyId);
-                paymentFieldsInitialized = true;
-            } else if (persistedShippingValue) {
-                // If shipping field has persisted value but no storage data,
-                // we should restore the storage data for consistency
-                const shippingCompanyIdField = document.getElementById('shipping-company_id');
-                const persistedShippingIdValue = shippingCompanyIdField ? shippingCompanyIdField.value : "";
-
-                if (persistedShippingIdValue) {
-                    const restoredData = {
-                        company_name: persistedShippingValue,
-                        company_id: persistedShippingIdValue
-                    };
-                    hyva.getBrowserStorage().setItem('shipping_company_selection', JSON.stringify(restoredData));
-                    updatePaymentFields(persistedShippingValue, persistedShippingIdValue);
-                    paymentFieldsInitialized = true;
-                }
-            }
-        };
-
-        // Use MutationObserver to watch for payment form elements
-        const observeForPaymentForm = () => {
-            if (paymentFieldsInitialized) return;
-
-            const companyNameInput = document.querySelector('[data-name="company_name"]');
-            const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-            if (companyNameInput && companyIdInput) {
-                // Payment form is already ready, initialize immediately
-                initializePaymentFieldsFromShipping();
-                paymentFieldsInitialized = true;
-
-                // Check if two_payment is already selected on page load and trigger order intent if needed
-                const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
-                    const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                    if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
-                        window.dispatchEvent(new Event("dispatch-order-intent"));
-                    }
-                }
+        const clearStaleBillingCompanyIfNeeded = () => {
+            if (!window.twoGatewayReadBillingCompany
+                || !window.twoGatewayWriteBillingCompany
+                || !window.twoGatewayClearBillingCompany) {
                 return;
             }
+            const billingData = window.twoGatewayReadBillingCompany();
+            if (Object.keys(billingData).length === 0) return;
 
-            // Set up MutationObserver to watch for payment form elements
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.type === 'childList') {
-                        const companyNameInput = document.querySelector('[data-name="company_name"]');
-                        const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-                        if (companyNameInput && companyIdInput) {
-                            initializePaymentFieldsFromShipping();
-                            paymentFieldsInitialized = true;
-
-                            // Check if two_payment is already selected and trigger order intent
-                            const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                            if (activePaymentMethod && activePaymentMethod.value === "two_payment") {
-                                const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                                if (shippingCompanySelectionData.company_name && shippingCompanySelectionData.company_id) {
-                                    window.dispatchEvent(new Event("dispatch-order-intent"));
-                                }
-                            }
-                            observer.disconnect(); // Stop observing once we've found the elements
-                        }
-                    }
-                });
-            });
-
-            // Start observing the document for changes
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+            const billingQuoteId = String(billingData.quote_id || '');
+            if (currentQuoteId && billingQuoteId && billingQuoteId !== currentQuoteId) {
+                window.twoGatewayClearBillingCompany();
+                return;
+            }
+            if (!billingQuoteId && currentQuoteId) {
+                window.twoGatewayWriteBillingCompany({ quote_id: currentQuoteId });
+            }
         };
+        clearStaleBillingCompanyIfNeeded();
 
-        // Start observing for payment form
-        observeForPaymentForm();
     });
 
 
@@ -214,99 +145,25 @@ $currentQuoteId = $quoteDetails['quote_id'] ?? '';
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is "two_payment" */
-        if (paymentMethod === "two_payment") {
-            /** Initialize payment method but don't overwrite existing company data */
-            /** The company data should only be updated by shipping section selections */
-
-            /** Retrieve previously saved company details to check if order intent should be dispatched */
-            const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-            const alreadySavedCompanyDetails = JSON.parse(hyva.getBrowserStorage().getItem('already_saved_company_details') || "{}");
-
-            const shippingCompany = shippingCompanySelectionData.company_name || "";
-            const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-            const savedShippingCompany = alreadySavedCompanyDetails.company_name || "";
-            const savedShippingCompanyId = alreadySavedCompanyDetails.company_id || "";
-
-            /** If we have shipping company data but payment fields are empty, populate them */
-            if (shippingCompany && shippingCompanyId) {
-                const companyNameInput = document.querySelector('[data-name="company_name"]');
-                const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-                if (companyNameInput && companyIdInput && !companyNameInput.value) {
-                    // Use the centralized update function for consistency and Alpine.js sync
-                    updatePaymentFields(shippingCompany, shippingCompanyId);
-                    paymentFieldsInitialized = true; // Mark as initialized to prevent duplicates
-                }
+        /** Check if the selected payment method is this brand's Two method */
+        if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
+            // TWO-25554: the record answers for a page whose identities are not seeded.
+            const invoiceCompany = (window.twoGatewayResolveInvoiceCompany
+                || function () { return { companyId: "" }; })();
+            if (invoiceCompany.companyId) {
+                window.dispatchEvent(new Event("dispatch-order-intent"));
+                return;
             }
 
-            // Trigger order intent if we have company data
-            if (shippingCompany && shippingCompanyId) {
+            const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
+                || function () { return {}; })();
+            const capturedCompany = billingCompanySelectionData.company_name || "";
+            const capturedCompanyId = billingCompanySelectionData.company_id || "";
+
+            if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));
             }
         }
-    });
-
-
-    /** Listen for shipping company selection events to update payment fields */
-    window.addEventListener("shipping-company-selected", (event) => {
-        // Only sync if billing is same as shipping
-        if (!isBillingAsShipping()) {
-            return;
-        }
-
-        /** Retrieve the latest shipping company selection data */
-        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-        const shippingCompany = shippingCompanySelectionData.company_name || "";
-        const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-
-        if (shippingCompany !== "" && shippingCompanyId !== "") {
-            /** Update payment method fields with shipping selection */
-            const companyNameInput = document.querySelector('[data-name="company_name"]');
-            const companyIdInput = document.querySelector('[data-name="company_id"]');
-
-            if (companyNameInput && companyIdInput) {
-                // Check if two_payment method is active for order intent
-                const activePaymentMethod = document.querySelector('input[name="payment-method-option"]:checked');
-                const shouldTriggerOrderIntent = activePaymentMethod && activePaymentMethod.value === "two_payment";
-
-                // Use the centralized update function for consistency and Alpine.js sync
-                updatePaymentFields(shippingCompany, shippingCompanyId, shouldTriggerOrderIntent, true);
-            }
-        }
-    });
-
-    /**
-     * Listen for Hyva Checkout's billing_as_shipping_address_updated Magewire event.
-     * When user toggles the "billing same as shipping" checkbox, we need to
-     * sync or clear payment company fields accordingly.
-     */
-    document.addEventListener('DOMContentLoaded', () => {
-        // Wait for Magewire to be available, then register event listener
-        const registerMagewireListener = () => {
-            if (typeof Magewire !== 'undefined' && Magewire.on) {
-                Magewire.on('billing_as_shipping_address_updated', (data) => {
-                    const billingAsShipping = data?.billingAsShipping;
-
-                    if (billingAsShipping) {
-                        // Billing is now same as shipping - sync company data from shipping
-                        const shippingCompanySelectionData = JSON.parse(hyva.getBrowserStorage().getItem('shipping_company_selection') || "{}");
-                        const shippingCompany = shippingCompanySelectionData.company_name || "";
-                        const shippingCompanyId = shippingCompanySelectionData.company_id || "";
-
-                        if (shippingCompany && shippingCompanyId) {
-                            updatePaymentFields(shippingCompany, shippingCompanyId, false, true);
-                        }
-                    }
-                    // When billingAsShipping is false, let the user enter their own billing company
-                });
-            } else {
-                // Retry after a short delay if Magewire is not ready
-                setTimeout(registerMagewireListener, 100);
-            }
-        };
-
-        registerMagewireListener();
     });
 </script>
 <?php $hyvaCsp->registerInlineScript(); ?>

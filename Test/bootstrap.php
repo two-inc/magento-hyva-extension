@@ -7,6 +7,16 @@ declare(strict_types=1);
 // and require them here.
 
 require __DIR__ . '/Stubs/HyvaCheckoutPaymentMethodList.php';
+require __DIR__ . '/Stubs/MagentoComponentRegistrar.php';
+require __DIR__ . '/Stubs/MagentoConfigFormField.php';
+require __DIR__ . '/Stubs/MagentoTranslate.php';
+require __DIR__ . '/Stubs/MagentoBlockArgumentInterface.php';
+require __DIR__ . '/Stubs/TermStillAvailablePlugin.php';
+require __DIR__ . '/Stubs/SurchargeDisplay.php';
+require __DIR__ . '/Stubs/CheckoutTileCopy.php';
+require __DIR__ . '/Stubs/TwoGatewayCacheType.php';
+require __DIR__ . '/Stubs/GatewayMethodDependencies.php';
+require __DIR__ . '/Stubs/MethodMetaDataPluginDependencies.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';

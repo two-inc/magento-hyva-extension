@@ -14,9 +14,27 @@ namespace Magewirephp\Magewire {
             /** @var array<string, string> */
             protected $listeners = [];
 
+            /** @var array<int, array{event: string, params: array<int, mixed>}> */
+            public array $emitted = [];
+
+            /** @var array<int, string> */
+            public array $errorMessages = [];
+
             public function getListeners(): array
             {
                 return $this->listeners;
+            }
+
+            /** @param mixed ...$params */
+            public function emit(string $event, ...$params): void
+            {
+                $this->emitted[] = ['event' => $event, 'params' => $params];
+            }
+
+            /** @param \Magento\Framework\Phrase|string $message */
+            public function dispatchErrorMessage($message): void
+            {
+                $this->errorMessages[] = (string) $message;
             }
         }
     }

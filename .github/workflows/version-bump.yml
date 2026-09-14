@@ -1,0 +1,151 @@
+name: Version bump
+
+# Computes the version a pull request should land on `staging` with, and commits
+# it onto the PR's own head branch.
+#
+# The version now describes the CHANGE, derived from the conventional-commit
+# types of the commits the PR adds, which is what semver actually asks for. The
+# previous scheme bumped by branch rule (patch on `staging`, minor on `main`),
+# so the same change got a different version depending on where it merged. That
+# is not semver, and the number carried no information.
+#
+# Trigger is `pull_request` to `staging` ONLY. In particular:
+#
+#   - NEVER on a `staging -> main` PR. Promotion to `main` does not invent a new
+#     version; it releases the version already in the tree. The `main` side only
+#     tags what is there and cuts the Release.
+#   - No longer on `push:` to `staging`. Bumping after the merge meant the
+#     version that reviewers saw was never the version that shipped, and it also
+#     needed a push to a protected branch (see the token note below).
+#
+# The whole decision lives in .github/scripts/decide-bump-level.sh, which emits
+# an ABSOLUTE `set_version`. It is idempotent by construction (`max()` against
+# the version already on the head), so a re-run, a synchronize triggered by this
+# workflow's own bump commit, or a second fix commit on the same PR all compute
+# the same answer and commit nothing.
+#
+# TOKEN: the org App, not the default GITHUB_TOKEN. Two reasons, both hard
+# requirements rather than preferences:
+#
+#   1. Pushes made with GITHUB_TOKEN do not trigger workflows, so CI would never
+#      re-run on the bump commit and the PR's checks would refer to a SHA that
+#      is no longer the head.
+#   2. The App (id 2603046) holds `bypass_mode: always` on the branch-protection
+#      ruleset in each of these repos.
+#
+# On (2): this scheme also sidesteps the GH013 failure that the old
+# push-to-staging workflow hits, because the bump is now a commit on the PR's
+# own head branch, and `terraform-managed-branch-protection` only targets
+# refs/heads/{main,release,staging}. A feature branch is outside its conditions
+# entirely.
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+# Never cancel in flight: a cancelled run could be killed between the bump
+# commit and the push.
+concurrency:
+  group: version-bump-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  self-test:
+    # The version arithmetic is unit-tested against throwaway git repos (no
+    # network, no docker, a couple of seconds). It gates the bump below rather
+    # than living in the main CI workflow, so the logic can never write a commit
+    # it cannot pass its own tests on.
+    name: Test the version computation
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - run: .github/scripts/test-decide-bump-level.sh
+
+  bump:
+    name: Compute version for this PR
+    needs: self-test
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    timeout-minutes: 10
+    # Fork PRs cannot be pushed to. Nothing here is secret-dependent for a fork
+    # to abuse; it simply has nowhere to write, so skip rather than fail red.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          # The PR's head BRANCH, not the merge ref: the bump commit has to land
+          # on the contributor's branch, so HEAD must be the branch tip and not
+          # a detached merge commit.
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Fetch main and staging
+        # The decision reads the released version off `origin/main` and the PR's
+        # commit range off `origin/staging`. Explicit refspecs because
+        # actions/checkout only guarantees the ref it was asked for.
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/staging:refs/remotes/origin/staging"
+
+      - name: Compute the version
+        id: decide
+        run: .github/scripts/decide-bump-level.sh origin/staging HEAD
+
+      - uses: actions/setup-python@v6
+        if: steps.decide.outputs.changed == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install bumpver
+        if: steps.decide.outputs.changed == 'true'
+        run: pip install bumpver
+
+      - name: Configure git identity
+        if: steps.decide.outputs.changed == 'true'
+        run: |
+          git config user.name "two-inc-app[bot]"
+          git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
+
+      - name: Write the version (files + commit only)
+        if: steps.decide.outputs.changed == 'true'
+        env:
+          SET_VERSION: ${{ steps.decide.outputs.set_version }}
+        run: |
+          set -euo pipefail
+          # bumpver.toml is the single source of truth for which files carry the
+          # version. --set-version because the script hands over an absolute
+          # version, not a level: no level can express "clamp to the version the
+          # tree already has". --no-tag-commit --no-push because tags belong to
+          # `main` and the push is done explicitly below.
+          bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
+
+      - name: Push onto the PR branch
+        if: steps.decide.outputs.changed == 'true'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: git push origin "HEAD:refs/heads/${HEAD_REF}"
+
+      - name: Summary
+        env:
+          SET_VERSION: ${{ steps.decide.outputs.set_version }}
+          CHANGED: ${{ steps.decide.outputs.changed }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: |
+          if [ "$CHANGED" = "true" ]; then
+            echo "Version set to ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Version already correct at ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          fi

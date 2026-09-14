@@ -1,0 +1,360 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25326. Exactly ONE company-search control per merchant (not per
+ * platform), rendering either in the address area or in the payment tile,
+ * driven by the CORE module's `enable_company_search` setting. Hyvä has no
+ * setting of its own; CheckoutConfig::getIsCompanySearchInPaymentTile() reads
+ * the core setting directly.
+ *
+ * Every other suite in this directory over these two templates predates that
+ * switch and keeps testing each control's OWN behaviour as if it were the
+ * active one (see the harness's per-file default in hyva-harness.js for why).
+ * This file is the one place that asserts on the LOCATION SWITCH itself: the
+ * production default (address-area) leaves the tile text-only with no
+ * duplicate control, and the opposite setting leaves the address step with a
+ * plain, unenhanced field rather than a second rich one.
+ */
+
+"use strict";
+
+const H = require("./hyva-harness");
+
+const PAYMENT_TILE_TRUE = [[/^\$isCompanySearchInPaymentTile$/, "1"]];
+// gateway_method*.phtml's harness DEFAULT is payment_tile=true (see
+// hyva-harness.js's per-file default and its comment for why) — the opposite
+// of production's actual default. This override is what makes THIS test
+// exercise the real production default rather than the harness's
+// legacy-preserving one.
+const ADDRESS_AREA = [[/^\$isCompanySearchInPaymentTile$/, ""]];
+
+describe("company-search location (TWO-25326)", () => {
+  describe("default (address-area) configuration", () => {
+    test("the payment tile has no editable company controls at all", () => {
+      const markup = H.renderTemplateMarkup(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        ADDRESS_AREA,
+      );
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      expect(doc.querySelector('[data-name="company_tile_label"]')).toBeNull();
+      expect(
+        doc.querySelector('[data-name="company_tile_change"]'),
+      ).toBeNull();
+      expect(doc.querySelector('input[name="payment[company_name]"]')).not
+        .toBeNull();
+      expect(
+        doc.querySelector('input[name="payment[company_name]"]').type,
+      ).toBe("hidden");
+      expect(doc.querySelector('input[name="payment[company_id]"]')).not
+        .toBeNull();
+      expect(
+        doc.querySelector('input[name="payment[company_id]"]').type,
+      ).toBe("hidden");
+      // No visible/enhanced search markup at all in this mode.
+      expect(doc.querySelector(".two-company-search")).toBeNull();
+      expect(doc.querySelector('[data-manual="true"]')).toBeNull();
+    });
+
+    test("the not-available notice element exists, gated on the same brand switch as the approved one", () => {
+      const showBinding = H.readAlpineBinding(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        '[data-name="order_intent_not_available_message"]',
+        "x-show",
+      );
+      const textBinding = H.readAlpineBinding(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        '[data-name="order_intent_not_available_message"]',
+        "x-text",
+      );
+
+      expect(showBinding).toBe("twoTileNotAvailableVisible");
+      expect(textBinding).toBe("orderIntentNotAvailableNotice");
+    });
+
+    test("the address-step control is the one that renders — its Alpine root is present", () => {
+      const markup = H.renderTemplateMarkup(H.COMPANY_NAME_MARKUP_TEMPLATE);
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      const root = doc.querySelector(".two-company-search");
+      expect(root).not.toBeNull();
+      expect(root.getAttribute("x-data")).toBe(
+        "twoGatewayHyvaCompanySearchField",
+      );
+    });
+  });
+
+  describe("payment-tile configuration (admin setting flipped)", () => {
+    test("the payment tile keeps its own rich control (unchanged from every other suite in this directory)", () => {
+      const markup = H.renderTemplateMarkup(
+        H.GATEWAY_METHOD_MARKUP_TEMPLATE,
+        PAYMENT_TILE_TRUE,
+      );
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      expect(doc.querySelector('[data-name="company_tile_label"]')).not
+        .toBeNull();
+      expect(doc.querySelector(".two-company-search")).not.toBeNull();
+    });
+
+    test("the address step degrades to a plain, unenhanced field — no second rich control", () => {
+      const markup = H.renderTemplateMarkup(
+        H.COMPANY_NAME_MARKUP_TEMPLATE,
+        PAYMENT_TILE_TRUE,
+      );
+      const doc = new DOMParser().parseFromString(markup, "text/html");
+
+      // No Alpine component, no dropdown, no spinner, no mode toggling.
+      expect(doc.querySelector(".two-company-search")).toBeNull();
+      expect(doc.querySelector("[x-data]")).toBeNull();
+
+      const input = doc.querySelector('input[type="text"]');
+      expect(input).not.toBeNull();
+      // renderAttributes() carries the real entity-field name — the harness
+      // fixture value, but the point is that it comes from THAT call and not
+      // from anything company-search specific.
+      expect(input.getAttribute("name")).toBe("company");
+    });
+  });
+
+  describe("resolveOrderIntentNotAvailableNotice() wording (TWO-25326)", () => {
+    const NOT_AVAILABLE_COPY = {
+      withCompany: "Two is not available for this order by {name} ({id}).",
+      withoutCompany: "Two is not available for this order.",
+      companyNameToken: "{name}",
+      companyNumberToken: "{id}",
+    };
+
+    const COMPONENT_NAME = "twoGatewayHyvaPaymentMethodBase";
+
+    let env;
+    let component;
+
+    beforeEach(() => {
+      document.body.innerHTML = '<div id="payment-root"></div>';
+
+      env = H.installHyvaEnvironment();
+      H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+      env.fireAlpineInit();
+
+      const root = document.getElementById("payment-root");
+      component = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {
+        el: root,
+        root: root,
+      });
+    });
+
+    afterEach(() => {
+      env.restore();
+    });
+
+    test("substitutes both the company name and number tokens", () => {
+      component.orderIntentNotAvailableCopy = NOT_AVAILABLE_COPY;
+      component.companyName = "Example Trading Ltd";
+      component.companyId = "123456789";
+
+      expect(component.resolveOrderIntentNotAvailableNotice()).toBe(
+        "Two is not available for this order by Example Trading Ltd (123456789).",
+      );
+    });
+
+    test("falls back to the without-company copy when no name is known", () => {
+      component.orderIntentNotAvailableCopy = NOT_AVAILABLE_COPY;
+      component.companyName = "";
+      component.companyId = "";
+
+      expect(component.resolveOrderIntentNotAvailableNotice()).toBe(
+        "Two is not available for this order.",
+      );
+    });
+
+    test("returns '' when the brand switched the notice off (copy is null)", () => {
+      component.orderIntentNotAvailableCopy = null;
+      component.companyName = "Example Trading Ltd";
+
+      expect(component.resolveOrderIntentNotAvailableNotice()).toBe("");
+    });
+
+    test("a declined order intent sets the persistent not-available notice, alongside the toast", () => {
+      component.orderIntentNotAvailableCopy = NOT_AVAILABLE_COPY;
+      component.companyName = "Example Trading Ltd";
+      component.companyId = "123456789";
+
+      component.processOrderIntentSuccessResponse({ approved: false });
+
+      expect(component.orderIntentNotAvailableNotice).toBe(
+        "Two is not available for this order by Example Trading Ltd (123456789).",
+      );
+      expect(component.twoTileNotAvailableVisible).toBe(true);
+    });
+
+    /**
+     * The token substitution is the base resolver's (`resolveCompanyNotice` /
+     * `stripBracketedToken`), so an override worded by a brand renders
+     * character-for-character the same sentence on both checkouts.
+     */
+    test.each([
+      [
+        "Two cannot serve {name} [{id}]",
+        "Ex Ltd",
+        "",
+        "Two cannot serve Ex Ltd",
+        "square brackets go with the number they hold",
+      ],
+      [
+        "Two cannot serve {name} ({id})",
+        "Ex Ltd",
+        "TWO:abc",
+        "Two cannot serve Ex Ltd",
+        "an internal placeholder number is treated as no number",
+      ],
+      [
+        "Two cannot serve {name}, org {id}, sorry",
+        "Ex Ltd",
+        "",
+        "Two cannot serve Ex Ltd, org , sorry",
+        "a token in no brackets is removed where it stands",
+      ],
+      [
+        "{name} declined. {name} may retry with {id}",
+        "Ex Ltd",
+        "123",
+        "Ex Ltd declined. Ex Ltd may retry with 123",
+        "a company named twice leaks no raw token",
+      ],
+      [
+        "Two cannot serve {name} ({id})",
+        "Ex () Ltd",
+        "",
+        "Two cannot serve Ex () Ltd",
+        "brackets in the name are not mistaken for the number's own",
+      ],
+    ])(
+      "copy %s with name %s and number %s reads %s — %s",
+      (withCompany, companyName, companyId, expected) => {
+        component.orderIntentNotAvailableCopy = {
+          ...NOT_AVAILABLE_COPY,
+          withCompany,
+        };
+        component.companyName = companyName;
+        component.companyId = companyId;
+
+        expect(component.resolveOrderIntentNotAvailableNotice()).toBe(expected);
+      },
+    );
+
+    test("an approved intent clears any leftover not-available notice", () => {
+      component.orderIntentNotAvailableCopy = NOT_AVAILABLE_COPY;
+      component.orderIntentApprovedNoticeCopy = {
+        withCompany: "Approved: {name}.",
+        withoutCompany: "Approved.",
+        companyNameToken: "{name}",
+        companyNumberToken: "{id}",
+      };
+      component.companyName = "Example Trading Ltd";
+      component.companyId = "123456789";
+
+      component.processOrderIntentSuccessResponse({ approved: false });
+      expect(component.twoTileNotAvailableVisible).toBe(true);
+
+      component.processOrderIntentSuccessResponse({ approved: true });
+      expect(component.orderIntentNotAvailableNotice).toBe("");
+      expect(component.twoTileNotAvailableVisible).toBe(false);
+    });
+  });
+
+  /**
+   * TWO-25503. Manual entry captures no company number and Two's payment method
+   * requires one, so the affordance is offered only where the address-step
+   * lookup is — which is exactly where the control is NOT in the tile.
+   *
+   * The gate is the `manualEntryOffered` each surface hands the one shared
+   * controller, and the chip the popover renders from it. Both halves are
+   * asserted: a value nothing consults is silently inert, and a chip fed from
+   * somewhere else drifts.
+   */
+  describe("manual entry follows the company-search setting", () => {
+    /**
+     * Each surface, with the mount point it renders the control at and the
+     * entry point Magewire re-runs.
+     */
+    const SURFACES = [
+      {
+        host: "address",
+        component: "twoGatewayHyvaCompanySearchField",
+        template: H.COMPANY_NAME_TEMPLATE,
+        rules: undefined,
+        fixture: [
+          '<div id="control-root" class="two-company-search" data-two-capture-host="address">',
+          '  <input type="text" id="field" data-two-capture-field value="" />',
+          "</div>",
+        ].join("\n"),
+        rootId: "control-root",
+        start: (component) => component.init(),
+        offered: true,
+        description: "offered on the address step",
+      },
+      {
+        host: "tile",
+        component: "twoGatewayHyvaPaymentMethodBase",
+        template: H.GATEWAY_METHOD_TEMPLATE,
+        rules: [[/^\$twoControlCaptureHost$/, "tile"]],
+        fixture: [
+          '<form id="two_payment_form">',
+          '  <div class="two-company-search" data-two-capture-host="tile">',
+          '    <input type="text" id="field" data-two-capture-field value="" />',
+          "  </div>",
+          "</form>",
+        ].join("\n"),
+        rootId: "two_payment_form",
+        start: (component) => {
+          component.$watch = () => {};
+          component.initialize(JSON.parse(H.QUOTE_JSON));
+        },
+        offered: false,
+        description: "withheld in the payment tile",
+      },
+    ];
+
+    describe.each(SURFACES)("$description", (surface) => {
+      let env;
+      let fetchStub;
+
+      beforeEach(() => {
+        document.body.innerHTML = surface.fixture;
+
+        env = H.installHyvaEnvironment();
+        fetchStub = H.stubFetch();
+        H.loadSharedHelpers(surface.rules);
+        H.loadTemplate(surface.template, surface.rules);
+        env.fireAlpineInit();
+
+        const factory = env.alpineComponents[surface.component];
+        expect(typeof factory).toBe("function");
+        const root = document.getElementById(surface.rootId);
+        surface.start(
+          H.mountComponent(factory, { el: root, root: root }),
+        );
+      });
+
+      afterEach(() => {
+        fetchStub.restore();
+        env.restore();
+      });
+
+      test("this surface tells the controller so", () => {
+        expect(
+          env.captureControllers[0].config().isCompanySearchEnabled,
+        ).toBe(surface.offered);
+      });
+
+      test("and the panel is told the same", () => {
+        expect(env.companyPanels).toHaveLength(1);
+        expect(env.companyPanels[0].options.isChipVisible("manual")).toBe(
+          surface.offered,
+        );
+      });
+    });
+  });
+});

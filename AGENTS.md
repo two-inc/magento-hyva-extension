@@ -15,39 +15,109 @@ etc/                  # Module configuration
 view/frontend/        # Hyvä frontend templates and layouts
 ├── templates/        # .phtml template files
 ├── layout/           # XML layout files
-└── web/              # CSS/JS assets
+└── web/              # CSS and images — no JavaScript ships from this module
 ViewModel/            # View models for templates
 Magewire/             # Magewire components (if applicable)
 ```
 
 ## Git Workflow
 
-- **PRs target `main`** (prod). `staging` is the GitHub default and deploy
-  branch; `merge-back.yml` syncs `main → staging` after merges. Branch off
-  `origin/main`. Ignore the lingering legacy branches — `main` is prod.
-- Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
-- Do NOT skip commit-msg hook on feature branches
+- **Day-to-day PRs target `staging`** (the GitHub default and deploy
+  branch); branch off `origin/staging` — `version-bump.yml` decides the
+  release version on PRs landing there. Promote to `main` (prod) with a
+  staging → main PR when releasing; `merge-back.yml` syncs `main → staging`
+  after merges. Ignore the lingering legacy branches.
+- Do NOT skip the commit-msg hook — nobody commits directly on `main`;
+  changes reach it via the staging → main promotion
 - Never use `--no-verify` flag
 
 ## Version Management
 
-**Releases are automated** — `release.yml` runs on CI success on `main`,
-derives the bump from conventional commits since the last bare-semver tag
-(`feat!:` → major, `feat:` → minor, else patch), tags, and creates the
-GitHub Release. Don't hand-run bumpver.
+Version bumps are automatic — CI computes them on the pull request into
+`staging`. `.github/workflows/release.yml` fires on `main` only and
+computes nothing: it reads the version out of `bumpver.toml`, tags it and cuts
+the Release.
 
-- `bumpver.toml` `current_version` MUST equal the version strings in the
-  files it patches (`composer.json` `"version"`, `etc/config.xml`
-  `<version>`, `README.md`) or the release fails at the bump step with
-  "No match for pattern".
-- Re-cutting an exact version after deleting its tag: reset
-  `current_version` to the highest surviving semver tag first, or the next
-  release overshoots past the intended version. Recreating a tag that has
-  a Release demotes it to a draft (`gh release delete` +
-  `gh release create --verify-tag` repairs).
-- Packagist syncs off this repo's webhook — on a missing version, check
-  `gh api repos/two-inc/magento-hyva-extension/hooks` `last_response.code`
-  (403 = stale Packagist-side authorization; fix on Packagist).
+| Change                | What happens                                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| PR into `staging`     | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
+| merge into `staging`  | nothing — the merge brings in the version its PR computed                                                                    |
+| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release                                 |
+
+With `M` the version on `origin/main` and `C` the version on the PR head, the PR's own commits (`origin/staging..HEAD`, `--no-merges`) decide the candidate: a `!` type or a `BREAKING CHANGE:` footer gives `(M.major + 1).0.0`, a `feat:` gives `M.major.(M.minor + 1).0`, and anything else — `fix` and `chore`/`docs`/`ci`/`test`/`refactor` alike — gives `M.major.M.minor.(M.patch + 1)`. The result is clamped with `max(C, candidate)`, which makes it idempotent (a re-run, the `synchronize` the bump commit itself fires, or a second fix commit on the same PR all write nothing) and means the version can never regress while `main` is behind `staging`.
+
+A **major** is an explicit escape hatch and overrides the rule above. Two
+independent signals, the higher wins:
+
+- **Declared** — a root `.next-major` file whose first whitespace-delimited
+  token is the target major, plus a short reason on the same line
+  (`3  # overlay migration, 3.0.0 release`). Reviewable in the PR that decides
+  it, so a _planned_ major with no single breaking commit still lands as a
+  major. CI never clears the file; it disarms itself once the current major
+  reaches the declared one, and a declaration that has fallen _below the major
+  on `main`_ is a hard CI failure.
+- **Discovered** — a `!` on a conventional-commit type (`feat!:`,
+  `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer, in **this PR's own
+  commits** only — never the cumulative `main..staging` range.
+
+The new version for a major is exactly `<target>.0.0`, so a declaration may
+skip more than one major.
+`.github/scripts/decide-bump-level.sh` owns the decision, is unit-tested by
+`.github/scripts/test-decide-bump-level.sh`, and is shared byte-identically
+across the plugin repos; it logs the full decision — inputs included — to the
+workflow log on every run.
+
+Do not bump or tag by hand. If you must, for a local experiment only:
+
+```bash
+SKIP=commit-msg bumpver update --patch --no-tag-commit --no-push  # or --minor, --major
+```
+
+### Deployed-commit provenance
+
+The admin field at `Stores > Configuration > Two > Hyva Extension` renders
+`<version> (<sha7>)` — the version from the `two_hyva/general/version` CCD
+value plus the commit the deployed code was built from. The commit is resolved
+by `Two\GatewayHyva\Model\Provenance`, which tries three signals in
+freshness order:
+
+1. the `.git` gitlink (gitSync dev shops — moves on every deploy),
+2. `Composer\InstalledVersions::getReference()` (Packagist installs — the
+   merchant distribution; the release workflow tags and Packagist resolves,
+   there are no release assets),
+3. the `.two-deployed-commit` build stamp that `make archive` writes into the
+   zip (zip drops, which have neither of the above).
+
+Any signal being absent or malformed falls through to the next, and none
+resolving renders the bare version — the field never throws.
+
+`make archive` writes the stamp via `git archive --add-file` from a temp dir,
+so it never dirties the working tree. `.two-deployed-commit` is gitignored and
+must never be committed: a committed stamp would be frozen at commit time and
+would shadow the two fresher signals.
+
+`Provenance` is a near-copy of the base module's equivalent provenance model
+rather than an injection of it, with an identical public surface. **Keep the
+copy.** No released base carries its own provenance model — the newest
+release, `2.1.2`, predates it — so injecting the base module's instead would
+fatal the admin field on every base a merchant can currently install. The `^2.3.0`
+floor in `composer.json` is not evidence to the contrary: it states intent
+only, for the reason set out under `getIsProxyAvailable()` below. Delete the
+copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
+the class — never on the strength of its version number.
+
+## This is a public repository
+
+- No partner or merchant name reaches file contents, a commit body, a branch name
+  or a PR title or body. Gate before pushing: a force-push afterwards does not
+  remove a commit from GitHub's history.
+- In comments, commit messages and PR bodies alike, cite a Linear ticket id and
+  nothing else: a section, question or ruling number belonging to an internal
+  review document means nothing to a reader outside the company, and neither does
+  a person named as the authority for a rule.
+- The base plugin's DOCUMENTED contract may be pointed at. Its source text, schema
+  fragments and test identifiers may not be reproduced here — describe behaviour in
+  your own words.
 
 ## Hyvä config registration
 
@@ -77,6 +147,230 @@ After changing templates, Tailwind CSS must be rebuilt to include new utility cl
 
 **Important**: New Tailwind classes in templates won't appear until CSS is rebuilt.
 
+And the rebuild is the **merchant's**, not ours — so a utility only this module asks
+for may never be generated on a real store. That failure is silent: a
+`bg-red-50 border border-red-200` box renders as an unstyled, colourless box that
+still claims whatever it says. So **colour, border and the geometry of any element
+this module owns go in `view/frontend/web/css/custom.css`**, not in a class list.
+Precedents in that file:
+`.two-company-search__unavailable`, `.two-company-search__spinner`, and the
+four-state `.two-order-intent-box` (the order-intent verdict box — one box, one
+place in the tile, states differing only in colour, geometry declared once on the
+shared class so the states cannot drift apart). Layout utilities that the theme
+certainly generates (`flex`, `w-full`, `min-w-0`, `space-y-4`) are fine to keep in
+the template.
+
+### Buyer-facing copy and links come from the base module
+
+The payment tile's subtitle and the explainer come from the base module's
+`CheckoutTileCopy` service through `CheckoutConfig`, never from a hardcoded URL,
+a translated string here or a re-derivation of brand data (ABN-496). A brand that
+supplies no URL gets no anchor and no tagline at all — never an empty `href`,
+never an empty element.
+
+**The explainer is ONE control, and it is the icon** (ABN-554) — the icon IS the
+anchor to the brand's about page, describing itself through a `role="tooltip"`
+body it names with `aria-describedby`. `component/tooltip.phtml` renders it into
+the method row and translates nothing of its own; the tile body carries no second
+explainer.
+
+The theme's payment-method-icon toggle gates the brand logo, not the explainer:
+`MethodMetaDataPlugin` gates each half on its own rule and wraps neither when it
+is withheld, an empty wrapper still costing its padding and its share of the row.
+
+Whether the intent-declined notice renders at all, and its wording, come from two
+separate brand-registry declarations: only the switch suppresses it, and the copy
+override is inert when empty — an empty override never doubles as an off switch
+(TWO-25326). A base declaring no declined switch falls back to the approved
+notice's switch, so a brand that turned that one off gets neither; a base
+declaring no switch of either kind leaves the notice on.
+
+`dev/base-tile-copy-parity.sh` pins the tile-copy methods this checkout calls
+against the base module's declarations, and `ci.yml` invokes it as
+`bash dev/base-tile-copy-parity.sh`. **Invoke anything whose failure mode is "did
+not execute" through `bash`**: run as `./script.sh` it depends on the committed
+mode, and a `100644` script exits 126 — on a CI dashboard indistinguishable from a
+check that ran and failed, so the guard's own absence reads as its verdict.
+
+### The consent checkbox is named by reference, never by a label
+
+The payment-terms checkbox takes its accessible name from an `aria-labelledby`
+pointing at the element that holds the consent sentence (ABN-554). The sentence
+is deliberately not wrapped in a `label`: it carries the link to the terms
+document, and activating a label activates its control, so a label would leave
+the link hard to reach. No `aria-label` either — the visible sentence is the
+name, and a second copy of it is a second string to keep in step (WCAG 2.5.3).
+
+Both ids are keyed on `BrandedHyvaViewModelInterface::getMethodCode()`, so a
+second brand's tile on the same page names its own sentence rather than this
+one's.
+
+### Order intent: one box, and a verdict that can be repainted
+
+The tile shows **at most one VERDICT** — available, not available, could not be
+determined — plus an in-progress row that is a separate fact and may legitimately
+be up alongside nothing. All four are one box style in one place. The rules that bite:
+
+- **ONE PAINTER.** `refreshOrderIntentVerdict()` is the only thing that writes a
+  verdict notice. The reply handlers RECORD and then call it; they do not paint.
+  `clearOrderIntentNotices()` takes all three states down and deliberately does
+  NOT touch the in-progress row. Assignment lists that name only the siblings a
+  caller happens to remember are how a state gets forgotten when a fourth one is
+  added.
+- **A CHECK IN PROGRESS OUTRANKS EVERY RECORDED VERDICT.** `refresh` paints
+  nothing while `orderIntentChecking` is true, and nothing under an open results
+  panel. "Checking availability" and a conclusion may never be on screen together.
+  The corollary is the part that bites: because a verdict can be _suppressed_,
+  something must repaint it when the check stops — so `setOrderIntentChecking()`
+  is the ONLY way the row goes down, and it re-derives the box. Lowering the flag
+  by hand reintroduces a blank box that nothing can refill. Guarding one route at
+  a time, instead of stating the rule, always leaves one more route to a verdict
+  beside a progress row.
+- **Records are PER COMPANY, keyed by id.**
+  `orderIntentDecisions[id] = { name, approved }` and
+  `orderIntentFailures[id] = { name }`. A single slot
+  cannot represent approve A, check B, come back to A — B overwrites it and A's
+  verdict is gone. The name is stored beside the decision, not used as the key: the
+  notice text embeds it, so a company renamed by hand must fail closed rather than
+  be shown a verdict reached under the old name. The recorded name must always
+  describe the recorded id — derive it from live state only when the reply is
+  provably about the company on screen, otherwise record it as unknown, never
+  guessed, because for a late reply the screen is showing somebody else.
+- **The dedup gate reads those same records** (`hasOrderIntentDecisionFor()`), in
+  both places that gate a dispatch. It used to consult a separate single-slot "last
+  company dispatched for", which meant "already decided" and "has a verdict to
+  show" could disagree — and did, so a company whose answer was known got asked
+  about again.
+- **A FAILED check is recorded, but never in the decisions map.** It needs a record
+  for the same reason a decline does: a search started and abandoned takes the box
+  down, and the failure is still a failure. But the dedup gate reads decisions, so
+  filing a failure there would suppress the retry the failure exists to invite. A
+  decision for a company clears its failure; so does a fresh check reaching the
+  wire.
+- **Both maps are emptied by a Magewire re-render**, because `initialize()` rebuilds
+  the component. Acceptable — a decision is only as good as the quote it was made
+  against — but it means the come-back-and-see-your-verdict property holds only
+  until the next totals/address/term change.
+- **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (TWO-25326).
+  A decline used to raise both; the toast self-dismisses and lands at the top of
+  the page rather than beside the company it is about, so it could only repeat
+  what the box already says permanently. Two exceptions, each for its own
+  reason: a FAILED check keeps its toast because that one carries the API's own
+  diagnostic strings and the box deliberately shows the general wording instead;
+  and a decline with NO INLINE SENTENCE TO SHOW falls back to the toast, because
+  the alternative is telling a declined buyer nothing whatsoever. That second
+  exception is gated on `resolveOrderIntentNotAvailableNotice() === ''` — "is
+  there a sentence", not "is the copy null". The two agree for the brand switch
+  (whose null copy means the box's element is never rendered at all, and a brand
+  shipping today is in that state), but the resolver also answers `''` for copy
+  that is present and malformed, which it degrades to a silent box for rather
+  than throwing — and that case needs the fallback just as much. Gate a fallback
+  on there being nothing to say, never on any narrower proxy for it.
+- **Every order-intent gate asks `twoGatewayInvoiceCompany()`** (TWO-25554)
+  — the dispatch trigger, the per-company dedup and verdict records, the notice
+  copy and the tile label alike, so a company picked in the DELIVERY form gets the
+  same client-side pre-check as one picked in the invoice form. The tile's own
+  state stays its own role's mirror; only the reads move.
+  `company-name-payment.phtml`'s `checkout:payment:method-activate` handler
+  exists because a company picked before Two became the active payment method
+  never got its intent fired — the global listener drops a dispatch while another
+  method is active. That re-arm asks the resolver first and falls back to the
+  BILLING record for a page whose identities are not seeded yet; it writes no
+  field either way. Both markup modes keep
+  `data-name` on the company pair so a surface that is not the payment form can
+  resolve it without a document-wide id lookup.
+- **The payload assembly is NOT part of the check.** `setPaymentData` carries the
+  captured company number onto the quote payment, and that is the only thing that
+  puts it there — the server refuses placement without it — so it runs whether or
+  not the merchant has the intent call switched on (ABN-554).
+- **A DECLINE REFUSES PLACEMENT** (TWO-25657). The `hyvaCheckout.validation` callback
+  returns false for a recorded `approved: false` on the company being placed for; no
+  record and a recorded FAILURE both place normally. The declined message is toasted
+  because a click-time refusal needs a click-time signal. The BUTTON is disabled as
+  well, from the same record — `applyOrderIntentPlacementGate()`, which calls Hyvä's
+  own `navigation.disableButtonPlaceOrder()`/`enableButtonPlaceOrder()` and sets the
+  `disabled` attribute those events no longer reach in Hyvä Checkout 1.3.13, lifting
+  only its own decline so a placement already in flight stays blocked.
+
+### Placement states the charged term
+
+`Plugin\Payment\RecordSelectedTermPlugin` states the payment term this checkout
+is charged for on the quote payment immediately before placement, reading the
+base module's own charged-term resolver — the same object that module prices the
+surcharge through, so the order and the fee cannot name different terms. Without
+it the payload carried no term at all, the composer substituted the configured
+default, and every other offered term was refused as unavailable (ABN-556).
+
+It belongs at placement rather than in the tile's payload assembly: that
+assembly runs a round trip earlier, so a chip clicked afterwards would leave the
+recorded term behind. Both brands route placement through the same plugged
+service, so the plugin is the one place that covers every store view.
+
+**The chip state stays the buyer's raw choice, not the resolved one.** A term the
+merchant withdraws mid-checkout matches no chip, which is what leaves the default
+chip clickable — and clicking it is the only thing that rewrites the session, so
+rendering the resolved fallback as already-selected would make the chip inert and
+strand the buyer behind the term re-check that runs first at placement
+(TWO-24812).
+
+**The payment tile's Magewire component takes new dependencies LAST, after the
+method code.** Subclasses outside this repository forward the constructor
+positionally, so a dependency inserted ahead of the method code lands in the
+wrong parameter and the tile stops constructing. No CI leg here pairs the
+extension with such a subclass, so
+`Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
+guard (ABN-556).
+
+### A chip states its term type, not just a day count
+
+An end-of-month term falls due that many days after the end of the month, so a
+chip reading "30 days" on a shop configured that way states the wrong due date
+(ABN-554). The visible text is `30 days` under standard terms and `EOM+30` under
+end of month, and only the end-of-month chip carries a `title` and an
+`aria-label`, both reading `EOM+30: pay 30 days after the end of the month`. The
+name opens with the visible token because WCAG 2.5.3 requires the accessible name
+to contain the visible text, so the phrase may not be reordered to lead with the
+explanation. A standard chip carries neither, since a name restating its visible
+text would risk the same criterion.
+
+The name states the surcharge too, because an `aria-label` replaces the whole
+accessible name and the `+€n.nn` rendered inside the chip is then announced
+nowhere: `EOM+30: pay 30 days after the end of the month, plus a €7.25
+surcharge`. Each wording is one translated sentence rather than an assembled
+one, so a translator can order the clauses. A term carrying no surcharge, a set
+where every term quotes nothing, and a chip mid-round-trip all name no amount.
+
+**The templates and both name sentences come from the Magewire component, not
+from the template file.** Alpine's CSP build forbids expressions in attribute
+bindings, so the chip's own script can only read a bare identifier; the day count
+and the stored term type are both known server-side. That also makes each of them
+directly unit-testable, where a conditional buried in the `.phtml` is not. Only
+the amount is left for the browser, as `%2` in the fee sentence, because the quote
+lands after the chip does — which is why the chip binds its `title` and
+`aria-label` to a getter rather than taking the rendered literals and stopping
+there.
+
+### The sole offered term is a disabled button
+
+One offered term is not a choice, but it still carries the name spelling the term
+out, and ARIA prohibits naming a role-less element — which a bare `span` is. So
+the sole chip is a `button` with the native `disabled` attribute: naming works,
+and a natively disabled button is not focusable, so the tab order skips a chip
+with nothing to select. Its appearance is unchanged, which takes one CSS
+exclusion: the rule that fades a chip while any term round-trip is in flight
+keys off `[disabled]`, and the sole chip is permanently disabled rather than
+busy.
+
+### A term change is never left unpriced
+
+`selectTerm()` writes the session term and reprices; a failed save restores the
+previous term and reprices again, in that order. The surcharge is priced off
+the session term, and placement compares the term it composes the order with
+against the term the fee was priced on — it refuses a disagreement and charges
+an agreement, so a restored-but-unpriced term would compose the previous term
+carrying the abandoned term's fee. When the compensating repricing also fails
+the session goes back to the abandoned term, whose fee it is still holding.
+
 ### Magewire Components
 
 - Located in `Magewire/` directory
@@ -90,12 +384,414 @@ After changing templates, Tailwind CSS must be rebuilt to include new utility cl
 - Use `x-data`, `x-show`, `x-on:click` etc. in templates
 - Alpine components can communicate via `$dispatch` and `@event-name.window`
 
+### Company search: ONE popover, and it is not in this repo
+
+There is **exactly one company-capture popover IMPLEMENTATION** across Magento's
+checkouts, it ships in the BASE plugin, and this module mounts it. Never add a
+second implementation, and never patch a surface by copying part of it — that
+duplication is what produced a batch of "three independent cosmetic bugs" on the
+payment tile that turned out to be one bug, and later what left this checkout's
+mode chips outside the panel while Luma's were inside it.
+
+**This module ships NO JavaScript file at all** — `view/frontend/web/js` does not
+exist, and it must not come into being. Four base-plugin modules are loaded by
+`Two_Gateway::` reference from `view/frontend/layout/hyva_checkout_index_index.xml`
+— the panel, the identity, the sole-trader flow and the capture controller — each
+framework-free with a UMD tail that attaches a browser global the mounts then read.
+The Alpine and Magewire code in this repo's `.phtml` templates is the HOST ADAPTER
+those modules ask for, never a second implementation of what they do. A behaviour
+change belongs in the base plugin, where both checkouts get it; a new `.js` file
+here is the duplication this arrangement exists to prevent.
+
+**ONE IDENTITY AND ONE CONTROLLER PER ADDRESS ROLE.** The checkout can hold two
+companies at once — the delivery panel's and the invoice panel's — so
+`twoGatewayCompanyIdentity(role)` and `twoGatewayCompanyCapture({role, …})` are
+memoized per role in `twoGatewayCompanyIdentityInstances` /
+`twoGatewayCompanyCaptureInstances`. Keyed by the role STRING, never by a root
+node: a Magewire morph replaces roots, and the captured company has to survive
+the re-render. A call with no role is a bug and answers `null` rather than
+sharing.
+
+**There is NO propagation between the two panels, of any kind.** Not a mirror,
+not a pin, not an event, not a shared field write. A pick in one panel is
+invisible to the other. The one thing that reads both is the
+ORDER-INTENT/PLACEMENT resolver, which reads the captured identities to decide
+which company the API is told about; it writes no identity. Its one deliberate
+UI effect is the carve-out from that rule: the payment tile's label and its
+order-intent notices name the company the resolver answers, so a delivery-panel
+pick IS visible there — a notice naming the company the check ran for is required.
+That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
+identity when it presents a company number, else the shipping one, else nothing.
+What the surfaces ask is `twoGatewayInvoiceCompany()`, which takes that
+resolver's answer and falls back to the tile's own capture. **No surface on this
+checkout offers an editable company identifier** (ABN-564): a number reaches the
+pair only from a registry hit, so there is no hand-entered value for either to
+prefer. `twoGatewayApplyInvoiceCompanyFields()` is the ONLY
+writer of the `payment[company_name]` / `payment[company_id]` pair that submits:
+it writes each field from that answer and blanks neither while it holds a value
+the writer did not put there, which is why the surface mirrors' clear and repaint
+call it instead of blanking the pair themselves. The tile hydrates each role's
+identity from that role's OWN record at mount, the delivery form not always
+being on the page to hydrate its own.
+
+Three layers, innermost first:
+
+| Layer                                        | Where                                                                                                                                                                                                                  | Owns                                                                                                                                                                              |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Popover — the shared company-search panel     | **the base plugin**, whose script this checkout's layout loads and which the mounts reach through the browser global it registers itself under                                                                          | everything the buyer sees and touches: the panel DOM, open/close, the query field, result rendering, keyboard navigation, the mode chips and the route in and out of manual entry |
+| Engine — `twoGatewayCompanySearchEngine()`   | `component/payment/method/gateway_method-csp-js.phtml`                                                                                                                                                                 | the request, the captured-company state, `selectItem()`, mode toggling, the company-id lock formula, address write-back, storage                                                  |
+| Adapter — `twoGatewayCaptureSurfaceMixin()` | same file, layered over the engine                                                                                                                                                                                     | the six-member search API the popover asks for, which chips this checkout offers and what each one runs, where the panel mounts, and the popover's translated copy                |
+
+**Registry and order-intent calls go through the base module's own REST routes**
+(`rest/V1/two/company-search`, `.../company`, `.../order-intent`), never straight
+at the API: the merchant API key authenticates them server-side, and a merchant
+whose network traffic passes through a firewall appliance can have a token
+attached there without it ever reaching a buyer's browser. Each answers a
+`{ok, status, body}` envelope — `ok: false` means the upstream call failed and
+must produce exactly what a failed direct call used to. Paging and client
+identification are the server's to set, so nothing here sends them.
+
+**What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
+`^2.3.0` floor in `composer.json`** — the reasoning is written once, in that
+method's docblock, and everything else points at it. Its answer reaches every
+mount as `isProxyAvailable`. `twoGatewayProxyPost()` deliberately has no
+runtime fallback for the 404 a stale route cache produces: a fallback that
+reopened the direct browser-to-API path would make a missed cache flush
+invisible instead of loud.
+
+`false` — and, the flag being read by identity, anything that is not exactly
+`true` — takes each of those routes back to the **direct
+browser-to-API call it made before the routes existed** — query-string client
+identification and merchant name restored, the
+order-intent body naming the merchant again, and no firewall token on any of
+it. That is not a new exposure: it is precisely what ran on that base already,
+and it is the only path on which those fallbacks are reachable.
+
+Those fallback branches are **deprecated on arrival**. Delete them, and the
+flag threading them, once a base release is confirmed BY INSPECTION OF THAT
+RELEASE to carry the routes — never by raising the floor high enough to look
+safe.
+
+The one exception is `/autofill/v1/buyer/current`, which is authenticated by
+the buyer's own cookie on the API's domain and so cannot be proxied at all; it
+carries the merchant's configured custom headers instead
+(`CheckoutConfig::getCustomHeaders()`, e.g. `X-WAF-TOKEN`), and only where a
+merchant enabled them for the browser. A rejection of that call is reported
+rather than swallowed: 404 is its documented "no buyer" answer, so any OTHER
+status is logged, which is what keeps an appliance rejecting a tokenless
+request distinguishable from a buyer who simply has no account.
+
+**The popover is framework-free with a UMD tail**, which is why this checkout can
+load it with no RequireJS, no jQuery and no Knockout. It takes three injected
+options — `search`, `translate` and `observe`. This checkout injects the first
+two and deliberately withholds `observe`: `$.async` has no equivalent here, and
+a MutationObserver per mount is what froze the checkout on this ticket, so the
+re-render's own `element.updated` hook drives the re-bind instead. Do not reach
+into the panel; if it needs to do something new, change it in the base plugin so
+both checkouts get it.
+
+**Its markup is not testable here.** The file is not in this repo and there is no
+vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub in
+place of the real panel (`installHyvaEnvironment()` returns `companyPanels`,
+with `.options` and `.calls`). What this repo tests is its own half of the
+contract — the options the adapter passes and the search API it builds over the
+engine. The panel's own behaviour is covered where that file
+lives, not here. The stub does build the wrapper and panel node the real one
+builds, and answers `isBound()` from them: that is the minimum DOM that makes a
+re-render's morph observable here, and a constant `true` is the answer that
+hides it.
+
+**The popover's STYLING comes from the base plugin too** — its stylesheet is
+loaded by this checkout's layout BEFORE `custom.css`, so this module keeps the
+last word. Do not copy popover rules into `custom.css`; a test
+guards against it. That stylesheet also restyles `.two-term-chip` and its
+siblings, which this checkout already paints: any class that genuinely needs to
+mesh with Hyvä's styling gets a **selective override**, written after someone
+has looked at the result rather than pre-emptively.
+
+**Known base-plugin defect, not fixed here:** the panel clears its return link
+across the whole document instead of its own wrapper, so with two panels on one
+page — the delivery form and the invoice form — one leaving manual entry
+deletes the other's only route out of it. Fix belongs in the base module,
+scoped to the panel's own wrapper.
+
+`form/field/company-search-control.phtml` is now only the company-name input and
+the organisation-number display. **Do not put a dropdown, a query box, a hint
+line or a chip row back into it** — the panel renders all of those, in an order
+that is the design: input → query → results → chips, which is what makes tab
+order correct with no key handling at all.
+
+Mount points, each a thin **adapter** supplying only what is genuinely
+per-surface (which storage record, which quote, whether address lookup is
+offered, what happens on capture):
+
+- the address step — `form/field/companyName.phtml` + `companyName-csp-js.phtml`
+- the payment tile — `component/payment/method/gateway_method.phtml` + its
+  `-csp-js` component. It mounts the control with **no `x-data` of its own**, so
+  the control's state lives on the payment form's component alongside the tile
+  label and the order-intent dispatch. It renders no chip row of its own; the
+  chips are inside the popover.
+- the address-book modal — `component/payment/method/shipping_company.phtml`,
+  which composes the ENGINE directly under the Alpine name `searchInput`
+  (Hyvä Checkout's own closed-source modal requires that literal name and
+  renders the visible input itself, so there is no markup here to mount the
+  control's into).
+
+Which of the first two renders is decided by the core module's
+`enable_company_search` setting — never both, never neither. See
+`CheckoutConfig::getIsCompanySearchInPaymentTile()`.
+
+Each mount builds its panel from its own `init()`/`initialize()`, and
+`mountCompanyPopover()` re-points its role's existing panel rather than building
+a second one. It stamps `data-two-capture-role` on its control root and the
+controller's field selectors are scoped on it alongside
+`data-two-capture-host` — the address-step field renderer is registered globally
+and mounts on the delivery form AND the invoice form, so a document-wide
+selector would give both mounts the first field.
+
+**A surface's role is a live DOM read, resolved fresh, never cached.** An
+address panel's is `twoGatewayCaptureRoleForForm()` over the panel that owns its
+country field: `billing` where that panel carries a `billing-`prefixed field id,
+Hyvä's own `<role>-<field>` convention, else `shipping`. The payment TILE is not
+a panel — it is the invoice-role submit surface — and its role is `billing`
+unconditionally: it reads and writes the billing record either way, so a role
+following `#billing-as-shipping` would seed one role's identity from the other's
+record. Its COUNTRY context does follow the checkbox
+(`twoGatewayInvoiceRoleCountryField()`), because with one address on the page the
+shipping form's country field is the invoice address's country field; identity and
+country are resolved separately and only the latter moves. The address-book modal
+is shipping-role.
+
+**A Magewire re-render does NOT re-run `init()`.** It MORPHS the server markup
+over the live DOM: the popover's `span.two-company-field-wrap` is built at
+runtime and is in no server markup, so the morph deletes it — panel, chips and
+the mount attribute with it — while KEEPING the element carrying the component's
+`x-data`, so Alpine keeps the component and never re-initialises it. Every mount
+therefore registers itself in `window.twoGatewayCompanyMounts`, and one
+page-level `element.updated` hook remounts any control whose panel reports
+`isBound()` false — each entry through its own root's surface, so one role's
+remount can never write the other's state. That is also the answer to "why does a shipping-method change
+survive": its re-render never touches this form. The same hook puts the caret
+back: a morph patches the company input in place and the browser blurs it to
+nothing, so the sweep re-focuses the company field — of whichever control still
+held the caret when `message.received` fired, only where the drop left focus
+unplaced, and once, because the record is spent by the repair (ABN-554).
+
+**The panel instance lives in a closure, never in Alpine state.** Alpine wraps
+component data in reactive proxies and the panel compares DOM nodes by identity;
+a proxied node makes those comparisons false and the popover silently stops
+responding to its own field.
+
+Things that bite:
+
+- **The markup is included with `include $block->getTemplateFile(…)`**, not as a
+  layout child. The address-step mount point is a Hyvä entity-form field
+  _renderer_ block created at runtime, so there is no layout node to hang a child
+  off. `Test/Js/hyva-harness.js` inlines that include (`TEMPLATE_INCLUDE_PATTERN`)
+  so the Jest suites render what the page renders.
+- **Address AUTOFILL needs BOTH settings**, and the conjunction lives in ONE
+  place: `CheckoutConfig::getIsAddressSearchEnabled()` returns
+  `enable_address_search && !getIsCompanySearchInPaymentTile()`. Autofill writes
+  city / postcode / street into an address FORM, so when the one control lives in
+  the payment tile there is no form the buyer is working in for it to write into
+  — filling one from a pick made on the payment step overwrites an address they
+  already completed, silently, several steps behind where they are looking. Never
+  re-derive the rule in a template or a component: the engine's `selectItem()`
+  reads `isAddressSearchEnabled` and nothing else, and a surface that computes
+  its own version is how the tile came to autofill.
+- **The buyer's country is resolved LIVE, and the store default is a last
+  resort only where there is no country selector at all**
+  (`twoGatewayGetCountryCode()`). The DOM comes first — **that of the form doing
+  the asking** — then the quote's own address countries, then the
+  store default. That last term is deliberately suppressed while a country
+  `<select>` exists: the quote snapshot is PHP-rendered at page load and carries
+  no country on a first visit, so an unconditional store default meant company
+  search silently returned US companies to a buyer who had chosen elsewhere.
+  Searching the wrong country is worse than not searching — with no country, the
+  callers already say "Please select a country first".
+  The hidden/disabled filter (`twoGatewayCountryFieldUsable()`) applies to the
+  NAME matches only. The two ids were read unconditionally by every version of
+  this helper before this rule existed, and this checkout hides a step's form
+  subtree rather than unmounting it in at least some states, so filtering them
+  would move already-correct behaviour towards the bug — on a surface no test
+  here can see. Filter what you ADD; leave what already worked alone.
+- **ONE resolver, but it resolves RELATIVE TO THE CALLER** (TWO-25461).
+  "Resolve the country one way and reuse it everywhere" means one resolution
+  FUNCTION, never one hardcoded priority order. `twoGatewayGetCountryCode()`
+  takes a context element and scopes the live DOM read to the address form that
+  owns it (`twoGatewayCountryFieldScope()`): the nearest ancestor with a country
+  field of its own, stopping at a `<form>` that has none. The company field
+  renderer is registered globally on `entity-form.field-renderers`, so the SAME
+  component mounts on the delivery form and the invoice form — a document-wide
+  shipping-first lookup gave the invoice form the delivery country, and each
+  form must read only its own live fields. Callers with no address form of
+  their own keep the document-wide, shipping-first list, and the payment tile
+  names the address it means BY ROLE rather than inheriting that:
+  `twoGatewayInvoiceRoleCountryField()` is the billing form's field, or the
+  shipping form's while `#billing-as-shipping` is ticked, because the tile's
+  company is the invoice-role company. Only the LIVE read is scoped; the quote
+  terms below it are a page-load snapshot and are deliberately left alone.
+- **Never show an organisation number without `twoGatewayDisplayCompanyNumber()`.**
+  A company with no number in its home registry gets an internal placeholder
+  identifier prefixed `TWO:`. It must reach the API and must never reach the
+  screen; the helper answers `''` for one, which is the same case as "no number",
+  so surrounding parentheses drop with it.
+
+### What focus landing on the checkout does to an open signup popup
+
+The base plugin's sole-trader flow classifies every `focusin` while the hosted
+signup window is up, and this checkout inherits all three rules (TWO-25658):
+
+- **the role's own Sole trader chip is inert** — arrival moves the popup neither
+  way, and only an activation raises it, the browser delivering Enter and Space on
+  a focused chip as a click;
+- **any other target closes an open popup**;
+- **a target outside that role's popover closes the popover too**, with the company
+  field counted as INSIDE it: the field is the popover's own trigger and sits
+  outside the panel node, and a buyer typing a query is still inside the control.
+
+A `focusin` the browser re-fires on window return counts as the buyer focusing
+that control, so an alt-tab back onto a control is classified like any other
+arrival. Opening the popup blurs whatever held focus for exactly that reason —
+with nothing focused, a window return settles nothing.
+
+**Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
+That chip is a different control, so this popup and popover close first; the new
+one is then raised by invoking that chip's own click handler, the single place a
+launch is spelled out. The exemption is per capture and survives a re-render
+because the popover is resolved live as the company field's sibling — a stored
+popover node goes stale when a morph deletes the wrap and keeps the field, which
+makes a capture's own rebuilt chip read as a sibling's (TWO-25658).
+
+**The POINTER route is not covered.** A chip's `mousedown` cancels, so a real
+click fires no `focusin` and reaches none of this: a buyer clicking a second
+capture's chip with the mouse can hold two popups open at once. Closing that means
+changing the chip's click path, not the focus rule — a mount must not read the
+focus rules as covering it.
+
+All of it lives in the base plugin, none of it in this repo. A mount that adds
+focus handling of its own to a chip or the company field is competing with rules it
+cannot see.
+
+**The open panel takes the company field's tab stop**, inherited the same way:
+`tabindex="-1"` while it is up, and on close the field's PRIOR value restored
+exactly — a theme's own `tabindex` is given back, and removal is what a field
+carrying none gets back (TWO-25503). Without it the
+focus opener is a keyboard trap — the opener puts the caret in the query field,
+Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
+2.1.2). A mount must not write a `tabindex` onto that field.
+
+### A popup window is in no tab listing
+
+`window.open` returns a window outside a browser extension's tab group, so a tab
+list can never answer "did the popup open" — nor can a hang. The authoritative
+check is the page's own retained handle and its `.closed`, which means wrapping
+`window.open` before the action that should raise one. Judging from a tab list
+yields a confident false "no window opened".
+
+### Two addresses, and NOTHING passes between them
+
+The checkout can hold two addresses — shipping, and a separate billing one once
+"billing same as shipping" is unticked — and both stay fully editable, always.
+Making a company or country read-only was evaluated and rejected: a company with
+a branch in a neighbouring country is one legal entity with two genuinely
+different valid local pairings.
+
+**The two panels do not interact.** Each has its own identity, its own capture
+controller, its own storage record and its own popover, and each writes ONLY its
+own surface:
+
+- Role-scoped selectors, never document-wide ones. A surface resolves its own
+  fields under its own control root; `data-two-capture-role` is what makes the
+  controller's `addressFieldSelector` / `tileFieldSelector` answer for one panel.
+- `watchCountryChanges` fires for a country field of the watching role only, by
+  id prefix or by which panel contains it. A document-level listener on any
+  `*country_id` is a cross-panel write.
+- Sole-trader autofill (`captureApplyBuyerAddress`, `captureApplyTelephone`)
+  writes the surface's OWN form. A surface with no form of its own — the tile —
+  writes nothing, deliberately: filling a form the buyer is not looking at is
+  forbidden.
+- The identity mirror writes its own surface's state, its own storage record and,
+  on the TILE only, the `#company_name` / `#company_id` pair that submits.
+- **Per-surface state is keyed on the surface's own root node, never on the kind
+  of host.** One renderer mounts the company field on both address forms, so one
+  key per kind of host is one key shared between two live surfaces, and the
+  second mount tears down the first's subscription.
+- **A CAPTURED COMPANY MUST BE ANNOUNCED TO THE MAGEWIRE MODEL, and only this
+  host can do it.** The popover announces a pick by writing the field and firing
+  `change`; it fires no `input`, and this checkout's company input is
+  `wire:model.defer`, whose text-input updates come from `input`. So the
+  server-side model never learned the pick, and the next address-form roundtrip
+  re-hydrated the input from that model and wrote `null` over the buyer's
+  company — measured live at +5.59s after the pick, which is the reported
+  "the name disappears after 3 to 4 seconds". The autofilled city/postcode/street
+  survive the same roundtrip precisely because the engine's own write DOES fire
+  `input` on them. `announceCapturedCompanyToModel()` says it through
+  `Magewire.find(...).set(model, name, true)` — deferred, so it costs no request
+  — reading the model name off the field, because which model the input binds to
+  is the checkout's decision and differs per form. It must NOT be said by
+  dispatching the missing `input`: the popover binds `input` on that field and
+  reads whatever arrives as the buyer typing, so a synthetic one reopens the
+  popover on the name it just captured.
+- **The re-render sweep restores CONTENT as well as structure.** Second line of
+  defence for the same invariant: a morph can rewrite the company input without
+  touching the popover's wrapper, and every other repaint is gated on a change
+  that has not happened then — the mirror on the component's own state, the
+  popover's rebind on its wrapper being gone. So `mountCompanyPopover()` ends by
+  reconciling the captured pair (`repaintCapturedNameFields()`), both directions
+  (an empty identity clears the field, because the server's value can equally be
+  a company the buyer has since discarded), idempotently and with no event.
+- **A surface's subscription is disposed by the re-render that removed it.** The
+  `element.updated` hook reaps every watcher whose root has left the document,
+  because a teardown that waits for the next mount never runs on a page with one
+  control.
+
+Whichever address plays the **billing/invoice role** is the one that requires a
+company and org number — never a shipping-only address, and the role is resolved
+fresh from the DOM rather than remembered.
+
+### Writing an address from an external payload
+
+`setAddressData()` routes one way for every payload it can receive — a
+registered-company search result, an autofill — because special-casing the
+source is how the two drift apart:
+
+| payload                        | line 1                      | line 2             |
+| ------------------------------ | --------------------------- | ------------------ |
+| `building`/`apartment` present | the premises (both, joined) | `street`           |
+| neither present                | `street`                    | **left untouched** |
+
+No dedup between the lines even when the text is identical: some real addresses
+legitimately repeat, and silently swallowing one is invisible to the buyer.
+Line 2 is left alone rather than blanked when there is nothing for it, so an
+autofill carrying no building cannot delete an apartment number the buyer typed.
+
+`region` goes to a `region_id` select when an option's TEXT matches (lossy and
+known to be), else to a free-text `region` field, else it is appended to `city`
+after a comma — the comma being a separator, so an address with no city gets
+none. An unmatched value is never written onto a `region_id` select: that stores
+an id the store does not have.
+
 ### Staging Cache Refresh (git-sync workflow)
+
+**`magento-dev` is the deployment that tracks this repo's `staging`**, through its
+`git-sync-hyva` container; each brand's own dev deployment git-syncs this repo
+too, alongside that brand's overlay. `deploy/magento` has no git-sync container at
+all and serves the deployed image's code, which tracks `main`. So anything
+verifying `staging` code goes to the dev deployment, and a check pointed at the
+other one silently reports on `main`. Confirm which code a deployment has from its
+git-sync container's checked-out HEAD, as below;
+`pub/static/deployed_version.txt` answers with an HTML 404 page and settles
+nothing.
+
+A merge to `staging` triggers an in-place static redeploy on the dev deployment
+and the storefront 500s for roughly three minutes, so a check that starts mid-sync
+fails for environmental reasons. Warn testers before merging.
 
 **IMPORTANT**: Always run Magento CLI commands as www-data user to avoid permission issues:
 
 ```bash
-kubectl exec deploy/magento -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
+kubectl exec deploy/magento-dev -n staging -- su www-data -s /bin/bash -c "php bin/magento <command>"
 ```
 
 When developing with git-sync on staging, after pushing changes:
@@ -103,24 +799,83 @@ When developing with git-sync on staging, after pushing changes:
 1. Wait for git-sync to pull the latest commit:
 
 ```bash
-kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
+kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline"
 ```
 
 2. Clear cache and restart Apache:
 
 ```bash
-kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
 
 Or combined (wait 15s for sync then clear):
 
 ```bash
-sleep 15 && kubectl exec deploy/magento -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
+sleep 15 && kubectl exec deploy/magento-dev -n staging -c git-sync-hyva -- sh -c "cd /git/code && git log -1 --oneline" && kubectl exec deploy/magento-dev -n staging -- bash -c "rm -rf pub/static/frontend/Hyva/*/en_GB/Two_GatewayHyva && php bin/magento cache:flush && apachectl graceful"
 ```
+
+### Tests that read a file as TEXT, and mutants that check them
+
+Two rules, both learned the same way — six times on TWO-25503, every one a check
+that ran cleanly and proved nothing:
+
+- **Any assertion that reads a stylesheet or a template as text matches against
+  a COMMENT-STRIPPED copy.** Prose explaining a declaration contains the same
+  tokens as the declaration, so a regex written to find the code matches the
+  explanation instead. Worse, comments here quote selectors — braces and all —
+  so a `[^}]*\}` pattern terminates at a comment's brace and silently stops
+  covering everything below it. `order-intent-spinner`,
+  `company-search-focus-scope` and `company-search-spinner` all strip at the
+  point the file is read, which is the place to do it: stripping per-assertion
+  leaves the next one in the same file exposed.
+  For a TEMPLATE the mitigation is different — its comments are the same
+  language as its code, and stripping PHP/HTML/JS comment forms is a bigger job
+  than `/* … */`. Anchor on syntax prose cannot reproduce instead: a call form
+  (`__('Checking availability')`, not the bare sentence, which the tile's own
+  comments do contain) or a whole statement. Those assertions are safe by anchor
+  tightness, not by stripping, and a loosened anchor is all it takes.
+- **A mutant is verified by WHAT IT REMOVED, never by the diff being
+  non-empty.** A non-empty diff only proves something changed. It does not
+  prove the anchor hit the rule you meant (`String.replace` takes the FIRST
+  match, and identical declarations are common), nor that what it replaced was
+  a statement rather than a comment beside one. Read the mutated region back,
+  or anchor through enough surrounding text to be unique.
+
+And the reason those two rules need writing down at all:
+
+- **Agreement between a test and the thing it tests is worth nothing when one
+  person wrote both.** TWO-25503's worst defect was a test double that diverged
+  from the real component in exactly the direction that hid the leak the test
+  existed to catch — with a comment confidently explaining why the divergence
+  was correct. Both halves were mine and they agreed, so nothing about writing
+  them more carefully would have surfaced it. When a test and its subject were
+  authored together, the thing to hunt is the divergence that would make the
+  test agree with a bug, and **the person to hunt it is not the author** — which
+  is what adversarial review is for, not a formality before merge.
+
+### Keyboard behaviour is not verifiable in jsdom
+
+jsdom implements no sequential focus navigation: a dispatched `Tab` keydown moves
+focus nowhere, so no Jest suite here can observe a focus trap, a wrong tab order or
+a reverse-Tab dead end, however many cases it carries and however green it is. This
+is the same class of empty check as the two rules above — a suite that runs cleanly
+and proves nothing. Assert the observable proxies (the parts are one contiguous run
+in document order, a closed panel carries `hidden`, the handler leaves the `Tab`
+event undefaulted) and verify the keyboard behaviour itself in a real browser. Never
+present a jsdom Tab test as evidence that a trap is absent.
+
+Two more of the same class:
+
+- **jsdom's `getElementById` answers with the first-REGISTERED node, not the
+  tree-first one**, so a fixture carrying a duplicate id silently resolves to the
+  wrong element while reading as though it found the right one.
+- **A mutation proves NEW coverage only when re-run against the base ref.** One the
+  existing suite already catches proves the suite is sensitive, not that the case
+  added covers anything.
 
 ### Common Issues
 
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface
 2. **Styles not applying**: Rebuild Tailwind CSS
 3. **Alpine.js not working**: Check browser console for JS errors, ensure `x-data` is on parent element
-4. **Payment method not showing**: Verify `two_payment` is enabled in admin config
+4. **Payment method not showing**: Verify the brand's Two payment method is enabled in admin config. The method code comes from `BrandedHyvaViewModelInterface::getMethodCode()` — never hardcode it in templates or tests.

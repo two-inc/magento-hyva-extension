@@ -11,17 +11,47 @@ declare(strict_types=1);
 
 namespace Two\GatewayHyva\ViewModel;
 
-use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
+use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
 
 class CheckoutConfig implements ArgumentInterface
 {
+    /**
+     * Placeholder the Alpine component substitutes the buyer's company number
+     * into (TWO-25326). Sibling of COMPANY_NAME_TOKEN below.
+     */
+    public const COMPANY_NUMBER_TOKEN = "{{companyNumber}}";
+    /**
+     * Placeholder the Alpine component substitutes the buyer's company name
+     * into. Local, not the parent's constant: that import would fatal on a
+     * parent predating it, defeating the method_exists() degradation below.
+     */
+    public const COMPANY_NAME_TOKEN = "{{companyName}}";
+
+    /**
+     * Characters a buyer must type before a company search is issued.
+     *
+     * The single source of truth for this repo (TWO-25288). Every company-search
+     * surface reads it through getCompanySearchMinChars() — the enforcing guard
+     * AND the "please enter N or more characters" hint that claims it. They used
+     * to be independent literals in five places across three templates, which
+     * meant the number a buyer was told and the number actually enforced could
+     * drift silently; that drift is the defect this constant closes, not the
+     * copy. Interpolate it into the hint, never restate it.
+     *
+     * Not a merchant config field on purpose: there is no admin setting for it,
+     * and inventing one would make the two numbers diverge per store view.
+     */
+    public const COMPANY_SEARCH_MIN_CHARS = 3;
+
     /**
      * @var ConfigRepository
      */
@@ -48,14 +78,14 @@ class CheckoutConfig implements ArgumentInterface
     private $assetRepository;
 
     /**
-     * @var CheckoutSession
-     */
-    private $checkoutSession;
-
-    /**
      * @var BrandedHyvaViewModelInterface
      */
     private $brandedViewModel;
+
+    /**
+     * @var ApiKeyVerificationStatus
+     */
+    private $apiKeyVerificationStatus;
 
     /**
      * Memoized result of getOrderIntentConfig() — avoids repeating the
@@ -65,22 +95,61 @@ class CheckoutConfig implements ArgumentInterface
      */
     private $orderIntentConfig;
 
+    /**
+     * @var CheckoutTileCopy
+     */
+    private $checkoutTileCopy;
+
+    /**
+     * @var LogRepository
+     */
+    private $logRepository;
+
+    /** @var bool */
+    private $withholdLogged = false;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
-        CheckoutSession $checkoutSession,
         BrandedHyvaViewModelInterface $brandedViewModel,
+        ApiKeyVerificationStatus $apiKeyVerificationStatus,
+        CheckoutTileCopy $checkoutTileCopy,
+        LogRepository $logRepository,
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
-        $this->checkoutSession = $checkoutSession;
         $this->brandedViewModel = $brandedViewModel;
+        $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
+        $this->checkoutTileCopy = $checkoutTileCopy;
+        $this->logRepository = $logRepository;
+    }
+
+    /**
+     * TWO-25326: is the payment tile the surface hosting the ONE
+     * company-search control right now? When false, the tile is text-only and
+     * the address-area control is the enhanced one.
+     *
+     * Hyvä has NO setting of its own for this — the earlier revision's
+     * Hyvä-local `two_general/hyva/company_search_location` field was wrong;
+     * the requirement is exactly one control deciding this per merchant, not
+     * one per platform. It reads the CORE module's
+     * already-existing, already-correct setting directly, the same way
+     * getIsCompanySearchEnabled()/getIsAddressSearchEnabled() below already
+     * reuse ConfigRepository for other core config: `enable_company_search`
+     * (Stores > Configuration > Two > General > Search). Enabled means the
+     * shipping-address field hosts the control; disabled means the payment
+     * tile does. So "in the payment tile" here is the negation of
+     * isCompanySearchEnabled().
+     */
+    public function getIsCompanySearchInPaymentTile(): bool
+    {
+        return !$this->configRepository->isCompanySearchEnabled();
     }
 
     /**
@@ -95,15 +164,6 @@ class CheckoutConfig implements ArgumentInterface
     public function getDefaultPaymentTerm(): int
     {
         return (int) $this->configRepository->getDefaultPaymentTerm();
-    }
-
-    /**
-     * Currently selected term in checkout session, falling back to default.
-     */
-    public function getSelectedPaymentTerm(): int
-    {
-        $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
-        return $sessionTerm > 0 ? $sessionTerm : $this->getDefaultPaymentTerm();
     }
 
     public function getSurchargeDescription(): string
@@ -159,7 +219,41 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * Arbitrary merchant-configured headers for `/autofill/v1/buyer/current`,
+     * the one browser-side call that cannot be proxied (see AGENTS.md). Empty
+     * unless the merchant opted in, so its presence in tile config is defence
+     * in depth, not a leak. A base predating the method answers no headers
+     * rather than fatal.
+     */
+    public function getCustomHeaders(): array
+    {
+        if (!method_exists($this->configRepository, "getBrowserCustomHeaders")) {
+            return [];
+        }
+
+        return $this->configRepository->getBrowserCustomHeaders();
+    }
+
+    /**
+     * Whether the base exposes the proxy routes; false falls back to the direct call.
+     * Runtime check, not composer's ^2.3.0 floor — a version is not proof the code
+     * shipped. True proves autoload, not route registration (a stale route cache 404s
+     * until cache:flush). The registry interface stands in for the order-intent one,
+     * both landing in one base commit; if that stops holding add a second check.
+     * String literal, not an import that would itself fatal on the base being
+     * detected. Base-module literals are duplicated in this repo's tests, so drift
+     * surfaces only at runtime — accepted because it fails closed. The four getters
+     * below stay `@deprecated` so static-analysis noise at their call sites reminds
+     * a reader to delete them once the fallback goes.
+     */
+    public function getIsProxyAvailable(): bool
+    {
+        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
+    }
+
+    /**
      * Plugin identifier for the `client` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientName(): ?string
     {
@@ -168,6 +262,7 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Plugin version for the `client_v` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getClientVersion(): ?string
     {
@@ -176,31 +271,136 @@ class CheckoutConfig implements ArgumentInterface
 
     /**
      * Merchant slug for the `merchant` query param on browser-side Two API calls.
+     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */
     public function getMerchantShortName(): string
     {
         return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
     }
 
-    public function getIsCompanySearchEnabled()
-    {
-        return $this->configRepository->isCompanySearchEnabled();
-    }
-
-    public function getIsAddressSearchEnabled()
-    {
-        return $this->configRepository->isAddressSearchEnabled();
-    }
-
-    public function getCompanySearchLimit()
+    /** @deprecated Fallback row bound; the proxy route sets its own. */
+    public function getCompanySearchLimit(): int
     {
         return 50;
     }
 
-    public function getSupportedCountryCodes()
+    /**
+     * A REJECTED key leaves a captured company nothing to feed, so the search
+     * stands down (TWO-25326); an unreachable or erroring Two is not a
+     * rejection and it keeps running (ABN-533).
+     */
+    public function getIsCompanySearchEnabled()
     {
-        $countries = ["no", "gb", "se", "nl"];
-        return $countries;
+        if (!$this->configRepository->isCompanySearchEnabled()) {
+            return false;
+        }
+        if (!$this->apiKeyVerificationStatus->isDefinitiveFailure()) {
+            return true;
+        }
+        // Standing the control down is invisible to the merchant (ABN-518).
+        if (!$this->withholdLogged) {
+            $this->withholdLogged = true;
+            $this->logRepository->addDebugLog(
+                'Hyva company search withheld from checkout: API key rejected',
+                ['status' => $this->apiKeyVerificationStatus->getStatus()]
+            );
+        }
+
+        return false;
+    }
+
+    /**
+     * May a company pick FILL IN the buyer's address for them?
+     *
+     * TWO-25326: TWO conditions, expressed here once.
+     * Address autofill requires the `enable_address_search` setting AND the
+     * company-search control living in the address entry — because autofill
+     * writes city / postcode / street into an address FORM, and when the one
+     * control lives in the payment tile instead there is no address form the
+     * buyer is working in for it to write into. Filling the address from a
+     * pick made on the payment step overwrites an address the buyer has
+     * already completed, silently, several steps behind where they are
+     * looking.
+     *
+     * Every autofill gate in this module — and in a branded overlay carrying
+     * its own copy of an address-side template — reads THIS getter, so the
+     * two conditions cannot be applied on one surface and forgotten on
+     * another. That is why the conjunction lives here rather than being
+     * `&&`-ed into each template: the previous arrangement satisfied the
+     * second condition three different accidental ways (a hard-coded `false`
+     * in the tile's options, a layout `ifconfig`, and a PHP branch), none of
+     * which stated the rule, and any surface that did not happen to inherit
+     * one of the three autofilled when it must not.
+     *
+     * The name is unchanged deliberately: the setting it gates is
+     * `enable_address_search`, this is the only question anything asks about
+     * it, and every existing caller is an autofill gate.
+     */
+    public function getIsAddressSearchEnabled()
+    {
+        return $this->configRepository->isAddressSearchEnabled()
+            && !$this->getIsCompanySearchInPaymentTile();
+    }
+
+    /**
+     * The `enable_address_search` setting ALONE, un-narrowed (TWO-25503).
+     *
+     * Deliberately not getIsAddressSearchEnabled(): that getter's second
+     * condition is about where the company-search CONTROL is mounted, which
+     * decides nothing about the sole-trader flow — the sole-trader entry point
+     * lives in the payment tile in both configurations, and its address
+     * write-back is unconditional per TWO-25461. The only thing this gates
+     * is the buyer's PHONE NUMBER, which the merchant opted into having filled
+     * in for them when they turned address autopopulation on.
+     */
+    public function getIsAddressAutopopulationEnabled(): bool
+    {
+        return (bool) $this->configRepository->isAddressSearchEnabled();
+    }
+
+    /**
+     * @see self::COMPANY_SEARCH_MIN_CHARS
+     */
+    public function getCompanySearchMinChars(): int
+    {
+        return self::COMPANY_SEARCH_MIN_CHARS;
+    }
+
+    /** Duplicate HTML attributes are first-occurrence-wins, so the entity field's own type/autocomplete must go. */
+    public function stripDuplicatedFieldAttributes(string $renderedAttributes): string
+    {
+        $kept = [];
+        $offset = 0;
+        $length = strlen($renderedAttributes);
+
+        while ($offset < $length) {
+            $matched = preg_match(
+                '/\G\s*([^\s=\/>"\']+)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+))?/',
+                $renderedAttributes,
+                $token,
+                0,
+                $offset
+            );
+
+            if ($matched !== 1) {
+                break;
+            }
+
+            $offset += strlen($token[0]);
+
+            if (!in_array(strtolower($token[1]), ['type', 'autocomplete'], true)) {
+                $kept[] = isset($token[2]) && $token[2] !== ''
+                    ? $token[1] . '=' . $token[2]
+                    : $token[1];
+            }
+        }
+
+        $remainder = trim(substr($renderedAttributes, $offset));
+        if ($remainder !== '') {
+            $kept[] = $remainder;
+        }
+
+        return implode(' ', $kept);
     }
 
     public function getIsDepartmentFieldEnabled()
@@ -236,28 +436,179 @@ class CheckoutConfig implements ArgumentInterface
         return $redirectMessage;
     }
 
-    /**
-     * Brand-supplied checkout subtitle, rendered under the payment title.
-     *
-     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
-     * from brand.xml). The vanilla Two brand returns '' → no subtitle. Only
-     * a non-empty key is passed to the translator, so an unmapped locale
-     * falls back to the brand-owned source key rather than leaking a
-     * vanilla key. May contain HTML (e.g. a link) — render unescaped.
-     */
+    /** Escaped and assembled by the base module, may contain HTML — render unescaped. */
     public function getCheckoutSubtitleHtml(): string
     {
-        $key = $this->brandRegistry->getCheckoutSubtitle();
-        return $key === '' ? '' : (string)__($key);
+        return $this->checkoutTileCopy->getSubtitleHtml();
     }
 
-    public function getOrderIntentApprovedMessage()
+    public function getShowAboutLink(): bool
     {
-        $orderIntentApprovedMessage = __(
-            "Your invoice purchase with %1 is likely to be accepted subject to additional checks.",
-            $this->brandRegistry->getProductName(),
-        );
-        return $orderIntentApprovedMessage;
+        return $this->checkoutTileCopy->isAboutLinkVisible();
+    }
+
+    /** '' whenever the link is not shown — never a dead href. */
+    public function getAboutLinkUrl(): string
+    {
+        return $this->checkoutTileCopy->getAboutLinkUrl();
+    }
+
+    public function getAboutLinkText(): string
+    {
+        return $this->checkoutTileCopy->getAboutLinkText();
+    }
+
+    public function getAboutTooltipHtml(): string
+    {
+        return $this->checkoutTileCopy->getAboutTooltipHtml();
+    }
+
+    /** Keyed on the payment code, like every other ARIA association on this tile. */
+    public function getAboutTooltipId(): string
+    {
+        return 'two-about-tooltip-' . $this->brandedViewModel->getMethodCode();
+    }
+
+    /**
+     * Buyer-facing "order intent approved" notice, or null when the active
+     * brand has switched it off.
+     *
+     * Null means the template must emit no element at all — not an empty
+     * wrapper. Otherwise both resolved copy variants are returned plus the
+     * token the Alpine component substitutes the buyer's company name into
+     * (the company name is only ever known client-side):
+     *
+     *   withCompany    — company known; the normal case, since an order
+     *                    intent is only placed once the buyer's company
+     *                    name and number are both resolved
+     *   withoutCompany — defensive fallback
+     *
+     * On/off and wording are two independent brand declarations, resolved by
+     * the parent module (TWO-25218 — they used to be conflated in one key,
+     * where an empty string meant "off"; do not reintroduce that):
+     *
+     *   isIntentApprovedNoticeEnabled() — the switch. Explicit boolean in
+     *       brand.xml; absent means the documented default true. false here
+     *       is the ONLY thing that returns null from this method.
+     *   getIntentApprovedNotice()       — copy override only. null (absent,
+     *       empty or whitespace-only) means the platform default copy. An
+     *       empty override is inert; it no longer switches the notice off.
+     *
+     * Mirrors the Luma checkout's config provider; the brand.xml contract
+     * lives on the base module's brand descriptor.
+     *
+     * TWO-25326: the default copy now embeds BOTH the company name and number
+     * directly in the sentence — this is what replaces the standalone
+     * "<name> (<number>)" tile label, which the ticket removes rather than
+     * supplements. A brand override supplied before TWO-25326 will not carry
+     * the number token; that is a brand-specific follow-up, not something this
+     * method can fix on a brand's behalf.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    public function getOrderIntentApprovedNotice(): ?array
+    {
+        // A base predating these registry methods means "no brand opinion": notice
+        // ON with platform default copy. Floor untrusted per getIsProxyAvailable().
+        $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
+            ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
+            : true;
+
+        if (!$enabled) {
+            return null;
+        }
+
+        $override = method_exists($this->brandRegistry, "getIntentApprovedNotice")
+            ? $this->brandRegistry->getIntentApprovedNotice()
+            : null;
+
+        $productName = $this->brandRegistry->getProductName();
+
+        // The default is spelled as a literal __() argument so
+        // i18n:collect-phrases and the overlay repos' i18n audit can still see
+        // it; the override branch takes a variable by necessity.
+        // '' should never reach here (the parent normalises blank overrides to
+        // null) but is treated as "no override" rather than as an off switch,
+        // so a stale parent cannot resurrect empty-means-off.
+        $withCompany = ($override === null || $override === "")
+            ? __(
+                "This order by %1 (%2) is likely to be accepted by %3",
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN,
+                $productName,
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+
+        return [
+            "withCompany" => (string) $withCompany,
+            "withoutCompany" => (string) __(
+                "Your invoice with %1 is likely to be accepted, subject to additional checks.",
+                $productName,
+            ),
+            "companyNameToken" => self::COMPANY_NAME_TOKEN,
+            "companyNumberToken" => self::COMPANY_NUMBER_TOKEN,
+        ];
+    }
+
+    /**
+     * TWO-25326: the tile's "not approved / no intent" wording, shown
+     * persistently in the text-only tile exactly where the approved notice
+     * would otherwise render.
+     *
+     * Two independent brand declarations of its own, read
+     * exactly as getOrderIntentApprovedNotice() above reads the approved
+     * pair — the two outcomes are suppressed and worded separately:
+     *
+     *   isIntentDeclinedNoticeEnabled() — the switch, the only thing that
+     *       returns null here. Absent from brand.xml means the documented
+     *       default true.
+     *   getIntentDeclinedNotice()       — copy override only, and inert
+     *       when empty.
+     *
+     * A base declaring neither falls back to the approved switch, and one
+     * declaring no switch at all leaves the notice on.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    public function getOrderIntentNotAvailableNotice(): ?array
+    {
+        if (method_exists($this->brandRegistry, "isIntentDeclinedNoticeEnabled")) {
+            $enabled = $this->brandRegistry->isIntentDeclinedNoticeEnabled();
+        } elseif (method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")) {
+            $enabled = $this->brandRegistry->isIntentApprovedNoticeEnabled();
+        } else {
+            $enabled = true;
+        }
+
+        if (!$enabled) {
+            return null;
+        }
+
+        $override = method_exists($this->brandRegistry, "getIntentDeclinedNotice")
+            ? $this->brandRegistry->getIntentDeclinedNotice()
+            : null;
+
+        $productName = $this->brandRegistry->getProductName();
+
+        // Literal default so i18n:collect-phrases still sees it; '' is no override, never an off switch.
+        $withCompany = ($override === null || $override === "")
+            ? __(
+                "%1 is not available for this order by %2 (%3)",
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN,
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+
+        return [
+            "withCompany" => (string) $withCompany,
+            "withoutCompany" => (string) __(
+                "%1 is not available for this order",
+                $productName,
+            ),
+            "companyNameToken" => self::COMPANY_NAME_TOKEN,
+            "companyNumberToken" => self::COMPANY_NUMBER_TOKEN,
+        ];
     }
 
     public function getOrderIntentDeclinedMessage()
@@ -278,6 +629,14 @@ class CheckoutConfig implements ArgumentInterface
             $tryAgainLater,
         );
         return $generalErrorMessage;
+    }
+
+    public function getCompanyRequiredMessage()
+    {
+        return __(
+            "Please select your company before paying with %1.",
+            $this->brandRegistry->getProductName(),
+        );
     }
 
     public function getInvalidEmailListMessage()

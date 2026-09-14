@@ -8,12 +8,54 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       layout="1column" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
 	<head>
+		<!--
+			The company popover itself, loaded from the BASE plugin rather than
+			reimplemented here (TWO-25503). It is framework-free with a UMD tail,
+			so with no RequireJS on the page it attaches itself to a browser
+			global the mounts then read.
+
+			The reference below resolves because the base plugin is a hard
+			composer dependency and Magento deploys a module's web assets for
+			every frontend theme — verified on the deployed static tree, where
+			the base plugin's scripts serve under Hyva/default.
+		-->
+		<script src="Two_Gateway::js/model/company-search-panel.js"/>
+		<!--
+			And the capture CONTROLLER above it, from the same place and for the
+			same reason (TWO-25503): the modes, the mount, the country the search
+			runs against and the sole-trader flow are one implementation, framework
+			-free with a UMD tail, attaching `window.TwoCompanyIdentity`,
+			`window.TwoSoleTrader` and `window.TwoCompanyCaptureComponent`. This
+			checkout supplies only the Alpine-shaped half each of them asks for.
+		-->
+		<script src="Two_Gateway::js/model/company-identity.js"/>
+		<script src="Two_Gateway::js/model/sole-trader.js"/>
+		<script src="Two_Gateway::js/model/company-capture-component.js"/>
+		<!--
+			And its STYLING, from the same place and for the same reason. Copying
+			the popover's rules here would duplicate exactly what this ticket
+			de-duplicates.
+
+			This also restyles the term chips, which this checkout already paints
+			and which are a shipped, working surface — deliberately, and to be
+			judged by eye rather than pre-empted: any class that genuinely needs
+			to mesh with Hyvä's styling gets a selective override in custom.css
+			AFTER someone has looked at it, which is why this loads BEFORE
+			custom.css and that ordering is pinned by a test.
+		-->
+		<css src="Two_Gateway::css/style.css"/>
 		<css src="Two_GatewayHyva::css/custom.css"/>
 	</head>
     <body>
         <referenceBlock name="before.body.end">
             <block name="two_getway_payment_method"
-                template="Two_GatewayHyva::js/payment/company-name-payment.phtml" after="-"/>
+                template="Two_GatewayHyva::js/payment/company-name-payment.phtml" after="-">
+                <arguments>
+                    <argument name="branded_view_model" xsi:type="object">
+                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
+                    </argument>
+                </arguments>
+            </block>
         </referenceBlock>
     </body>
 </page>
