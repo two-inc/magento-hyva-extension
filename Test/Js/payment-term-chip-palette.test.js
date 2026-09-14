@@ -530,13 +530,22 @@ describe("no chip state is settled by source order", () => {
  * in this file and lose outright on the page, so the weight is asserted.
  */
 describe("the palette outweighs the base plugin's own chip rules", () => {
-  const CHIP = /\.two-term-chip(?![\w-])|\.two-company-mode-chip(?![\w-])/;
-  const MODIFIER = /--(selected|single)(?![\w-])/;
+  const TOKENS = [
+    /\.two-term-chip(?![\w-])/g,
+    /\.two-company-mode-chip(?![\w-])/g,
+  ];
 
-  it("every chip selector carries more than one class", () => {
-    const underweight = RULES.filter((rule) => CHIP.test(rule.selector))
-      .filter((rule) => rule.score[1] < (MODIFIER.test(rule.selector) ? 3 : 2))
-      .map((rule) => `${rule.selector} scores ${rule.score.join(",")}`);
+  /** @returns {number} times the selector names the chip's own class */
+  function repeats(selector) {
+    return Math.max(
+      ...TOKENS.map((token) => (selector.match(token) || []).length),
+    );
+  }
+
+  it("every chip selector names its class at least twice", () => {
+    const underweight = RULES.filter(
+      (rule) => repeats(rule.selector) === 1,
+    ).map((rule) => rule.selector);
 
     expect(underweight).toEqual([]);
   });
