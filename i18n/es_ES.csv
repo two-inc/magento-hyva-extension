@@ -7,3 +7,7 @@
 "no API key is saved. Check API key.","no hay ninguna clave API guardada. Compruebe Clave API."
 "the API key was rejected. Check API key and Environment.","la clave API fue rechazada. Compruebe Clave API y Entorno."
 "Shown in the payment method — Enable company search in address entry is No.","Se muestra en el método de pago: Activar la búsqueda de empresa en la introducción de la dirección está en No."
+"Could not update payment term. Please try again.","No se ha podido actualizar el plazo de pago. Inténtalo de nuevo."
+"Opening sole trader sign-up","Abriendo el registro de autónomo"
+"The selected payment term is no longer available. Please review the payment options and place the order again.","El plazo de pago seleccionado ya no está disponible. Revisa las opciones de pago y realiza el pedido de nuevo."
+"This order by %1 (%2) is likely to be accepted by %3","Es probable que este pedido de %1 (%2) sea aceptado por %3"
