@@ -33,6 +33,15 @@ name: Version bump
 #   2. The App (id 2603046) holds `bypass_mode: always` on the branch-protection
 #      ruleset in each of these repos.
 #
+# It is minted for the final push only, after every step that runs code from the
+# PR head, so it is not on disk while those steps run. That is hygiene rather than
+# a boundary, and two routes get past it. `pull_request` reads this workflow from
+# the PR head, so a same-repo PR can edit the job itself. And steps share a
+# filesystem and a $HOME, so PR code in an earlier step can leave a git shim on
+# PATH or a credential helper in .gitconfig for the push step to hand the token
+# to. Closing either needs the App off the ruleset bypass list, or a trigger whose
+# workflow is read from the default branch. See PLAT-2318.
+#
 # On (2): this scheme also sidesteps the GH013 failure that the old
 # push-to-staging workflow hits, because the bump is now a commit on the PR's
 # own head branch, and `terraform-managed-branch-protection` only targets
@@ -44,7 +53,9 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  # Read is enough: the checkout and the fetch below are the only things using
+  # this token, and the push carries the App token instead.
+  contents: read
 
 # Never cancel in flight: a cancelled run could be killed between the bump
 # commit and the push.
@@ -74,13 +85,6 @@ jobs:
     # to abuse; it simply has nowhere to write, so skip rather than fail red.
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - name: Mint GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
-
       - uses: actions/checkout@v6
         with:
           # The PR's head BRANCH, not the merge ref: the bump commit has to land
@@ -88,15 +92,18 @@ jobs:
           # a detached merge commit.
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: true
+          # Nothing on disk for the steps below, which run code from the PR head.
+          # The fetch and the push each carry their own credential.
+          persist-credentials: false
 
       - name: Fetch main and staging
         # The decision reads the released version off `origin/main` and the PR's
         # commit range off `origin/staging`. Explicit refspecs because
         # actions/checkout only guarantees the ref it was asked for.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --no-tags origin \
+          git fetch --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
             "+refs/heads/main:refs/remotes/origin/main" \
             "+refs/heads/staging:refs/remotes/origin/staging"
 
@@ -132,11 +139,20 @@ jobs:
           # `main` and the push is done explicitly below.
           bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
 
+      - name: Mint GitHub App token
+        id: app-token
+        if: steps.decide.outputs.changed == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+
       - name: Push onto the PR branch
         if: steps.decide.outputs.changed == 'true'
         env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: git push origin "HEAD:refs/heads/${HEAD_REF}"
+        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "HEAD:refs/heads/${HEAD_REF}"
 
       - name: Summary
         env:

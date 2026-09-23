@@ -1,0 +1,42 @@
+name: Release propagation dispatch
+
+# The release-tracking Magento staging shops install the published release rather
+# than a branch, and only re-resolve when their pod restarts — so publishing a
+# Release here has to tell the infra repo, which resolves what is newly published
+# and raises the values pull request that rolls the shop. Its daily reconcile is a
+# backstop for a dispatch that never arrived, not the mechanism. TWO-25769.
+on:
+  release:
+    types: [published]
+
+# The dispatch goes out under the App token; GITHUB_TOKEN needs nothing.
+permissions: {}
+
+concurrency:
+  group: release-propagation-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Notify platform-tools
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          owner: two-inc
+          repositories: platform-tools
+
+      - name: Dispatch plugin-release-published
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # The receiver maps this to a shop and fails on a repository it has no
+          # mapping for.
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          gh api repos/two-inc/platform-tools/dispatches \
+            -f event_type=plugin-release-published \
+            -f "client_payload[repository]=$SOURCE_REPO"

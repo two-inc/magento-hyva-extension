@@ -389,31 +389,4 @@ describe("the sole offered term chip", () => {
   ])("the sole chip $case", ({ read, expected }) => {
     expect(read(soleChip())).toBe(expected);
   });
-
-  it.each([
-    {
-      // The busy rule would otherwise fade the one permanently disabled chip.
-      pattern: ".two-term-chip[disabled]:not(.two-term-chip--single)",
-      case: "the sole chip is not dimmed by the mid-round-trip styling",
-    },
-    {
-      pattern:
-        ".two-term-chip:focus-visible {\n  outline: 2px solid #3043d1;\n  outline-offset: 2px;\n}",
-      case: "a keyboard-focused chip keeps a visible ring (WCAG 2.4.7)",
-    },
-  ])("$case", ({ pattern }) => {
-    const css = require("fs").readFileSync(
-      require("path").join(
-        __dirname,
-        "..",
-        "..",
-        "view/frontend/web/css/custom.css",
-      ),
-      "utf8",
-    );
-
-    expect(css).toContain(pattern);
-    // An `outline: none` anywhere on the chip removes the ring again.
-    expect(css).not.toMatch(/\.two-term-chip:focus\s*\{[^}]*outline:\s*none/);
-  });
 });

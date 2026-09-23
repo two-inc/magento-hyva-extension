@@ -57,13 +57,15 @@ install: clean
 	# (commit 28a55d8), ported forward here.
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
+	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/create-admin-user
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key) TWO_ENV=$(TWO_ENV)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	@echo ""
 	@echo "========================================="
 	@echo " Magento store: $(URL)"
 	@echo " Admin panel:   $(URL)admin"
-	@echo " Credentials:   exampleuser / examplepassword123"
+	@echo " Credentials:   exampleuser@two.inc / examplepassword123"
+	@echo "                (the base image's own 'exampleuser' account still works too)"
 	@echo " Xdebug:        installed (activate with 'make debug')"
 	@echo "========================================="
 
@@ -98,7 +100,8 @@ run:
 		echo " Proxy store:   $$PROXY_URL/"; \
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
-	echo " Credentials:   exampleuser / examplepassword123"; \
+	echo " Credentials:   exampleuser@two.inc / examplepassword123"; \
+	echo "                (the base image's own 'exampleuser' account still works too)"; \
 	echo "========================================="
 
 ## Start Magento with Xdebug and caches disabled for hot reload
@@ -128,7 +131,8 @@ debug:
 		echo " Proxy store:   $$PROXY_URL/"; \
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
-	echo " Credentials:   exampleuser / examplepassword123"; \
+	echo " Credentials:   exampleuser@two.inc / examplepassword123"; \
+	echo "                (the base image's own 'exampleuser' account still works too)"; \
 	echo " Mode:          debug (Xdebug + caches disabled)"; \
 	echo "========================================="
 
