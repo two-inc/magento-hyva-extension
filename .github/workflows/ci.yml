@@ -257,12 +257,108 @@ jobs:
           ref: staging
           path: base-module
 
+      # This leg installs the base from a path repo, which Composer treats as
+      # canonical: it outranks Packagist, so a branch whose `two-inc/magento2`
+      # constraint excludes the version on base `staging` cannot resolve at
+      # all, and the job fails on resolution rather than on anything it set
+      # out to prove.
+      #
+      # That is the correct answer for a branch tracking the current base. It
+      # is the wrong question for a MAINTENANCE release on an older major,
+      # which is pinned below the base's line on purpose. Releasing 2.1.1 off
+      # `main` while base `staging` is 3.x is exactly that case, and a red CI
+      # run there blocks release.yml, which requires CI success.
+      #
+      # Caret constraints only, which is all this repo has ever used. Anything
+      # else is treated as supported so an unfamiliar constraint fails loudly
+      # in the job below rather than being skipped silently here.
+      - name: Can this branch reach the base's staging line?
+        id: compat
+        env:
+          # The post-merge run on `main` and nothing else. That is the only
+          # run release.yml consumes, so it is the only one the skip has to
+          # work for, and scoping it this tightly removes the whole class of
+          # bypass: no pull request can claim release context by targeting a
+          # branch or naming a head, so lowering `two-inc/magento2` to an older
+          # caret major cannot mark this required gate successful without
+          # compiling anything.
+          #
+          # Deliberately NOT `head_ref == 'staging'`. A 2.x maintenance release
+          # cannot come from `staging`, because `staging` already carries the
+          # next major — 2.1.1 was cut from staging's own first parent for
+          # exactly that reason. Keying on the head branch would fail the
+          # release this exists to unblock.
+          #
+          # The cost is that a release PR shows these legs red before merge.
+          # They gate nothing (no required status checks on `main`) and the
+          # red is honest: on that tree the compile genuinely cannot resolve.
+          RELEASE_CONTEXT: >-
+            ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+        run: |
+          set -euo pipefail
+          constraint=$(jq -r '.require["two-inc/magento2"] // ""' composer.json)
+          base_version=$(sed -n 's/^current_version = "\([^"]*\)"/\1/p' base-module/bumpver.toml)
+          echo "constraint=${constraint} base=${base_version}"
+
+          # Fail closed. `sed` exits 0 with no output if the file is gone or
+          # the line is reformatted, and an empty base version would compare
+          # unequal to any constraint, marking this gate green without
+          # compiling anything — the check silently disabling itself.
+          if ! printf '%s' "$base_version" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Could not read a version from base-module/bumpver.toml (got '${base_version}'). Refusing to decide whether this gate applies."
+            exit 1
+          fi
+          base_major=${base_version%%.*}
+
+          # A COMPLETE single-caret constraint and nothing else. Matching a
+          # `^` prefix alone would read `^2.3 || ^3.0` as major 2 and skip,
+          # although Composer reads the `||` as OR and accepts base 3.x — so
+          # the gate would go green exactly when the compatible base is the
+          # thing that needs compiling. Anything this does not recognise is
+          # treated as supported and proceeds to the compile below, where an
+          # unfamiliar constraint fails loudly instead of silently here.
+          # The whole VALUE must be a single-caret constraint, evaluated as one
+          # record. `grep` is line-oriented and succeeds if ANY line matches,
+          # so a constraint carrying an embedded newline — `"^2.3\n|| ^3.0"`,
+          # which jq decodes and Composer accepts — would match on its first
+          # line and skip, although its `^3.0` arm is compatible. Reject a
+          # multiline value outright before the match.
+          if [ "$(printf '%s' "$constraint" | wc -l | tr -d ' ')" != "0" ]; then
+            want_major=""
+          elif printf '%s' "$constraint" | grep -Eq '^\^[0-9]+(\.[0-9]+)*$'; then
+            stripped="${constraint#^}"
+            want_major="${stripped%%.*}"
+          else
+            want_major=""
+          fi
+
+          # Directional on purpose. Only an OLDER major is the maintenance
+          # case this skip exists for. A branch that has moved AHEAD of base
+          # staging — say it wants ^4.0 while staging is 3.x — genuinely
+          # cannot compile against the base it is meant to track, and that has
+          # to stay red rather than be waved through as skipped-success.
+          # Outside the post-merge `main` run there is no skip, whatever the
+          # versions say. Fall through and let the compile fail on its own
+          # resolution error rather than inventing a different failure.
+          if [ "${RELEASE_CONTEXT}" != "true" ]; then
+            want_major=""
+          fi
+
+          if [ -n "$want_major" ] && [ "$want_major" -lt "$base_major" ]; then
+            echo "::notice::Skipping: this branch requires two-inc/magento2 ${constraint}, base staging is ${base_version}. A branch on an older major cannot resolve against it, by design."
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "supported=true" >> "$GITHUB_OUTPUT"
+
       - name: Start Magento docker container
+        if: steps.compat.outputs.supported == 'true'
         run: |
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
+        if: steps.compat.outputs.supported == 'true'
         # Ship only tracked files — avoids leaking .git/, dotfiles,
         # or any untracked working-tree state into the CI container.
         run: |
@@ -270,11 +366,13 @@ jobs:
           git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-hyva-extension
 
       - name: Upload base module source into container
+        if: steps.compat.outputs.supported == 'true'
         run: |
           docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2
           git -C base-module ls-files -z | tar --null -cf - -C base-module -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/two-magento2
 
       - name: Stub Hyvä / Magewire (no commercial credentials in CI)
+        if: steps.compat.outputs.supported == 'true'
         # The Hyvä checkout package (hyva-themes/magento2-hyva-checkout) is
         # commercial and can't be pulled in CI without credentials. dev/stub-hyva
         # satisfies it via composer `provide` + minimal class stubs so
@@ -285,6 +383,7 @@ jobs:
             php /data/extensions/magento-hyva-extension/dev/stub-hyva
 
       - name: Install extension from uploaded source
+        if: steps.compat.outputs.supported == 'true'
         # Base module is registered by its own key, ahead of requiring this
         # module, so composer resolves the transitive `two-inc/magento2`
         # requirement against the uploaded staging source instead of Packagist.
@@ -297,6 +396,7 @@ jobs:
             composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
 
       - name: Run setup:di:compile
+        if: steps.compat.outputs.supported == 'true'
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
@@ -315,8 +415,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
       - run: npm ci --no-audit --no-fund
       - run: npm run test:js
 
