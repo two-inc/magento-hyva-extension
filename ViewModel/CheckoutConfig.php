@@ -252,6 +252,15 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * Whether the base composes order intent from the quote itself (TWO-26092),
+     * so the browser sends the buyer only. Same runtime check as the proxy.
+     */
+    public function getIsServerIntentAvailable(): bool
+    {
+        return interface_exists('Two\Gateway\Api\OrderPostprocessingInterface');
+    }
+
+    /**
      * Plugin identifier for the `client` query param on browser-side Two API calls.
      * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
      */

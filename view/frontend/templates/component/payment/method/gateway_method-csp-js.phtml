@@ -32,6 +32,7 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $customHeaders = $configModel->getCustomHeaders();
 $isProxyAvailable = $configModel->getIsProxyAvailable();
+$isServerIntentAvailable = $configModel->getIsServerIntentAvailable();
 $companySearchLimit = $configModel->getCompanySearchLimit();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
 $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
@@ -59,7 +60,6 @@ $isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnable
 // its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
 $merchantDetails = $orderIntentConfig["merchant"] ?? [];
-$merchantId = $merchantDetails["id"] ?? "";
 $merchantName = $merchantDetails["short_name"] ?? "";
 $clientName = $configModel->getClientName();
 $clientVersion = $configModel->getClientVersion();
@@ -3141,6 +3141,8 @@ $quoteDetails = json_encode(
             // would misreport one company's standing decision after another
             // company's reply.
             placeOrderIntentFlag: true,
+            // Bare boolean: the base composes order intent from the quote (TWO-26092).
+            isServerIntentAvailable: <?= $isServerIntentAvailable ? "true" : "false" ?>,
 
             /*
              * WHAT WE KNOW ABOUT EACH COMPANY, keyed BY company id.
@@ -3247,19 +3249,6 @@ $quoteDetails = json_encode(
             ) ?>',
             generalErrorMessage: '<?= $escaper->escapeJs(
                 __($generalErrorMessage),
-            ) ?>',
-            orderIntentConfig_weightUnit: '<?= $escaper->escapeJs(
-                $orderIntentConfig["weightUnit"],
-            ) ?>',
-            orderIntentConfig_merchant_id: '<?= $escaper->escapeJs($merchantId) ?>',
-            orderIntentConfig_merchant_shortName: '<?= $escaper->escapeJs(
-                $merchantName,
-            ) ?>',
-            orderIntentConfig_extensionPlatformName: '<?= $escaper->escapeJs(
-                $orderIntentConfig["extensionPlatformName"],
-            ) ?>',
-            orderIntentConfig_extensionDBVersion: '<?= $escaper->escapeJs(
-                $orderIntentConfig["extensionDBVersion"],
             ) ?>',
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
@@ -3823,25 +3812,10 @@ $quoteDetails = json_encode(
 
                     if (this.shouldSkipOrderIntent(quoteData)) return null;
 
+                    // Only the base composes amounts and lines, from the quote; an older base gets no intent (TWO-26092).
+                    if (this.isServerIntentAvailable !== true) return null;
+
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
-
-                    // DEPRECATED — see twoGatewayCompanySearch.
-                    if (this.isProxyAvailable !== true) {
-                        const queryParams = new URLSearchParams({
-                            client: this.orderIntentConfig_extensionPlatformName,
-                            client_v: this.orderIntentConfig_extensionDBVersion,
-                            merchant: this.orderIntentConfig_merchant_shortName
-                        });
-
-                        const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(orderIntentRequestBody)
-                        });
-
-                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-                        return await response.json();
-                    }
 
                     const envelope = await window.twoGatewayProxyPost(
                         this.restBaseUrl,
@@ -3863,61 +3837,18 @@ $quoteDetails = json_encode(
 
             buildOrderIntentRequestBody(quoteData) {
                 const invoiceCompany = this.invoiceCompany();
-                const companyName = invoiceCompany.companyName;
-                const companyId = invoiceCompany.companyId;
-
-                let lineItems = quoteData.items?.map(item => ({
-                    name: item.name,
-                    description: item.description || '',
-                    discount_amount: parseFloat(item.discount_amount || 0).toFixed(2),
-                    gross_amount: parseFloat(item.row_total_incl_tax || 0).toFixed(2),
-                    net_amount: parseFloat(item.row_total || 0).toFixed(2),
-                    quantity: item.qty,
-                    unit_price: parseFloat(item.price || 0).toFixed(2),
-                    tax_amount: parseFloat(item.tax_amount || 0).toFixed(2),
-                    tax_rate: (parseFloat(item.tax_percent || 0) / 100).toFixed(6),
-                    tax_class_name: '',
-                    quantity_unit: this.orderIntentConfig_weightUnit || '',
-                    image_url: item.thumbnail,
-                    type: item.is_virtual === '0' ? 'PHYSICAL' : 'DIGITAL'
-                })) || [];
-
-                lineItems.push({
-                    name: 'Shipping',
-                    description: 'Shipping fee',
-                    gross_amount: parseFloat(quoteData.shipping_incl_tax || 0).toFixed(2),
-                    net_amount: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
-                    quantity: 1,
-                    unit_price: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
-                    tax_amount: parseFloat(quoteData.shipping_tax_amount || 0).toFixed(2),
-                    tax_rate: isNaN(parseFloat(quoteData.shipping_tax_amount)) || isNaN(parseFloat(quoteData.shipping_amount)) || parseFloat(quoteData.shipping_amount) === 0
-                        ? "0.000000"
-                        : (parseFloat(quoteData.shipping_tax_amount) / parseFloat(quoteData.shipping_amount)).toFixed(6),
-                    tax_class_name: '',
-                    quantity_unit: 'unit',
-                    type: 'SHIPPING_FEE'
-                });
 
                 // The same one resolution the search uses, so an order intent can
                 // never be checked against a different country from the one the
                 // company was found in.
                 this.countryCode = this.resolveCountryCode(quoteData);
 
-                const gross_amount = parseFloat(quoteData.grand_total || 0);
-                const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
-                const net_amount = gross_amount - tax_amount;
-
                 return {
-                    gross_amount: gross_amount.toFixed(2),
-                    net_amount: net_amount.toFixed(2),
-                    tax_amount: tax_amount.toFixed(2),
-                    currency: quoteData.quote_currency_code,
-                    line_items: lineItems,
                     buyer: {
                         company: {
-                            organization_number: companyId,
+                            organization_number: invoiceCompany.companyId,
                             country_prefix: this.countryCode,
-                            company_name: companyName
+                            company_name: invoiceCompany.companyName
                         },
                         representative: {
                             email: quoteData.email,
@@ -3925,12 +3856,7 @@ $quoteDetails = json_encode(
                             last_name: quoteData.last_name,
                             phone_number: quoteData.telephone
                         }
-                    },
-                    // The proxy resolves the merchant from the store's API key.
-                    ...(this.isProxyAvailable === true ? {} : {
-                        merchant_id: this.orderIntentConfig_merchant_id,
-                        merchant_short_name: this.orderIntentConfig_merchant_shortName
-                    })
+                    }
                 };
             },
 
