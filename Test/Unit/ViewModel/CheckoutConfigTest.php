@@ -499,6 +499,19 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testServerIntentTracksTheBaseModulesOwnInterface(): void
+    {
+        $viewModel = (new ReflectionClass(CheckoutConfig::class))->newInstanceWithoutConstructor();
+
+        $this->assertFalse($viewModel->getIsServerIntentAvailable(), 'a base that still takes amounts from the browser');
+        eval('namespace Two\Gateway\Api; interface OrderPostprocessingInterface {}');
+        $this->assertTrue($viewModel->getIsServerIntentAvailable(), 'the base composes intent from the quote');
+    }
+
+    /**
      * @dataProvider customHeadersCases
      */
     public function testCustomHeadersAreThreadedFromTheConfigRepository(

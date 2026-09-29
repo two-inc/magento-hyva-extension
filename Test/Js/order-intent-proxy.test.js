@@ -97,9 +97,16 @@ describe("order intent through the plugin's own backend", () => {
     const sent = call.jsonBody();
     expect(Object.keys(sent)).toEqual(["payload"]);
     const payload = JSON.parse(sent.payload);
+    // Only the buyer: the plugin composes amounts and lines from the quote (TWO-26092).
+    expect(Object.keys(payload)).toEqual(["buyer"]);
     expect(payload.buyer.company.organization_number).toBe("123456789");
     expect(payload.buyer.company.country_prefix).toBe("GB");
-    expect(payload.currency).toBe("GBP");
+    expect(payload.buyer.representative).toEqual({
+      email: "buyer@example.test",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone_number: "+44 1234",
+    });
 
     call.respondProxy(APPROVED);
     await pending;
@@ -114,7 +121,6 @@ describe("order intent through the plugin's own backend", () => {
 
     // Key-absence, not undefined: a payload decoding to `{}` satisfies toBeUndefined().
     expect(payload.buyer.company.organization_number).toBe("123456789");
-    expect(payload.currency).toBe("GBP");
     expect(Object.keys(payload)).not.toContain("merchant_id");
     expect(Object.keys(payload)).not.toContain("merchant_short_name");
 

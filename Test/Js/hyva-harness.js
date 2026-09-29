@@ -83,6 +83,7 @@ const PHP_VALUE_RULES = [
   ],
   // proxy-capability-fallback.test.js overrides this to `false`.
   [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
+  [/^\$isServerIntentAvailable \? "true" : "false"$/, "true"],
   [/^\$clientName$/, "magento-hyva"],
   [/^\$clientVersion$/, "2.1.0"],
   [/^\$merchantShortName$/, "Example Shop"],

@@ -91,62 +91,25 @@ describe("the capability flag reaches the browser", () => {
   });
 });
 
-describe("order intent without the proxy route", () => {
+const SERVER_INTENT_ABSENT = [[/^\$isServerIntentAvailable \? "true" : "false"$/, "false"]];
+
+describe("order intent on a base that does not compose it", () => {
   let tile;
 
   afterEach(() => tile && tile.restore());
 
-  test("goes straight to the API, as it did before the route existed", async () => {
-    tile = mountTile(PROXY_ABSENT);
+  // TWO-26092: amounts and lines are composed from the quote by the base, so a
+  // base that still expects them from the browser gets no intent at all.
+  test.each([
+    { rules: PROXY_ABSENT.concat(SERVER_INTENT_ABSENT), label: "no proxy routes either" },
+    { rules: SERVER_INTENT_ABSENT, label: "proxy routes, amounts still from the browser" },
+  ])("sends nothing and resolves with no verdict: $label", async ({ rules }) => {
+    tile = mountTile(rules);
 
     const pending = tile.component.placeOrderIntent();
-    const call = tile.fetchStub.last();
 
-    expect(call.url).toContain(API + "/v1/order_intent?");
-    expect(call.init.method).toBe("POST");
-
-    // Anchored outside the loop: a forEach body with no calls asserts nothing.
-    expect(tile.fetchStub.calls.length).toBeGreaterThan(0);
-    tile.fetchStub.calls.forEach((made) => {
-      expect(made.url).not.toContain("/rest/V1/two/");
-    });
-
-    const query = new URLSearchParams(call.url.split("?")[1]);
-    // The harness renders `client`/`client_v` as one placeholder; `merchant` has its own rule.
-    expect(query.get("client")).toBe("test");
-    expect(query.get("client_v")).toBe("test");
-    expect(query.get("merchant")).toBe("Example Shop");
-
-    const sent = JSON.parse(call.init.body);
-    expect(sent.payload).toBeUndefined();
-    expect(sent.buyer.company.organization_number).toBe("123456789");
-    expect(sent.currency).toBe("GBP");
-
-    call.respond(APPROVED);
-    expect(await pending).toEqual(APPROVED);
-  });
-
-  test("names the merchant, which the proxied body deliberately does not", async () => {
-    tile = mountTile(PROXY_ABSENT);
-
-    const pending = tile.component.placeOrderIntent();
-    const call = tile.fetchStub.last();
-    const sent = JSON.parse(call.init.body);
-
-    expect(sent.merchant_id).toBe("test-merchant-id");
-    expect(sent.merchant_short_name).toBe("Example Shop");
-
-    call.respond(APPROVED);
-    await pending;
-  });
-
-  test("a refusal still rejects, so the verdict box is painted not blank", async () => {
-    tile = mountTile(PROXY_ABSENT);
-
-    const pending = tile.component.placeOrderIntent();
-    tile.fetchStub.last().respondWithStatus(500);
-
-    await expect(pending).rejects.toThrow();
+    expect(tile.fetchStub.calls).toHaveLength(0);
+    expect(await pending).toBeNull();
   });
 });
 
@@ -443,27 +406,23 @@ describe("the capability flag is read by identity at every selection site", () =
 
   test.each(VALUES)("order intent — $label", async ({ flag, proxied }) => {
     tile = mountTile();
-    tile.component.isProxyAvailable = flag;
+    tile.component.isServerIntentAvailable = flag;
 
     const pending = tile.component.placeOrderIntent();
-    const call = tile.fetchStub.last();
-    const sent = JSON.parse(call.init.body);
-
-    expect(call.url === REST_BASE + "/rest/V1/two/order-intent").toBe(proxied);
-    expect(call.url.startsWith(API + "/v1/order_intent?")).toBe(!proxied);
 
     if (proxied) {
+      const call = tile.fetchStub.last();
+      expect(call.url).toBe(REST_BASE + "/rest/V1/two/order-intent");
+      const sent = JSON.parse(call.init.body);
       expect(Object.keys(sent)).toEqual(["payload"]);
-      const payload = JSON.parse(sent.payload);
-      expect(Object.keys(payload)).not.toContain("merchant_id");
-      expect(Object.keys(payload)).not.toContain("merchant_short_name");
+      expect(Object.keys(JSON.parse(sent.payload))).toEqual(["buyer"]);
       call.respondProxy(APPROVED);
+      expect(await pending).toEqual(APPROVED);
     } else {
-      expect(sent.merchant_id).toBe("test-merchant-id");
-      expect(sent.merchant_short_name).toBe("Example Shop");
-      call.respond(APPROVED);
+      // Nothing but the plugin's backend can compose an intent (TWO-26092).
+      expect(tile.fetchStub.calls).toHaveLength(0);
+      expect(await pending).toBeNull();
     }
-    await pending;
   });
 });
 
