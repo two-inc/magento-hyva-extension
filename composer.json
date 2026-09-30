@@ -4,7 +4,7 @@
   "type": "magento2-module",
   "version": "3.0.0",
   "require": {
-    "two-inc/magento2": "^3.0",
+    "two-inc/magento2": "^3.0 || ^4.0",
     "hyva-themes/magento2-hyva-checkout": "^1.2"
   },
   "autoload": {
