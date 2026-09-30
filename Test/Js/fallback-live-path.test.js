@@ -119,13 +119,6 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       telephone: "+44 1234",
-      quote_currency_code: "GBP",
-      grand_total: 120,
-      tax_amount: 20,
-      shipping_tax_amount: 0,
-      shipping_amount: 0,
-      shipping_incl_tax: 0,
-      items: [],
     };
     tile.companyId = "123456789";
     tile.companyName = "Acme Widgets";

@@ -87,27 +87,6 @@ class GetQuoteDetails implements ArgumentInterface
             }
 
             $shippingAddress = $quote->getShippingAddress();
-            $quoteDetails[
-                "shipping_incl_tax"
-            ] = $shippingAddress->getShippingInclTax();
-            $quoteDetails[
-                "shipping_amount"
-            ] = $shippingAddress->getShippingAmount();
-            $quoteDetails[
-                "shipping_tax_amount"
-            ] = $shippingAddress->getShippingTaxAmount();
-            $quoteDetails["tax_amount"] = $shippingAddress->getTaxAmount();
-            $totals = $quote->getTotals();
-            if (isset($totals["grand_total"])) {
-                $grandTotal = $totals["grand_total"]->getValue();
-                $quoteDetails["grand_total"] = $grandTotal;
-            }
-            $baseCurrencyCode = $quote->getBaseCurrencyCode();
-            $quoteCurrencyCode = $quote->getQuoteCurrencyCode();
-            if ($baseCurrencyCode || $quoteCurrencyCode) {
-                $quoteDetails["base_currency_code"] = $baseCurrencyCode;
-                $quoteDetails["quote_currency_code"] = $quoteCurrencyCode;
-            }
             $billingAddress = $quote->getBillingAddress();
             if ($billingAddress) {
                 $quoteDetails["country_id"] = $billingAddress->getCountryId();
@@ -128,32 +107,6 @@ class GetQuoteDetails implements ArgumentInterface
             );
             $quoteDetails["default_country_id"] = $defaultCountry;
 
-            $quoteItems = $quote->getItems();
-            if ($quoteItems) {
-                $mediaUrl = $this->_storeManager
-                    ->getStore()
-                    ->getBaseUrl(
-                        \Magento\Framework\UrlInterface::URL_TYPE_MEDIA,
-                    );
-                $items = [];
-                foreach ($quoteItems as $item) {
-                    $items[] = [
-                        "name" => $item->getName(),
-                        "description" => $item->getDescription() ?? "",
-                        "discount_amount" => $item->getDiscountAmount(),
-                        "row_total_incl_tax" => $item->getRowTotalInclTax(),
-                        "row_total" => $item->getRowTotal(),
-                        "qty" => $item->getQty(),
-                        "price" => $item->getPrice(),
-                        "tax_amount" => $item->getTaxAmount(),
-                        "tax_percent" => $item->getTaxPercent(),
-                        "thumbnail" =>
-                            $mediaUrl . $item->getProduct()->getThumbnail(),
-                        "is_virtual" => $item->getIsVirtual(),
-                    ];
-                }
-                $quoteDetails["items"] = $items;
-            }
             return $quoteDetails;
         } catch (LocalizedException $exception) {
             // Return empty array instead of null to prevent JS errors

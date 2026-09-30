@@ -210,9 +210,6 @@ class CheckoutConfig implements ArgumentInterface
             );
         }
         $this->orderIntentConfig = [
-            "extensionPlatformName" => $this->configRepository->getExtensionPlatformName(),
-            "extensionDBVersion" => $this->configRepository->getExtensionDBVersion(),
-            "weightUnit" => $this->configRepository->getWeightUnit(),
             "merchant" => $merchant,
         ];
         return $this->orderIntentConfig;

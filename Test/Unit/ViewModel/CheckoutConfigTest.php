@@ -512,6 +512,24 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
+     * The base composes intent server-side, so the page carries only the
+     * merchant identity the client params read (TWO-26092).
+     */
+    public function testOrderIntentConfigCarriesOnlyTheMerchant(): void
+    {
+        $reflection = new ReflectionClass(CheckoutConfig::class);
+        $viewModel = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('configRepository')->setValue($viewModel, new class {
+            public function __call(string $name, array $arguments)
+            {
+                return $name === 'getApiKey' ? '' : 'x';
+            }
+        });
+
+        $this->assertSame(['merchant' => null], $viewModel->getOrderIntentConfig());
+    }
+
+    /**
      * @dataProvider customHeadersCases
      */
     public function testCustomHeadersAreThreadedFromTheConfigRepository(
