@@ -210,9 +210,6 @@ class CheckoutConfig implements ArgumentInterface
             );
         }
         $this->orderIntentConfig = [
-            "extensionPlatformName" => $this->configRepository->getExtensionPlatformName(),
-            "extensionDBVersion" => $this->configRepository->getExtensionDBVersion(),
-            "weightUnit" => $this->configRepository->getWeightUnit(),
             "merchant" => $merchant,
         ];
         return $this->orderIntentConfig;
@@ -249,6 +246,15 @@ class CheckoutConfig implements ArgumentInterface
     public function getIsProxyAvailable(): bool
     {
         return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
+    }
+
+    /**
+     * Whether the base composes order intent from the quote itself (TWO-26092),
+     * so the browser sends the buyer only. Same runtime check as the proxy.
+     */
+    public function getIsServerIntentAvailable(): bool
+    {
+        return interface_exists('Two\Gateway\Api\OrderPostprocessingInterface');
     }
 
     /**

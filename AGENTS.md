@@ -460,12 +460,16 @@ reopened the direct browser-to-API path would make a missed cache flush
 invisible instead of loud.
 
 `false` — and, the flag being read by identity, anything that is not exactly
-`true` — takes each of those routes back to the **direct
-browser-to-API call it made before the routes existed** — query-string client
-identification and merchant name restored, the
-order-intent body naming the merchant again, and no firewall token on any of
+`true` — takes the registry routes back to the **direct
+browser-to-API call they made before the routes existed** — query-string client
+identification and merchant name restored, and no firewall token on any of
 it. That is not a new exposure: it is precisely what ran on that base already,
 and it is the only path on which those fallbacks are reachable.
+
+**Order intent has no browser fallback** (TWO-26092). The base composes its
+amounts and lines from the quote and the tile sends the buyer only, so intent
+runs only while `CheckoutConfig::getIsServerIntentAvailable()` finds the base's
+`OrderPostprocessingInterface`; on an older base no intent is sent at all.
 
 Those fallback branches are **deprecated on arrival**. Delete them, and the
 flag threading them, once a base release is confirmed BY INSPECTION OF THAT
