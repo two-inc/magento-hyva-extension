@@ -1608,7 +1608,8 @@ $quoteDetails = json_encode(
              * see or correct.
              *
              * `region` goes to a state/county field where the address format has
-             * one (a `region_id` select takes the relay's `region_id` where it
+             * one (a region select, named `region` on Hyvä Checkout and
+             * `region_id` elsewhere, takes the relay's `region_id` where it
              * offers it, else is matched by option TEXT, which is lossy and
              * known to be, hence best-effort), and otherwise is
              * appended to `city` after a comma, because dropping it loses part
@@ -1671,7 +1672,15 @@ $quoteDetails = json_encode(
                 };
                 const appendRegion = () => (ownSubdivisionCode() ? city : cityWithRegion());
                 if (region) {
-                    const regionSelect = container.querySelector('select[name="region_id"]');
+                    /*
+                     * Hyvä Checkout renders the region as ONE control named
+                     * `region`, a select of region ids where the country has a
+                     * list and a text input where it has none, both bound with
+                     * `wire:model` to `address.region` (TWO-26265). Other forms
+                     * name the select `region_id`. Either name is a select of
+                     * ids; only a text input takes the region as written.
+                     */
+                    const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
                     const regionInput = container.querySelector('input[name="region"]');
                     if (regionSelect) {
                         /*
@@ -1693,6 +1702,10 @@ $quoteDetails = json_encode(
                         // the region instead, so it is not lost either way.
                         if (match) {
                             regionSelect.value = match.value;
+                            // `input` as every other field written here gets;
+                            // `change` because `wire:model` on a select listens
+                            // for that rather than `input`.
+                            regionSelect.dispatchEvent(new Event('input', { bubbles: false }));
                             regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
                         } else {
                             city = appendRegion();
