@@ -1608,7 +1608,8 @@ $quoteDetails = json_encode(
              * see or correct.
              *
              * `region` goes to a state/county field where the address format has
-             * one (a `region_id` select takes the relay's `region_id` where it
+             * one (a region select, named `region` on Hyvä Checkout and
+             * `region_id` elsewhere, takes the relay's `region_id` where it
              * offers it, else is matched by option TEXT, which is lossy and
              * known to be, hence best-effort), and otherwise is
              * appended to `city` after a comma, because dropping it loses part
@@ -1670,8 +1671,18 @@ $quoteDetails = json_encode(
                     return !!field && field.value.toUpperCase() === match[1].toUpperCase();
                 };
                 const appendRegion = () => (ownSubdivisionCode() ? city : cityWithRegion());
+                // The region select that took an option, announced last.
+                let selectedRegion = null;
                 if (region) {
-                    const regionSelect = container.querySelector('select[name="region_id"]');
+                    /*
+                     * Hyvä Checkout renders the region as ONE control named
+                     * `region`, a select of region ids where the country has a
+                     * list and a text input where it has none, both bound with
+                     * `wire:model` to `address.region` (TWO-26265). Other forms
+                     * name the select `region_id`. Either name is a select of
+                     * ids; only a text input takes the region as written.
+                     */
+                    const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
                     const regionInput = container.querySelector('input[name="region"]');
                     if (regionSelect) {
                         /*
@@ -1693,7 +1704,7 @@ $quoteDetails = json_encode(
                         // the region instead, so it is not lost either way.
                         if (match) {
                             regionSelect.value = match.value;
-                            regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                            selectedRegion = regionSelect;
                         } else {
                             city = appendRegion();
                         }
@@ -1711,6 +1722,16 @@ $quoteDetails = json_encode(
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
                 });
+                /*
+                 * The region select is announced only once every value is in
+                 * the DOM, so nothing listening for its `change` reads a half
+                 * written address: `input` as every other field gets, and
+                 * `change` because `wire:model` on a select listens for that.
+                 */
+                if (selectedRegion) {
+                    selectedRegion.dispatchEvent(new Event('input', { bubbles: false }));
+                    selectedRegion.dispatchEvent(new Event('change', { bubbles: false }));
+                }
             },
 
             closeDropdown() {
