@@ -784,7 +784,9 @@ city.
 ids for a country with a list, a text input of the same name otherwise. Other
 forms name the select `region_id`, so both names are looked for. A selection is
 announced with `input` and `change`: `wire:model` on a select listens for
-`change`, and without it the next round trip writes the old value back. The
+`change`, and without it the next round trip writes the old value back. It is
+announced last, once city, postcode and street are written and announced, so
+nothing listening for its `change` reads a half-written address. The
 Jest fixtures in `address-payload-routing.test.js` are copied from the served
 checkout for exactly this reason: they used to render a `region_id` select,
 which Hyvä Checkout never serves, and passed while the province was never

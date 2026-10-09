@@ -374,15 +374,31 @@ describe("setAddressData field routing", () => {
    * TWO-26265. `wire:model` on a select takes its value from `change`, so a
    * selection Magewire never hears about is lost on the next round trip. The
    * select is announced with the same `input` every other field written here
-   * gets, plus `change`, and only once its value is set.
+   * gets, plus `change`, and only after every other field is written and
+   * announced, so nothing listening for its `change` reads a half-written
+   * address.
    */
-  test("a selected region is announced to Magewire with input and change", () => {
+  test("a selected region is announced last, with input and change", () => {
     const container = renderForm("select", "GB");
-    const select = container.querySelector('select[name="region"]');
+    const field = (name) => container.querySelector('[name="' + name + '"]');
     const heard = [];
+    ["city", "postcode", "street[0]"].forEach((name) =>
+      field(name).addEventListener("input", () => heard.push(name)),
+    );
     ["input", "change"].forEach((type) =>
-      select.addEventListener(type, () =>
-        heard.push(type + "=" + select.value),
+      field("region").addEventListener(type, () =>
+        heard.push(
+          "region " +
+            type +
+            "=" +
+            field("region").value +
+            " with " +
+            [
+              field("city").value,
+              field("postcode").value,
+              field("street[0]").value,
+            ].join("|"),
+        ),
       ),
     );
 
@@ -390,13 +406,20 @@ describe("setAddressData field routing", () => {
       {
         street_address: "1 High St",
         city: "Ashford",
+        postal_code: "TN23 1AA",
         region: "GB-KEN",
         region_id: 43,
       },
       container,
     );
 
-    expect(heard).toEqual(["input=43", "change=43"]);
+    expect(heard).toEqual([
+      "city",
+      "postcode",
+      "street[0]",
+      "region input=43 with Ashford|TN23 1AA|1 High St",
+      "region change=43 with Ashford|TN23 1AA|1 High St",
+    ]);
   });
 
   test("an unmatched region announces nothing on the select", () => {

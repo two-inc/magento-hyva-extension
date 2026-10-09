@@ -1671,6 +1671,8 @@ $quoteDetails = json_encode(
                     return !!field && field.value.toUpperCase() === match[1].toUpperCase();
                 };
                 const appendRegion = () => (ownSubdivisionCode() ? city : cityWithRegion());
+                // The region select that took an option, announced last.
+                let selectedRegion = null;
                 if (region) {
                     /*
                      * Hyvä Checkout renders the region as ONE control named
@@ -1702,11 +1704,7 @@ $quoteDetails = json_encode(
                         // the region instead, so it is not lost either way.
                         if (match) {
                             regionSelect.value = match.value;
-                            // `input` as every other field written here gets;
-                            // `change` because `wire:model` on a select listens
-                            // for that rather than `input`.
-                            regionSelect.dispatchEvent(new Event('input', { bubbles: false }));
-                            regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                            selectedRegion = regionSelect;
                         } else {
                             city = appendRegion();
                         }
@@ -1724,6 +1722,16 @@ $quoteDetails = json_encode(
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
                 });
+                /*
+                 * The region select is announced only once every value is in
+                 * the DOM, so nothing listening for its `change` reads a half
+                 * written address: `input` as every other field gets, and
+                 * `change` because `wire:model` on a select listens for that.
+                 */
+                if (selectedRegion) {
+                    selectedRegion.dispatchEvent(new Event('input', { bubbles: false }));
+                    selectedRegion.dispatchEvent(new Event('change', { bubbles: false }));
+                }
             },
 
             closeDropdown() {
