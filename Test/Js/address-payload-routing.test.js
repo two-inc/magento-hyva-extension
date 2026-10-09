@@ -30,9 +30,11 @@ describe("setAddressData field routing", () => {
    * region control the case asks for.
    *
    * @param {string} regionControl '', 'select' or 'input'
+   * @param {string} [country] the form's selected country; no country field
+   *   when omitted
    * @returns {HTMLElement} the container `setAddressData()` writes into
    */
-  function renderForm(regionControl) {
+  function renderForm(regionControl, country) {
     const region =
       regionControl === "select"
         ? '<select name="region_id"><option value="">--</option>' +
@@ -42,6 +44,13 @@ describe("setAddressData field routing", () => {
           : "";
     document.body.innerHTML = [
       '<div id="address-form">',
+      country
+        ? '  <select name="country_id"><option value="' +
+          country +
+          '" selected>' +
+          country +
+          "</option></select>"
+        : "",
       '  <input type="text" name="street[0]" value="PRE-LINE-1" />',
       '  <input type="text" name="street[1]" value="PRE-LINE-2" />',
       '  <input type="text" name="city" value="" />',
@@ -187,6 +196,87 @@ describe("setAddressData field routing", () => {
       });
     },
   );
+
+  /*
+   * TWO-26258. A registry can answer the region as an ISO 3166-2 code ("ES-M"),
+   * which no option is labelled with. A code for the form's own country is no
+   * use to anyone reading the city, so the region select is left for the buyer
+   * and the checkout's required-field validation prompts them.
+   */
+  const SUBDIVISION_CODE_CASES = [
+    {
+      country: "ES",
+      region: "ES-M",
+      regionControl: "select",
+      expected: { city: "MADRID", region_id: "" },
+      description: "an own-country code is not appended to the city",
+    },
+    {
+      country: "ES",
+      region: "es-m",
+      regionControl: "",
+      expected: { city: "MADRID" },
+      description: "the code is matched case-insensitively",
+    },
+    {
+      country: "ES",
+      region: "Nowhereshire",
+      regionControl: "select",
+      expected: { city: "MADRID, Nowhereshire", region_id: "" },
+      description: "a same-country free-text name is still appended",
+    },
+    {
+      country: "ES",
+      region: "FR-75",
+      regionControl: "select",
+      expected: { city: "MADRID, FR-75", region_id: "" },
+      description: "another country's code stays free text",
+    },
+    {
+      country: "",
+      region: "ES-M",
+      regionControl: "",
+      expected: { city: "MADRID, ES-M" },
+      description:
+        "with no country in the form there is nothing to judge it by",
+    },
+    {
+      country: "ES",
+      region: "",
+      regionControl: "select",
+      expected: { city: "MADRID", region_id: "" },
+      description: "an empty region writes nothing anywhere",
+    },
+  ];
+
+  test.each(SUBDIVISION_CODE_CASES)(
+    "$description",
+    ({ country, region, regionControl, expected, description }) => {
+      const container = renderForm(regionControl, country);
+
+      engine.setAddressData(
+        { street_address: "Calle Mayor 1", city: "MADRID", region },
+        container,
+      );
+
+      Object.keys(expected).forEach((name) => {
+        expect(description + ": " + name + "=" + valueOf(container, name)).toBe(
+          description + ": " + name + "=" + expected[name],
+        );
+      });
+    },
+  );
+
+  test("an own-country code is not written into an empty city either", () => {
+    const container = renderForm("select", "ES");
+
+    engine.setAddressData(
+      { street_address: "Calle Mayor 1", region: "ES-M" },
+      container,
+    );
+
+    expect(valueOf(container, "city")).toBe("");
+  });
 
   test("a missing container is a warned no-op, not a throw", () => {
     // The tile offers no address lookup at all, so `null` is a reachable
