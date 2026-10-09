@@ -770,8 +770,10 @@ legitimately repeat, and silently swallowing one is invisible to the buyer.
 Line 2 is left alone rather than blanked when there is nothing for it, so an
 autofill carrying no building cannot delete an apartment number the buyer typed.
 
-`region` goes to a `region_id` select when an option's TEXT matches (lossy and
-known to be), else to a free-text `region` field, else it is appended to `city`
+`region` goes to a `region_id` select when the payload's `region_id` is one of
+its options (the module's company relay adds the store's own id when it can
+resolve an ISO 3166-2 region, TWO-26263) or else an option's TEXT matches (lossy
+and known to be), else to a free-text `region` field, else it is appended to `city`
 after a comma — the comma being a separator, so an address with no city gets
 none. An unmatched value is never written onto a `region_id` select: that stores
 an id the store does not have.

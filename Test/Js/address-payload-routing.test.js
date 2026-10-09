@@ -267,6 +267,60 @@ describe("setAddressData field routing", () => {
     },
   );
 
+  /*
+   * TWO-26263. The module's company relay adds the store's own region id beside
+   * an ISO 3166-2 region it could resolve. The select takes it wherever it
+   * offers that id; otherwise the text routing above applies.
+   */
+  const REGION_ID_CASES = [
+    {
+      payload: { region: "GB-KEN", region_id: "43" },
+      expected: { region_id: "43", city: "Ashford" },
+      description: "an id the select offers is selected",
+    },
+    {
+      payload: { region: "GB-KEN", region_id: 43 },
+      expected: { region_id: "43", city: "Ashford" },
+      description: "a numeric id is matched as text",
+    },
+    {
+      payload: { region: "Surrey", region_id: "43" },
+      expected: { region_id: "43", city: "Ashford" },
+      description: "the id wins over a text match",
+    },
+    {
+      payload: { region: "GB-KEN", region_id: "99" },
+      expected: { region_id: "", city: "Ashford" },
+      description: "an id the select lacks falls back to the text routing",
+    },
+    {
+      payload: { region: "Surrey" },
+      expected: { region_id: "51", city: "Ashford" },
+      description: "with no id the text match is unchanged",
+    },
+  ];
+
+  test.each(REGION_ID_CASES)(
+    "$description",
+    ({ payload, expected, description }) => {
+      const container = renderForm("select", "GB");
+
+      engine.setAddressData(
+        Object.assign(
+          { street_address: "1 High St", city: "Ashford" },
+          payload,
+        ),
+        container,
+      );
+
+      Object.keys(expected).forEach((name) => {
+        expect(description + ": " + name + "=" + valueOf(container, name)).toBe(
+          description + ": " + name + "=" + expected[name],
+        );
+      });
+    },
+  );
+
   test("an own-country code is not written into an empty city either", () => {
     const container = renderForm("select", "ES");
 
