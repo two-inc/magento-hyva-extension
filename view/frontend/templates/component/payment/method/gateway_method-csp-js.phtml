@@ -1611,7 +1611,8 @@ $quoteDetails = json_encode(
              * one — a `region_id` select is matched by option TEXT, which is
              * lossy and known to be, hence best-effort — and otherwise is
              * appended to `city` after a comma, because dropping it loses part
-             * of the address entirely.
+             * of the address entirely. An ISO 3166-2 code for the form's own
+             * country is the exception: it is not appended.
              */
             setAddressData(address, container) {
                 if (!container) {
@@ -1653,6 +1654,21 @@ $quoteDetails = json_encode(
                 // things to separate. An address whose payload names a region and
                 // no city would otherwise arrive with a leading comma.
                 const cityWithRegion = () => (city ? city + ', ' + region : region);
+                /*
+                 * An ISO 3166-2 code for the form's own country ("ES-M" on a
+                 * Spanish address) is no use to anyone reading the city, so it
+                 * is never appended (TWO-26258). The region select is left for
+                 * the buyer, and the checkout's own required-field validation
+                 * prompts them. A code for another country stays free text.
+                 */
+                const ownSubdivisionCode = () => {
+                    const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+                    if (!match) return false;
+                    const field = window.twoGatewayCountryFields(container)
+                        .find((candidate) => candidate.value);
+                    return !!field && field.value.toUpperCase() === match[1].toUpperCase();
+                };
+                const appendRegion = () => (ownSubdivisionCode() ? city : cityWithRegion());
                 if (region) {
                     const regionSelect = container.querySelector('select[name="region_id"]');
                     const regionInput = container.querySelector('input[name="region"]');
@@ -1669,13 +1685,13 @@ $quoteDetails = json_encode(
                             regionSelect.value = match.value;
                             regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
                         } else {
-                            city = cityWithRegion();
+                            city = appendRegion();
                         }
                     } else if (regionInput) {
                         regionInput.value = region;
                         regionInput.dispatchEvent(new Event('input', { bubbles: false }));
                     } else {
-                        city = cityWithRegion();
+                        city = appendRegion();
                     }
                 }
 
