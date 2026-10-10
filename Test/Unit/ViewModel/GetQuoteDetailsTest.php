@@ -98,6 +98,8 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel {
                 'grand total moved' => [['getGrandTotal' => 148.81], true],
                 'quantity changed' => [['getItemsQty' => 4], true],
                 'currency changed' => [['getQuoteCurrencyCode' => 'SEK'], true],
+                'billing country changed' => [['billing.getCountryId' => 'US'], true],
+                'shipping country changed' => [['shipping.getCountryId' => 'US'], true],
             ];
         }
 
@@ -111,9 +113,11 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel {
                 'getQuoteCurrencyCode' => 'EUR',
                 'getGrandTotal' => 107.98,
                 'getItemsQty' => 3,
+                'billing.getCountryId' => 'ES',
                 'billing.getTaxAmount' => 0.0,
                 'billing.getShippingAmount' => 0.0,
                 'billing.getShippingMethod' => '',
+                'shipping.getCountryId' => 'ES',
                 'shipping.getTaxAmount' => 0.0,
                 'shipping.getShippingAmount' => 0.0,
                 'shipping.getShippingMethod' => 'flat_rate',

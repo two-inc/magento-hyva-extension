@@ -63,7 +63,8 @@ class GetQuoteDetails implements ArgumentInterface
      * re-render-ignored form, so every re-render carries the current one, and
      * checks again when it differs from the key its last check was sent under.
      * Hashed so the page still carries no amounts (TWO-26092). Both addresses
-     * are read because a virtual quote keeps its totals on the billing one.
+     * are read because a virtual quote keeps its totals on the billing one,
+     * and each address's country with them, which the intent is sent under.
      *
      * Returns '' when the quote cannot be loaded; the tile then never sees a
      * change and behaves as it did before the key existed.
@@ -86,6 +87,9 @@ class GetQuoteDetails implements ArgumentInterface
                 $parts[] = '-';
                 continue;
             }
+            // The intent goes out under the address's country too, so a move
+            // that changes nothing else is still a different check.
+            $parts[] = (string) $address->getCountryId();
             $parts[] = sprintf('%.4F', (float) $address->getTaxAmount());
             $parts[] = sprintf('%.4F', (float) $address->getShippingAmount());
             $parts[] = (string) $address->getShippingMethod();

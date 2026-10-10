@@ -270,7 +270,7 @@ describe("a decision stands only for the basket it was priced on (TWO-26296)", (
 
   test.each([
     ["K2", false, false, true, false, "a decline for this basket refuses"],
-    ["K1", false, true, false, true, "a decline for an older basket does not"],
+    ["K1", false, false, false, true, "a decline for an older basket still refuses until this one is answered"],
     ["K2", true, true, true, false, "an approval for this basket"],
     [
       "K1",
@@ -305,19 +305,40 @@ describe("a decision stands only for the basket it was priced on (TWO-26296)", (
     },
   );
 
-  test("a basket re-check lifts the button a decline for the old basket disabled", () => {
-    form.orderIntentDecisions = {
-      [COMPANY.id]: { name: COMPANY.name, approved: false, basket: "K1" },
-    };
-    setBasket("K1");
-    form.refreshOrderIntentVerdict();
-    const button = document.querySelector('[x-bind="buttonPlaceOrder"]');
-    expect(button.hasAttribute("disabled")).toBe(true);
+  test.each([
+    [null, false, "no answer yet for the new basket: the old decline still holds"],
+    [{ approved: true, basket: "K2" }, true, "an approval for the new basket lifts it"],
+    [{ approved: false, basket: "K2" }, false, "a decline for the new basket keeps it"],
+    ["failure", true, "a failed re-check places, as any failure does"],
+  ])(
+    "after the basket moves, answer %j leaves placement allowed=%s (%s)",
+    async (answer, allowed, description) => {
+      form.orderIntentDecisions = {
+        [COMPANY.id]: { name: COMPANY.name, approved: false, basket: "K1" },
+      };
+      setBasket("K1");
+      form.refreshOrderIntentVerdict();
+      const button = document.querySelector('[x-bind="buttonPlaceOrder"]');
+      expect(button.hasAttribute("disabled")).toBe(true);
 
-    // The new basket arrives; no company changed, so only the re-check path runs.
-    setBasket("K2");
-    form.fillCompanyData("", "", true);
+      // The new basket arrives; no company changed, so only the re-check path runs.
+      setBasket("K2");
+      form.fillCompanyData("", "", true);
+      if (answer === "failure") {
+        form.orderIntentFailures = { [COMPANY.id]: { name: COMPANY.name } };
+      } else if (answer) {
+        form.orderIntentDecisions = {
+          [COMPANY.id]: { name: COMPANY.name, approved: answer.approved, basket: answer.basket },
+        };
+      }
+      form.applyOrderIntentPlacementGate();
 
-    expect(button.hasAttribute("disabled")).toBe(false);
-  });
+      const result = await validators[0]();
+      expect([description, result, button.hasAttribute("disabled")]).toEqual([
+        description,
+        allowed,
+        !allowed,
+      ]);
+    },
+  );
 });

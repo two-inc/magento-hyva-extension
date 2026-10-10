@@ -252,20 +252,27 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the company is picked, before shipping and tax are known, was priced on a basket
   the order will not have. `GetQuoteDetails::getIntentBasketKey()` is an opaque
   hash of the totals the intent is priced on (currency, grand total, quantity, and
-  each address's tax, shipping amount and method), rendered into
+  each address's country, tax, shipping amount and method, the country because
+  the intent is sent under it), rendered into
   `#<method code>_intent_basket` OUTSIDE the tile's `wire:ignore` form, so every
   re-render carries the current one; the form's own `data-hyvacsp1` snapshot is
   page-load only. A decision records the basket its request was SENT under, and a
-  decision for another basket is no decision: it does not satisfy the dedup gate,
-  paint a verdict, or refuse placement. A Magewire `element.updated` hook calls
+  decision for another basket is no decision: it does not satisfy the dedup gate
+  or paint a verdict. A Magewire `element.updated` hook calls
   `recheckOrderIntentIfBasketMoved()`, which re-asks when the basket differs from
   the one the company's latest check was sent under (`orderIntentSentBaskets`,
   module scope beside `orderIntentSeq`). Keyed on SENT, not decided, so a check
   still in flight when shipping is chosen is replaced and its late reply dropped by
   the sequence guard. An unchanged basket re-asks nothing, so repeated re-renders
   cost no requests, and the many `element.updated` calls of one re-render fall
-  inside the dispatcher's 500ms debounce. The re-check lifts a decline reached for
-  the old basket from the button at once, since no company watcher fires for it.
+  inside the dispatcher's 500ms debounce. A DECLINE for an older basket still
+  refuses placement (`isOrderIntentPlacementRefused()`, which both the button
+  and the validator read) until the re-check answers: a decision or a failure for
+  the current basket replaces it. Otherwise a declined buyer could place in the
+  window between a basket change and the new verdict. An approval for an older
+  basket does not hold placement during that window, as no check in flight ever
+  has. Every term chip click reprices the quote, so it moves the basket and costs
+  one re-check; that is correct, not a request storm.
   A tile template that does not render the basket element reads `''` throughout
   and keeps the old single-check behaviour.
 - **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (TWO-25326).
