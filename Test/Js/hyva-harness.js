@@ -41,7 +41,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
  * `<prefix>GatewayHyva`; the vanilla prefix is `two`.
  */
 const QUOTE_JSON =
-  '{"quote_id":"test-quote-1","shipping_country_id":"GB","grand_total":100}';
+  '{"quote_id":"test-quote-1","shipping_country_id":"GB"}';
 
 /**
  * Fallback for an escapeJs()/escapeHtmlAttr() whose argument has no rule of its
@@ -83,6 +83,7 @@ const PHP_VALUE_RULES = [
   ],
   // proxy-capability-fallback.test.js overrides this to `false`.
   [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
+  [/^\$isServerIntentAvailable \? "true" : "false"$/, "true"],
   [/^\$clientName$/, "magento-hyva"],
   [/^\$clientVersion$/, "2.1.0"],
   [/^\$merchantShortName$/, "Example Shop"],

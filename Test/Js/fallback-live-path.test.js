@@ -22,7 +22,11 @@ const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
 const API = "https://api.test.invalid";
 const REST_BASE = "https://shop.test.invalid";
 
-const PROXY_ABSENT = [[/^\$isProxyAvailable \? "true" : "false"$/, "false"]];
+// A base without the routes predates server-side intent too.
+const PROXY_ABSENT = [
+  [/^\$isProxyAvailable \? "true" : "false"$/, "false"],
+  [/^\$isServerIntentAvailable \? "true" : "false"$/, "false"],
+];
 
 describe("the fallback path, end to end (search, select, order intent)", () => {
   let env;
@@ -98,7 +102,7 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
     expect(component.companyId).toBe("123456789");
   });
 
-  test("placing the order intent from that same fallback config goes straight to the API", async () => {
+  test("placing the order intent from that same fallback config sends nothing (TWO-26092)", async () => {
     document.getElementById("company_name") ||
       document.getElementById("checkout").insertAdjacentHTML(
         "beforeend",
@@ -115,28 +119,15 @@ describe("the fallback path, end to end (search, select, order intent)", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       telephone: "+44 1234",
-      quote_currency_code: "GBP",
-      grand_total: 120,
-      tax_amount: 20,
-      shipping_tax_amount: 0,
-      shipping_amount: 0,
-      shipping_incl_tax: 0,
-      items: [],
     };
     tile.companyId = "123456789";
     tile.companyName = "Acme Widgets";
 
+    const before = fetchStub.calls.length;
     const pending = tile.placeOrderIntent();
-    const call = fetchStub.last();
 
-    expect(call.url).toContain(API + "/v1/order_intent?");
-    expect(call.url).not.toContain("/rest/V1/two/");
-
-    const sent = JSON.parse(call.init.body);
-    expect(sent.merchant_id).toBe("test-merchant-id");
-    expect(sent.buyer.company.organization_number).toBe("123456789");
-
-    call.respond({ approved: true, decision: "APPROVED" });
-    expect(await pending).toEqual({ approved: true, decision: "APPROVED" });
+    // Amounts and lines are composed server-side, and a base without the route has none to compose.
+    expect(fetchStub.calls).toHaveLength(before);
+    expect(await pending).toBeNull();
   });
 });
