@@ -227,7 +227,7 @@ be up alongside nothing. All four are one box style in one place. The rules that
   a time, instead of stating the rule, always leaves one more route to a verdict
   beside a progress row.
 - **Records are PER COMPANY, keyed by id.**
-  `orderIntentDecisions[id] = { name, approved }` and
+  `orderIntentDecisions[id] = { name, approved, basket }` and
   `orderIntentFailures[id] = { name }`. A single slot
   cannot represent approve A, check B, come back to A — B overwrites it and A's
   verdict is gone. The name is stored beside the decision, not used as the key: the
@@ -247,10 +247,34 @@ be up alongside nothing. All four are one box style in one place. The rules that
   filing a failure there would suppress the retry the failure exists to invite. A
   decision for a company clears its failure; so does a fresh check reaching the
   wire.
-- **Both maps are emptied by a Magewire re-render**, because `initialize()` rebuilds
-  the component. Acceptable — a decision is only as good as the quote it was made
-  against — but it means the come-back-and-see-your-verdict property holds only
-  until the next totals/address/term change.
+- **A DECISION STANDS ONLY FOR THE BASKET IT WAS PRICED ON** (TWO-26296). The base
+  prices the intent from the quote when the request arrives, so a check sent when
+  the company is picked, before shipping and tax are known, was priced on a basket
+  the order will not have. `GetQuoteDetails::getIntentBasketKey()` is an opaque
+  hash of the totals the intent is priced on (currency, grand total, quantity, and
+  each address's country, tax, shipping amount and method, the country because
+  the intent is sent under it), rendered into
+  `#<method code>_intent_basket` OUTSIDE the tile's `wire:ignore` form, so every
+  re-render carries the current one; the form's own `data-hyvacsp1` snapshot is
+  page-load only. A decision records the basket its request was SENT under, and a
+  decision for another basket is no decision: it does not satisfy the dedup gate
+  or paint a verdict. A Magewire `element.updated` hook calls
+  `recheckOrderIntentIfBasketMoved()`, which re-asks when the basket differs from
+  the one the company's latest check was sent under (`orderIntentSentBaskets`,
+  module scope beside `orderIntentSeq`). Keyed on SENT, not decided, so a check
+  still in flight when shipping is chosen is replaced and its late reply dropped by
+  the sequence guard. An unchanged basket re-asks nothing, so repeated re-renders
+  cost no requests, and the many `element.updated` calls of one re-render fall
+  inside the dispatcher's 500ms debounce. A DECLINE for an older basket still
+  refuses placement (`isOrderIntentPlacementRefused()`, which both the button
+  and the validator read) until the re-check answers: a decision or a failure for
+  the current basket replaces it. Otherwise a declined buyer could place in the
+  window between a basket change and the new verdict. An approval for an older
+  basket does not hold placement during that window, as no check in flight ever
+  has. Every term chip click reprices the quote, so it moves the basket and costs
+  one re-check; that is correct, not a request storm.
+  A tile template that does not render the basket element reads `''` throughout
+  and keeps the old single-check behaviour.
 - **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (TWO-25326).
   A decline used to raise both; the toast self-dismisses and lands at the top of
   the page rather than beside the company it is about, so it could only repeat

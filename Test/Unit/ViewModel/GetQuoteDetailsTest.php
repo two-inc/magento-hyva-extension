@@ -80,5 +80,118 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel {
                 array_keys($viewModel->getQuoteDetails())
             );
         }
+
+        /**
+         * TWO-26296: the basket key moves with every total the base prices an
+         * order intent on, stays put when nothing moved, and carries no amount.
+         *
+         * @return array<string, array{array<string, mixed>, bool}>
+         */
+        public static function basketChanges(): array
+        {
+            return [
+                'nothing moved' => [[], false],
+                'shipping chosen' => [['shipping.getShippingAmount' => 15.0], true],
+                'shipping method changed' => [['shipping.getShippingMethod' => 'other_rate'], true],
+                'tax applied' => [['shipping.getTaxAmount' => 25.83], true],
+                'virtual quote tax on billing' => [['billing.getTaxAmount' => 2.1], true],
+                'grand total moved' => [['getGrandTotal' => 148.81], true],
+                'quantity changed' => [['getItemsQty' => 4], true],
+                'currency changed' => [['getQuoteCurrencyCode' => 'SEK'], true],
+                'billing country changed' => [['billing.getCountryId' => 'US'], true],
+                'shipping country changed' => [['shipping.getCountryId' => 'US'], true],
+            ];
+        }
+
+        /**
+         * @dataProvider basketChanges
+         * @param array<string, mixed> $change
+         */
+        public function testTheBasketKeyFollowsTheTotals(array $change, bool $moves): void
+        {
+            $base = [
+                'getQuoteCurrencyCode' => 'EUR',
+                'getGrandTotal' => 107.98,
+                'getItemsQty' => 3,
+                'billing.getCountryId' => 'ES',
+                'billing.getTaxAmount' => 0.0,
+                'billing.getShippingAmount' => 0.0,
+                'billing.getShippingMethod' => '',
+                'shipping.getCountryId' => 'ES',
+                'shipping.getTaxAmount' => 0.0,
+                'shipping.getShippingAmount' => 0.0,
+                'shipping.getShippingMethod' => 'flat_rate',
+            ];
+
+            $before = $this->basketKey($base);
+            $after = $this->basketKey(array_merge($base, $change));
+
+            $this->assertSame($moves, $before !== $after, 'moves: ' . json_encode($change));
+            $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $after, 'opaque: ' . json_encode($change));
+        }
+
+        /** @param array<string, mixed> $values */
+        private function basketKey(array $values): string
+        {
+            $address = static function (string $role) use ($values): object {
+                return new class ($role, $values) {
+                    /** @var string */
+                    private $role;
+                    /** @var array<string, mixed> */
+                    private $values;
+
+                    public function __construct(string $role, array $values)
+                    {
+                        $this->role = $role;
+                        $this->values = $values;
+                    }
+
+                    public function __call(string $name, array $arguments)
+                    {
+                        return $this->values[$this->role . '.' . $name] ?? null;
+                    }
+                };
+            };
+            $quote = new class ($values, $address('billing'), $address('shipping')) extends Quote {
+                /** @var array<string, mixed> */
+                private $values;
+                /** @var object */
+                private $billing;
+                /** @var object */
+                private $shipping;
+
+                public function __construct(array $values, object $billing, object $shipping)
+                {
+                    $this->values = $values;
+                    $this->billing = $billing;
+                    $this->shipping = $shipping;
+                }
+
+                // A real method on the shared Quote stub, so __call never sees it.
+                public function getQuoteCurrencyCode(): string
+                {
+                    return (string) ($this->values['getQuoteCurrencyCode'] ?? '');
+                }
+
+                public function __call(string $name, array $arguments)
+                {
+                    if ($name === 'getBillingAddress') {
+                        return $this->billing;
+                    }
+                    if ($name === 'getShippingAddress') {
+                        return $this->shipping;
+                    }
+                    return $this->values[$name] ?? null;
+                }
+            };
+            $session = new Session();
+            $session->setQuote($quote);
+
+            $reflection = new ReflectionClass(GetQuoteDetails::class);
+            $viewModel = $reflection->newInstanceWithoutConstructor();
+            $reflection->getProperty('sessionCheckout')->setValue($viewModel, $session);
+
+            return $viewModel->getIntentBasketKey();
+        }
     }
 }

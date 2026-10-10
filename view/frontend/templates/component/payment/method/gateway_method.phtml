@@ -190,6 +190,11 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
         <?php endif ?>
         </div>
     <?php endif ?>
+    <?php /* TWO-26296: OUTSIDE the wire:ignore'd form below, so each re-render (shipping, address,
+             coupon, term) carries the current basket and the tile can tell its last order-intent
+             check was priced on another one. */ ?>
+    <span hidden id="<?= $escaper->escapeHtmlAttr($methodCode) ?>_intent_basket"
+          data-basket="<?= $escaper->escapeHtmlAttr($quoteModel->getIntentBasketKey()) ?>"></span>
     <?php
     /*
      * wire:ignore opts the payment-method form subtree out of Magewire's
