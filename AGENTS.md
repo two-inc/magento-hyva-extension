@@ -435,10 +435,11 @@ identity from that role's OWN record at mount, the delivery form not always
 being on the page to hydrate its own.
 
 **A stored company carries the country it was captured in** (TWO-26295). Both
-records outlive the page and the order, and an organisation number means
-nothing outside its registry, so a returning buyer on an address in another
-country used to have the old number restored and sent in the order intent,
-which the API refuses. Every write of a number stamps `company_country`
+records outlive the page and last for the whole quote (a new quote id clears
+them), and an organisation number means nothing outside its registry, so a
+buyer whose quote moved to an address in another country, a logged-in buyer
+picking another saved address included, used to have the old number restored
+and sent in the order intent, which the API refuses. Every write of a number stamps `company_country`
 (`twoGatewayCompanyCountryStamp()`): a NEW number takes the writing surface's
 live country, a rewrite of the same number keeps the stamp it has, so a restore
 can never re-stamp a record with whatever country the page shows. Every restore
@@ -450,6 +451,15 @@ a delivery company falling back across to an invoice address in another
 country. All of it fails OPEN on a missing stamp or a missing country, as the
 Luma checkout's own guard does: records written before the stamp existed must
 not drop a legitimate company on the first load after an upgrade.
+
+The tile's country is read live. Its quote is the page-load snapshot (the form
+is `wire:ignore`d), and a logged-in buyer picking saved addresses has no country
+field to read instead, so the tile renders the quote's current billing and
+shipping countries in a hidden `[data-two-live-countries]` element outside that
+form, which every address re-render refreshes. `getCaptureQuote()` and the
+resolver's invoice country overlay it on the snapshot
+(`twoGatewayWithLiveCountries()`), billing first, and the order intent is built
+from the same quote, so the guard and the intent's country cannot disagree.
 
 Three layers, innermost first:
 

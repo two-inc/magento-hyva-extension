@@ -260,6 +260,49 @@ describe("the captured company's country (TWO-26295)", () => {
     },
   );
 
+  /*
+   * A logged-in buyer picking saved addresses has no country field on the
+   * page, and the tile's quote is the page-load snapshot (GB here). The live
+   * element the tile renders outside its form says where the quote is now.
+   */
+  test.each([
+    [null, "GB", COMPANY.companyId, "GB", "no live element: the snapshot answers, as before"],
+    ["ES", "ES", COMPANY.companyId, "ES", "still on the saved address it was captured under"],
+    ["ES", "US", "", "US", "switched to a saved address in another country"],
+  ])(
+    "saved addresses: captured under live %s, now %s, places %s with prefix %s (%s)",
+    (capturedUnder, nowLive, expectedId, expectedPrefix, description) => {
+      render(true);
+      document.getElementById("shipping-country_id").remove();
+      const live = document.createElement("span");
+      live.hidden = true;
+      live.setAttribute("data-two-live-countries", "");
+      live.setAttribute("data-shipping-country", "US");
+      if (capturedUnder !== null) document.body.appendChild(live);
+      const setLive = (billing) => live.setAttribute("data-billing-country", billing);
+      setLive(capturedUnder || "");
+
+      const tile = mountTile();
+      env.identityFor("billing").write(
+        {
+          companyName: COMPANY.companyName,
+          companyId: COMPANY.companyId,
+          companyIdSource: "registry",
+        },
+        { authoritative: true },
+      );
+      if (capturedUnder !== null) setLive(nowLive);
+
+      const prefix = tile.buildOrderIntentRequestBody(tile.getCaptureQuote()).buyer.company
+        .country_prefix;
+      expect([description, tile.invoiceCompany().companyId, prefix]).toEqual([
+        description,
+        expectedId,
+        expectedPrefix,
+      ]);
+    },
+  );
+
   test("a capture stamps its country, and a later rewrite of it keeps that stamp", () => {
     render(true);
     mountTile();
