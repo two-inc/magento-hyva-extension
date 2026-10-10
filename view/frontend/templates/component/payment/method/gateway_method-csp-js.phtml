@@ -3194,8 +3194,9 @@ $quoteDetails = json_encode(
             /*
              * WHAT WE KNOW ABOUT EACH COMPANY, keyed BY company id.
              *
-             * `orderIntentDecisions[id] = { name, approved }` for a company whose
-             * check reached a decision; `orderIntentFailures[id] = { name }` for
+             * `orderIntentDecisions[id] = { name, approved, basket }` for a company
+             * whose check reached a decision, `basket` being the fingerprint the
+             * request was sent under (TWO-26296); `orderIntentFailures[id] = { name }` for
              * one whose check could not be completed. A decision for a company
              * removes its failure — the question has been answered.
              *
@@ -3369,6 +3370,7 @@ $quoteDetails = json_encode(
             initialize(quote) {
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
+                twoGatewayWatchOrderIntentBasket();
 
                 // The tile is the invoice-role submit surface: its own record,
                 // its own role's identity, nothing else.
@@ -3600,7 +3602,51 @@ $quoteDetails = json_encode(
             hasOrderIntentDecisionFor(companyId, companyName) {
                 if (!companyId) return false;
                 const decision = this.orderIntentDecisions[companyId];
-                return Boolean(decision) && decision.name === companyName;
+                return Boolean(decision) && decision.name === companyName
+                    && this.isOrderIntentDecisionForThisBasket(decision);
+            },
+
+            /**
+             * TWO-26296: whether a recorded decision was priced on the basket on
+             * the page now. A decision for another basket is no decision at all:
+             * it neither suppresses a check, nor paints, nor blocks placement.
+             *
+             * @param {Object} decision an `orderIntentDecisions` entry
+             * @returns {boolean}
+             */
+            isOrderIntentDecisionForThisBasket(decision) {
+                return String(decision.basket || '') === this.orderIntentBasket();
+            },
+
+            /**
+             * TWO-26296: the fingerprint of the basket an intent would be priced
+             * on NOW. Read live from the element gateway_method.phtml renders
+             * outside its re-render-ignored form, so it moves with every
+             * shipping, address, coupon or term re-render. '' where the element
+             * is absent, which then never differs and changes nothing.
+             *
+             * @returns {string}
+             */
+            orderIntentBasket() {
+                const el = document.getElementById('<?= $brandedViewModel->getMethodCode() ?>_intent_basket');
+                return el ? String(el.dataset.basket || '') : '';
+            },
+
+            /**
+             * TWO-26296: check again when the basket has moved since the last
+             * check for the company being placed for was SENT. The base prices
+             * the intent from the quote at request time, so a check made before
+             * shipping and tax were chosen was priced on a basket the order will
+             * not have. Keyed on what was sent, not on what was decided, so a
+             * check still in flight when the basket moves is replaced too; its
+             * late reply is dropped by the sequence guard. An unchanged basket
+             * re-asks nothing, so repeated re-renders cost no requests.
+             */
+            recheckOrderIntentIfBasketMoved() {
+                const companyId = this.invoiceCompany().companyId;
+                if (!companyId || !Object.prototype.hasOwnProperty.call(orderIntentSentBaskets, companyId)) return;
+                if (orderIntentSentBaskets[companyId] === this.orderIntentBasket()) return;
+                this.fillCompanyData('', '', true);
             },
 
             /**
@@ -3632,8 +3678,10 @@ $quoteDetails = json_encode(
                     return { kind: 'failure' };
                 }
 
+                // A decision priced on another basket is no decision for this one (TWO-26296).
                 const decision = this.orderIntentDecisions[companyId];
-                if (decision && decision.name === invoiceCompany.companyName) {
+                if (decision && decision.name === invoiceCompany.companyName
+                    && this.isOrderIntentDecisionForThisBasket(decision)) {
                     return { kind: 'decision', approved: decision.approved };
                 }
 
@@ -3833,6 +3881,9 @@ $quoteDetails = json_encode(
                      */
                     this.clearOrderIntentNotices();
                     this.setOrderIntentChecking(true);
+                    // A basket re-check changes no company, so no watcher re-derives the
+                    // button: lift a decline reached for the old basket here (TWO-26296).
+                    this.applyOrderIntentPlacementGate();
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 } else {
                     /*
@@ -4018,7 +4069,7 @@ $quoteDetails = json_encode(
              *   about the company on screen); otherwise it is recorded as
              *   unknown, never guessed from live state.
              */
-            processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName) {
+            processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName, requestedBasket) {
                 if (!response) return;
 
                 const invoiceCompany = this.invoiceCompany();
@@ -4075,6 +4126,9 @@ $quoteDetails = json_encode(
                 this.orderIntentDecisions[decidedCompanyId] = {
                     name: recordedName,
                     approved: Boolean(response.approved),
+                    // The basket the request was SENT for (TWO-26296), so a reply
+                    // overtaken by a totals change cannot stand for the new basket.
+                    basket: typeof requestedBasket === 'string' ? requestedBasket : this.orderIntentBasket(),
                 };
                 // A decision supersedes any earlier FAILED check for the same
                 // company: the question has been answered now.
@@ -4632,6 +4686,27 @@ $quoteDetails = json_encode(
      */
     let orderIntentSeq = 0;
 
+    /*
+     * TWO-26296: the basket fingerprint each company's latest check was SENT
+     * under, keyed by company id. Module scope like `orderIntentSeq`, so it
+     * outlives any one component instance. `recheckOrderIntentIfBasketMoved()`
+     * compares it with the live basket after every Magewire re-render.
+     */
+    const orderIntentSentBaskets = {};
+    let orderIntentBasketHooked = false;
+
+    /** Hook the basket re-check onto Magewire's re-renders, once per page. */
+    function twoGatewayWatchOrderIntentBasket() {
+        if (orderIntentBasketHooked) return;
+        if (!window.Magewire || typeof window.Magewire.hook !== 'function') return;
+        orderIntentBasketHooked = true;
+        window.Magewire.hook('element.updated', () => {
+            if (twoPaymentComponentInstance) {
+                twoPaymentComponentInstance.recheckOrderIntentIfBasketMoved();
+            }
+        });
+    }
+
     // Global order intent event listener - only added once.
     window.addEventListener("dispatch-order-intent", (event) => {
         if (orderIntentDebounceTimeout) {
@@ -4710,6 +4785,8 @@ $quoteDetails = json_encode(
                 orderIntentSeq += 1;
                 const seq = orderIntentSeq;
                 const requestedCompanyId = currentCompanyId;
+                const requestedBasket = component.orderIntentBasket();
+                orderIntentSentBaskets[currentCompanyId] = requestedBasket;
                 // Captured with the id, for the same reason: a reply that lands
                 // after the buyer has moved on must be filed under the company
                 // it was ASKED about, name included. Read off the component
@@ -4768,7 +4845,8 @@ $quoteDetails = json_encode(
                         component.processOrderIntentSuccessResponse(
                             response,
                             requestedCompanyId,
-                            requestedCompanyName
+                            requestedCompanyName,
+                            requestedBasket
                         );
                     })
                     .catch(error => {
