@@ -113,4 +113,31 @@ class GetQuoteDetails implements ArgumentInterface
             return [];
         }
     }
+
+    /**
+     * The quote's billing and shipping countries as they are now (TWO-26295).
+     *
+     * getQuoteDetails() feeds the payment tile's form, which re-render ignores,
+     * so its countries are the ones from page load. A logged-in buyer who
+     * picks a saved address has no country field on the page to read
+     * instead, so the tile reads these, rendered outside that form on every
+     * re-render, to know the country the order intent goes out under.
+     *
+     * @return array{billing: string, shipping: string}
+     */
+    public function getLiveAddressCountries(): array
+    {
+        try {
+            $quote = $this->sessionCheckout->getQuote();
+        } catch (LocalizedException $exception) {
+            return ['billing' => '', 'shipping' => ''];
+        }
+        $billing = $quote->getBillingAddress();
+        $shipping = $quote->getShippingAddress();
+
+        return [
+            'billing' => $billing ? (string) $billing->getCountryId() : '',
+            'shipping' => $shipping ? (string) $shipping->getCountryId() : '',
+        ];
+    }
 }

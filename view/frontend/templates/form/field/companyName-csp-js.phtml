@@ -220,7 +220,14 @@ function <?= $gwBase ?>CompanySearchField() {
              * shipping company alone.
              */
             const role = this.captureRole();
-            const data = twoAddressReadSelection(role);
+            const stored = twoAddressReadSelection(role);
+            // TWO-26295: a company captured in another country than this
+            // form's is not restored. Guarded like the reads above, for the
+            // same CSP degradation.
+            const data = !window.twoGatewayCompanyRecordFits
+                || window.twoGatewayCompanyRecordFits(stored, this.resolveCountryCode(this.quoteData))
+                ? stored
+                : {};
             const identity = window.twoGatewayCompanyIdentity(role);
             // A sole-trader signup is live across rebuilds and its handshake
             // bails unless the mode is still `soletrader`, so the stored mode —

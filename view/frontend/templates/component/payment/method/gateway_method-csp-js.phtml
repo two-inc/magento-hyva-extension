@@ -292,6 +292,83 @@ $quoteDetails = json_encode(
         }
     };
 
+    /*
+     * THE COUNTRY A STORED COMPANY WAS CAPTURED IN (TWO-26295).
+     *
+     * A company record outlives the page for as long as the quote, and an organisation
+     * number means nothing outside the registry that issued it. A buyer who
+     * captured a company in one country and comes back to a checkout sitting on
+     * another (a returning customer whose default address is elsewhere, say)
+     * would otherwise have the old number restored and sent to the API under
+     * the new country, which refuses it with an error the buyer cannot act on.
+     * So the record carries `company_country`, and every restore and the
+     * order-intent resolver check it. Same rule as the Luma checkout's.
+     *
+     * The stamp follows the NUMBER, not the write: a rewrite of the same
+     * number keeps the stamp it already has, so restoring a record cannot
+     * re-stamp it with whatever country the page happens to show. A record
+     * written before the stamp existed therefore stays unstamped until the
+     * buyer captures a different number.
+     *
+     * @param {Object} previous the record as stored before this write
+     * @param {string} companyId the number being written
+     * @param {string} country the writing surface's live country
+     * @returns {string} the stamp to write
+     */
+    window.twoGatewayCompanyCountryStamp = window.twoGatewayCompanyCountryStamp || function(previous, companyId, country) {
+        if (!companyId) return '';
+        if (previous && previous.company_id === companyId) return String(previous.company_country || '');
+        return String(country || '').toUpperCase();
+    };
+
+    /**
+     * Does a stored company record belong to `country`?
+     *
+     * Fails OPEN on a record with no number, no stamp (written before the stamp
+     * existed; refusing those would drop a legitimate company on the first load
+     * after an upgrade) or no country to compare against.
+     *
+     * @param {Object} record a stored company selection
+     * @param {string} country the country it is about to be used under
+     * @returns {boolean}
+     */
+    window.twoGatewayCompanyRecordFits = window.twoGatewayCompanyRecordFits || function(record, country) {
+        const stamp = String((record && record.company_id && record.company_country) || '');
+        if (!stamp || !country) return true;
+        return stamp.toLowerCase() === String(country).toLowerCase();
+    };
+
+    /**
+     * A role's stored record, or {} when it was captured in another country.
+     *
+     * @param {string} role 'shipping' or 'billing'
+     * @param {string} country the country the record is about to be used under
+     * @returns {Object}
+     */
+    window.twoGatewayReadCompanyRecordFor = window.twoGatewayReadCompanyRecordFor || function(role, country) {
+        const record = role === 'billing'
+            ? window.twoGatewayReadBillingCompany()
+            : window.twoGatewayReadCompanySelection();
+        return window.twoGatewayCompanyRecordFits(record, country) ? record : {};
+    };
+
+    /**
+     * Is the invoice-role country one this role's captured company does not belong to?
+     *
+     * Only a record describing the SAME number can say: an identity holding a
+     * number its record does not (a sole-trader signup) has nothing to compare.
+     *
+     * @param {string} role
+     * @param {string} companyId the number the identity holds
+     * @param {string} country the country the order intent is sent under
+     * @returns {boolean}
+     */
+    window.twoGatewayCompanyCapturedElsewhere = window.twoGatewayCompanyCapturedElsewhere || function(role, companyId, country) {
+        // No country: the raw record, whatever its stamp.
+        const record = window.twoGatewayReadCompanyRecordFor(role, '');
+        return record.company_id === companyId && !window.twoGatewayCompanyRecordFits(record, country);
+    };
+
     /**
      * Is the buyer's billing address the shipping address?
      *
@@ -1509,6 +1586,11 @@ $quoteDetails = json_encode(
                     company_name: item.companyName,
                     company_id: item.companyId || '',
                     company_id_source: this.companyIdSource,
+                    company_country: window.twoGatewayCompanyCountryStamp(
+                        cfg.readSelection.call(this),
+                        item.companyId || '',
+                        this.resolveCountryCode(cfg.getQuote.call(this))
+                    ),
                     manual_mode: false,
                 });
 
@@ -1968,7 +2050,61 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * The quote's current billing and shipping countries, from the element the
+     * tile renders outside its re-render-ignored form (TWO-26295), or null on a
+     * page without it.
+     *
+     * @returns {?{billing: string, shipping: string}}
+     */
+    window.twoGatewayLiveAddressCountries = window.twoGatewayLiveAddressCountries || function () {
+        const node = document.querySelector('[data-two-live-countries]');
+        if (!node) return null;
+        return {
+            billing: String(node.getAttribute('data-billing-country') || ''),
+            shipping: String(node.getAttribute('data-shipping-country') || '')
+        };
+    };
+
+    /**
+     * `quote` with its countries replaced by the live ones, when the page has
+     * them (TWO-26295). The tile's company is the invoice company, so a known
+     * billing country is what the quote fallback answers, ahead of shipping.
+     *
+     * @param {Object} quote a page-load quote snapshot
+     * @returns {Object} the same object when there is nothing live to apply
+     */
+    window.twoGatewayWithLiveCountries = window.twoGatewayWithLiveCountries || function (quote) {
+        const live = window.twoGatewayLiveAddressCountries();
+        if (!live || (!live.billing && !live.shipping)) return quote;
+        return Object.assign({}, quote, live.billing
+            ? { billing_country_id: live.billing, country_id: live.billing, shipping_country_id: '' }
+            : { shipping_country_id: live.shipping });
+    };
+
+    /**
+     * The country the order intent is sent under: the tile's own resolution,
+     * which is what buildOrderIntentRequestBody() sends.
+     *
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {string}
+     */
+    window.twoGatewayInvoiceCountry = window.twoGatewayInvoiceCountry || function (surface) {
+        const tile = surface || twoPaymentComponentInstance;
+        return tile && typeof tile.captureCountryCode === 'function'
+            ? tile.captureCountryCode()
+            : window.twoGatewayGetCountryCode(
+                window.twoGatewayWithLiveCountries({}),
+                window.twoGatewayInvoiceRoleCountryField()
+            );
+    };
+
+    /**
      * TWO-25554: billing when it presents a company number, else shipping.
+     *
+     * TWO-26295: never a company captured in another country than the one the
+     * order intent goes out under. That covers a stale record restored on a
+     * later visit and a delivery-panel company falling back across to an
+     * invoice address in another country; either way the API refuses the pair.
      *
      * @returns {{companyName: string, companyId: string, companyIdSource: string, role: string}}
      */
@@ -1978,6 +2114,9 @@ $quoteDetails = json_encode(
             if (!identity) return null;
             const companyId = String(identity.companyId() || '').trim();
             if (!companyId) return null;
+            if (window.twoGatewayCompanyCapturedElsewhere(role, companyId, window.twoGatewayInvoiceCountry())) {
+                return null;
+            }
             return {
                 companyName: String(identity.companyName() || ''),
                 companyId: companyId,
@@ -2027,6 +2166,11 @@ $quoteDetails = json_encode(
         const tileName = tile ? tile.companyName : '';
         const resolved = window.twoGatewayResolveInvoiceCompany();
         if (resolved.companyId) return resolved;
+        // The tile's capture IS the billing record's, so the same country rule.
+        if (tile && tile.companyId
+            && window.twoGatewayCompanyCapturedElsewhere('billing', tile.companyId, window.twoGatewayInvoiceCountry(tile))) {
+            return { companyName: '', companyId: '', companyIdSource: '', role: '' };
+        }
         return {
             companyName: tileName,
             companyId: tile ? tile.companyId : '',
@@ -2468,10 +2612,20 @@ $quoteDetails = json_encode(
                 this.captureFieldReleased();
             },
 
-            /** @returns {Object} the quote this surface reads, plain and detached */
+            /**
+             * The quote this surface reads.
+             *
+             * On the tile, the countries come from the live element rather
+             * than the page-load snapshot (TWO-26295): a logged-in buyer who
+             * picks a saved address has no country field to read, and the
+             * snapshot keeps the address they started on. See
+             * twoGatewayWithLiveCountries().
+             *
+             * @returns {Object}
+             */
             getCaptureQuote() {
                 const quote = this.quote || this.quoteData || {};
-                return quote;
+                return this.isTileSurface() ? window.twoGatewayWithLiveCountries(quote) : quote;
             },
             resolveCaptureAddressContainer() {
                 return typeof opts.resolveAddressContainer === 'function'
@@ -2747,14 +2901,22 @@ $quoteDetails = json_encode(
             },
 
             writeCapturedSelection() {
-                return typeof opts.writeSelection === 'function'
-                    ? opts.writeSelection.call(this, {
-                        company_name: this.companyName,
-                        company_id: this.companyId,
-                        company_id_source: this.companyIdSource,
-                        manual_mode: this.manualMode
-                    })
+                if (typeof opts.writeSelection !== 'function') return {};
+                const previous = typeof opts.readSelection === 'function'
+                    ? opts.readSelection.call(this)
                     : {};
+                return opts.writeSelection.call(this, {
+                    company_name: this.companyName,
+                    company_id: this.companyId,
+                    company_id_source: this.companyIdSource,
+                    // TWO-26295: see twoGatewayCompanyCountryStamp().
+                    company_country: window.twoGatewayCompanyCountryStamp(
+                        previous,
+                        this.companyId,
+                        this.captureCountryCode()
+                    ),
+                    manual_mode: this.manualMode
+                });
             },
 
             /** @returns {?Object} the popover, for tests that drive it */
@@ -3371,8 +3533,12 @@ $quoteDetails = json_encode(
                 twoPaymentComponentInstance = this;
 
                 // The tile is the invoice-role submit surface: its own record,
-                // its own role's identity, nothing else.
-                const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
+                // its own role's identity, nothing else. A record captured in
+                // another country is not restored (TWO-26295).
+                const billingCompanySelectionData = window.twoGatewayReadCompanyRecordFor(
+                    'billing',
+                    this.captureCountryCode()
+                );
                 const identity = window.twoGatewayCompanyIdentity(this.captureRole());
                 // A tile hosting no control made no capture, and a live signup
                 // never writes the record — so neither may seed from it.
@@ -3393,7 +3559,13 @@ $quoteDetails = json_encode(
                     && !shipping.isSoleTrader()
                     && !shipping.companyName()
                     && !shipping.companyId()) {
-                    const shippingSelection = window.twoGatewayReadCompanySelection();
+                    const shippingSelection = window.twoGatewayReadCompanyRecordFor(
+                        'shipping',
+                        window.twoGatewayGetCountryCode(
+                            this.getCaptureQuote(),
+                            document.getElementById('shipping-country_id')
+                        )
+                    );
                     if (shippingSelection.company_name || shippingSelection.company_id) {
                         shipping.write(
                             {
@@ -3855,7 +4027,9 @@ $quoteDetails = json_encode(
             // Order Intent methods
             async placeOrderIntent() {
                 try {
-                    const quoteData = JSON.parse(JSON.stringify(this.quote));
+                    // The live countries, so the intent goes out under the country the
+                    // company guard checked (TWO-26295).
+                    const quoteData = JSON.parse(JSON.stringify(this.getCaptureQuote()));
 
                     if (this.shouldSkipOrderIntent(quoteData)) return null;
 

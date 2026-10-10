@@ -64,6 +64,12 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
 ?>
 <div
      x-data="<?= $gwBase ?>PaymentMethodBase" class="w-full min-w-0 space-y-4 p-4 bg-white shadow-md rounded-lg payment-method-custom-form mb-6">
+    <?php /* TWO-26295: outside the wire:ignore'd form, so each re-render (an address saved or
+             picked from the address book) carries the quote's current countries for the tile. */ ?>
+    <?php $liveCountries = $quoteModel->getLiveAddressCountries(); ?>
+    <span hidden data-two-live-countries
+          data-billing-country="<?= $escaper->escapeHtmlAttr($liveCountries['billing']) ?>"
+          data-shipping-country="<?= $escaper->escapeHtmlAttr($liveCountries['shipping']) ?>"></span>
     <?php $subtitleHtml = $configModel->getCheckoutSubtitleHtml(); ?>
     <?php if ($subtitleHtml !== ''): ?>
         <div class="two-payment-subtitle"><?= /* @noEscape */ $subtitleHtml ?></div>
