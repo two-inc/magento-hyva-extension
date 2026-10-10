@@ -432,6 +432,8 @@ describe("company-name field picker", () => {
         company_name: "Acme Widgets",
         company_id: "111",
         company_id_source: "registry",
+        // TWO-26295: the country the company was captured in.
+        company_country: "GB",
         manual_mode: false,
       });
     });

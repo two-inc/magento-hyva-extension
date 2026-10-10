@@ -434,6 +434,23 @@ call it instead of blanking the pair themselves. The tile hydrates each role's
 identity from that role's OWN record at mount, the delivery form not always
 being on the page to hydrate its own.
 
+**A stored company carries the country it was captured in** (TWO-26295). Both
+records outlive the page and the order, and an organisation number means
+nothing outside its registry, so a returning buyer on an address in another
+country used to have the old number restored and sent in the order intent,
+which the API refuses. Every write of a number stamps `company_country`
+(`twoGatewayCompanyCountryStamp()`): a NEW number takes the writing surface's
+live country, a rewrite of the same number keeps the stamp it has, so a restore
+can never re-stamp a record with whatever country the page shows. Every restore
+(the tile's two seeds, the address step's `init()`) skips a record whose stamp
+differs from that role's current country, and the resolver answers neither role
+for a company whose record was stamped in another country than the one the
+intent goes out under (`twoGatewayCompanyCapturedElsewhere()`), which also stops
+a delivery company falling back across to an invoice address in another
+country. All of it fails OPEN on a missing stamp or a missing country, as the
+Luma checkout's own guard does: records written before the stamp existed must
+not drop a legitimate company on the first load after an upgrade.
+
 Three layers, innermost first:
 
 | Layer                                        | Where                                                                                                                                                                                                                  | Owns                                                                                                                                                                              |
