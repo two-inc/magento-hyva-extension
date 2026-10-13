@@ -234,7 +234,7 @@ jobs:
 
   # The base module's floor tracks a route set that exists on the base repo's
   # `staging` branch only — no release carries it yet (see
-  # `getIsProxyAvailable()` in AGENTS.md). Release timing there is a separate,
+  # `getIsProxyAvailable()` in docs/api-proxy.md). Release timing there is a separate,
   # unrelated decision, so this leg proves the real dependency: this branch
   # against that staging code, installed via path repo instead of Packagist.
   # This is the required gate for merge; `di-compile` above stays pointed at
