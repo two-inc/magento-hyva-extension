@@ -137,7 +137,7 @@ describe("company-name field picker", () => {
   }
 
   test("custom headers reach the address-step surface's own capture config", () => {
-    // Never wired before now — see AGENTS.md's autofill exception. Default
+    // Never wired before now — see docs/api-proxy.md's autofill exception. Default
     // harness value is '{}'; the header itself is only ever read by the
     // shared sole-trader.js this repo does not test.
     expect(capture().config().customHeaders).toEqual({});
