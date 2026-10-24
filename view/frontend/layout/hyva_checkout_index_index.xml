@@ -56,17 +56,6 @@
                     </argument>
                 </arguments>
             </block>
-            <!-- TWO-26616: preselects this brand's method for a buyer who
-                 arrived through the product page "Buy with" button. On the
-                 page body because the payment list may not be rendered yet. -->
-            <block name="two.express.preselect"
-                   template="Two_GatewayHyva::checkout/express-preselect.phtml" after="-">
-                <arguments>
-                    <argument name="branded_view_model" xsi:type="object">
-                        Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface
-                    </argument>
-                </arguments>
-            </block>
         </referenceBlock>
     </body>
 </page>
