@@ -1,0 +1,197 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+
+/** @var \Two\Gateway\Block\Product\ExpressButton $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+
+/*
+ * TWO-26616: the product page "Buy with <brand>" button on a Hyvä theme.
+ *
+ * The block is the base module's own, so whether the button shows at all (the
+ * merchant's product button switch, an active method, a salable product, a
+ * brand with a name) and every word on it are decided there, exactly as on
+ * Luma. Only the behaviour is replaced: the base template wires the button up
+ * through RequireJS, which a Hyvä page does not have, so there it renders and
+ * does nothing.
+ *
+ * What the click does is the base module's documented flow, in plain browser
+ * JavaScript. It puts the base module's confirmation URL, carrying a token
+ * naming this one attempt, into the product form's `return_url` and submits
+ * that form. Core's add-to-cart controller honours `return_url` only when the
+ * item went into the basket, and the base module stamps the token at that
+ * moment, so the buyer reaches checkout (with the preselect marker) on a
+ * successful add and is sent back to the product with core's own message on a
+ * refused one. Nothing here decides how the add turned out.
+ */
+if (!$block->isVisible()) {
+    return;
+}
+
+$hyvaCsp = $viewModels->require(HyvaCsp::class);
+?>
+<div class="two-product-express" data-brand="<?= $escaper->escapeHtmlAttr($block->getBrandCode()) ?>">
+    <?php /* type=button: the click drives the shop's own add-to-cart form,
+            so core validates the chosen options and adds the item. */ ?>
+    <button type="button"
+            class="action two-product-express__button"
+            data-two-express-return-url="<?= $escaper->escapeHtmlAttr($block->getReturnUrl()) ?>">
+        <span class="two-product-express__text"><?= $escaper->escapeHtml($block->getLabel()) ?></span>
+        <?php /* The mark is painted by the brand's CSS and hidden from
+                assistive technology; the brand name beside it is what keeps
+                "Buy with <brand>" as the control's accessible name. Same markup
+                as the base template, so the base stylesheet applies unchanged. */ ?>
+        <span class="two-product-express__mark" aria-hidden="true"></span>
+        <span class="two-product-express__brand"><?= $escaper->escapeHtml($block->getBrandLabel()) ?></span>
+    </button>
+</div>
+<script>
+    /**
+     * The add-to-cart form a button belongs to: the form around it if there is
+     * one, so a page listing several products submits the right one, else the
+     * product view's own form by its standard id.
+     *
+     * @param {HTMLElement} button
+     * @returns {HTMLFormElement|null}
+     */
+    function twoGatewayExpressForm(button) {
+        const enclosing = button.closest('form');
+        if (enclosing) {
+            return enclosing;
+        }
+        const productForm = document.getElementById('product_addtocart_form');
+
+        return productForm instanceof HTMLFormElement ? productForm : null;
+    }
+
+    /**
+     * A name for one attempt. It identifies the add, it authorises nothing:
+     * the server matches it against a stamp it wrote itself when the add
+     * succeeded, so a guessed token buys nothing.
+     *
+     * @returns {string} lower-case letters and digits only
+     */
+    function twoGatewayExpressToken() {
+        let entropy = '';
+        try {
+            const words = window.crypto.getRandomValues(new Uint32Array(2));
+            entropy = words[0].toString(36) + words[1].toString(36);
+        } catch (e) {
+            entropy = Math.random().toString(36).slice(2, 12);
+        }
+
+        return Date.now().toString(36) + entropy;
+    }
+
+    /**
+     * Everything one attempt changes on the page, and how to put it back.
+     *
+     * A `return_url` the theme or another extension already put on the form is
+     * restored rather than removed; one this created is removed rather than
+     * left pointing at a finished attempt.
+     *
+     * @param {HTMLFormElement} form
+     * @param {HTMLButtonElement} button
+     * @param {string} returnUrl
+     * @returns {{begin: function(): void, abandon: function(): void}}
+     */
+    function twoGatewayExpressAttempt(form, button, returnUrl) {
+        let field = form.querySelector('input[name="return_url"]');
+        const created = !field;
+        const prior = created ? null : field.value;
+        const token = twoGatewayExpressToken();
+
+        return {
+            begin() {
+                if (created) {
+                    field = document.createElement('input');
+                    field.type = 'hidden';
+                    field.name = 'return_url';
+                    form.appendChild(field);
+                }
+                field.value = returnUrl + (returnUrl.indexOf('?') === -1 ? '?' : '&') + 't=' + token;
+                button.disabled = true;
+            },
+            abandon() {
+                if (created) {
+                    field.remove();
+                } else {
+                    field.value = prior;
+                }
+                button.disabled = false;
+            }
+        };
+    }
+
+    /**
+     * Wire one button up. Idempotent, so a second render of this block on the
+     * same page binds each button once.
+     *
+     * @param {HTMLButtonElement} button
+     * @returns {void}
+     */
+    function twoGatewayProductExpressButton(button) {
+        const returnUrl = button.getAttribute('data-two-express-return-url') || '';
+        if (!returnUrl || button.hasAttribute('data-two-express-bound')) {
+            return;
+        }
+        button.setAttribute('data-two-express-bound', '');
+
+        let inFlight = null;
+
+        button.addEventListener('click', () => {
+            const form = twoGatewayExpressForm(button);
+
+            // One attempt at a time. The button sits outside the form, so the
+            // theme does not disable it for the request the way it does its
+            // own add to cart: without this a double click adds two units.
+            if (inFlight || !form) {
+                return;
+            }
+
+            // An unchosen required option behaves exactly as it does for add
+            // to cart: the browser says what is missing, at the field, and
+            // nothing is submitted.
+            if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                if (typeof form.reportValidity === 'function') {
+                    form.reportValidity();
+                }
+
+                return;
+            }
+
+            inFlight = twoGatewayExpressAttempt(form, button, returnUrl);
+            inFlight.begin();
+
+            // A full-page POST, so core's controller (not whatever submit
+            // handler a theme hangs on the form) decides where the buyer goes.
+            // The prototype call still works on a form with a field named
+            // "submit".
+            HTMLFormElement.prototype.submit.call(form);
+        });
+
+        // Every outcome navigates away, so there is nothing to undo in-page,
+        // except when the browser restores this page from its back-forward
+        // cache exactly as the attempt left it.
+        window.addEventListener('pageshow', (event) => {
+            if (!event.persisted || !inFlight) {
+                return;
+            }
+            inFlight.abandon();
+            inFlight = null;
+        });
+    }
+
+    document.querySelectorAll('[data-two-express-return-url]').forEach(twoGatewayProductExpressButton);
+</script>
+<?php $hyvaCsp->registerInlineScript(); ?>
