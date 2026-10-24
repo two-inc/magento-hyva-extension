@@ -85,18 +85,6 @@ npm --prefix vendor/hyva-themes/magento2-default-theme/web/tailwind run build-pr
 Set up your Two Gateway credentials and settings in the Magento Admin:
 `Admin > Stores > Configuration > Two Gateway`
 
-### Product page "Buy with" button
-
-The base module's product page promo message and "Buy with <brand>" button are
-off by default and switched on separately in the Two Gateway configuration. Both
-work on Hyvä themes with no further setup. This module gives the button a Hyvä
-template (on Hyvä themes only; Luma keeps the base module's) that adds the
-product to the basket with the options and quantity chosen in the product form,
-then takes the buyer to checkout. In Hyvä Checkout the brand's payment method is
-then preselected, once, unless the buyer picks a method first or the method is
-not offered for the basket. The brand's name and texts come from the base
-module, as on Luma.
-
 ## Testing
 
 1. Check the module is enabled: `php bin/magento module:status | grep Two_GatewayHyva`

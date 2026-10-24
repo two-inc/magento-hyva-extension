@@ -198,18 +198,6 @@ Read [docs/address-write-back.md](docs/address-write-back.md) before changing
 region select or `region` field, or the fixtures in
 `address-payload-routing.test.js`.
 
-### Product page "Buy with" button and its checkout preselect
-
-The base module owns the button block, its placement, its on/off switch and
-every word on it; `hyva_catalog_product_view.xml` only swaps its template, and
-the `hyva_` prefix keeps Luma on the base one (TWO-26616). The Hyvä template
-submits the product's own form natively with a tokened `return_url`, so core's
-add-to-cart controller decides where the buyer goes, exactly as on Luma.
-`checkout/express-preselect.phtml` consumes the base module's `two_express`
-checkout marker on sight and selects the brand's method by clicking its radio
-in Hyvä Checkout's payment list, so Magewire saves it through its own binding.
-It never overrides a method the buyer picked first.
-
 ### Staging Cache Refresh (git-sync workflow)
 
 Read [docs/staging-dev-deployment.md](docs/staging-dev-deployment.md) before
