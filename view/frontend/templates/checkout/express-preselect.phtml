@@ -1,0 +1,171 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+use Magento\Framework\Escaper;
+use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
+
+/** @var \Magento\Framework\View\Element\Template $block */
+/** @var Escaper $escaper */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+
+/*
+ * TWO-26616: preselect this brand's method in Hyvä Checkout for a buyer who
+ * arrived through the product page "Buy with <brand>" button.
+ *
+ * The signal is the base module's documented checkout marker: a `two_express`
+ * query parameter naming the attempt, on the checkout URL the base module's
+ * confirmation redirects to. That redirect happens only when the item actually
+ * reached the basket, so a marker on the URL means a successful express add.
+ *
+ * Best-effort, and a default rather than an override:
+ *   - the marker is consumed on sight, whatever happens next, so a reload, a
+ *     shared link or a later checkout in this tab cannot reapply it;
+ *   - a method the buyer picks before this acts wins, and this then never acts;
+ *   - a method that is not offered for this basket is never selected, and the
+ *     buyer chooses as normal. It is still selected if it appears later in the
+ *     same page, for example once the basket crosses the minimum order value.
+ *
+ * Selecting is a click on the method's own radio in Hyvä Checkout's payment
+ * list, the control the buyer would use, so Magewire saves the choice on the
+ * quote through its own binding and nothing here talks to the server.
+ *
+ * Mounted on the page body, not inside the method's renderer: the payment list
+ * may not be on the page yet (an earlier step) and Magewire re-renders it.
+ */
+
+/** @var BrandedHyvaViewModelInterface $brandedViewModel */
+$brandedViewModel = $block->getData('branded_view_model');
+$methodCode = $brandedViewModel->getMethodCode();
+$hyvaCsp = $viewModels->require(HyvaCsp::class);
+?>
+<script>
+    /**
+     * Read the express marker off this page's URL and consume it in the same
+     * step, answering whether this load is the one the button sent the buyer
+     * to.
+     *
+     * Two records of consumption, either of which is enough: the marker is
+     * taken out of the address bar, and its token is written to
+     * sessionStorage for a browser that refuses the history write (an
+     * embedded or sandboxed view). The URL is cleaned on every visit carrying
+     * a marker, consumed or not, so it cannot be copied out of the address bar
+     * into a tab that has never seen it.
+     *
+     * @returns {boolean}
+     */
+    function twoGatewayTakeExpressIntent() {
+        const search = (window.location && window.location.search) || '';
+        const pairs = search.replace(/^\?/, '').split('&');
+        const isMarker = (pair) => pair.split('=')[0] === 'two_express';
+        const marker = pairs.find(isMarker);
+        if (!marker) {
+            return false;
+        }
+
+        const kept = pairs.filter((pair) => pair !== '' && !isMarker(pair));
+        try {
+            window.history.replaceState(
+                window.history.state,
+                '',
+                window.location.pathname + (kept.length ? '?' + kept.join('&') : '') + window.location.hash
+            );
+        } catch (e) {
+            // Refused: the sessionStorage record answers instead.
+        }
+
+        // The base module's tokens are letters, digits and `_.-`; anything
+        // else is not one of its markers.
+        const token = marker.slice(marker.indexOf('=') + 1);
+        if (!/^[A-Za-z0-9_.-]+$/.test(token)) {
+            return false;
+        }
+
+        // Keyed on the attempt, so the same buyer buying the same thing again
+        // is a new intent rather than a replay of the old one.
+        const key = 'two_gateway_hyva_express_used:' + token;
+        try {
+            if (window.sessionStorage.getItem(key) === '1') {
+                return false;
+            }
+            window.sessionStorage.setItem(key, '1');
+        } catch (e) {
+            // Storage refused: the history write is the only record.
+        }
+
+        return true;
+    }
+
+    /**
+     * Select `methodCode` in Hyvä Checkout's payment list once it is offered,
+     * unless the buyer has chosen a method first.
+     *
+     * @param {string} methodCode
+     * @returns {{attempt: function(): void, isDone: function(): boolean}}
+     */
+    function twoGatewayExpressPreselect(methodCode) {
+        const selector = 'input[name="payment-method-option"]';
+        let done = false;
+
+        // Any change to the payment list before this has acted is somebody
+        // choosing, and theirs wins. Once this has acted it is done, so its own
+        // click below never reaches here as a choice.
+        document.addEventListener('change', (event) => {
+            if (!done && event.target instanceof Element && event.target.matches(selector)) {
+                done = true;
+            }
+        }, true);
+
+        function attempt() {
+            // Without Magewire a click would check the radio on screen and
+            // save nothing on the quote, which is worse than not selecting.
+            if (done || !window.Magewire) {
+                return;
+            }
+            const options = Array.from(document.querySelectorAll(selector));
+            const checked = options.find((option) => option.checked);
+            if (checked && checked.value === methodCode) {
+                done = true;
+
+                return;
+            }
+            const offered = options.find((option) => option.value === methodCode && !option.disabled);
+            if (!offered) {
+                return;
+            }
+            done = true;
+            offered.click();
+        }
+
+        return { attempt, isDone: () => done };
+    }
+
+    (() => {
+        if (!twoGatewayTakeExpressIntent()) {
+            return;
+        }
+        const preselect = twoGatewayExpressPreselect('<?= $escaper->escapeJs($methodCode) ?>');
+
+        // After the page has loaded, Magewire is up and its bindings are on the
+        // radios; after every Magewire round trip the list may have changed.
+        const arm = () => {
+            preselect.attempt();
+            if (window.Magewire && typeof window.Magewire.hook === 'function') {
+                window.Magewire.hook('message.processed', preselect.attempt);
+            }
+        };
+        if (document.readyState === 'complete') {
+            arm();
+        } else {
+            window.addEventListener('load', arm, { once: true });
+        }
+    })();
+</script>
+<?php $hyvaCsp->registerInlineScript(); ?>
