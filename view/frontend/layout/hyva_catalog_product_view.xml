@@ -23,11 +23,17 @@
  *
  * The promo message is the base module's block too, left on its template and
  * its own switch, and it hung off the same base position, so it landed at the
- * foot of the page as well. It moves into the same container, after the
- * button: the order the base module gives the two on Luma, where the message
- * follows the button beneath the add-to-cart controls. Hyvä's product-info
- * column offers no container nearer the price, which shares a row with the
- * add-to-cart button.
+ * foot of the page as well. It moves into the same container, with the button
+ * directly above it: the order the base module gives the two on Luma, where the
+ * message follows the button beneath the add-to-cart controls. Hyvä's
+ * product-info column offers no container nearer the price, which shares a row
+ * with the add-to-cart button.
+ *
+ * Magento runs scheduled moves in the order the moved elements were declared,
+ * not the order of these move tags, and skips a before or after naming a
+ * sibling not yet in the container as a broken reference. The base layout
+ * declares the promo first, so the promo moves with no sibling and the button
+ * is placed before it. Whichever move runs first, the button ends up above.
  *
  * The button label and the promo text are resized for a Hyvä theme in this
  * module's own product stylesheet, loaded here so it reaches the product page
@@ -45,8 +51,8 @@
     <body>
         <referenceBlock name="two.product.express"
                         template="Two_GatewayHyva::product/express-button.phtml"/>
-        <move element="two.product.express" destination="product.info.additional"/>
-        <move element="two.product.promo" destination="product.info.additional"
-              after="two.product.express"/>
+        <move element="two.product.promo" destination="product.info.additional"/>
+        <move element="two.product.express" destination="product.info.additional"
+              before="two.product.promo"/>
     </body>
 </page>

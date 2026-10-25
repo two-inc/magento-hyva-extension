@@ -101,6 +101,7 @@ class ProductExpressLayoutTest extends TestCase
     public function testProductBlockSitsInThePurchaseColumn(
         string $blockName,
         string $destination,
+        string $before,
         string $after,
         string $case
     ): void {
@@ -109,35 +110,29 @@ class ProductExpressLayoutTest extends TestCase
         $move = $this->load('hyva_catalog_product_view.xml')->xpath("//move[@element=\"{$blockName}\"]");
 
         $this->assertCount(1, $move, $case);
-        $this->assertSame($destination, (string) $move[0]['destination'], $case);
-        $this->assertSame($after, (string) $move[0]['after'], $case);
+        $this->assertSame($destination, (string) $move[0]['destination'], "{$case}: destination");
+        $this->assertSame($before, (string) $move[0]['before'], "{$case}: before");
+        $this->assertSame($after, (string) $move[0]['after'], "{$case}: after");
     }
 
     /**
-     * Base block, destination container, sibling it follows ('' = none), description.
-     * The promo follows the button, as the base module orders the two on Luma.
+     * Base block, destination container, sibling it goes before, sibling it goes after ('' = none), description.
      *
-     * @return array<string, array{string, string, string, string}>
+     * The button sits directly above the promo, as the base module orders the two on Luma. Magento runs
+     * scheduled moves in the order the moved elements were declared (the base layout declares the promo
+     * first), not the order of the move tags, and skips a before or after naming a sibling not yet in the
+     * container as a broken reference. So only the button names a sibling: if the promo moves first the
+     * button lands before it, and if the button moves first its reference is skipped and the promo is
+     * appended after it. A promo naming the button as its sibling broke on a live store, landing above it.
+     *
+     * @return array<string, array{string, string, string, string, string}>
      */
     public static function placementProvider(): array
     {
         return [
-            'product button' => ['two.product.express', 'product.info.additional', '', 'product button'],
-            'promo message' => ['two.product.promo', 'product.info.additional', 'two.product.express', 'promo message'],
+            'product button' => ['two.product.express', 'product.info.additional', 'two.product.promo', '', 'product button'],
+            'promo message' => ['two.product.promo', 'product.info.additional', '', '', 'promo message'],
         ];
-    }
-
-    public function testButtonMovesBeforeThePromoThatFollowsIt(): void
-    {
-        // Given the Hyvä handle; then the button's move is declared first.
-        // Magento applies moves in the order the layout declares them, and skips an `after` naming a
-        // sibling that is not in the container yet as a broken reference, which leaves the promo first.
-        $moved = array_map(
-            static fn (SimpleXMLElement $move): string => (string) $move['element'],
-            $this->load('hyva_catalog_product_view.xml')->xpath('//move')
-        );
-
-        $this->assertSame(['two.product.express', 'two.product.promo'], $moved);
     }
 
     public function testProductStylesheetIsShipped(): void
