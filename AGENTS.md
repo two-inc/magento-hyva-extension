@@ -198,17 +198,20 @@ Read [docs/address-write-back.md](docs/address-write-back.md) before changing
 region select or `region` field, or the fixtures in
 `address-payload-routing.test.js`.
 
-### Product page "Buy with" button and its checkout preselect
+### Product page promo message, "Buy with" button and its checkout preselect
 
-The base module owns the button block, its on/off switch and every word on
-it; `hyva_catalog_product_view.xml` swaps its template and moves it into
-`product.info.additional`, and the `hyva_` prefix keeps Luma on the base
-template and placement (TWO-26616). The move is needed because Hyvä's
-`product.info.main` is the whole product page, so the base position landed the
-button above the footer rather than under add to cart. The label's size is
-reset to Hyvä's add-to-cart size in `web/css/product-express.css`, a file of its
-own so the product page does not load the checkout rules in `custom.css`. The
-Hyvä template
+The base module owns the button and promo blocks, their on/off switches and
+every word on them; `hyva_catalog_product_view.xml` swaps the button's template
+and moves both into `product.info.additional`, the promo after the button as the
+base module orders them on Luma, and the `hyva_` prefix keeps Luma on the base
+template and placement (TWO-26616, TWO-26659). The move is needed because Hyvä's
+`product.info.main` is the whole product page, so the base position landed both
+above the footer rather than under add to cart; Hyvä's product-info column has
+no container nearer the price. The button's move must stay declared before the
+promo's, which names the button as its sibling. The button label and the promo
+text are reset to Hyvä's 1rem body size in `web/css/product-express.css`, a file
+of its own so the product page does not load the checkout rules in `custom.css`.
+The promo keeps the base template. The button's Hyvä template
 submits the product's own form natively with a tokened `return_url`, so core's
 add-to-cart controller decides where the buyer goes, exactly as on Luma.
 `checkout/express-preselect.phtml` consumes the base module's `two_express`

@@ -5,6 +5,7 @@
  * See COPYING.txt for license details.
  *
  * TWO-26616: the product page "Buy with <brand>" button on Hyvä themes.
+ * TWO-26659: the product page promo message on Hyvä themes.
  *
  * The base module adds the button block on every theme. Its template wires the
  * click up through RequireJS, which a Hyvä page does not load, so on Hyvä the
@@ -20,11 +21,20 @@
  * renders last in that column, directly beneath its add-to-cart and wish-list
  * rows.
  *
- * The label is resized for a Hyvä theme in this module's own product-express
- * stylesheet, loaded here so it reaches the product page only.
+ * The promo message is the base module's block too, left on its template and
+ * its own switch, and it hung off the same base position, so it landed at the
+ * foot of the page as well. It moves into the same container, after the
+ * button: the order the base module gives the two on Luma, where the message
+ * follows the button beneath the add-to-cart controls. Hyvä's product-info
+ * column offers no container nearer the price, which shares a row with the
+ * add-to-cart button.
+ *
+ * The button label and the promo text are resized for a Hyvä theme in this
+ * module's own product stylesheet, loaded here so it reaches the product page
+ * only.
  *
  * The hyva_ prefix makes Hyvä apply this handle on Hyvä themes only, so a Luma
- * storefront keeps the base template.
+ * storefront keeps the base template and placement of both.
  */
 -->
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -36,5 +46,7 @@
         <referenceBlock name="two.product.express"
                         template="Two_GatewayHyva::product/express-button.phtml"/>
         <move element="two.product.express" destination="product.info.additional"/>
+        <move element="two.product.promo" destination="product.info.additional"
+              after="two.product.express"/>
     </body>
 </page>
