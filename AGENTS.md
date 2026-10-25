@@ -200,9 +200,12 @@ region select or `region` field, or the fixtures in
 
 ### Product page "Buy with" button and its checkout preselect
 
-The base module owns the button block, its placement, its on/off switch and
-every word on it; `hyva_catalog_product_view.xml` only swaps its template, and
-the `hyva_` prefix keeps Luma on the base one (TWO-26616). The Hyvä template
+The base module owns the button block, its on/off switch and every word on
+it; `hyva_catalog_product_view.xml` swaps its template and moves it into
+`product.info.additional`, and the `hyva_` prefix keeps Luma on the base
+template and placement (TWO-26616). The move is needed because Hyvä's
+`product.info.main` is the whole product page, so the base position landed the
+button above the footer rather than under add to cart. The Hyvä template
 submits the product's own form natively with a tokened `return_url`, so core's
 add-to-cart controller decides where the buyer goes, exactly as on Luma.
 `checkout/express-preselect.phtml` consumes the base module's `two_express`

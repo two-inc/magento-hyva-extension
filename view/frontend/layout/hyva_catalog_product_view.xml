@@ -9,9 +9,16 @@
  * The base module adds the button block on every theme. Its template wires the
  * click up through RequireJS, which a Hyvä page does not load, so on Hyvä the
  * button rendered and did nothing. This swaps in a template that does the same
- * thing in plain browser JavaScript. Only the template changes: the block, its
- * placement and its visibility rules (the merchant's product button switch
- * included) stay the base module's.
+ * thing in plain browser JavaScript. The block and its visibility rules (the
+ * merchant's product button switch included) stay the base module's.
+ *
+ * Its placement moves. The base module hangs the button off product.info.main,
+ * just after the add-to-cart form, which on Luma is the purchase column. On
+ * Hyvä product.info.main is the whole product page, so the same position put
+ * the button below the related products and the review form, just above the
+ * footer. product.info.additional is the container Hyvä's product-info template
+ * renders last in that column, directly beneath its add-to-cart and wish-list
+ * rows.
  *
  * The hyva_ prefix makes Hyvä apply this handle on Hyvä themes only, so a Luma
  * storefront keeps the base template.
@@ -22,5 +29,6 @@
     <body>
         <referenceBlock name="two.product.express"
                         template="Two_GatewayHyva::product/express-button.phtml"/>
+        <move element="two.product.express" destination="product.info.additional"/>
     </body>
 </page>

@@ -90,8 +90,9 @@ Set up your Two Gateway credentials and settings in the Magento Admin:
 The base module's product page promo message and "Buy with <brand>" button are
 off by default and switched on separately in the Two Gateway configuration. Both
 work on Hyvä themes with no further setup. This module gives the button a Hyvä
-template (on Hyvä themes only; Luma keeps the base module's) that adds the
-product to the basket with the options and quantity chosen in the product form,
+template (on Hyvä themes only; Luma keeps the base module's), placed directly
+beneath the add-to-cart controls in the product information column, that adds
+the product to the basket with the options and quantity chosen in the product form,
 then takes the buyer to checkout. In Hyvä Checkout the brand's payment method is
 then preselected, once, unless the buyer picks a method first or the method is
 not offered for the basket. The brand's name and texts come from the base

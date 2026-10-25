@@ -74,6 +74,16 @@ class ProductExpressLayoutTest extends TestCase
         $this->assertCount(0, $xml->xpath('//referenceBlock[@name="two.product.express"]/@class'));
     }
 
+    public function testProductButtonSitsInThePurchaseColumn(): void
+    {
+        // Given the Hyvä handle; then the button moves into the container Hyvä renders under add to cart.
+        // Left where the base module puts it, it lands at the foot of the whole product page.
+        $move = $this->load('hyva_catalog_product_view.xml')->xpath('//move[@element="two.product.express"]');
+
+        $this->assertCount(1, $move);
+        $this->assertSame('product.info.additional', (string) $move[0]['destination']);
+    }
+
     public function testPreselectReceivesTheBrandedViewModel(): void
     {
         // Given the preselect block; then the method code reaches it through the branded view model.
