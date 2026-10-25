@@ -20,12 +20,18 @@
  * renders last in that column, directly beneath its add-to-cart and wish-list
  * rows.
  *
+ * The label is resized for a Hyvä theme in this module's own product-express
+ * stylesheet, loaded here so it reaches the product page only.
+ *
  * The hyva_ prefix makes Hyvä apply this handle on Hyvä themes only, so a Luma
  * storefront keeps the base template.
  */
 -->
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="Two_GatewayHyva::css/product-express.css"/>
+    </head>
     <body>
         <referenceBlock name="two.product.express"
                         template="Two_GatewayHyva::product/express-button.phtml"/>

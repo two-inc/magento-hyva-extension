@@ -84,6 +84,19 @@ class ProductExpressLayoutTest extends TestCase
         $this->assertSame('product.info.additional', (string) $move[0]['destination']);
     }
 
+    public function testProductStylesheetIsShipped(): void
+    {
+        // Given the Hyvä handle; then the stylesheet that resizes the label exists in this module.
+        // A missing asset is a 404 on the page and a label left at the base size.
+        $css = $this->load('hyva_catalog_product_view.xml')->xpath('//head/css/@src');
+
+        $this->assertCount(1, $css);
+        $this->assertStringStartsWith('Two_GatewayHyva::', (string) $css[0]);
+        $this->assertFileExists(
+            self::VIEW_ROOT . '/web/' . substr((string) $css[0], strlen('Two_GatewayHyva::'))
+        );
+    }
+
     public function testPreselectReceivesTheBrandedViewModel(): void
     {
         // Given the preselect block; then the method code reaches it through the branded view model.

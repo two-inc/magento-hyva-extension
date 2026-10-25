@@ -1,0 +1,16 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-26616: the product page "Buy with <brand>" button on Hyvä themes.
+ *
+ * The base stylesheet sizes the label in rem against Luma's 10px root, which
+ * on a Hyvä theme's 16px root makes it far larger than the add-to-cart button
+ * beside it. Hyvä's add-to-cart text is the theme's base size, 1rem, so the
+ * label takes that. A theme utility class cannot do this: the base stylesheet
+ * loads after the theme's and its rule would win, so the selector here is the
+ * more specific one and holds whichever order the two arrive in.
+ */
+.two-product-express .two-product-express__button {
+  font-size: 1rem;
+}
