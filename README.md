@@ -91,7 +91,7 @@ The base module's product page promo message and "Buy with <brand>" button are
 off by default and switched on separately in the Two Gateway configuration. Both
 work on Hyvä themes with no further setup. On Hyvä themes this module places
 both beneath the add-to-cart controls in the product information column, the
-button first and the promo message after it as on Luma, and sizes their text to
+button directly above the promo message as on Luma, and sizes their text to
 the theme's body text; Luma keeps the base module's placement and sizes. It also
 gives the button a Hyvä template (Luma keeps the base module's) that adds the
 product to the basket with the options and quantity chosen in the product form,
