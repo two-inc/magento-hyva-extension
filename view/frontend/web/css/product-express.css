@@ -3,14 +3,24 @@
  * See COPYING.txt for license details.
  *
  * TWO-26616: the product page "Buy with <brand>" button on Hyvä themes.
+ * TWO-26659: the product page promo message on Hyvä themes.
  *
- * The base stylesheet sizes the label in rem against Luma's 10px root, which
- * on a Hyvä theme's 16px root makes it far larger than the add-to-cart button
- * beside it. Hyvä's add-to-cart text is the theme's base size, 1rem, so the
- * label takes that. A theme utility class cannot do this: the base stylesheet
- * loads after the theme's and its rule would win, so the selector here is the
- * more specific one and holds whichever order the two arrive in.
+ * The base stylesheets size the button label and the promo text in rem against
+ * Luma's 10px root, which on a Hyvä theme's 16px root makes both far larger
+ * than the product text around them. Hyvä's body and add-to-cart text are the
+ * theme's base size, 1rem, so both take that. A theme utility class cannot do
+ * this: the base stylesheets load after the theme's and their rules would win,
+ * so each selector here is the more specific one and holds whichever order the
+ * files arrive in.
  */
 .two-product-express .two-product-express__button {
+  font-size: 1rem;
+}
+
+/* On Luma the promo text is 15px against a 14px body. At 1rem it matches
+   Hyvä's 16px body, so the brand name beside it (which inherits the body
+   size) and the brand's fixed-size mark stand to it within a pixel of their
+   Luma proportions. */
+.two-product-promo .two-product-promo__text {
   font-size: 1rem;
 }
