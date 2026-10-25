@@ -40,20 +40,27 @@ if (!$block->isVisible()) {
 
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 ?>
-<div class="two-product-express" data-brand="<?= $escaper->escapeHtmlAttr($block->getBrandCode()) ?>">
-    <?php /* type=button: the click drives the shop's own add-to-cart form,
-            so core validates the chosen options and adds the item. */ ?>
-    <button type="button"
-            class="action two-product-express__button"
-            data-two-express-return-url="<?= $escaper->escapeHtmlAttr($block->getReturnUrl()) ?>">
-        <span class="two-product-express__text"><?= $escaper->escapeHtml($block->getLabel()) ?></span>
-        <?php /* The mark is painted by the brand's CSS and hidden from
-                assistive technology; the brand name beside it is what keeps
-                "Buy with <brand>" as the control's accessible name. Same markup
-                as the base template, so the base stylesheet applies unchanged. */ ?>
-        <span class="two-product-express__mark" aria-hidden="true"></span>
-        <span class="two-product-express__brand"><?= $escaper->escapeHtml($block->getBrandLabel()) ?></span>
-    </button>
+<?php /* A row of the product-info column, spaced and right-aligned like the
+        add-to-cart and wish-list rows above it. Utility classes those rows
+        already use, so the theme's compiled stylesheet carries them; the
+        outer wrapper holds the spacing because the base stylesheet sets the
+        button block's own margin. */ ?>
+<div class="mt-4">
+    <div class="two-product-express flex justify-end" data-brand="<?= $escaper->escapeHtmlAttr($block->getBrandCode()) ?>">
+        <?php /* type=button: the click drives the shop's own add-to-cart form,
+                so core validates the chosen options and adds the item. */ ?>
+        <button type="button"
+                class="action two-product-express__button"
+                data-two-express-return-url="<?= $escaper->escapeHtmlAttr($block->getReturnUrl()) ?>">
+            <span class="two-product-express__text"><?= $escaper->escapeHtml($block->getLabel()) ?></span>
+            <?php /* The mark is painted by the brand's CSS and hidden from
+                    assistive technology; the brand name beside it is what keeps
+                    "Buy with <brand>" as the control's accessible name. Same markup
+                    as the base template, so the base stylesheet applies unchanged. */ ?>
+            <span class="two-product-express__mark" aria-hidden="true"></span>
+            <span class="two-product-express__brand"><?= $escaper->escapeHtml($block->getBrandLabel()) ?></span>
+        </button>
+    </div>
 </div>
 <script>
     /**
