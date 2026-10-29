@@ -157,6 +157,20 @@ jobs:
       - name: Run tests with coverage
         run: phpunit --coverage-clover coverage.xml --coverage-text
 
+      # The chain suite runs the buyer's chosen term from chip click to the quote
+      # payment against the base module's REAL charged-term resolver (ABN-621),
+      # so it needs the base's staging source, the same one the DI-compile leg
+      # below installs. Its bootstrap fails the run when the checkout is missing.
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
+      - name: Run the selected-term chain suite
+        run: phpunit -c phpunit.chain.xml
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
