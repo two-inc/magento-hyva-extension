@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, staging]
+    branches: [main, staging, release/2.0]
   pull_request:
-    branches: [main, staging]
+    branches: [main, staging, release/2.0]
 
 # Cancel in-progress runs for the same ref when a new push lands.
 # Each PR / branch gets its own group so concurrent unrelated work is
