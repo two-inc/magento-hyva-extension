@@ -31,9 +31,19 @@ namespace Magento\Quote\Model\Quote {
 
             private ?string $method = null;
 
-            public function setAdditionalInformation(string $key, $value): self
+            /**
+             * Mirrors the framework: an array with no value REPLACES the whole
+             * set, a key and a value sets one entry.
+             *
+             * @param string|array<string, mixed> $key
+             */
+            public function setAdditionalInformation($key, $value = null): self
             {
-                $this->additionalInformation[$key] = $value;
+                if (is_array($key) && $value === null) {
+                    $this->additionalInformation = $key;
+                } else {
+                    $this->additionalInformation[$key] = $value;
+                }
 
                 return $this;
             }

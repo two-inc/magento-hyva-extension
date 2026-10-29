@@ -189,6 +189,19 @@ extension with such a subclass, so
 `Test/Unit/Magewire/Checkout/Payment/GatewayMethodConstructorTest.php` is the
 guard (ABN-556).
 
+**The chosen term is guarded end to end** (ABN-621). `Test/Chain/` runs the
+buyer's clicks (chip selection, the tile saving its form, a late chip change, a
+term the merchant withdraws) through the tile's component and the plugins
+registered in `etc/frontend/di.xml` in their registered order, against the base
+module's real charged-term resolver, and asserts the term on the quote payment
+that the order composer reads. It is a config of its own,
+`phpunit -c phpunit.chain.xml`, because the unit suite stubs that resolver; it
+needs a base-module checkout in `./base-module` (or `TWO_BASE_MODULE`) and CI
+checks out the base's `staging` for it. It stops at the payment: composing the
+order needs the Magento framework, which no PHPUnit suite here loads. A
+withdrawn term is refused at placement by the availability re-check that runs
+first, and is never stated on the payment.
+
 ### A chip states its term type, not just a day count
 
 An end-of-month term falls due that many days after the end of the month, so a
