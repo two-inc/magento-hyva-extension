@@ -27,15 +27,17 @@ use Two\GatewayHyva\Model\Magewire\Payment\PlaceOrderService;
  * the quote payment, so the order was composed on the merchant default.
  *
  * This runs the chain a buyer's clicks drive, with nothing between the chip and
- * the payment replaced by a test double that answers what it is told:
+ * the payment replaced by a double that answers what it is told (the framework
+ * edges aside, see below):
  *
  *  - the payment tile's Magewire component (boot, term selection, payment data),
  *  - the plugins registered in etc/frontend/di.xml on the placement service, in
  *    their registered order (so a deleted or re-ordered registration fails),
  *  - the base module's REAL charged-term resolver (see bootstrap-chain.php).
  *
- * Only the framework edges are fakes: the quote session, the config repository
- * and the cart repository. The assertion is on the payment's additional
+ * Only the framework edges are stubs or fakes: the quote, its payment and the
+ * checkout session (bootstrap stubs), the config repository and the cart
+ * repository. The assertion is on the payment's additional
  * information, the place the base module's order composer reads the term from.
  * Composing the order itself needs the Magento framework, which this suite does
  * not load; the composer refuses a term that disagrees with the session's, so the
@@ -80,11 +82,11 @@ class SelectedTermReachesPlacementTest extends TestCase
         $this->assertSame($expectedRefusal, $refusal, "$because: placement outcome");
         $this->assertSame($expectedTerm, $info['selectedTerm'] ?? null, "$because: term on the payment");
         if ($expectedTerm !== null) {
-            $this->assertSame(
-                $expectedTerm,
-                $world['session']->getTwoSelectedTerm() ?: $expectedTerm,
-                "$because: the stated term is the one the surcharge was priced on",
-            );
+            $sessionTerm = $world['session']->getTwoSelectedTerm();
+            if ($sessionTerm > 0) {
+                // The composer refuses a stated term that disagrees with the session's.
+                $this->assertSame($expectedTerm, $sessionTerm, "$because: the stated term agrees with the session term");
+            }
             $this->assertSame(
                 self::PAYMENT_FORM['poNumber'],
                 $info['poNumber'] ?? null,
@@ -128,30 +130,19 @@ class SelectedTermReachesPlacementTest extends TestCase
                 [['select', 90], ['pay', 0], ['select', 30], ['place', 0]], 30, null,
                 'going back to the default after a non-default choice states the default',
             ],
+            'placed again on a different term, form not re-saved' => [
+                [['select', 90], ['pay', 0], ['place', 0], ['select', 60], ['place', 0]], 60, null,
+                'a stamp left by the first attempt is re-derived at the retry, not trusted',
+            ],
+            'placed again on a different term, form re-saved' => [
+                [['select', 90], ['pay', 0], ['place', 0], ['select', 60], ['pay', 0], ['place', 0]], 60, null,
+                'the retry states the term chosen since the first attempt',
+            ],
             'term withdrawn by the merchant' => [
                 [['select', 90], ['pay', 0], ['withdraw', 90], ['place', 0]], null, $gone,
                 'a withdrawn term is refused at placement and never stated on the payment',
             ],
         ];
-    }
-
-    /**
-     * Placement-time stamping has to survive the buyer saving the form again:
-     * the form write replaces the payment's whole set, so a stamp left over from
-     * an earlier placement attempt must be re-derived, not trusted.
-     */
-    public function testSecondPlacementAttemptRestatesTheCurrentTerm(): void
-    {
-        $world = $this->world();
-        foreach ([['select', 90], ['pay', 0], ['place', 0], ['select', 60], ['pay', 0], ['place', 0]] as [$step, $days]) {
-            $this->perform($world, $step, $days);
-        }
-
-        $this->assertSame(
-            60,
-            $world['quote']->getPayment()->getAdditionalInformation()['selectedTerm'] ?? null,
-            'the retried placement states the term chosen since the first attempt',
-        );
     }
 
     /**
