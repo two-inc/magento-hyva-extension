@@ -26,7 +26,7 @@
 #   2. Support window = current minor + (SUPPORT_WINDOW-1) previous minors,
 #      taken over ALL minors. Image availability does NOT slide the window:
 #      an in-policy minor with no CI image is surfaced as a skip, it is NOT
-#      silently replaced by an older out-of-policy minor (TWO-24998 Defect 2 —
+#      silently replaced by an older out-of-policy minor (TWO-24998 —
 #      "the window silently trails a minor behind").
 #   3. For each window minor: fetch composer.json, parse require.php → the
 #      PHP minors it accepts (e.g. "~8.2.0||~8.3.0||~8.4.0" → 8.2 8.3 8.4).
@@ -41,9 +41,9 @@
 #      lint / phpunit jobs use setup-php, not the Magento docker images.
 #
 # Replaces the hand-maintained EOL list AND the hand-maintained min-PHP map
-# with upstream discovery (Doug 2026-05-22, r5 #10). TWO-24998 additionally
-# retired the hand-maintained image-exclusion entries in favour of a docker
-# manifest probe (see intentionally_excluded + probe_image below).
+# with upstream discovery. TWO-24998 additionally retired the hand-maintained
+# image-exclusion entries in favour of a docker manifest probe (see
+# intentionally_excluded + probe_image below).
 
 set -euo pipefail
 
@@ -75,7 +75,7 @@ case "${1:-}" in
     # of the classifier — not three independent runs that each re-fetch upstream
     # and re-probe every image. Prevents a transient `docker manifest inspect`
     # blip from putting a combo in one slice but not its mirror, and cuts the
-    # anonymous Docker Hub rate-limit exposure 3x (review: brtkwr on #237).
+    # anonymous Docker Hub rate-limit exposure 3x.
     --emit-all) mode=all ;;
     "") mode=report ;;
     *) echo "Unknown flag: $1" >&2; exit 2 ;;
@@ -143,17 +143,16 @@ fetch_json() {
 # probe_image <image-tag> → prints one of: exists | missing | error
 #
 # Distinguishes a genuinely-unpublished image (skip) from a transient
-# registry failure (fail TOWARD running the test, per TWO-24998 Phase 2 —
-# a Docker Hub blip must not silently zero the matrix). `docker manifest
-# inspect` returns non-zero for both cases, so we inspect stderr: a clear
-# "not found"-class message → missing; anything else → retry once → error.
+# registry failure (fail TOWARD running the test, per TWO-24998 — a Docker Hub
+# blip must not silently zero the matrix). `docker manifest inspect` returns
+# non-zero for both cases, so we inspect stderr: a clear "not found"-class
+# message → missing; anything else → retry once → error.
 #
-# Trade-off (by design, review: brtkwr on #237): because "error" maps to RUN,
-# under degraded / rate-limited registry conditions a genuinely-missing image
-# is classified `run` and surfaces as a RED matrix leg rather than the intended
-# yellow (::warning::) skip. We prefer a loud red on a Docker Hub blip over a
-# silent green that hides zero coverage. Every such case emits the ::warning::
-# above, so the run/skip mismatch is greppable in the job log.
+# Trade-off, by design: because "error" maps to RUN, a genuinely-missing image
+# under degraded / rate-limited registry conditions is classified `run` and
+# surfaces as a RED matrix leg rather than the intended yellow (::warning::)
+# skip. A loud red on a Docker Hub blip beats a silent green hiding zero
+# coverage.
 # ---------------------------------------------------------------------------
 probe_image() {
     local img="$1" attempt out
@@ -200,7 +199,7 @@ fi
 # Window = the SUPPORT_WINDOW most-recent minors, over ALL of them. We do NOT
 # pre-filter image-less/excluded minors out before taking the top-N — doing so
 # would let an older out-of-policy minor backfill the window and hide the fact
-# that an in-policy minor is currently untestable (TWO-24998 Defect 2).
+# that an in-policy minor is currently untestable (TWO-24998).
 supported=$(echo "$all_minors" | head -n "$SUPPORT_WINDOW")
 log "Magento support window ($SUPPORT_WINDOW most-recent minors):"
 log "$supported" | sed 's/^/  /'
