@@ -73,7 +73,7 @@ would shadow the two fresher signals.
 rather than an injection of it, with an identical public surface. **Keep the
 copy.** No released base carries its own provenance model — the newest
 release, `2.1.2`, predates it — so injecting the base module's instead would
-fatal the admin field on every base a merchant can currently install. The `^2.3.0`
+fatal the admin field on every base a merchant can currently install. The base version
 floor in `composer.json` is not evidence to the contrary: it states intent
 only, for the reason set out under `getIsProxyAvailable()` in
 [api-proxy.md](api-proxy.md). Delete the

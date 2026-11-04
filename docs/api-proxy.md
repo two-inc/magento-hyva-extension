@@ -14,7 +14,7 @@ must produce exactly what a failed direct call used to. Paging and client
 identification are the server's to set, so nothing here sends them.
 
 **What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
-`^2.3.0` floor in `composer.json`** — the reasoning is written once, in that
+base version floor in `composer.json`** — the reasoning is written once, in that
 method's docblock, and everything else points at it. Its answer reaches every
 mount as `isProxyAvailable`. `twoGatewayProxyPost()` deliberately has no
 runtime fallback for the 404 a stale route cache produces: a fallback that
