@@ -1084,7 +1084,7 @@ function installCompanyIdentityStub() {
  * and the postMessage handshake are the shared file's own behaviour and are
  * covered where that file lives. What is this repo's is the host adapter the flow
  * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
- * `applyBuyerAddress`, `applyTelephone`, `showError` — so
+ * `applyBuyerAddress`, `applyTelephone`, `showError`. So
  * a stub reimplementing the flow would let a test assert the stub instead.
  *
  * @returns {{instances: Array}} newest last
