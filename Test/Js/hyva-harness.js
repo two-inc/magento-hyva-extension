@@ -1986,6 +1986,36 @@ async function flushPromises() {
   }
 }
 
+/**
+ * The base plugin's shared capture modules, in the order this checkout's
+ * layout loads them, and the global each registers itself under.
+ */
+const REAL_CAPTURE_MODULES = [
+  ["company-search-panel.js", "TwoCompanySearchPanel"],
+  ["company-identity.js", "TwoCompanyIdentity"],
+  ["sole-trader.js", "TwoSoleTrader"],
+  ["company-capture-component.js", "TwoCompanyCaptureComponent"],
+];
+
+/**
+ * Replace the four stubs with the REAL shared modules from a magento-plugin
+ * checkout (TWO-26775). Call after installHyvaEnvironment(): each file's UMD
+ * tail assigns its global over the stub, and that environment's restore()
+ * deletes them again. Evaluated in global scope, as a `<script>` tag runs them.
+ *
+ * @param {string} pluginDir the root of a magento-plugin checkout
+ * @returns {void}
+ */
+function loadRealCaptureModules(pluginDir) {
+  REAL_CAPTURE_MODULES.forEach(function (entry) {
+    const file = path.join(pluginDir, "view/frontend/web/js/model", entry[0]);
+    (0, eval)(fs.readFileSync(file, "utf8"));
+    if (typeof window[entry[1]] !== "function") {
+      throw new Error("loadRealCaptureModules: " + file + " registered no " + entry[1]);
+    }
+  });
+}
+
 module.exports = {
   REPO_ROOT: REPO_ROOT,
   COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
@@ -2006,6 +2036,7 @@ module.exports = {
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
   installCompanyPanelStub: installCompanyPanelStub,
+  loadRealCaptureModules: loadRealCaptureModules,
   CAPTURE_HOST_CONTRACT: CAPTURE_HOST_CONTRACT,
   mountComponent: mountComponent,
   stubFetch: stubFetch,
