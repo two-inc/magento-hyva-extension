@@ -20,6 +20,15 @@ legitimately repeat, and silently swallowing one is invisible to the buyer.
 Line 2 is left alone rather than blanked when there is nothing for it, so an
 autofill carrying no building cannot delete an apartment number the buyer typed.
 
+**A sole trader's autofill record is written on the base plugin's terms for it**
+(TWO-26775), selected by `{ buyerRules: true }`: every non-blank value is written
+when the record arrives and a blank writes nothing, so a record missing a postcode
+cannot wipe the one the buyer typed. The region goes only into a region control
+that is empty or still holds this module's own write, which it marks with
+`data-two-autofilled-region`; a morph that drops the mark makes the region read
+as the buyer's, the safe direction. A registry pick keeps the rules above, blanks
+included. Neither ever writes the country, the email or the buyer's names.
+
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can
 resolve the registry's region, TWO-26263) or else an option's TEXT matches (lossy

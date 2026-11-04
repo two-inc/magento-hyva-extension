@@ -212,25 +212,36 @@ describe("the host adapter the shared flow is given", () => {
     expect(tile.host[member].apply(null, args)).toBe(expected);
   });
 
+  test.each([
+    ["clearField", "a click on a mode clears nothing"],
+    ["renderSignupPrompt", "the panel offers a blocked popup again itself"],
+  ])("carries no %s: %s (TWO-26775)", (member, why) => {
+    expect([why, member in tile.host]).toEqual([why, false]);
+  });
+
+  test("the blocked-popup panel's caption is translated here (TWO-26775)", () => {
+    expect(
+      tile.component.translatePanelString("Sign up or log in as a sole trader"),
+    ).toBe(H.ESCAPED_STRING);
+  });
+
+  test("the company control renders no fallback link of its own (TWO-26775)", () => {
+    const markup = H.renderTemplateMarkup(
+      "view/frontend/templates/form/field/company-search-control.phtml",
+    );
+
+    expect(
+      ["soletrader_signup_link", "soleTraderPopupMessageVisible", "openSoleTraderSignupFromLink"]
+        .filter((token) => markup.includes(token)),
+    ).toEqual([]);
+  });
+
   test("the quote id the mint is made for is the quote's own", () => {
     expect(tile.host.quoteId()).toBe("test-quote-1");
   });
 
   test("this checkout's buyer read carries no client identification", () => {
     expect(tile.host.apiClientParams({})).toEqual({});
-  });
-
-  test("clearField blanks the mounted field and tells this surface", () => {
-    const field = document.getElementById("company_name");
-    field.value = "Something Ltd";
-    tile.component.search = "Something Ltd";
-
-    tile.host.clearField(
-      '[data-two-capture-host="tile"] input[data-two-capture-field]',
-    );
-
-    expect(field.value).toBe("");
-    expect(tile.component.search).toBe("");
   });
 
   test("revertAutofilledAddress is a no-op this checkout can survive", () => {
@@ -388,28 +399,6 @@ describe("the hosted signup (PDEV-4669)", () => {
 
     expect(tile.flow.calls).toContain("focusSignupPopup");
     expect(tile.flow.calls).not.toContain("launchSignup");
-  });
-
-  test("a blocked popup raises the on-page fallback, and the link relaunches it", () => {
-    tile = mountTile();
-
-    tile.flow.showSignupPrompt(true);
-
-    expect(tile.component.showPopupMessage).toBe(true);
-    expect(tile.component.soleTraderPopupMessageVisible).toBe(true);
-
-    tile.component.openSoleTraderSignupFromLink();
-
-    expect(tile.flow.calls).toContain("retrySignup");
-  });
-
-  test("the fallback is withdrawn once the signup has answered", () => {
-    tile = mountTile();
-    tile.flow.showSignupPrompt(true);
-
-    tile.flow.showSignupPrompt(false);
-
-    expect(tile.component.showPopupMessage).toBe(false);
   });
 
   test("the spinner follows the flow's own busy state", () => {

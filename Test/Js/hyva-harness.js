@@ -1084,7 +1084,7 @@ function installCompanyIdentityStub() {
  * and the postMessage handshake are the shared file's own behaviour and are
  * covered where that file lives. What is this repo's is the host adapter the flow
  * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
- * `applyBuyerAddress`, `applyTelephone`, `showError`, `renderSignupPrompt` — so
+ * `applyBuyerAddress`, `applyTelephone`, `showError` — so
  * a stub reimplementing the flow would let a test assert the stub instead.
  *
  * @returns {{instances: Array}} newest last
@@ -1146,13 +1146,6 @@ function installSoleTraderStub() {
     this.calls.push("focusSignupPopup");
     return this.popupOpen;
   };
-  SoleTraderStub.prototype.showSignupPrompt = function (show) {
-    this.calls.push("showSignupPrompt:" + (show ? "on" : "off"));
-    const self = this;
-    this.host().renderSignupPrompt(!!show, function () {
-      self.retrySignup();
-    });
-  };
 
   window.TwoSoleTrader = SoleTraderStub;
   return { instances: instances };
@@ -1176,7 +1169,6 @@ const CAPTURE_HOST_CONTRACT = [
   "supportedCompanyTypesUrl",
   "applyCompanyAddress",
   "revertAutofilledAddress",
-  "clearField",
   "tokensUrl",
   "quoteId",
   "apiClientParams",
@@ -1185,7 +1177,6 @@ const CAPTURE_HOST_CONTRACT = [
   "applyBuyerAddress",
   "applyTelephone",
   "showError",
-  "renderSignupPrompt",
 ];
 
 /**
@@ -1477,7 +1468,6 @@ function installCompanyCaptureStub() {
       this._panel.releaseField();
     }
     this._identity.clearNumber();
-    this._options.clearField(this._boundSelector);
     this.syncChips();
   };
 
@@ -1511,8 +1501,12 @@ function installCompanyCaptureStub() {
     const wasAdopted =
       this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
     if (!wasAdopted) {
+      // A click captures nothing and clears nothing; the mode it left is the
+      // resting mode until a sole trader is adopted (TWO-26775).
+      if (!this._identity.isSoleTrader()) {
+        this._modeBeforeSoleTrader = this._identity.captureMode();
+      }
       this._identity.captureMode("soletrader");
-      this._identity.clearNumber();
       this.syncChips();
     }
     return this._soleTrader.launchSignup(
@@ -1520,8 +1514,24 @@ function installCompanyCaptureStub() {
     );
   };
 
+  CaptureStub.prototype.restingMode = function () {
+    if (this._identity.soleTraderAdopted()) return "soletrader";
+    return this._modeBeforeSoleTrader === "manual" ? "manual" : "registered";
+  };
+
+  // Name-only capture: manual entry, or a Sole trader click pending over it.
+  CaptureStub.prototype.isManualEntry = function () {
+    const mode = this._identity.captureMode();
+    return (
+      mode === "manual" ||
+      (mode === "soletrader" && this.restingMode() === "manual")
+    );
+  };
+
   CaptureStub.prototype.leaveSoleTraderMode = function () {
     if (!this._identity.isSoleTrader()) return false;
+    // Before an adoption the mode captured nothing, so nothing goes.
+    if (!this._identity.soleTraderAdopted()) return true;
     this._identity.soleTraderAdopted(false);
     this._identity.clear();
     this._options.revertAutofilledAddress();

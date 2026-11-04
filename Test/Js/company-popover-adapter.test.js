@@ -465,26 +465,52 @@ describe("the Hyvä adapter over the shared capture controller", () => {
     });
 
     test.each([
-      ["items", [], "a result list behind the released field"],
-      ["isSearchUnavailable", false, "a stale unavailable verdict"],
-      ["searchCompletedFor", null, "the term the last search settled for"],
-      ["isOpen", false, "the panel's own open state"],
+      ["the field", () => field.value, "the name stays for the buyer to edit"],
+      ["the mirror", () => component.companyName, "the capture keeps its name"],
     ])(
-      "it takes the engine's %s down with it, leaving %j: no %s",
-      (key, expected) => {
-        // The engine's own manual toggle is inert here — the controller owns
-        // the modes — so nothing else ends the search interaction, and the
-        // tile's dropdown-clear hook is what puts its verdict box back.
-        component.items = [{ companyName: "Alpha Ltd" }];
-        component.isSearchUnavailable = true;
-        component.searchCompletedFor = "alpha";
-        component.isOpen = true;
+      "entering it keeps the name in %s (%s, TWO-26775)",
+      (where, read, why) => {
+        // Manual entry drops the number only. The host used to blank the
+        // field on this click through a hook the controller called.
+        env.identity.write(
+          { companyName: "Alpha Ltd", companyId: "12345678" },
+          { authoritative: true },
+        );
+        field.value = "Alpha Ltd";
 
         chip("manual").onActivate();
 
-        expect(component[key]).toEqual(expected);
+        expect([why, read()]).toEqual([why, "Alpha Ltd"]);
       },
     );
+
+    test.each([
+      ["manual", false, true, "a Sole trader click from manual entry is still manual entry"],
+      ["registered", false, false, "a Sole trader click from search is not"],
+      ["manual", true, false, "an adopted sole trader is not, whatever came before"],
+    ])(
+      "from %s, adopted %p, the surface and its record say manual: %p (%s, TWO-26775)",
+      (resting, adopted, manual, why) => {
+        env.identity.write({ companyName: "Typed Name" }, { authoritative: true });
+        if (resting === "manual") chip("manual").onActivate();
+
+        capture().soleTraderMode();
+        if (adopted) {
+          capture().adoptSoleTrader({ company_name: "Sole Ltd", organization_number: "77" });
+        }
+
+        const record = JSON.parse(env.browserStorage.getItem(H.COMPANY_SELECTION_KEY));
+        expect([why, component.manualMode, record.manual_mode]).toEqual([why, manual, manual]);
+      },
+    );
+
+    test("a sole trader's autofill reaches the form under the sole-trader write rules", () => {
+      const write = jest.spyOn(component, "setAddressData").mockImplementation(() => {});
+
+      capture().host().applyBuyerAddress({ city: "Ashford" });
+
+      expect(write.mock.calls.map((call) => call[2])).toEqual([{ buyerRules: true }]);
+    });
 
     test("leaving it takes the field back and opens the search", () => {
       chip("manual").onActivate();

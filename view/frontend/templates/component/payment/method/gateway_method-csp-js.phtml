@@ -2149,6 +2149,8 @@ $quoteDetails = json_encode(
 
     /**
      * TWO-25554: billing when it presents a company number, else shipping.
+     * TWO-26775: billing in manual entry answers with its name alone, never
+     * with the delivery company's number.
      *
      * TWO-26295: never a company captured in another country than the one the
      * order intent goes out under. That covers a stale record restored on a
@@ -2173,8 +2175,22 @@ $quoteDetails = json_encode(
                 role: role
             };
         };
-        return captured('billing')
-            || captured('shipping')
+        const billing = captured('billing');
+        if (billing) return billing;
+        // Manual entry on the invoice panel is name-only capture, a Sole trader
+        // click pending over it included (TWO-26775): the delivery company's
+        // number must not stand in for the name the buyer typed.
+        const billingCapture = (window.twoGatewayCompanyCaptureInstances || {}).billing;
+        if (billingCapture && billingCapture.isManualEntry()) {
+            const identity = window.twoGatewayCompanyIdentity('billing');
+            return {
+                companyName: String((identity && identity.companyName()) || ''),
+                companyId: '',
+                companyIdSource: '',
+                role: 'billing'
+            };
+        }
+        return captured('shipping')
             || { companyName: '', companyId: '', companyIdSource: '', role: '' };
     };
 

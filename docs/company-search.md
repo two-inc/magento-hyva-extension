@@ -41,7 +41,9 @@ UI effect is the carve-out from that rule: the payment tile's label and its
 order-intent notices name the company the resolver answers, so a delivery-panel
 pick IS visible there — a notice naming the company the check ran for is required.
 That resolver is `twoGatewayResolveInvoiceCompany()` (TWO-25554): the billing
-identity when it presents a company number, else the shipping one, else nothing.
+identity when it presents a company number, else the shipping one, else nothing;
+billing in manual entry (a Sole trader click pending over it included) answers
+with its typed name and no number, never the delivery company's (TWO-26775).
 What the surfaces ask is `twoGatewayInvoiceCompany()`, which takes that
 resolver's answer and falls back to the tile's own capture. **No surface on this
 checkout offers an editable company identifier** (ABN-564): a number reaches the
@@ -71,6 +73,13 @@ a delivery company falling back across to an invoice address in another
 country. All of it fails OPEN on a missing stamp or a missing country, as the
 Luma checkout's own guard does: records written before the stamp existed must
 not drop a legitimate company on the first load after an upgrade.
+
+**A record saying manual entry restores its name alone** (TWO-26775). Records
+merge field by field, so one can say `manual_mode: true` and still hold an earlier
+pick's or sole trader's number; every restore goes through
+`twoGatewayRecordedCompany()`, which drops it. The mirror records `manual_mode`
+from the controller's `isManualEntry()`, so a Sole trader click pending over
+manual entry is still recorded, and restored, as manual entry.
 
 The tile's country is read live. Its quote is the page-load snapshot (the form
 is `wire:ignore`d), and a logged-in buyer picking saved addresses has no country
@@ -276,6 +285,16 @@ click fires no `focusin` and reaches none of this: a buyer clicking a second
 capture's chip with the mouse can hold two popups open at once. Closing that means
 changing the chip's click path, not the focus rule — a mount must not read the
 focus rules as covering it.
+
+**A press counts as well as a focus** (TWO-26775): a left press on page content
+nothing can focus, empty page space included, closes the popup, and closes the
+popover too when it lands outside it. A right press or a press on a scrollbar
+closes nothing. The listeners are on `document` in the capture phase and resolve
+the field afresh on each event, so a Magewire morph cannot strand them.
+
+**A blocked popup is offered again by the panel itself**: one button over the
+popover, captioned from `twoGatewayPanelStrings` ("Sign up or log in as a sole
+trader"). This checkout renders no fallback link of its own.
 
 All of it lives in the base plugin, none of it in this repo. A mount that adds
 focus handling of its own to a chip or the company field is competing with rules it

@@ -449,6 +449,70 @@ describe("setAddressData field routing", () => {
     expect(valueOf(container, "city")).toBe("");
   });
 
+  describe("a sole trader's autofill record (TWO-26775)", () => {
+    const MARK = "data-two-autofilled-region";
+    const BUYER = { buyerRules: true };
+
+    /*
+     * [why, region control, field values already there, region marked as
+     *  this module's write, payload, rules, field -> expected value]
+     */
+    test.each([
+      ["a blank city writes nothing", "", { city: "Leeds" }, null, { city: "" }, BUYER, { city: "Leeds" }],
+      ["a blank postcode writes nothing", "", { postcode: "LS1 1AA" }, null, { postal_code: "" }, BUYER, { postcode: "LS1 1AA" }],
+      ["a blank street writes nothing", "", {}, null, { street_address: "" }, BUYER, { "street[0]": "PRE-LINE-1" }],
+      ["a value is written over what was there", "", { city: "Leeds" }, null, { city: "Ashford" }, BUYER, { city: "Ashford" }],
+      ["a registry pick still writes its blanks", "", { city: "Leeds" }, null, { city: "" }, null, { city: "" }],
+      ["the buyer's own region stands, and is not put in the city", "select", { region: "51" }, null, { city: "Ashford", region: "Kent" }, BUYER, { region: "51", city: "Ashford" }],
+      ["a region this module wrote is replaced", "select", { region: "51" }, "51", { region: "Kent" }, BUYER, { region: "43" }],
+      ["an empty region select takes the region", "select", {}, null, { region: "Kent" }, BUYER, { region: "43" }],
+      ["the buyer's own free-text region stands", "input", { region: "Yorkshire" }, null, { region: "Kent" }, BUYER, { region: "Yorkshire" }],
+      ["a registry pick replaces the buyer's region", "select", { region: "51" }, null, { region: "Kent" }, null, { region: "43" }],
+    ])("%s", (why, regionControl, before, mark, payload, rules, expected) => {
+      const container = renderForm(regionControl);
+      Object.keys(before).forEach((name) => {
+        container.querySelector('[name="' + name + '"]').value = before[name];
+      });
+      if (mark) container.querySelector('[name="region"]').setAttribute(MARK, mark);
+
+      engine.setAddressData(payload, container, rules || undefined);
+
+      const actual = {};
+      Object.keys(expected).forEach((name) => {
+        actual[name] = valueOf(container, name);
+      });
+      expect([why, actual]).toEqual([why, expected]);
+    });
+
+    test("never writes the country, the email or the buyer's names", () => {
+      const container = renderForm("", "GB");
+      ["email", "firstname", "lastname"].forEach((name) => {
+        container.insertAdjacentHTML(
+          "beforeend",
+          '<input type="text" name="' + name + '" value="kept-' + name + '" />',
+        );
+      });
+
+      engine.setAddressData(
+        {
+          city: "Ashford",
+          country_code: "NO",
+          email: "sole@trader.test",
+          first_name: "Ada",
+          last_name: "Lovelace",
+        },
+        container,
+        BUYER,
+      );
+
+      expect(
+        ["country_id", "email", "firstname", "lastname", "city"].map((name) =>
+          valueOf(container, name),
+        ),
+      ).toEqual(["GB", "kept-email", "kept-firstname", "kept-lastname", "Ashford"]);
+    });
+  });
+
   test("a missing container is a warned no-op, not a throw", () => {
     // The tile offers no address lookup at all, so `null` is a reachable
     // argument rather than a defensive branch.
