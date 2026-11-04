@@ -700,6 +700,9 @@ const SHARED_HELPER_GLOBALS = [
   // What a stored record restores, the number dropped under manual entry
   // (TWO-26775). Same idiom, same reset reason.
   "twoGatewayRecordedCompany",
+  // What setAddressData() last wrote per field; a survivor would let one test's
+  // writes count as this module's in the next.
+  "twoGatewayAutofillWrites",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.

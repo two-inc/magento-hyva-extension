@@ -161,6 +161,12 @@ describe("payment-fields template order-intent re-arm", () => {
       description: "a mode flag alone dispatches nothing",
     },
     {
+      billing: Object.assign({}, CAPTURED, { manual_mode: true }),
+      expected: false,
+      description:
+        "a record saying manual entry holds no number, whatever it stored (TWO-26775)",
+    },
+    {
       billing: { quote_id: CURRENT_QUOTE, company_name: "Half Captured Ltd" },
       expected: false,
       description:

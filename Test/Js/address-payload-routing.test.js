@@ -450,12 +450,11 @@ describe("setAddressData field routing", () => {
   });
 
   describe("a sole trader's autofill record (TWO-26775)", () => {
-    const MARK = "data-two-autofilled-region";
     const BUYER = { buyerRules: true };
 
     /*
-     * [why, region control, field values already there, region marked as
-     *  this module's write, payload, rules, field -> expected value]
+     * [why, region control, the buyer's own field values, an earlier registry
+     *  pick written before them, payload, rules, field -> expected value]
      */
     test.each([
       [
@@ -515,11 +514,48 @@ describe("setAddressData field routing", () => {
       [
         "a region this module wrote is replaced",
         "select",
-        { region: "51" },
-        "51",
+        {},
+        { region: "Surrey" },
         { region: "Kent" },
         BUYER,
         { region: "43" },
+      ],
+      [
+        "a field the record leaves out is cleared where it holds this module's write",
+        "",
+        {},
+        {
+          building: "Unit 4",
+          street_address: "Mill Lane",
+          postal_code: "1011AB",
+          city: "Amsterdam",
+        },
+        { street_address: "High St", city: "Leeds" },
+        BUYER,
+        {
+          "street[0]": "High St",
+          "street[1]": "",
+          postcode: "",
+          city: "Leeds",
+        },
+      ],
+      [
+        "a region the record leaves out is cleared where it holds this module's write",
+        "select",
+        {},
+        { region: "Surrey" },
+        { city: "Leeds" },
+        BUYER,
+        { region: "", city: "Leeds" },
+      ],
+      [
+        "a field the buyer changed since this module's write stays",
+        "",
+        { postcode: "1011AC" },
+        { postal_code: "1011AB", city: "Amsterdam" },
+        { city: "Leeds" },
+        BUYER,
+        { postcode: "1011AC" },
       ],
       [
         "an empty region select takes the region",
@@ -548,21 +584,38 @@ describe("setAddressData field routing", () => {
         null,
         { region: "43" },
       ],
-    ])("%s", (why, regionControl, before, mark, payload, rules, expected) => {
-      const container = renderForm(regionControl);
-      Object.keys(before).forEach((name) => {
-        container.querySelector('[name="' + name + '"]').value = before[name];
-      });
-      if (mark)
-        container.querySelector('[name="region"]').setAttribute(MARK, mark);
+    ])(
+      "%s",
+      (why, regionControl, before, earlier, payload, rules, expected) => {
+        const container = renderForm(regionControl);
+        if (earlier) engine.setAddressData(earlier, container);
+        Object.keys(before).forEach((name) => {
+          container.querySelector('[name="' + name + '"]').value = before[name];
+        });
 
-      engine.setAddressData(payload, container, rules || undefined);
+        engine.setAddressData(payload, container, rules || undefined);
 
-      const actual = {};
-      Object.keys(expected).forEach((name) => {
-        actual[name] = valueOf(container, name);
+        const actual = {};
+        Object.keys(expected).forEach((name) => {
+          actual[name] = valueOf(container, name);
+        });
+        expect([why, actual]).toEqual([why, expected]);
+      },
+    );
+
+    test("a region this module wrote is still replaced after a Magewire morph", () => {
+      const container = renderForm("select");
+      engine.setAddressData({ region: "Surrey" }, container);
+      // A morph patches a kept node's attributes back to the server markup.
+      container.querySelectorAll("*").forEach((node) => {
+        Array.from(node.attributes)
+          .filter((attribute) => attribute.name.startsWith("data-two-"))
+          .forEach((attribute) => node.removeAttribute(attribute.name));
       });
-      expect([why, actual]).toEqual([why, expected]);
+
+      engine.setAddressData({ region: "Kent" }, container, BUYER);
+
+      expect(valueOf(container, "region")).toBe("43");
     });
 
     test("never writes the country, the email or the buyer's names", () => {

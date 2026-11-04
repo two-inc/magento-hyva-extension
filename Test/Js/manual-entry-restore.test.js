@@ -126,8 +126,11 @@ describe("the address step's restore and the invoice resolver", () => {
   }
 
   beforeEach(() => {
+    // Billing an address of its own, as the invoice panel's own form means.
     document.body.innerHTML =
-      addressPanel("shipping") + addressPanel("billing");
+      '<input type="checkbox" id="billing-as-shipping" />' +
+      addressPanel("shipping") +
+      addressPanel("billing");
     env = H.installHyvaEnvironment();
     fetchStub = H.stubFetch();
     jest.spyOn(console, "error").mockImplementation(() => {});
@@ -197,6 +200,11 @@ describe("the address step's restore and the invoice resolver", () => {
       { companyName: "Delivery Ltd", companyId: "22222222", role: "shipping" },
       "a billing panel holding no number in search mode falls back",
     ],
+    [
+      "manual, then billing-as-shipping ticked",
+      { companyName: "Delivery Ltd", companyId: "22222222", role: "shipping" },
+      "once billing is the delivery address, the delivery company is the invoice company",
+    ],
   ])("billing in %s resolves %j (%s)", (mode, expected, why) => {
     mountPanel("shipping");
     mountPanel("billing");
@@ -212,6 +220,10 @@ describe("the address step's restore and the invoice resolver", () => {
     if (mode !== "registered") controller("billing").manualEntryMode();
     if (mode === "soletrader-over-manual")
       controller("billing").soleTraderMode();
+    if (mode.endsWith("ticked")) {
+      document.getElementById("billing-as-shipping").checked = true;
+      document.getElementById("billing-form").remove();
+    }
 
     const resolved = window.twoGatewayResolveInvoiceCompany();
 
@@ -224,4 +236,88 @@ describe("the address step's restore and the invoice resolver", () => {
       },
     ]).toEqual([why, expected]);
   });
+});
+
+describe("the payment tile's restore (TWO-26775)", () => {
+  const TILE_COMPONENT = "twoGatewayHyvaPaymentMethodBase";
+  let env;
+  let fetchStub;
+
+  /** The tile hosting its own control, as it does with address-step search off. */
+  function render() {
+    document.body.innerHTML = [
+      '<input type="radio" name="payment-method-option" value="two_payment" checked />',
+      '<input id="shipping-country_id" value="GB" />',
+      '<form id="two_payment_form"><div id="payment-root">',
+      '  <div class="two-company-search" data-two-capture-host="tile">',
+      '    <input type="text" id="company_name" name="payment[company_name]" data-two-capture-field value="" />',
+      "  </div>",
+      '  <input type="text" id="company_id" name="payment[company_id]" data-name="company_id" value="" />',
+      "</div></form>",
+    ].join("\n");
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    env = H.installHyvaEnvironment();
+    fetchStub = H.stubFetch();
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    render();
+    H.loadTemplate(H.GATEWAY_METHOD_TEMPLATE);
+    env.fireAlpineInit();
+  });
+
+  afterEach(() => {
+    delete window.twoGatewayInvoiceCompanyWritten;
+    delete window.twoGatewayInvoiceCompanyWatchers;
+    fetchStub.restore();
+    env.restore();
+    jest.useRealTimers();
+    document.body.innerHTML = "";
+  });
+
+  test.each([
+    [
+      true,
+      "",
+      "a record saying manual entry puts no number back after the tick",
+    ],
+    [false, "111", "a registered pick's number is restored"],
+  ])(
+    "manual %p: the submitted number and the intent's are %p (%s)",
+    (manual, expected, why) => {
+      env.browserStorage.setItem(
+        H.BILLING_COMPANY_KEY,
+        JSON.stringify({
+          company_name: "Typed",
+          company_id: "111",
+          company_id_source: "registry",
+          manual_mode: manual,
+        }),
+      );
+      const root = document.getElementById("payment-root");
+      const tile = H.mountComponent(env.alpineComponents[TILE_COMPONENT], {
+        el: root,
+        root: root,
+      });
+      // Alpine runs a tick after the current one, not inside it: the seed and
+      // the mirror run first, then the tick's restore.
+      const ticks = [];
+      tile.$nextTick = (fn) => {
+        ticks.push(fn);
+        return Promise.resolve();
+      };
+      tile.$watch = function () {};
+      tile.initialize(JSON.parse(H.QUOTE_JSON));
+      ticks.splice(0).forEach((fn) => fn());
+
+      const intent = tile.buildOrderIntentRequestBody(JSON.parse(H.QUOTE_JSON))
+        .buyer.company;
+      expect([
+        why,
+        document.getElementById("company_id").value,
+        intent.organization_number || "",
+      ]).toEqual([why, expected, expected]);
+    },
+  );
 });

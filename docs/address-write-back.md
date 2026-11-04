@@ -24,10 +24,15 @@ autofill carrying no building cannot delete an apartment number the buyer typed.
 (TWO-26775), selected by `{ buyerRules: true }`: every non-blank value is written
 when the record arrives and a blank writes nothing, so a record missing a postcode
 cannot wipe the one the buyer typed. The region goes only into a region control
-that is empty or still holds this module's own write, which it marks with
-`data-two-autofilled-region`; a morph that drops the mark makes the region read
-as the buyer's, the safe direction. A registry pick keeps the rules above, blanks
-included. Neither ever writes the country, the email or the buyer's names.
+that is empty or still holds this module's own write. A field the record leaves
+out is cleared where it still holds this module's own earlier write, so an earlier
+company's postcode or second line does not stand beside the sole trader's address;
+a field the buyer has changed since stays. What this module wrote is kept per field
+node in `twoGatewayAutofillWrites`, not as an attribute, because a Magewire morph
+patches a kept node's attributes back to the server markup; a node the morph
+replaces loses its entry and its value reads as the buyer's. A registry pick keeps
+the rules above, blanks included, and retracts nothing. Neither ever writes the
+country, the email or the buyer's names.
 
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can

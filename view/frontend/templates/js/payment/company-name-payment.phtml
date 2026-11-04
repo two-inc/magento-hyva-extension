@@ -157,8 +157,11 @@ $methodCode = $brandedViewModel->getMethodCode();
 
             const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
                 || function () { return {}; })();
-            const capturedCompany = billingCompanySelectionData.company_name || "";
-            const capturedCompanyId = billingCompanySelectionData.company_id || "";
+            // A record saying manual entry holds no number (TWO-26775).
+            const recorded = (window.twoGatewayRecordedCompany
+                || function () { return { companyName: "", companyId: "" }; })(billingCompanySelectionData);
+            const capturedCompany = recorded.companyName;
+            const capturedCompanyId = recorded.companyId;
 
             if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));

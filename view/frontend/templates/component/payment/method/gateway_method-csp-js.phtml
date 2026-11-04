@@ -352,6 +352,16 @@ $quoteDetails = json_encode(
         return window.twoGatewayCompanyRecordFits(record, country) ? record : {};
     };
 
+    /*
+     * What setAddressData() last wrote into each address field, so a later
+     * sole trader's record can tell this module's write from the buyer's
+     * (TWO-26775). Keyed on the node, not marked on it: a Magewire morph patches
+     * a kept node's attributes back to the server markup, which would strip a
+     * mark, and a node it replaces drops its entry, leaving the value the
+     * buyer's.
+     */
+    window.twoGatewayAutofillWrites = window.twoGatewayAutofillWrites || new WeakMap();
+
     /**
      * The company a stored record restores, as an identity write.
      *
@@ -1723,9 +1733,12 @@ $quoteDetails = json_encode(
              * written on the base plugin's terms for it (TWO-26775): a blank
              * value writes nothing, so it cannot wipe what the buyer typed,
              * and the region goes only into a region control that is empty or
-             * still holds this module's own write. Only the address lines,
-             * city, postcode and region are ever written; never the country,
-             * the email or the buyer's names.
+             * still holds this module's own write. A field the record leaves
+             * out is cleared where it still holds this module's own earlier
+             * write, so an earlier company's postcode or second line does not
+             * stand beside it. Only the address lines, city, postcode and region
+             * are ever written; never the country, the email or the buyer's
+             * names.
              *
              * @param {Object} address the payload
              * @param {?HTMLElement} container the address form to write into
@@ -1738,19 +1751,33 @@ $quoteDetails = json_encode(
                 }
                 const buyerRules = Boolean(rules && rules.buyerRules);
                 const text = (value) => String(value === undefined || value === null ? '' : value).trim();
+                // What this module last wrote into each field, and the fields this call wrote.
+                const writes = window.twoGatewayAutofillWrites;
+                const written = new Set();
                 const write = (input, value) => {
-                    if (input && !(buyerRules && value === '')) input.value = value;
+                    if (!input || (buyerRules && value === '')) return;
+                    input.value = value;
+                    writes.set(input, value);
+                    written.add(input);
                 };
-                // Marks a region this module wrote, so a later sole trader may replace it.
-                const REGION_MARK = 'data-two-autofilled-region';
-                const regionHeldByBuyer = (control) => buyerRules
+                const heldByBuyer = (control) => buyerRules
                     && Boolean(control.value)
-                    && control.getAttribute(REGION_MARK) !== control.value;
+                    && writes.get(control) !== control.value;
 
                 const cityInput = container.querySelector('input[name="city"]');
                 const postcodeInput = container.querySelector('input[name="postcode"]');
                 const line1Input = container.querySelector('input[name="street[0]"]');
                 const line2Input = container.querySelector('input[name="street[1]"]');
+                /*
+                 * Hyvä Checkout renders the region as ONE control named
+                 * `region`, a select of region ids where the country has a
+                 * list and a text input where it has none, both bound with
+                 * `wire:model` to `address.region` (TWO-26265). Other forms
+                 * name the select `region_id`. Either name is a select of
+                 * ids; only a text input takes the region as written.
+                 */
+                const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
+                const regionInput = container.querySelector('input[name="region"]');
 
                 const street = text(address.street_address);
                 // Either name, joined when the payload carries both: they are two
@@ -1772,7 +1799,7 @@ $quoteDetails = json_encode(
                  * building silently delete an apartment number the buyer typed
                  * themselves, which is a worse failure than not filling a field.
                  */
-                if (line2Input && line2) line2Input.value = line2;
+                if (line2) write(line2Input, line2);
 
                 const region = text(address.region);
                 let city = text(address.city);
@@ -1798,17 +1825,7 @@ $quoteDetails = json_encode(
                 // The region select that took an option, announced last.
                 let selectedRegion = null;
                 if (region) {
-                    /*
-                     * Hyvä Checkout renders the region as ONE control named
-                     * `region`, a select of region ids where the country has a
-                     * list and a text input where it has none, both bound with
-                     * `wire:model` to `address.region` (TWO-26265). Other forms
-                     * name the select `region_id`. Either name is a select of
-                     * ids; only a text input takes the region as written.
-                     */
-                    const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
-                    const regionInput = container.querySelector('input[name="region"]');
-                    if (regionSelect && regionHeldByBuyer(regionSelect)) {
+                    if (regionSelect && heldByBuyer(regionSelect)) {
                         // The buyer's own region stands, and is not appended to the city either.
                     } else if (regionSelect) {
                         /*
@@ -1829,16 +1846,14 @@ $quoteDetails = json_encode(
                         // id the store does not have. The comma fallback carries
                         // the region instead, so it is not lost either way.
                         if (match) {
-                            regionSelect.value = match.value;
-                            regionSelect.setAttribute(REGION_MARK, match.value);
+                            write(regionSelect, match.value);
                             selectedRegion = regionSelect;
                         } else {
                             city = appendRegion();
                         }
                     } else if (regionInput) {
-                        if (!regionHeldByBuyer(regionInput)) {
-                            regionInput.value = region;
-                            regionInput.setAttribute(REGION_MARK, region);
+                        if (!heldByBuyer(regionInput)) {
+                            write(regionInput, region);
                             regionInput.dispatchEvent(new Event('input', { bubbles: false }));
                         }
                     } else {
@@ -1849,9 +1864,26 @@ $quoteDetails = json_encode(
                 write(cityInput, city);
                 write(postcodeInput, text(address.postal_code));
 
+                // A sole trader's record replaces this module's earlier write
+                // whole; a field the buyer has changed since is theirs and stays.
+                const retracted = [];
+                if (buyerRules) {
+                    [cityInput, postcodeInput, line1Input, line2Input, regionSelect, regionInput].forEach((field) => {
+                        if (!field || written.has(field) || !field.value) return;
+                        if (writes.get(field) !== field.value) return;
+                        field.value = '';
+                        writes.delete(field);
+                        retracted.push(field);
+                    });
+                }
+                if (!selectedRegion && retracted.indexOf(regionSelect) !== -1) selectedRegion = regionSelect;
+
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
                 });
+                if (regionInput && retracted.indexOf(regionInput) !== -1) {
+                    regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                }
                 /*
                  * The region select is announced only once every value is in
                  * the DOM, so nothing listening for its `change` reads a half
@@ -2179,9 +2211,11 @@ $quoteDetails = json_encode(
         if (billing) return billing;
         // Manual entry on the invoice panel is name-only capture, a Sole trader
         // click pending over it included (TWO-26775): the delivery company's
-        // number must not stand in for the name the buyer typed.
+        // number must not stand in for the name the buyer typed. Only while
+        // billing is an address of its own: once billing is the delivery
+        // address, that panel's capture is the invoice company.
         const billingCapture = (window.twoGatewayCompanyCaptureInstances || {}).billing;
-        if (billingCapture && billingCapture.isManualEntry()) {
+        if (billingCapture && billingCapture.isManualEntry() && !window.twoGatewayIsBillingAsShipping()) {
             const identity = window.twoGatewayCompanyIdentity('billing');
             return {
                 companyName: String((identity && identity.companyName()) || ''),
@@ -3669,8 +3703,10 @@ $quoteDetails = json_encode(
                     // `false`: a restore is not a company the buyer just chose,
                     // and the per-company dedup record is emptied by the same
                     // rebuild that caused it.
+                    // Through the one restore rule: a record saying manual
+                    // entry brings back no number (TWO-26775).
                     this.fillCompanyData(
-                        billingCompanySelectionData.company_id || '',
+                        window.twoGatewayRecordedCompany(billingCompanySelectionData).companyId,
                         restored,
                         false
                     );
