@@ -231,8 +231,11 @@ describe("the host adapter the shared flow is given", () => {
     );
 
     expect(
-      ["soletrader_signup_link", "soleTraderPopupMessageVisible", "openSoleTraderSignupFromLink"]
-        .filter((token) => markup.includes(token)),
+      [
+        "soletrader_signup_link",
+        "soleTraderPopupMessageVisible",
+        "openSoleTraderSignupFromLink",
+      ].filter((token) => markup.includes(token)),
     ).toEqual([]);
   });
 

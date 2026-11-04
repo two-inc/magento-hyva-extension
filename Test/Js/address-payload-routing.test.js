@@ -458,22 +458,103 @@ describe("setAddressData field routing", () => {
      *  this module's write, payload, rules, field -> expected value]
      */
     test.each([
-      ["a blank city writes nothing", "", { city: "Leeds" }, null, { city: "" }, BUYER, { city: "Leeds" }],
-      ["a blank postcode writes nothing", "", { postcode: "LS1 1AA" }, null, { postal_code: "" }, BUYER, { postcode: "LS1 1AA" }],
-      ["a blank street writes nothing", "", {}, null, { street_address: "" }, BUYER, { "street[0]": "PRE-LINE-1" }],
-      ["a value is written over what was there", "", { city: "Leeds" }, null, { city: "Ashford" }, BUYER, { city: "Ashford" }],
-      ["a registry pick still writes its blanks", "", { city: "Leeds" }, null, { city: "" }, null, { city: "" }],
-      ["the buyer's own region stands, and is not put in the city", "select", { region: "51" }, null, { city: "Ashford", region: "Kent" }, BUYER, { region: "51", city: "Ashford" }],
-      ["a region this module wrote is replaced", "select", { region: "51" }, "51", { region: "Kent" }, BUYER, { region: "43" }],
-      ["an empty region select takes the region", "select", {}, null, { region: "Kent" }, BUYER, { region: "43" }],
-      ["the buyer's own free-text region stands", "input", { region: "Yorkshire" }, null, { region: "Kent" }, BUYER, { region: "Yorkshire" }],
-      ["a registry pick replaces the buyer's region", "select", { region: "51" }, null, { region: "Kent" }, null, { region: "43" }],
+      [
+        "a blank city writes nothing",
+        "",
+        { city: "Leeds" },
+        null,
+        { city: "" },
+        BUYER,
+        { city: "Leeds" },
+      ],
+      [
+        "a blank postcode writes nothing",
+        "",
+        { postcode: "LS1 1AA" },
+        null,
+        { postal_code: "" },
+        BUYER,
+        { postcode: "LS1 1AA" },
+      ],
+      [
+        "a blank street writes nothing",
+        "",
+        {},
+        null,
+        { street_address: "" },
+        BUYER,
+        { "street[0]": "PRE-LINE-1" },
+      ],
+      [
+        "a value is written over what was there",
+        "",
+        { city: "Leeds" },
+        null,
+        { city: "Ashford" },
+        BUYER,
+        { city: "Ashford" },
+      ],
+      [
+        "a registry pick still writes its blanks",
+        "",
+        { city: "Leeds" },
+        null,
+        { city: "" },
+        null,
+        { city: "" },
+      ],
+      [
+        "the buyer's own region stands, and is not put in the city",
+        "select",
+        { region: "51" },
+        null,
+        { city: "Ashford", region: "Kent" },
+        BUYER,
+        { region: "51", city: "Ashford" },
+      ],
+      [
+        "a region this module wrote is replaced",
+        "select",
+        { region: "51" },
+        "51",
+        { region: "Kent" },
+        BUYER,
+        { region: "43" },
+      ],
+      [
+        "an empty region select takes the region",
+        "select",
+        {},
+        null,
+        { region: "Kent" },
+        BUYER,
+        { region: "43" },
+      ],
+      [
+        "the buyer's own free-text region stands",
+        "input",
+        { region: "Yorkshire" },
+        null,
+        { region: "Kent" },
+        BUYER,
+        { region: "Yorkshire" },
+      ],
+      [
+        "a registry pick replaces the buyer's region",
+        "select",
+        { region: "51" },
+        null,
+        { region: "Kent" },
+        null,
+        { region: "43" },
+      ],
     ])("%s", (why, regionControl, before, mark, payload, rules, expected) => {
       const container = renderForm(regionControl);
       Object.keys(before).forEach((name) => {
         container.querySelector('[name="' + name + '"]').value = before[name];
       });
-      if (mark) container.querySelector('[name="region"]').setAttribute(MARK, mark);
+      if (mark)
+        container.querySelector('[name="region"]').setAttribute(MARK, mark);
 
       engine.setAddressData(payload, container, rules || undefined);
 
@@ -509,7 +590,13 @@ describe("setAddressData field routing", () => {
         ["country_id", "email", "firstname", "lastname", "city"].map((name) =>
           valueOf(container, name),
         ),
-      ).toEqual(["GB", "kept-email", "kept-firstname", "kept-lastname", "Ashford"]);
+      ).toEqual([
+        "GB",
+        "kept-email",
+        "kept-firstname",
+        "kept-lastname",
+        "Ashford",
+      ]);
     });
   });
 
