@@ -697,6 +697,12 @@ const SHARED_HELPER_GLOBALS = [
   // Which address role a panel belongs to — the whole basis of the per-role
   // split, so a template that stopped publishing it must fail loudly.
   "twoGatewayCaptureRoleForForm",
+  // What a stored record restores, the number dropped under manual entry
+  // (TWO-26775). Same idiom, same reset reason.
+  "twoGatewayRecordedCompany",
+  // What setAddressData() last wrote per field; a survivor would let one test's
+  // writes count as this module's in the next.
+  "twoGatewayAutofillWrites",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -1081,7 +1087,7 @@ function installCompanyIdentityStub() {
  * and the postMessage handshake are the shared file's own behaviour and are
  * covered where that file lives. What is this repo's is the host adapter the flow
  * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
- * `applyBuyerAddress`, `applyTelephone`, `showError`, `renderSignupPrompt` — so
+ * `applyBuyerAddress`, `applyTelephone`, `showError`. So
  * a stub reimplementing the flow would let a test assert the stub instead.
  *
  * @returns {{instances: Array}} newest last
@@ -1143,13 +1149,6 @@ function installSoleTraderStub() {
     this.calls.push("focusSignupPopup");
     return this.popupOpen;
   };
-  SoleTraderStub.prototype.showSignupPrompt = function (show) {
-    this.calls.push("showSignupPrompt:" + (show ? "on" : "off"));
-    const self = this;
-    this.host().renderSignupPrompt(!!show, function () {
-      self.retrySignup();
-    });
-  };
 
   window.TwoSoleTrader = SoleTraderStub;
   return { instances: instances };
@@ -1173,7 +1172,6 @@ const CAPTURE_HOST_CONTRACT = [
   "supportedCompanyTypesUrl",
   "applyCompanyAddress",
   "revertAutofilledAddress",
-  "clearField",
   "tokensUrl",
   "quoteId",
   "apiClientParams",
@@ -1182,7 +1180,6 @@ const CAPTURE_HOST_CONTRACT = [
   "applyBuyerAddress",
   "applyTelephone",
   "showError",
-  "renderSignupPrompt",
 ];
 
 /**
@@ -1474,7 +1471,6 @@ function installCompanyCaptureStub() {
       this._panel.releaseField();
     }
     this._identity.clearNumber();
-    this._options.clearField(this._boundSelector);
     this.syncChips();
   };
 
@@ -1508,8 +1504,12 @@ function installCompanyCaptureStub() {
     const wasAdopted =
       this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
     if (!wasAdopted) {
+      // A click captures nothing and clears nothing; the mode it left is the
+      // resting mode until a sole trader is adopted (TWO-26775).
+      if (!this._identity.isSoleTrader()) {
+        this._modeBeforeSoleTrader = this._identity.captureMode();
+      }
       this._identity.captureMode("soletrader");
-      this._identity.clearNumber();
       this.syncChips();
     }
     return this._soleTrader.launchSignup(
@@ -1517,8 +1517,24 @@ function installCompanyCaptureStub() {
     );
   };
 
+  CaptureStub.prototype.restingMode = function () {
+    if (this._identity.soleTraderAdopted()) return "soletrader";
+    return this._modeBeforeSoleTrader === "manual" ? "manual" : "registered";
+  };
+
+  // Name-only capture: manual entry, or a Sole trader click pending over it.
+  CaptureStub.prototype.isManualEntry = function () {
+    const mode = this._identity.captureMode();
+    return (
+      mode === "manual" ||
+      (mode === "soletrader" && this.restingMode() === "manual")
+    );
+  };
+
   CaptureStub.prototype.leaveSoleTraderMode = function () {
     if (!this._identity.isSoleTrader()) return false;
+    // Before an adoption the mode captured nothing, so nothing goes.
+    if (!this._identity.soleTraderAdopted()) return true;
     this._identity.soleTraderAdopted(false);
     this._identity.clear();
     this._options.revertAutofilledAddress();
@@ -1973,6 +1989,36 @@ async function flushPromises() {
   }
 }
 
+/**
+ * The base plugin's shared capture modules, in the order this checkout's
+ * layout loads them, and the global each registers itself under.
+ */
+const REAL_CAPTURE_MODULES = [
+  ["company-search-panel.js", "TwoCompanySearchPanel"],
+  ["company-identity.js", "TwoCompanyIdentity"],
+  ["sole-trader.js", "TwoSoleTrader"],
+  ["company-capture-component.js", "TwoCompanyCaptureComponent"],
+];
+
+/**
+ * Replace the four stubs with the REAL shared modules from a magento-plugin
+ * checkout (TWO-26775). Call after installHyvaEnvironment(): each file's UMD
+ * tail assigns its global over the stub, and that environment's restore()
+ * deletes them again. Evaluated in global scope, as a `<script>` tag runs them.
+ *
+ * @param {string} pluginDir the root of a magento-plugin checkout
+ * @returns {void}
+ */
+function loadRealCaptureModules(pluginDir) {
+  REAL_CAPTURE_MODULES.forEach(function (entry) {
+    const file = path.join(pluginDir, "view/frontend/web/js/model", entry[0]);
+    (0, eval)(fs.readFileSync(file, "utf8"));
+    if (typeof window[entry[1]] !== "function") {
+      throw new Error("loadRealCaptureModules: " + file + " registered no " + entry[1]);
+    }
+  });
+}
+
 module.exports = {
   REPO_ROOT: REPO_ROOT,
   COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
@@ -1993,6 +2039,7 @@ module.exports = {
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
   installCompanyPanelStub: installCompanyPanelStub,
+  loadRealCaptureModules: loadRealCaptureModules,
   CAPTURE_HOST_CONTRACT: CAPTURE_HOST_CONTRACT,
   mountComponent: mountComponent,
   stubFetch: stubFetch,

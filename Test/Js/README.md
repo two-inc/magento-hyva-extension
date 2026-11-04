@@ -100,7 +100,15 @@ into, what each writes into this checkout's DOM and storage. What it cannot catc
 change to the shared files' own contract: the stubs would go on agreeing with the suite
 while the real controller had moved. That risk is accepted deliberately and is covered
 where those files live; the mitigation available here is the contract list, which is why
-it is asserted rather than merely used. Unlike `prestashop-plugin`, which loads the real
+it is asserted rather than merely used.
+
+`shared-modules-smoke.test.js` is the other mitigation, and it is opt-in (TWO-26775):
+with `TWO_MAGENTO_PLUGIN_DIR` naming a magento-plugin checkout,
+`loadRealCaptureModules()` evaluates the real four files over the stubs and the
+suite drives this host through them (construction against the real contract,
+manual entry, a Sole trader click pending over it, and the signup popup's press
+rule across a Magewire re-render). Without the variable it is skipped, which is
+what CI does, since CI has no magento-plugin checkout. Unlike `prestashop-plugin`, which loads the real
 jQuery UI because two of its target defects were properties _of the widget_, there is no
 npm distribution to load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,

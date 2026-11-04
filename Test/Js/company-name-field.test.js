@@ -619,14 +619,15 @@ describe("company-name field picker", () => {
     test("does not disturb an intact registry pick whose field is not re-read", () => {
       // The field is empty on a freshly restored step while state holds the
       // stored company. Driving a search from that field would drop a registry
-      // number nothing was wrong with and re-ask for it.
+      // number nothing was wrong with and re-ask for it. Restored as a
+      // registered capture: a record saying manual entry restores no number at
+      // all (TWO-26775, pinned in manual-entry-restore.test.js).
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
         JSON.stringify({
           company_name: "Acme Ltd",
           company_id: "111",
           company_id_source: "registry",
-          manual_mode: true,
         }),
       );
       const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {

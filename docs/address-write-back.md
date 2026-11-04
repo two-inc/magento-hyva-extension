@@ -20,6 +20,20 @@ legitimately repeat, and silently swallowing one is invisible to the buyer.
 Line 2 is left alone rather than blanked when there is nothing for it, so an
 autofill carrying no building cannot delete an apartment number the buyer typed.
 
+**A sole trader's autofill record is written on the base plugin's terms for it**
+(TWO-26775), selected by `{ buyerRules: true }`: every non-blank value is written
+when the record arrives and a blank writes nothing, so a record missing a postcode
+cannot wipe the one the buyer typed. The region goes only into a region control
+that is empty or still holds this module's own write. A field the record leaves
+out is cleared where it still holds this module's own earlier write, so an earlier
+company's postcode or second line does not stand beside the sole trader's address;
+a field the buyer has changed since stays. What this module wrote is kept per field
+node in `twoGatewayAutofillWrites`, not as an attribute, because a Magewire morph
+patches a kept node's attributes back to the server markup; a node the morph
+replaces loses its entry and its value reads as the buyer's. A registry pick keeps
+the rules above, blanks included, and retracts nothing. Neither ever writes the
+country, the email or the buyer's names.
+
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can
 resolve the registry's region, TWO-26263) or else an option's TEXT matches (lossy

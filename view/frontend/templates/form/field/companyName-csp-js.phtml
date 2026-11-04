@@ -232,16 +232,11 @@ function <?= $gwBase ?>CompanySearchField() {
             // A sole-trader signup is live across rebuilds and its handshake
             // bails unless the mode is still `soletrader`, so the stored mode —
             // which that flow never writes — must not overwrite it.
+            // A record saying manual entry restores its name alone, never a
+            // number an earlier pick or sole trader left in it (TWO-26775).
             if (identity && !identity.isSoleTrader()) {
                 identity.captureMode(data.manual_mode ? 'manual' : 'registered');
-                identity.write(
-                    {
-                        companyName: data.company_name || '',
-                        companyId: data.company_id || '',
-                        companyIdSource: data.company_id_source || ''
-                    },
-                    { authoritative: true }
-                );
+                identity.write(window.twoGatewayRecordedCompany(data), { authoritative: true });
             }
 
             this.mountCompanyPopover();
