@@ -353,6 +353,27 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * The company a stored record restores, as an identity write.
+     *
+     * Manual entry is name-only capture (TWO-26775). Records merge field by
+     * field, so one saying manual entry can still hold the number of an earlier
+     * pick or sole trader; restoring it would carry that company's number into
+     * manual entry and onto the order. Such a record restores its name alone.
+     *
+     * @param {Object} record a role's stored record
+     * @returns {{companyName: string, companyId: string, companyIdSource: string}}
+     */
+    window.twoGatewayRecordedCompany = window.twoGatewayRecordedCompany || function(record) {
+        const data = record || {};
+        const manual = Boolean(data.manual_mode);
+        return {
+            companyName: data.company_name || '',
+            companyId: manual ? '' : (data.company_id || ''),
+            companyIdSource: manual ? '' : (data.company_id_source || '')
+        };
+    };
+
+    /**
      * Is the invoice-role country one this role's captured company does not belong to?
      *
      * Only a record describing the SAME number can say: an identity holding a
@@ -1697,13 +1718,34 @@ $quoteDetails = json_encode(
              * appended to `city` after a comma, because dropping it loses part
              * of the address entirely. An ISO 3166-2 code for the form's own
              * country is the exception: it is not appended.
+             *
+             * A sole trader's autofill record (`{ buyerRules: true }`) is
+             * written on the base plugin's terms for it (TWO-26775): a blank
+             * value writes nothing, so it cannot wipe what the buyer typed,
+             * and the region goes only into a region control that is empty or
+             * still holds this module's own write. Only the address lines,
+             * city, postcode and region are ever written; never the country,
+             * the email or the buyer's names.
+             *
+             * @param {Object} address the payload
+             * @param {?HTMLElement} container the address form to write into
+             * @param {Object} [rules] `{ buyerRules: true }` for a sole trader
              */
-            setAddressData(address, container) {
+            setAddressData(address, container, rules) {
                 if (!container) {
                     if (cfg.addressContainerWarning) console.warn(cfg.addressContainerWarning);
                     return;
                 }
+                const buyerRules = Boolean(rules && rules.buyerRules);
                 const text = (value) => String(value === undefined || value === null ? '' : value).trim();
+                const write = (input, value) => {
+                    if (input && !(buyerRules && value === '')) input.value = value;
+                };
+                // Marks a region this module wrote, so a later sole trader may replace it.
+                const REGION_MARK = 'data-two-autofilled-region';
+                const regionHeldByBuyer = (control) => buyerRules
+                    && Boolean(control.value)
+                    && control.getAttribute(REGION_MARK) !== control.value;
 
                 const cityInput = container.querySelector('input[name="city"]');
                 const postcodeInput = container.querySelector('input[name="postcode"]');
@@ -1723,7 +1765,7 @@ $quoteDetails = json_encode(
                 // branch is not a write of empty — see the guard below.
                 const line2 = premises ? street : '';
 
-                if (line1Input) line1Input.value = line1;
+                write(line1Input, line1);
                 /*
                  * Line 2 is left ALONE, not blanked, when there is nothing to put
                  * in it. Blanking would make an autofill that happens to carry no
@@ -1766,7 +1808,9 @@ $quoteDetails = json_encode(
                      */
                     const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
                     const regionInput = container.querySelector('input[name="region"]');
-                    if (regionSelect) {
+                    if (regionSelect && regionHeldByBuyer(regionSelect)) {
+                        // The buyer's own region stands, and is not appended to the city either.
+                    } else if (regionSelect) {
                         /*
                          * The store's own region id, when the module's relay
                          * resolved the registry's ISO 3166-2 code to one
@@ -1786,20 +1830,24 @@ $quoteDetails = json_encode(
                         // the region instead, so it is not lost either way.
                         if (match) {
                             regionSelect.value = match.value;
+                            regionSelect.setAttribute(REGION_MARK, match.value);
                             selectedRegion = regionSelect;
                         } else {
                             city = appendRegion();
                         }
                     } else if (regionInput) {
-                        regionInput.value = region;
-                        regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                        if (!regionHeldByBuyer(regionInput)) {
+                            regionInput.value = region;
+                            regionInput.setAttribute(REGION_MARK, region);
+                            regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                        }
                     } else {
                         city = appendRegion();
                     }
                 }
 
-                if (cityInput) cityInput.value = city;
-                if (postcodeInput) postcodeInput.value = text(address.postal_code);
+                write(cityInput, city);
+                write(postcodeInput, text(address.postal_code));
 
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
@@ -1878,6 +1926,7 @@ $quoteDetails = json_encode(
         'Registered company': '<?= $escaper->escapeJs(__('Registered company')) ?>',
         'Sole trader': '<?= $escaper->escapeJs(__('Sole trader')) ?>',
         'Enter manually': '<?= $escaper->escapeJs(__('Enter manually')) ?>',
+        'Sign up or log in as a sole trader': '<?= $escaper->escapeJs(__('Sign up or log in as a sole trader')) ?>',
     };
 
     /*
@@ -2218,7 +2267,6 @@ $quoteDetails = json_encode(
         }
 
         const restBaseUrl = settings.restBaseUrl || '';
-        let retrySignup = function () {};
 
         const controller = new Controller({
             config: {
@@ -2336,14 +2384,6 @@ $quoteDetails = json_encode(
             // is nothing to take back out; a buyer who changes country after an
             // autofill corrects the address themselves.
             revertAutofilledAddress() {},
-            clearField(selector) {
-                const field = document.querySelector(selector);
-                if (!field) return;
-                field.value = '';
-                field.dispatchEvent(new Event('input', { bubbles: false }));
-                field.focus();
-                twoGatewayOnSurface('captureFieldCleared');
-            },
 
             tokensUrl() {
                 return restBaseUrl + '/rest/V1/two/get-tokens';
@@ -2372,20 +2412,9 @@ $quoteDetails = json_encode(
                 // The merchant's own wording wins where a brand supplies one.
                 const text = settings.soleTraderErrorMessage || message;
                 window.dispatchMessages([{ type: 'error', text: text }], 5000);
-            },
-            /**
-             * The blocked-popup fallback is a bound element on the tile rather
-             * than DOM this builds, so the flag is all that moves here.
-             */
-            renderSignupPrompt(show, onRetry) {
-                retrySignup = onRetry;
-                twoGatewayOnSurface('captureSignupPromptVisible', [show]);
             }
         });
 
-        controller.retrySignup = function () {
-            retrySignup();
-        };
         controller.pointAtSurface = function (surface) {
             currentSurface = surface;
         };
@@ -2450,7 +2479,6 @@ $quoteDetails = json_encode(
             // Alpine state rather than reaching into the controller.
             manualMode: false,
             showSoleTrader: false,
-            showPopupMessage: false,
             soleTraderBusy: false,
 
             /**
@@ -2562,7 +2590,7 @@ $quoteDetails = json_encode(
                 this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
             },
             captureApplyBuyerAddress(source) {
-                this.setAddressData(source, this.resolveCaptureAddressContainer());
+                this.setAddressData(source, this.resolveCaptureAddressContainer(), { buyerRules: true });
             },
             /**
              * A phone number is not part of the address the buyer is being shown
@@ -2603,13 +2631,6 @@ $quoteDetails = json_encode(
                 return String(quote.billing_country_id || quote.country_id || '')
                     .trim()
                     .toUpperCase();
-            },
-            captureSignupPromptVisible(show) {
-                this.showPopupMessage = !!show;
-            },
-            captureFieldCleared() {
-                this.search = '';
-                this.captureFieldReleased();
             },
 
             /**
@@ -2763,20 +2784,31 @@ $quoteDetails = json_encode(
                 if (registry.has(slot)) registry.get(slot).dispose();
                 const self = this;
                 let restoring = false;
+                /*
+                 * Name-only capture, asked of the controller (TWO-26775): a Sole
+                 * trader click from manual entry that nobody has been adopted
+                 * over leaves manual entry in place, so it is still recorded as
+                 * manual and a reload comes back to manual entry. Read off the
+                 * mode only before this role has a controller.
+                 */
+                const isManualEntry = function () {
+                    const capture = self.captureController();
+                    return capture ? capture.isManualEntry() : identity.captureMode() === 'manual';
+                };
                 const apply = function () {
                     // The MODE counts as a change: it is persisted alongside the
                     // pair, and a return to search that wrote nothing left
                     // `manual_mode: true` in storage for the next re-render to
                     // restore the buyer back into manual entry.
+                    const manual = isManualEntry();
                     const pairChanged = self.companyName !== identity.companyName()
                         || self.companyId !== identity.companyId()
                         || self.companyIdSource !== identity.companyIdSource();
-                    const changed = pairChanged
-                        || self.manualMode !== (identity.captureMode() === 'manual');
+                    const changed = pairChanged || self.manualMode !== manual;
                     self.companyName = identity.companyName();
                     self.companyId = identity.companyId();
                     self.companyIdSource = identity.companyIdSource();
-                    self.manualMode = identity.captureMode() === 'manual';
+                    self.manualMode = manual;
                     self.showSoleTrader = identity.isSoleTrader();
                     // Mirrored onto reactive state: `x-show` tracks component
                     // properties, and the identity is a plain object no Alpine
@@ -2952,26 +2984,10 @@ $quoteDetails = json_encode(
                 if (capture) capture.commitManualCompany(this.search);
             },
 
-            /**
-             * The engine's own manual toggle is inert here, so this is what ends
-             * the search interaction: otherwise a stale "unavailable" verdict and
-             * a populated result list sit behind the released field.
-             */
-            captureFieldReleased() {
-                this.closeDropdown();
-            },
-
-            get soleTraderPopupMessageVisible() {
-                return this.showPopupMessage;
-            },
             // The token mint runs before the hosted signup can open, so the wait
             // is real and needs saying.
             get soleTraderSpinnerVisible() {
                 return this.soleTraderBusy;
-            },
-            openSoleTraderSignupFromLink() {
-                const capture = this.captureController();
-                if (capture) capture.retrySignup();
             },
 
             /*
@@ -3545,11 +3561,7 @@ $quoteDetails = json_encode(
                 // never writes the record — so neither may seed from it.
                 if (identity && !identity.isSoleTrader() && this.companyNameField()) {
                     identity.write(
-                        {
-                            companyName: billingCompanySelectionData.company_name || '',
-                            companyId: billingCompanySelectionData.company_id || '',
-                            companyIdSource: billingCompanySelectionData.company_id_source || ''
-                        },
+                        window.twoGatewayRecordedCompany(billingCompanySelectionData),
                         { authoritative: true }
                     );
                 }
@@ -3569,11 +3581,7 @@ $quoteDetails = json_encode(
                     );
                     if (shippingSelection.company_name || shippingSelection.company_id) {
                         shipping.write(
-                            {
-                                companyName: shippingSelection.company_name || '',
-                                companyId: shippingSelection.company_id || '',
-                                companyIdSource: shippingSelection.company_id_source || ''
-                            },
+                            window.twoGatewayRecordedCompany(shippingSelection),
                             { authoritative: true }
                         );
                     }

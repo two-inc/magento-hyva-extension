@@ -697,6 +697,9 @@ const SHARED_HELPER_GLOBALS = [
   // Which address role a panel belongs to — the whole basis of the per-role
   // split, so a template that stopped publishing it must fail loudly.
   "twoGatewayCaptureRoleForForm",
+  // What a stored record restores, the number dropped under manual entry
+  // (TWO-26775). Same idiom, same reset reason.
+  "twoGatewayRecordedCompany",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
