@@ -190,22 +190,27 @@ describeReal(
         true,
         true,
       ],
-    ])("%s closes the signup popup: %p", async (why, init, morph, closes) => {
-      const popup = await openSignup();
-      if (morph) {
-        // A re-render deletes the runtime-built popover and keeps the field.
-        document.querySelectorAll(".two-company-field-wrap").forEach((wrap) => {
-          wrap.parentNode.insertBefore(field(), wrap);
-          wrap.remove();
-        });
-        env.fireMagewireHook("element.updated");
-        surface.init();
-      }
+    ])(
+      "%s (press %p, re-render %p): the signup popup closes %p",
+      async (why, init, morph, closes) => {
+        const popup = await openSignup();
+        if (morph) {
+          // A re-render deletes the runtime-built popover and keeps the field.
+          document
+            .querySelectorAll(".two-company-field-wrap")
+            .forEach((wrap) => {
+              wrap.parentNode.insertBefore(field(), wrap);
+              wrap.remove();
+            });
+          env.fireMagewireHook("element.updated");
+          surface.init();
+        }
 
-      press(document.getElementById("page-text"), init);
-      await flush();
+        press(document.getElementById("page-text"), init);
+        await flush();
 
-      expect([why, popup.closed]).toEqual([why, closes]);
-    });
+        expect([why, popup.closed]).toEqual([why, closes]);
+      },
+    );
   },
 );
