@@ -46,7 +46,8 @@ field still holds; a number the buyer typed or edited stays. The registry phone 
 recorded per telephone node in `twoGatewayRegistryPhoneWrites`, so each address
 form has its own. A sole trader's verified phone (`captureApplyTelephone()`)
 drops that record, so no later pick clears it. Only the latest lookup for a form
-writes anything: a reply to an earlier pick is ignored. A country switch retracts
+writes anything: a reply to an earlier pick is ignored, and so is one that
+arrives after a sole trader's address or phone was written into that form. A country switch retracts
 nothing here, the phone included, because this checkout does not take an
 autofilled address back on a country switch either.
 

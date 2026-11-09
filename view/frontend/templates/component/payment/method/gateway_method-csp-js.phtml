@@ -2485,9 +2485,10 @@ $quoteDetails = json_encode(
             applyCompanyAddress(selectedItem) {
                 twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
             },
-            // This checkout keeps no record of what an autofill wrote, so there
-            // is nothing to take back out; a buyer who changes country after an
-            // autofill corrects the address themselves.
+            // A country switch takes nothing back here, the registry phone
+            // included: the records of what an autofill wrote serve a sole
+            // trader's record and a later pick, and a buyer who changes
+            // country after an autofill corrects the address themselves.
             revertAutofilledAddress() {},
 
             tokensUrl() {
@@ -2695,7 +2696,11 @@ $quoteDetails = json_encode(
                 this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
             },
             captureApplyBuyerAddress(source) {
-                this.setAddressData(source, this.resolveCaptureAddressContainer(), { buyerRules: true });
+                const container = this.resolveCaptureAddressContainer();
+                // A company lookup still in flight is superseded, so its reply
+                // cannot overwrite the sole trader's address (TWO-27160).
+                if (container) window.twoGatewayAddressLookups.delete(container);
+                this.setAddressData(source, container, { buyerRules: true });
             },
             /**
              * A phone number is not part of the address the buyer is being shown
@@ -2710,8 +2715,10 @@ $quoteDetails = json_encode(
                 if (!field) return;
                 field.value = phone;
                 // The buyer's own verified number from here on, even where it
-                // equals the registry's, so no later pick clears it (TWO-27160).
+                // equals the registry's, so no later pick clears it and no
+                // lookup still in flight overwrites it (TWO-27160).
                 window.twoGatewayRegistryPhoneWrites.delete(field);
+                window.twoGatewayAddressLookups.delete(container);
                 field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**
