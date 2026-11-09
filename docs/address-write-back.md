@@ -31,8 +31,25 @@ a field the buyer has changed since stays. What this module wrote is kept per fi
 node in `twoGatewayAutofillWrites`, not as an attribute, because a Magewire morph
 patches a kept node's attributes back to the server markup; a node the morph
 replaces loses its entry and its value reads as the buyer's. A registry pick keeps
-the rules above, blanks included, and retracts nothing. Neither ever writes the
-country, the email or the buyer's names.
+the rules above, blanks included, and retracts no address field. Neither ever
+writes the country, the email or the buyer's names.
+
+**A registry pick also writes the company's registered phone and a fitted
+postcode** (TWO-27160). The base module's company relay fits each `postal_code`
+to its country's written format before it reaches the browser, so the postcode is
+written as it arrives. `addressLookup()` passes the address's `phone_number` to
+`applyRegistryTelephone()`, which writes it into the telephone field of the same
+form, replacing what the field holds. A pick with no phone, or one whose lookup
+fills nothing (no address, a failure, a rate limit), leaves the address as it was
+and clears only a registry phone an earlier pick wrote into that field and the
+field still holds; a number the buyer typed or edited stays. The registry phone is
+recorded per telephone node in `twoGatewayRegistryPhoneWrites`, so each address
+form has its own. A sole trader's verified phone (`captureApplyTelephone()`)
+drops that record, so no later pick clears it. Only the latest lookup for a form
+writes anything: a reply to an earlier pick is ignored, and so is one that
+arrives after a sole trader's address or phone was written into that form. A country switch retracts
+nothing here, the phone included, because this checkout does not take an
+autofilled address back on a country switch either.
 
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can

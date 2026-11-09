@@ -58,6 +58,7 @@ describe("company-name field picker", () => {
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
+      '  <input name="telephone" value="" />',
       "  <div><div><div>",
       '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
       '      <input type="text" id="company-field" data-two-capture-field value="" />',
@@ -486,6 +487,211 @@ describe("company-name field picker", () => {
       expect(document.querySelector('input[name="city"]').value).toBe(
         "Typed by the buyer",
       );
+    });
+
+    describe("the registry phone (TWO-27160)", () => {
+      const PHONE_A = "+47 22 00 00 01";
+      const PHONE_B = "+47 22 00 00 02";
+      let picks = 0;
+
+      /** @returns {HTMLInputElement} */
+      function telephone() {
+        return document.querySelector('input[name="telephone"]');
+      }
+
+      /**
+       * Pick a fresh company and settle its detail lookup.
+       *
+       * @param {string|number} reply a phone (`""` for an address with none),
+       *   `"no address"`, `"network"`, or an HTTP status the relay passed on
+       */
+      async function pick(reply) {
+        picks += 1;
+        component.selectItem({
+          companyName: "Company " + picks,
+          companyId: String(picks),
+          lookupId: "lookup-" + picks,
+        });
+        const call = fetchStub.lastSearch();
+        if (reply === "network") call.networkError();
+        else if (typeof reply === "number")
+          call.respondProxy(null, false, reply);
+        else if (reply === "no address") call.respondProxy({ addresses: [] });
+        else
+          call.respondProxy({
+            addresses: [{ city: "Oslo", phone_number: reply }],
+          });
+        await H.flushPromises();
+      }
+
+      /** @param {string} value what the buyer leaves in the field */
+      function type(value) {
+        telephone().value = value;
+      }
+
+      /** @param {string} value a sole trader's verified phone */
+      function soleTrader(value) {
+        component.isAddressAutopopulationEnabled = true;
+        component.captureApplyTelephone(value);
+      }
+
+      /*
+       * The last column counts the `input` events the telephone field got:
+       * `wire:model.defer` saves the phone with the quote only on that event,
+       * so every write and every clear has to announce itself, and a field
+       * left alone must not.
+       */
+      test.each([
+        [
+          "a pick with a phone fills an empty field",
+          [() => pick(PHONE_A)],
+          PHONE_A,
+          1,
+        ],
+        [
+          "a registry phone replaces a typed one",
+          [() => type("+44 typed"), () => pick(PHONE_A)],
+          PHONE_A,
+          1,
+        ],
+        [
+          "a re-pick's phone replaces the previous pick's",
+          [() => pick(PHONE_A), () => pick(PHONE_B)],
+          PHONE_B,
+          2,
+        ],
+        ["the phone is trimmed", [() => pick(" " + PHONE_A + " ")], PHONE_A, 1],
+        [
+          "a pick with no phone clears the previous pick's",
+          [() => pick(PHONE_A), () => pick("")],
+          "",
+          2,
+        ],
+        [
+          "a re-pick with no address clears it",
+          [() => pick(PHONE_A), () => pick("no address")],
+          "",
+          2,
+        ],
+        [
+          "a failed re-pick clears it",
+          [() => pick(PHONE_A), () => pick(500)],
+          "",
+          2,
+        ],
+        [
+          "a rate-limited re-pick clears it",
+          [() => pick(PHONE_A), () => pick(429)],
+          "",
+          2,
+        ],
+        [
+          "a re-pick lost on the network clears it",
+          [() => pick(PHONE_A), () => pick("network")],
+          "",
+          2,
+        ],
+        [
+          "a pick with no phone keeps a typed one",
+          [() => type("+44 typed"), () => pick("")],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a failed pick keeps a typed one",
+          [() => type("+44 typed"), () => pick(500)],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a pick with no phone keeps an edited registry phone",
+          [() => pick(PHONE_A), () => type("+47 edited"), () => pick("")],
+          "+47 edited",
+          1,
+        ],
+        [
+          "a sole trader's verified phone survives a pick with no phone",
+          [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("")],
+          PHONE_A,
+          2,
+        ],
+      ])("%s", async (description, steps, expected, inputEvents) => {
+        let announced = 0;
+        telephone().addEventListener("input", () => (announced += 1));
+
+        for (const step of steps) await step();
+
+        expect([telephone().value, announced, description]).toEqual([
+          expected,
+          inputEvents,
+          description,
+        ]);
+      });
+
+      test.each([
+        [
+          "a sole trader's address",
+          () =>
+            component.captureApplyBuyerAddress({
+              city: "Ashford",
+              postal_code: "TN23 1AA",
+              street_address: "Mill Lane",
+            }),
+          "Ashford",
+          "",
+        ],
+        [
+          "a sole trader's phone",
+          () => soleTrader("+44 7700 900000"),
+          "",
+          "+44 7700 900000",
+        ],
+      ])(
+        "%s written while a pick's lookup is in flight is not overwritten by its reply",
+        async (_label, verify, city, phone) => {
+          component.selectItem({
+            companyName: "Slow",
+            companyId: "1",
+            lookupId: "lookup-slow",
+          });
+          const slow = fetchStub.lastSearch();
+          verify();
+
+          slow.respondProxy({
+            addresses: [{ city: "Oslo", phone_number: PHONE_A }],
+          });
+          await H.flushPromises();
+
+          expect(document.querySelector('input[name="city"]').value).toBe(city);
+          expect(telephone().value).toBe(phone);
+        },
+      );
+
+      test("a reply to an earlier pick writes nothing over the latest", async () => {
+        component.selectItem({
+          companyName: "Slow",
+          companyId: "1",
+          lookupId: "lookup-slow",
+        });
+        const slow = fetchStub.lastSearch();
+        component.selectItem({
+          companyName: "Fast",
+          companyId: "2",
+          lookupId: "lookup-fast",
+        });
+        fetchStub.lastSearch().respondProxy({
+          addresses: [{ city: "Bergen", phone_number: PHONE_B }],
+        });
+        await H.flushPromises();
+
+        slow.respondProxy({ addresses: [{ city: "Oslo" }] });
+        await H.flushPromises();
+
+        expect(telephone().value).toBe(PHONE_B);
+        expect(document.querySelector('input[name="city"]').value).toBe(
+          "Bergen",
+        );
+      });
     });
 
     test("a company with no lookup id skips the detail request entirely", async () => {
