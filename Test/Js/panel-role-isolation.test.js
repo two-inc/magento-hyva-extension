@@ -358,6 +358,54 @@ describe("address panels are isolated by role", () => {
     });
   });
 
+  describe("a company pick's registry phone stays in its own panel (TWO-27160)", () => {
+    let panels;
+
+    /**
+     * @param {string} role
+     * @param {string} phone the address's `phone_number`, `""` for none
+     */
+    async function pickIn(role, phone) {
+      panels[role].selectItem({
+        companyName: "Company " + role,
+        companyId: "1",
+        lookupId: "lookup-" + role + "-" + phone,
+      });
+      fetchStub.lastSearch().respondProxy({
+        addresses: [{ city: "Oslo", phone_number: phone }],
+      });
+      await H.flushPromises();
+    }
+
+    beforeEach(() => {
+      panels = {
+        shipping: mountPanel("shipping"),
+        billing: mountPanel("billing"),
+      };
+    });
+
+    test.each([
+      ["shipping", "billing"],
+      ["billing", "shipping"],
+    ])(
+      "a %s pick writes and clears no phone of the %s panel",
+      async (picking, other) => {
+        await pickIn(other, "+47 22 00 00 02");
+        await pickIn(picking, "+47 22 00 00 01");
+
+        expect(addressField(picking, "telephone").value).toBe(
+          "+47 22 00 00 01",
+        );
+        expect(addressField(other, "telephone").value).toBe("+47 22 00 00 02");
+
+        await pickIn(picking, "");
+
+        expect(addressField(picking, "telephone").value).toBe("");
+        expect(addressField(other, "telephone").value).toBe("+47 22 00 00 02");
+      },
+    );
+  });
+
   describe("role resolution", () => {
     test.each([
       ["a form holding a billing- field", "billing-form", "billing"],

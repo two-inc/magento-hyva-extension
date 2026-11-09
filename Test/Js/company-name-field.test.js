@@ -58,6 +58,7 @@ describe("company-name field picker", () => {
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
+      '  <input name="telephone" value="" />',
       "  <div><div><div>",
       '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
       '      <input type="text" id="company-field" data-two-capture-field value="" />',
@@ -486,6 +487,150 @@ describe("company-name field picker", () => {
       expect(document.querySelector('input[name="city"]').value).toBe(
         "Typed by the buyer",
       );
+    });
+
+    describe("the registry phone (TWO-27160)", () => {
+      const PHONE_A = "+47 22 00 00 01";
+      const PHONE_B = "+47 22 00 00 02";
+      let picks = 0;
+
+      /** @returns {HTMLInputElement} */
+      function telephone() {
+        return document.querySelector('input[name="telephone"]');
+      }
+
+      /**
+       * Pick a fresh company and settle its detail lookup.
+       *
+       * @param {string|number} reply a phone (`""` for an address with none),
+       *   `"no address"`, `"network"`, or an HTTP status the relay passed on
+       */
+      async function pick(reply) {
+        picks += 1;
+        component.selectItem({
+          companyName: "Company " + picks,
+          companyId: String(picks),
+          lookupId: "lookup-" + picks,
+        });
+        const call = fetchStub.lastSearch();
+        if (reply === "network") call.networkError();
+        else if (typeof reply === "number")
+          call.respondProxy(null, false, reply);
+        else if (reply === "no address") call.respondProxy({ addresses: [] });
+        else
+          call.respondProxy({
+            addresses: [{ city: "Oslo", phone_number: reply }],
+          });
+        await H.flushPromises();
+      }
+
+      /** @param {string} value what the buyer leaves in the field */
+      function type(value) {
+        telephone().value = value;
+      }
+
+      /** @param {string} value a sole trader's verified phone */
+      function soleTrader(value) {
+        component.isAddressAutopopulationEnabled = true;
+        component.captureApplyTelephone(value);
+      }
+
+      test.each([
+        [
+          "a pick with a phone fills an empty field",
+          [() => pick(PHONE_A)],
+          PHONE_A,
+        ],
+        [
+          "a registry phone replaces a typed one",
+          [() => type("+44 typed"), () => pick(PHONE_A)],
+          PHONE_A,
+        ],
+        [
+          "a re-pick's phone replaces the previous pick's",
+          [() => pick(PHONE_A), () => pick(PHONE_B)],
+          PHONE_B,
+        ],
+        ["the phone is trimmed", [() => pick(" " + PHONE_A + " ")], PHONE_A],
+        [
+          "a pick with no phone clears the previous pick's",
+          [() => pick(PHONE_A), () => pick("")],
+          "",
+        ],
+        [
+          "a re-pick with no address clears it",
+          [() => pick(PHONE_A), () => pick("no address")],
+          "",
+        ],
+        [
+          "a failed re-pick clears it",
+          [() => pick(PHONE_A), () => pick(500)],
+          "",
+        ],
+        [
+          "a rate-limited re-pick clears it",
+          [() => pick(PHONE_A), () => pick(429)],
+          "",
+        ],
+        [
+          "a re-pick lost on the network clears it",
+          [() => pick(PHONE_A), () => pick("network")],
+          "",
+        ],
+        [
+          "a pick with no phone keeps a typed one",
+          [() => type("+44 typed"), () => pick("")],
+          "+44 typed",
+        ],
+        [
+          "a failed pick keeps a typed one",
+          [() => type("+44 typed"), () => pick(500)],
+          "+44 typed",
+        ],
+        [
+          "a pick with no phone keeps an edited registry phone",
+          [() => pick(PHONE_A), () => type("+47 edited"), () => pick("")],
+          "+47 edited",
+        ],
+        [
+          "a sole trader's verified phone survives a pick with no phone",
+          [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("")],
+          PHONE_A,
+        ],
+      ])("%s", async (description, steps, expected) => {
+        for (const step of steps) await step();
+
+        expect([telephone().value, description]).toEqual([
+          expected,
+          description,
+        ]);
+      });
+
+      test("a reply to an earlier pick writes nothing over the latest", async () => {
+        component.selectItem({
+          companyName: "Slow",
+          companyId: "1",
+          lookupId: "lookup-slow",
+        });
+        const slow = fetchStub.lastSearch();
+        component.selectItem({
+          companyName: "Fast",
+          companyId: "2",
+          lookupId: "lookup-fast",
+        });
+        fetchStub.lastSearch().respondProxy({
+          addresses: [{ city: "Bergen", phone_number: PHONE_B }],
+        });
+        await H.flushPromises();
+
+        slow.respondProxy({ addresses: [{ city: "Oslo" }] });
+        await H.flushPromises();
+
+        expect(telephone().value).toBe(PHONE_B);
+        expect(document.querySelector('input[name="city"]').value).toBe(
+          "Bergen",
+        );
+      });
     });
 
     test("a company with no lookup id skips the detail request entirely", async () => {

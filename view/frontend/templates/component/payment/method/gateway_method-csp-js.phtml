@@ -362,6 +362,22 @@ $quoteDetails = json_encode(
      */
     window.twoGatewayAutofillWrites = window.twoGatewayAutofillWrites || new WeakMap();
 
+    /*
+     * The registry phone a company pick last wrote into each telephone field
+     * (TWO-27160), keyed on the node for the same reason as the map above and
+     * kept apart from it: a sole trader's record reads that one, and the
+     * phone is not an address field it may clear. One node per address form,
+     * so each form has its own registry phone.
+     */
+    window.twoGatewayRegistryPhoneWrites = window.twoGatewayRegistryPhoneWrites || new WeakMap();
+
+    /*
+     * The latest company detail lookup for each address form, so a reply
+     * that arrives after the buyer has picked again writes nothing: neither
+     * the old company's address nor a retraction of the new one's phone.
+     */
+    window.twoGatewayAddressLookups = window.twoGatewayAddressLookups || new WeakMap();
+
     /**
      * The company a stored record restores, as an identity write.
      *
@@ -1684,6 +1700,8 @@ $quoteDetails = json_encode(
 
             // --- address lookup (identical across every surface that offers it) ---
             async addressLookup(lookupId, container) {
+                const lookup = {};
+                if (container) window.twoGatewayAddressLookups.set(container, lookup);
                 const data = await window.twoGatewayCompanyDetail(
                     this.restBaseUrl,
                     lookupId,
@@ -1694,9 +1712,46 @@ $quoteDetails = json_encode(
                         merchant: this.merchant,
                     }
                 );
-                if (data && data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0], container);
+                if (container && window.twoGatewayAddressLookups.get(container) !== lookup) return;
+                // The relay has already fitted `postal_code` to its country's
+                // written format (TWO-27160), so it is written as it arrives.
+                const address = data && data.addresses && data.addresses.length > 0
+                    ? data.addresses[0]
+                    : null;
+                if (address) this.setAddressData(address, container);
+                // A pick that fills nothing still replaces the company, so it
+                // takes the previous pick's registry phone with it.
+                this.applyRegistryTelephone(address ? address.phone_number : '', container);
+            },
+            /**
+             * Write a company pick's registered phone into the telephone field
+             * of the form its address went to (TWO-27160).
+             *
+             * A registry phone replaces whatever the field holds, as the
+             * address fields do. A blank one, from a register with no phone or
+             * a lookup that returned nothing, writes nothing and clears only
+             * a registry phone an earlier pick wrote into this field that the
+             * field still holds, so company B never leaves company A's number
+             * standing and a number the buyer typed or edited always stays.
+             *
+             * @param {*} phone the address's `phone_number`, or '' for none
+             * @param {?HTMLElement} container the address form
+             */
+            applyRegistryTelephone(phone, container) {
+                const field = container && container.querySelector('input[name="telephone"]');
+                if (!field) return;
+                const writes = window.twoGatewayRegistryPhoneWrites;
+                const value = typeof phone === 'string' ? phone.trim() : '';
+                if (value) {
+                    field.value = value;
+                    writes.set(field, value);
+                } else {
+                    const written = writes.get(field);
+                    writes.delete(field);
+                    if (written === undefined || field.value.trim() !== written) return;
+                    field.value = '';
                 }
+                field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**
              * Write an address from an external payload into an address form.
@@ -2654,6 +2709,9 @@ $quoteDetails = json_encode(
                 const field = container && container.querySelector('input[name="telephone"]');
                 if (!field) return;
                 field.value = phone;
+                // The buyer's own verified number from here on, even where it
+                // equals the registry's, so no later pick clears it (TWO-27160).
+                window.twoGatewayRegistryPhoneWrites.delete(field);
                 field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**
