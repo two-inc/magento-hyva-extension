@@ -24,11 +24,12 @@ class CompanySearchStatusTest extends TestCase
     public function testTheRowNamesTheActiveReason(
         string $verdictStatus,
         ?int $code,
+        bool $companySearchInAddressStep,
         string $expectedState,
         string $expectedFragment,
         string $description
     ): void {
-        $block = $this->block($verdictStatus, $code);
+        $block = $this->block($verdictStatus, $code, $companySearchInAddressStep);
         $row = $block->getStatusRow();
 
         $this->assertSame($expectedState, $row['state'], $description);
@@ -36,19 +37,6 @@ class CompanySearchStatusTest extends TestCase
         // A verdict that could not be reached must not be painted as a fault.
         $expectedColour = $expectedState === 'ok' ? '#079633' : '#e02b27';
         $this->assertSame($expectedColour, $block->getStatusColour($row), $description);
-    }
-
-    /**
-     * With company search in the payment tile, the address-step gate this row
-     * reports decides nothing — reporting the verdict there would name a
-     * setting the merchant has deliberately turned off.
-     */
-    public function testCompanySearchInThePaymentTileIsNotAWithholding(): void
-    {
-        $row = $this->block(ApiKeyVerificationStatus::INVALID_KEY, 401, false)->getStatusRow();
-
-        $this->assertSame('ok', $row['state']);
-        $this->assertStringContainsString('Shown in the payment method', $row['value']);
     }
 
     /**
@@ -128,33 +116,53 @@ class CompanySearchStatusTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int|null, 2: string, 3: string, 4: string}>
+     * The verdict decides first, then the setting says where the control sits
+     * (TWO-27224): with the setting off the control moves into the payment
+     * tile, which a missing or rejected key withholds too.
+     *
+     * @return array<string, array{0: string, 1: int|null, 2: bool, 3: string, 4: string, 5: string}>
      */
     public static function verdicts(): array
     {
         return [
             'verified' => [
-                ApiKeyVerificationStatus::OK, null, 'ok', 'Shown at checkout',
+                ApiKeyVerificationStatus::OK, null, true, 'ok', 'Shown at checkout',
                 'a working integration says so',
             ],
+            'verified, relocated to the tile' => [
+                ApiKeyVerificationStatus::OK, null, false, 'ok', 'Shown in the payment method',
+                'the setting off moves the control into the payment method',
+            ],
             'no key saved' => [
-                ApiKeyVerificationStatus::NOT_CONFIGURED, null, 'withheld', 'no API key is saved',
+                ApiKeyVerificationStatus::NOT_CONFIGURED, null, true, 'withheld', 'no API key is saved',
                 'an unconfigured install is not a rejected key',
             ],
+            'no key saved, relocated to the tile' => [
+                ApiKeyVerificationStatus::NOT_CONFIGURED, null, false, 'withheld', 'no API key is saved',
+                'the tile it would move into is withheld too',
+            ],
             'key rejected' => [
-                ApiKeyVerificationStatus::INVALID_KEY, 401, 'withheld', 'the API key was rejected',
+                ApiKeyVerificationStatus::INVALID_KEY, 401, true, 'withheld', 'the API key was rejected',
                 'a definitive rejection names both key and environment',
             ],
+            'key rejected, relocated to the tile' => [
+                ApiKeyVerificationStatus::INVALID_KEY, 401, false, 'withheld', 'the API key was rejected',
+                'a rejected key withholds the control in the payment method as well',
+            ],
             'service error' => [
-                ApiKeyVerificationStatus::SERVICE_ERROR, 503, 'ok', 'Shown at checkout',
+                ApiKeyVerificationStatus::SERVICE_ERROR, 503, true, 'ok', 'Shown at checkout',
                 'ABN-533: a transient verdict falls through to the cached record',
             ],
             'unreachable' => [
-                ApiKeyVerificationStatus::UNREACHABLE, null, 'ok', 'Shown at checkout',
+                ApiKeyVerificationStatus::UNREACHABLE, null, true, 'ok', 'Shown at checkout',
                 'the same for a store that cannot reach us at all',
             ],
+            'unreachable, relocated to the tile' => [
+                ApiKeyVerificationStatus::UNREACHABLE, null, false, 'ok', 'Shown in the payment method',
+                'an outage falls through to the placement',
+            ],
             'other error' => [
-                ApiKeyVerificationStatus::ERROR, 404, 'ok', 'Shown at checkout',
+                ApiKeyVerificationStatus::ERROR, 404, true, 'ok', 'Shown at checkout',
                 'an unclassified status is not evidence the key is wrong',
             ],
         ];
@@ -163,7 +171,7 @@ class CompanySearchStatusTest extends TestCase
     private function block(
         string $verdictStatus,
         ?int $code,
-        bool $companySearchInAddressStep = true
+        bool $companySearchInAddressStep
     ): CompanySearchStatus {
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
