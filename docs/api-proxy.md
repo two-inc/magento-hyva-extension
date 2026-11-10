@@ -21,6 +21,12 @@ runtime fallback for the 404 a stale route cache produces: a fallback that
 reopened the direct browser-to-API path would make a missed cache flush
 invisible instead of loud.
 
+**A non-ok answer carries its status.** `twoGatewayProxyPost()` throws an error
+with `status` and the `Retry-After` header (the base's own rate limit refuses
+with a raw 429 before the route runs), and company search reads an envelope's
+`status` the same way, so a 429 from either place parks the calling surface
+rather than reading as an ordinary failure (TWO-27211, see company-search.md).
+
 `false` — and, the flag being read by identity, anything that is not exactly
 `true` — takes the registry routes back to the **direct
 browser-to-API call they made before the routes existed** — query-string client
