@@ -93,9 +93,9 @@ ask the same question of the same key and agree on the key verdict, apart from a
 cache window of up to five minutes. With Enable company search in address entry
 off, the base row also reflects whether the payment method itself is shown,
 which this module does not re-derive, so this row says the control shows in the
-payment method "when it is offered". **Keep the row.** No released base carries that checklist row yet,
-so removing this one would leave a Hyvä merchant on any base they can currently
-install with no admin explanation for a missing control. The base version floor
+payment method "when it is offered". **Keep the row.** No released base carries
+that checklist row yet, so removing this one would leave a Hyvä merchant on any
+base they can currently install with no admin explanation for a missing control. The base version floor
 in `composer.json` is not evidence to the contrary, for the reason given above.
 Delete the row, with its block, template, test and translations, only once BOTH
 hold: a base release is confirmed BY INSPECTION OF THAT RELEASE to carry the
