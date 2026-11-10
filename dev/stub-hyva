@@ -4,7 +4,9 @@
  * Stub the Hyvä/Magewire dependencies so the extension can be installed
  * and DI-compiled without Hyvä credentials.
  *
- * Called by: make install (when auth.json is absent)
+ * Called by: make install (when auth.json is absent), and by CI's DI-compile
+ * and PHPStan legs. PHPStan needs every class and method this module's code
+ * and templates name, so the set covers those too (TWO-27218).
  *
  * DRIFT CAVEAT: these class stubs are authored by the same hand as the
  * consumer, so di:compile against them can't catch SIGNATURE drift in the real
@@ -33,6 +35,28 @@ class Component
 {
     protected $loader;
     public function mount(): void {}
+    public function emit(string $event, ...$params) { return $this; }
+    public function dispatchErrorMessage($message) { return $this; }
+}
+PHP,
+
+    'Hyva/Theme/ViewModel/HyvaCsp.php' => <<<'PHP'
+<?php
+namespace Hyva\Theme\ViewModel;
+
+class HyvaCsp
+{
+    public function registerInlineScript(): void {}
+}
+PHP,
+
+    'Hyva/Checkout/ViewModel/Checkout/Formatter.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\ViewModel\Checkout;
+
+class Formatter
+{
+    public function currency($value): string { return (string) $value; }
 }
 PHP,
 

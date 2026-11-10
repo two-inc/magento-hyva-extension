@@ -926,7 +926,7 @@ $quoteDetails = json_encode(
             // Stale webapi route cache, not "base too old"; no fallback, which would hide the missed flush.
             if (response.status === 404) {
                 console.warn(
-                    'Two: proxy route ' + path + ' is unregistered despite the base module '
+                    'Two_GatewayHyva: proxy route ' + path + ' is unregistered despite the base module '
                     + 'exposing it — run setup:upgrade and cache:flush on the store.'
                 );
             }
@@ -1055,7 +1055,7 @@ $quoteDetails = json_encode(
             return { status: items.length ? 'ok' : 'empty', items: items };
         }
 
-        // Two signals: the caller's (next keystroke / teardown) and our own
+        // Both signals, the caller's (next keystroke / teardown) and our own
         // timeout. Whichever fires first aborts the fetch. The catch below
         // tells them apart by asking the CALLER's signal whether it aborted,
         // not by inspecting the error — the error is an AbortError either
@@ -1158,7 +1158,7 @@ $quoteDetails = json_encode(
         let cfg = direct;
         if (!useProxy && typeof direct !== 'object') {
             console.warn(
-                'Two: twoGatewayCompanyDetail is (restBaseUrl, lookupId, direct); '
+                'Two_GatewayHyva: twoGatewayCompanyDetail is (restBaseUrl, lookupId, direct); '
                 + 'it was called with no direct config, so the direct call falls '
                 + "back to the store's own direct-call config."
             );
@@ -2312,7 +2312,7 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanyIdentityInstances = window.twoGatewayCompanyIdentityInstances || {};
     window.twoGatewayCompanyIdentity = window.twoGatewayCompanyIdentity || function (role) {
         if (!twoGatewayIsCaptureRole(role)) {
-            console.error('Two: twoGatewayCompanyIdentity() needs an address role');
+            console.error('Two_GatewayHyva: twoGatewayCompanyIdentity() needs an address role');
             return null;
         }
         const instances = window.twoGatewayCompanyIdentityInstances;
@@ -2481,7 +2481,7 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanyCapture = window.twoGatewayCompanyCapture || function(settings) {
         const role = settings && settings.role;
         if (!twoGatewayIsCaptureRole(role)) {
-            console.error('Two: twoGatewayCompanyCapture() needs an address role');
+            console.error('Two_GatewayHyva: twoGatewayCompanyCapture() needs an address role');
             return null;
         }
         if (window.twoGatewayCompanyCaptureInstances[role]) {
@@ -2504,7 +2504,7 @@ $quoteDetails = json_encode(
             || typeof Panel !== 'function'
             || typeof SoleTraderFlow !== 'function'
             || !identity) {
-            console.error('Two: company-capture modules are not loaded');
+            console.error('Two_GatewayHyva: company-capture modules are not loaded');
             return null;
         }
 
@@ -3465,7 +3465,7 @@ $quoteDetails = json_encode(
                                     // Refusing with nothing on screen is worse
                                     // than the error this replaces, so leave a
                                     // trace rather than failing silently.
-                                    console.error('Two: no message channel for the company-required refusal.');
+                                    console.error('Two_GatewayHyva: no message channel for the company-required refusal.');
                                 }
                                 return false;
                             }
@@ -3797,7 +3797,7 @@ $quoteDetails = json_encode(
 
             // TWO-25503: this tile hosts the control only when the address-step
             // company search is off, and manual entry captures no company
-            // number — which Two's payment method requires — so the registry
+            // number — which the payment method requires — so the registry
             // lookup is the only route left here.
             get manualEntryVisible() {
                 return false;
@@ -3955,7 +3955,7 @@ $quoteDetails = json_encode(
             // company captured" check: that diverges while an intent is
             // pending, declined, or suppressed by the brand.
             //
-            // Two configurations stop the notice firing, so the label never
+            // Either of two configurations stops the notice firing, so the label never
             // renders either: order intent disabled for the merchant, and a
             // Dutch buyer whose company is not a BV. A product decision, not
             // one to widen this getter around.
@@ -4631,7 +4631,7 @@ $quoteDetails = json_encode(
                  * exists (TWO-25326).
                  *
                  * A decline used to raise a 5-second `dispatchMessages()` toast
-                 * AS WELL AS the in-tile "not available" box. Two notices for one
+                 * AS WELL AS the in-tile "not available" box. A pair of notices for one
                  * verdict, and the toast is the weaker of the two: it
                  * self-dismisses, it lands at the top of the page rather than in
                  * the tile the buyer is reading, and it says the same thing the
@@ -5218,7 +5218,7 @@ $quoteDetails = json_encode(
                 }
 
                 /*
-                 * The request is now definitely going out — past every gate. Two
+                 * The request is now definitely going out — past every gate. A pair of
                  * things belong exactly here rather than at the call sites:
                  *
                  *   - no verdict may be on screen while a check runs. The tile's

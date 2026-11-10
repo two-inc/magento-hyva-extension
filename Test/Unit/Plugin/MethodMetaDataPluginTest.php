@@ -138,9 +138,33 @@ class MethodMetaDataPluginTest extends TestCase
         );
     }
 
-    private function plugin(bool $aboutVisible, bool $iconsEnabled, string $blockHtml): MethodMetaDataPlugin
+    /**
+     * TWO-27218: the icon provider's template reaches the explainer block as
+     * its `template` data, which the template block applies on construction.
+     */
+    public function testTheExplainerBlockIsGivenTheIconProvidersTemplate(): void
     {
         $layout = new Layout();
+        $plugin = $this->plugin(true, true, '<span id="explainer"></span>', $layout);
+        $subject = new MethodMetaData(['additional_icon_provider' => ['template' => 'Two::t.phtml']]);
+
+        $plugin->afterRenderIcon($subject, '<img id="logo">');
+
+        $this->assertCount(1, $layout->createdBlocks, 'one explainer block is created per render');
+        $this->assertSame(
+            'Two::t.phtml',
+            $layout->createdBlocks[0]['arguments']['data']['template'] ?? null,
+            'the block is created with the icon provider template as its data'
+        );
+    }
+
+    private function plugin(
+        bool $aboutVisible,
+        bool $iconsEnabled,
+        string $blockHtml,
+        ?Layout $layout = null
+    ): MethodMetaDataPlugin {
+        $layout = $layout ?? new Layout();
         $layout->blockHtml = $blockHtml;
 
         $systemConfigPayment = new SystemConfigPayment();
