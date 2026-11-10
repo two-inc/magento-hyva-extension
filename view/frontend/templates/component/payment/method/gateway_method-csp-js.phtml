@@ -707,7 +707,7 @@ $quoteDetails = json_encode(
      * Reads the same list, so it inherits the same filtering: NAME matches only.
      * A name-matched select the buyer cannot reach does not
      * count — suppressing the store default on the strength of one leaves
-     * company search saying "Please select a country first" with nothing on
+     * company search asking the buyer to select their country with nothing on
      * screen to satisfy it, a dead end where the store default would merely have
      * been a guess. A hidden select under one of the two KNOWN ids does still
      * count, and should: that is the checkout's own address form with its step
@@ -773,8 +773,8 @@ $quoteDetails = json_encode(
      * Searching the wrong country is worse than not searching: the buyer is
      * shown a list of real companies that are not theirs, with no indication
      * the country is wrong. So where the buyer HAS a country selector and has
-     * not yet chosen, this answers '' and the callers show "Please select a
-     * country first" — the existing, already-wired behaviour for no country.
+     * not yet chosen, this answers '' and the callers show the no-country
+     * message, the existing, already-wired behaviour for no country.
      * The fallback is preserved exactly where its own comment always said it
      * was for: a checkout with no country selector, where the store default is
      * the only answer there is.
@@ -3677,7 +3677,7 @@ $quoteDetails = json_encode(
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isCompanySearchEnabled: true,
             isAddressSearchEnabled: false,
-            countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+            countrySelectionMessage: '<?= $escaper->escapeJs(__('Select your country above to search for your company.')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose

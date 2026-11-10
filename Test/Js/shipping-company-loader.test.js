@@ -24,6 +24,21 @@
 
 const H = require("./hyva-harness");
 
+/**
+ * The standard no-country sentence (TWO-27226). The harness resolves every
+ * `__()` to one constant, so this rule answers the exact call form the
+ * template must make: a template still asking for any other msgid toasts the
+ * harness constant instead, and the assertion below fails.
+ */
+const NO_COUNTRY_SENTENCE =
+  "Select your country above to search for your company.";
+const NO_COUNTRY_RULE = [
+  [
+    /^__\('Select your country above to search for your company\.'\)$/,
+    NO_COUNTRY_SENTENCE,
+  ],
+];
+
 describe("shipping-company picker", () => {
   let env;
   let fetchStub;
@@ -58,7 +73,7 @@ describe("shipping-company picker", () => {
     jest.spyOn(console, "error").mockImplementation(() => {});
 
     H.loadSharedHelpers();
-    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE);
+    H.loadTemplate(H.SHIPPING_COMPANY_TEMPLATE, NO_COUNTRY_RULE);
     env.fireAlpineInit();
 
     field = document.getElementById("company-search");
@@ -249,8 +264,16 @@ describe("shipping-company picker", () => {
 
     expect(env.loaderEvents).toEqual(["start", "done"]);
     expect(component.items).toEqual([]);
-    // The buyer is told what to do about it, once.
-    expect(env.messages).toHaveLength(1);
+    // The buyer is told what to do about it, once, as a toast carrying the
+    // standard no-country sentence every other company field uses (TWO-27226).
+    expect(env.messages).toEqual([
+      [
+        {
+          type: "warning",
+          text: NO_COUNTRY_SENTENCE,
+        },
+      ],
+    ]);
     expect(component.countrySelectionShown).toBe(true);
   });
 

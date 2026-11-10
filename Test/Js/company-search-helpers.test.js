@@ -699,7 +699,7 @@ describe("shared company-search helpers", () => {
       test("the store default is NOT used while the buyer has a country selector they have not chosen in", () => {
         // The whole reported symptom: US companies for a buyer who has
         // chosen no country yet. Answering '' is what makes the callers
-        // say "Please select a country first" instead of searching the
+        // ask the buyer to select their country instead of searching the
         // store's own country silently.
         addCountrySelect("country_id", "");
 
@@ -755,7 +755,7 @@ describe("shared company-search helpers", () => {
           expect(window.twoGatewayGetCountryCode(quote)).toBe("SE");
           // …and it does not suppress the store default either, or a
           // single-country checkout with an address-book modal in the DOM
-          // would dead-end on "Please select a country first".
+          // would dead-end on the no-country message.
           expect(window.twoGatewayHasCountrySelector()).toBe(false);
         });
 

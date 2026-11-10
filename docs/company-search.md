@@ -249,7 +249,9 @@ Things that bite:
   no country on a first visit, so an unconditional store default meant company
   search silently returned US companies to a buyer who had chosen elsewhere.
   Searching the wrong country is worse than not searching — with no country, the
-  callers already say "Please select a country first".
+  callers already say "Select your country above to search for your company."
+  (TWO-27226: the same sentence on the address step, the payment tile and the
+  address-book modal).
   The hidden/disabled filter (`twoGatewayCountryFieldUsable()`) applies to the
   NAME matches only. The two ids were read unconditionally by every version of
   this helper before this rule existed, and this checkout hides a step's form
