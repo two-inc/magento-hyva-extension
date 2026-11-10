@@ -773,8 +773,8 @@ $quoteDetails = json_encode(
      * Searching the wrong country is worse than not searching: the buyer is
      * shown a list of real companies that are not theirs, with no indication
      * the country is wrong. So where the buyer HAS a country selector and has
-     * not yet chosen, this answers '' and the callers show "Please select a
-     * country first" — the existing, already-wired behaviour for no country.
+     * not yet chosen, this answers '' and the callers show the no-country
+     * message, the existing, already-wired behaviour for no country.
      * The fallback is preserved exactly where its own comment always said it
      * was for: a checkout with no country selector, where the store default is
      * the only answer there is.
