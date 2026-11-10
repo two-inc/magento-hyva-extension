@@ -353,30 +353,78 @@ $quoteDetails = json_encode(
     };
 
     /*
-     * What setAddressData() last wrote into each address field, so a later
-     * sole trader's record can tell this module's write from the buyer's
-     * (TWO-26775). Keyed on the node, not marked on it: a Magewire morph patches
-     * a kept node's attributes back to the server markup, which would strip a
-     * mark, and a node it replaces drops its entry, leaving the value the
-     * buyer's.
+     * Every field this module writes, the phone included, carries what it
+     * wrote in this attribute, so a country switch or a new pick clears only
+     * what still holds this module's value (TWO-27212).
+     */
+    window.TWO_GATEWAY_AUTOFILL_MARK = 'data-two-autofilled-value';
+
+    /*
+     * What setAddressData() last wrote into each address field, kept beside
+     * the mark because a Magewire morph patches a kept node's attributes back
+     * to the server markup and so strips the mark while the node and its
+     * value stay. A node the morph replaces drops both, leaving the value the
+     * buyer's. Read through twoGatewayAutofillMarkOf(), never directly.
      */
     window.twoGatewayAutofillWrites = window.twoGatewayAutofillWrites || new WeakMap();
 
+    /**
+     * Record a write into a field: the mark on the node, and the record a morph
+     * cannot strip.
+     *
+     * @param {HTMLElement} field
+     * @param {string} value what was written
+     */
+    window.twoGatewayMarkAutofill = window.twoGatewayMarkAutofill || function(field, value) {
+        field.setAttribute(window.TWO_GATEWAY_AUTOFILL_MARK, value);
+        window.twoGatewayAutofillWrites.set(field, value);
+    };
+
+    /**
+     * What this module last wrote into a field: the mark, else the record that
+     * outlives a morph, else undefined for a field it never wrote.
+     *
+     * @param {HTMLElement} field
+     * @returns {string|undefined}
+     */
+    window.twoGatewayAutofillMarkOf = window.twoGatewayAutofillMarkOf || function(field) {
+        return field.hasAttribute(window.TWO_GATEWAY_AUTOFILL_MARK)
+            ? field.getAttribute(window.TWO_GATEWAY_AUTOFILL_MARK)
+            : window.twoGatewayAutofillWrites.get(field);
+    };
+
+    /** @param {HTMLElement} field a field this module no longer claims */
+    window.twoGatewayForgetAutofill = window.twoGatewayForgetAutofill || function(field) {
+        field.removeAttribute(window.TWO_GATEWAY_AUTOFILL_MARK);
+        window.twoGatewayAutofillWrites.delete(field);
+    };
+
     /*
      * The registry phone a company pick last wrote into each telephone field
-     * (TWO-27160), keyed on the node for the same reason as the map above and
-     * kept apart from it: a sole trader's record reads that one, and the
-     * phone is not an address field it may clear. One node per address form,
-     * so each form has its own registry phone.
+     * (TWO-27160), kept apart from the address record: a sole trader's verified
+     * phone carries the mark too, and only the registry's is ever retracted.
+     * Keyed on the node, so each address form has its own.
      */
     window.twoGatewayRegistryPhoneWrites = window.twoGatewayRegistryPhoneWrites || new WeakMap();
 
     /*
-     * The latest company detail lookup for each address form, so a reply
-     * that arrives after the buyer has picked again writes nothing: neither
-     * the old company's address nor a retraction of the new one's phone.
+     * The latest company detail lookup for each address ROLE, so a reply that
+     * arrives after the buyer has picked again writes nothing: neither the old
+     * company's address nor a retraction of the new one's phone. Keyed on the
+     * role, not the form node, because the notice a reply raises is the role's
+     * (its identity's), and a morph that rebuilt the form between two picks
+     * would otherwise leave the first pick's token alive on the old node
+     * (TWO-27212).
      */
-    window.twoGatewayAddressLookups = window.twoGatewayAddressLookups || new WeakMap();
+    window.twoGatewayAddressLookups = window.twoGatewayAddressLookups || new Map();
+
+    /**
+     * @param {?HTMLElement} container an address form
+     * @returns {string} the key its lookups are tracked under
+     */
+    window.twoGatewayAddressLookupKey = window.twoGatewayAddressLookupKey || function(container) {
+        return window.twoGatewayCaptureRoleForForm(container);
+    };
 
     /**
      * The company a stored record restores, as an identity write.
@@ -1744,8 +1792,13 @@ $quoteDetails = json_encode(
 
                 const container = cfg.resolveAddressContainer.call(this);
                 this.supersedeAddressLookup(container);
-                if (this.isAddressSearchEnabled && item.lookupId) {
+                if (!this.isAddressSearchEnabled) return;
+                if (item.lookupId) {
                     this.addressLookup(item.lookupId, container);
+                } else {
+                    // A pick with no lookup id still replaces the company, so
+                    // the previous pick's registry phone goes (TWO-27212).
+                    this.applyRegistryTelephone('', container);
                 }
             },
 
@@ -1811,12 +1864,12 @@ $quoteDetails = json_encode(
              * @param {?HTMLElement} container the address form the pick is for
              */
             supersedeAddressLookup(container) {
-                if (container) window.twoGatewayAddressLookups.delete(container);
+                if (container) window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
                 cfg.announceAddressNotice.call(this, '');
             },
             async addressLookup(lookupId, container) {
                 const lookup = {};
-                if (container) window.twoGatewayAddressLookups.set(container, lookup);
+                if (container) window.twoGatewayAddressLookups.set(window.twoGatewayAddressLookupKey(container), lookup);
                 // Withdrawn as the pick starts, so no notice outlives the
                 // company it was about.
                 cfg.announceAddressNotice.call(this, '');
@@ -1830,7 +1883,7 @@ $quoteDetails = json_encode(
                         merchant: this.merchant,
                     }
                 );
-                if (container && window.twoGatewayAddressLookups.get(container) !== lookup) return;
+                if (container && window.twoGatewayAddressLookups.get(window.twoGatewayAddressLookupKey(container)) !== lookup) return;
                 // The relay has already fitted `postal_code` to its country's
                 // written format (TWO-27160), so it is written as it arrives.
                 const address = data && data.addresses && data.addresses.length > 0
@@ -1868,12 +1921,14 @@ $quoteDetails = json_encode(
                 const value = typeof phone === 'string' ? phone.trim() : '';
                 if (value) {
                     field.value = value;
+                    window.twoGatewayMarkAutofill(field, value);
                     writes.set(field, value);
                 } else {
                     const written = writes.get(field);
                     writes.delete(field);
                     if (written === undefined || field.value.trim() !== written) return;
                     field.value = '';
+                    window.twoGatewayForgetAutofill(field);
                 }
                 field.dispatchEvent(new Event('input', { bubbles: false }));
             },
@@ -1931,17 +1986,17 @@ $quoteDetails = json_encode(
                 const buyerRules = Boolean(rules && rules.buyerRules);
                 const text = (value) => String(value === undefined || value === null ? '' : value).trim();
                 // What this module last wrote into each field, and the fields this call wrote.
-                const writes = window.twoGatewayAutofillWrites;
+                const markOf = window.twoGatewayAutofillMarkOf;
                 const written = new Set();
                 const write = (input, value) => {
                     if (!input || (buyerRules && value === '')) return;
                     input.value = value;
-                    writes.set(input, value);
+                    window.twoGatewayMarkAutofill(input, value);
                     written.add(input);
                 };
                 const heldByBuyer = (control) => buyerRules
                     && Boolean(control.value)
-                    && writes.get(control) !== control.value;
+                    && markOf(control) !== control.value;
 
                 const cityInput = container.querySelector('input[name="city"]');
                 const postcodeInput = container.querySelector('input[name="postcode"]');
@@ -2045,16 +2100,12 @@ $quoteDetails = json_encode(
 
                 // A sole trader's record replaces this module's earlier write
                 // whole; a field the buyer has changed since is theirs and stays.
-                const retracted = [];
-                if (buyerRules) {
-                    [cityInput, postcodeInput, line1Input, line2Input, regionSelect, regionInput].forEach((field) => {
-                        if (!field || written.has(field) || !field.value) return;
-                        if (writes.get(field) !== field.value) return;
-                        field.value = '';
-                        writes.delete(field);
-                        retracted.push(field);
-                    });
-                }
+                const retracted = buyerRules
+                    ? this.retractAutofilledFields(
+                        [cityInput, postcodeInput, line1Input, line2Input, regionSelect, regionInput]
+                            .filter((field) => !written.has(field))
+                    )
+                    : [];
                 if (!selectedRegion && retracted.indexOf(regionSelect) !== -1) selectedRegion = regionSelect;
 
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
@@ -2073,6 +2124,58 @@ $quoteDetails = json_encode(
                     selectedRegion.dispatchEvent(new Event('input', { bubbles: false }));
                     selectedRegion.dispatchEvent(new Event('change', { bubbles: false }));
                 }
+            },
+            /**
+             * Empty each field that still holds exactly what this module wrote
+             * into it, and drop its mark. A field the buyer has changed since,
+             * or one this module never wrote, is left as it is.
+             *
+             * @param {Array<HTMLElement|null>} fields
+             * @returns {Array<HTMLElement>} the fields emptied, not yet announced
+             */
+            retractAutofilledFields(fields) {
+                return fields.filter((field) => {
+                    if (!field || !field.value) return false;
+                    if (window.twoGatewayAutofillMarkOf(field) !== field.value) return false;
+                    field.value = '';
+                    window.twoGatewayForgetAutofill(field);
+                    return true;
+                });
+            },
+            /**
+             * Take an autofilled address back out of ONE address form, the
+             * registry phone with it (TWO-27212). The capture controller calls
+             * this when the buyer switches that form's country, because an
+             * address from the previous country's registry is a wrong address
+             * they may not re-read, and when they leave sole-trader mode, so the
+             * sole trader's address does not go out under the next company.
+             *
+             * Only fields still holding this module's write are emptied; what
+             * the buyer typed or edited stays, and so does a sole trader's
+             * verified phone. A lookup still on the wire is retired first, so
+             * its reply cannot refill the form for the country just left. Every
+             * field's mark goes, so a value the buyer later types to match an
+             * old write is not mistaken for this module's.
+             *
+             * @param {?HTMLElement} container the address form
+             */
+            revertAutofilledAddress(container) {
+                if (!container) return;
+                this.supersedeAddressLookup(container);
+                const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
+                const fields = ['street[0]', 'street[1]', 'city', 'postcode', 'region']
+                    .map((name) => container.querySelector('input[name="' + name + '"]'))
+                    .concat([regionSelect]);
+                const retracted = this.retractAutofilledFields(fields);
+                fields.forEach((field) => {
+                    if (field) window.twoGatewayForgetAutofill(field);
+                });
+                retracted.forEach((field) => field.dispatchEvent(new Event('input', { bubbles: false })));
+                // `wire:model` on a select listens for `change`.
+                if (retracted.indexOf(regionSelect) !== -1) {
+                    regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                }
+                this.applyRegistryTelephone('', container);
             },
 
             closeDropdown() {
@@ -2490,6 +2593,8 @@ $quoteDetails = json_encode(
         /* The live surface of THIS role. Read fresh by every host function: the
          * component is replaced on every re-render while the controller is not. */
         let currentSurface = null;
+        /* The country field whose `change` the controller is handling, if any. */
+        let countryChangedIn = null;
         const twoGatewayOnSurface = function (member, args, fallback) {
             if (!currentSurface || typeof currentSurface[member] !== 'function') return fallback;
             return currentSurface[member].apply(currentSurface, args || []);
@@ -2608,7 +2713,15 @@ $quoteDetails = json_encode(
                         ) !== role) {
                         return;
                     }
-                    onChange(String(target.value || '').toLowerCase());
+                    // Held for the length of the controller's synchronous
+                    // handling, so a revert it makes reaches the form whose
+                    // country this is (TWO-27212).
+                    countryChangedIn = target;
+                    try {
+                        onChange(String(target.value || '').toLowerCase());
+                    } finally {
+                        countryChangedIn = null;
+                    }
                 }, true);
             },
 
@@ -2622,11 +2735,12 @@ $quoteDetails = json_encode(
             applyCompanyAddress(selectedItem) {
                 twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
             },
-            // A country switch takes nothing back here, the registry phone
-            // included: the records of what an autofill wrote serve a sole
-            // trader's record and a later pick, and a buyer who changes
-            // country after an autofill corrects the address themselves.
-            revertAutofilledAddress() {},
+            // On a country switch, the form whose country changed and no
+            // other; on leaving sole-trader mode, the surface's own form
+            // (TWO-27212).
+            revertAutofilledAddress() {
+                twoGatewayOnSurface('captureRevertAutofilledAddress', [countryChangedIn]);
+            },
 
             tokensUrl() {
                 return restBaseUrl + '/rest/V1/two/get-tokens';
@@ -2837,14 +2951,33 @@ $quoteDetails = json_encode(
             captureAddressLookup(selectedItem) {
                 const container = this.resolveCaptureAddressContainer();
                 this.supersedeAddressLookup(container);
-                if (!this.isAddressSearchEnabled || !selectedItem.lookupId) return;
-                this.addressLookup(selectedItem.lookupId, container);
+                if (!this.isAddressSearchEnabled) return;
+                if (selectedItem.lookupId) {
+                    this.addressLookup(selectedItem.lookupId, container);
+                } else {
+                    // As the engine's own pick: the previous pick's registry
+                    // phone goes with the company it belonged to (TWO-27212).
+                    this.applyRegistryTelephone('', container);
+                }
+            },
+            /**
+             * @param {?HTMLElement} countryField the country field that changed,
+             *   or null when the revert is not about a country switch. A field
+             *   outside this surface's form (the address-book modal's) reverts
+             *   its own form, never this one.
+             */
+            captureRevertAutofilledAddress(countryField) {
+                const own = this.resolveCaptureAddressContainer();
+                const container = !countryField || (own && own.contains(countryField))
+                    ? own
+                    : countryField.closest('form');
+                this.revertAutofilledAddress(container);
             },
             captureApplyBuyerAddress(source) {
                 const container = this.resolveCaptureAddressContainer();
                 // A company lookup still in flight is superseded, so its reply
                 // cannot overwrite the sole trader's address (TWO-27160).
-                if (container) window.twoGatewayAddressLookups.delete(container);
+                if (container) window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
                 this.setAddressData(source, container, { buyerRules: true });
             },
             /**
@@ -2859,11 +2992,12 @@ $quoteDetails = json_encode(
                 const field = container && container.querySelector('input[name="telephone"]');
                 if (!field) return;
                 field.value = phone;
+                window.twoGatewayMarkAutofill(field, phone);
                 // The buyer's own verified number from here on, even where it
                 // equals the registry's, so no later pick clears it and no
                 // lookup still in flight overwrites it (TWO-27160).
                 window.twoGatewayRegistryPhoneWrites.delete(field);
-                window.twoGatewayAddressLookups.delete(container);
+                window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
                 field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**

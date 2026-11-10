@@ -247,9 +247,9 @@ describe("the host adapter the shared flow is given", () => {
     expect(tile.host.apiClientParams({})).toEqual({});
   });
 
-  test("revertAutofilledAddress is a no-op this checkout can survive", () => {
-    // Nothing here records what an autofill wrote, so there is nothing to take
-    // back out — but the controller calls it on every country change.
+  test("revertAutofilledAddress on a surface with no address form of its own does not throw", () => {
+    // The controller calls it on every country change; the panels' own
+    // retraction is covered in panel-role-isolation.test.js (TWO-27212).
     expect(() => tile.host.revertAutofilledAddress()).not.toThrow();
   });
 

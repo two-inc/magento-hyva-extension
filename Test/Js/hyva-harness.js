@@ -708,6 +708,14 @@ const SHARED_HELPER_GLOBALS = [
   // What setAddressData() last wrote per field; a survivor would let one test's
   // writes count as this module's in the next.
   "twoGatewayAutofillWrites",
+  // The autofill mark and its helpers (TWO-27212), and the per-role lookup
+  // tokens: a token surviving into the next test would let its reply land.
+  "TWO_GATEWAY_AUTOFILL_MARK",
+  "twoGatewayMarkAutofill",
+  "twoGatewayAutofillMarkOf",
+  "twoGatewayForgetAutofill",
+  "twoGatewayAddressLookups",
+  "twoGatewayAddressLookupKey",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -1281,11 +1289,12 @@ function installCompanyCaptureStub() {
 
   CaptureStub.prototype.onCountryChanged = function (observedCountry) {
     if (!this._config || !this._started) return;
-    const adjacent = this.adjacentCountry();
-    const country =
-      adjacent !== null
-        ? adjacent
-        : String(observedCountry || this.countryCode() || "").toLowerCase();
+    // The country the host observed first, as the real controller reads it:
+    // a field outside the surface's own form (the address-book modal) reports
+    // a country its adjacent read would not see (TWO-27212).
+    const country = String(
+      observedCountry || this.countryCode() || "",
+    ).toLowerCase();
     if (!country || country === this._lastCountry) return;
     const hadCountry = !!this._lastCountry;
     this._lastCountry = country;
@@ -1645,6 +1654,21 @@ function installHyvaEnvironment() {
   window.addEventListener("magewire:loader:start", onLoaderStart);
   window.addEventListener("magewire:loader:done", onLoaderDone);
 
+  // Every listener the code under test puts on `document`, so restore() can
+  // take it off again. jsdom keeps one document per file, and a capture
+  // controller's country watch left behind by an earlier test would otherwise
+  // hear the next test's country change and act on it (TWO-27212).
+  const documentListeners = [];
+  document.addEventListener = function (type, listener, options) {
+    documentListeners.push([type, listener, options]);
+    return EventTarget.prototype.addEventListener.call(
+      this,
+      type,
+      listener,
+      options,
+    );
+  };
+
   global.hyva = hyva;
   window.hyva = hyva;
   global.Alpine = Alpine;
@@ -1782,6 +1806,10 @@ function installHyvaEnvironment() {
     restore: function () {
       window.removeEventListener("magewire:loader:start", onLoaderStart);
       window.removeEventListener("magewire:loader:done", onLoaderDone);
+      delete document.addEventListener;
+      documentListeners.forEach(function (entry) {
+        document.removeEventListener(entry[0], entry[1], entry[2]);
+      });
       delete window.dispatchMessages;
       delete global.hyva;
       delete global.Alpine;
