@@ -55,6 +55,20 @@ jobs:
         # Invoked through bash for the same reason as the job above.
         run: bash dev/base-cache-tag-parity.sh
 
+  # No hardcoded brand name on a surface a brand overlay cannot debrand. Runs
+  # the base module's own scanner from its `staging` branch over this tree, so
+  # the two repos share one rule (TWO-27218).
+  debrand-guard:
+    name: Debrand guard
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan templates, layouts and PHP literals for a hardcoded brand
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Invoked through bash for the same reason as the jobs above.
+        run: bash dev/debrand-guard.sh
+
   # Discovers the current Magento support window from upstream so the
   # PHPStan / DI-compile / lint matrices track Adobe's lifecycle without
   # hand-maintenance. `dev/magento-support-matrix.sh` is the single
@@ -414,6 +428,74 @@ jobs:
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+  # Static analysis at the base module's level (phpstan.neon), over this
+  # module's PHP and templates, against the same Hyvä / Magewire stubs and base
+  # `staging` source as the leg above (TWO-27218). The image ships PHPStan.
+  #
+  # Not run on the post-merge push to `main`: that is the run release.yml
+  # consumes, and a maintenance release on an older major cannot install
+  # against base staging (see the compat step above). Every change reaching
+  # `main` was analysed on its pull request.
+  phpstan:
+    name: PHPStan (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    needs: discover-magento-matrix
+    if: ${{ !(github.event_name == 'push' && github.ref_name == 'main') }}
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Upload tracked source into container
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-hyva-extension
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-hyva-extension
+
+      - name: Upload base module source into container
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2
+          git -C base-module ls-files -z | tar --null -cf - -C base-module -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/two-magento2
+
+      - name: Stub Hyvä / Magewire (no commercial credentials in CI)
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-hyva-extension/dev/stub-hyva
+
+      - name: Install extension from uploaded source
+        run: |
+          docker exec magento-project-community-edition \
+            composer config repositories.two-magento2 path /data/extensions/two-magento2
+          docker exec magento-project-community-edition \
+            composer config repositories.local path '/data/extensions/magento-hyva-extension'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
+
+      - name: Activate extension
+        # Compiled so generated factories and interceptors resolve for PHPStan.
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+      - name: Run PHPStan
+        # This module only: the base module is analysed by its own CI.
+        run: |
+          docker exec magento-project-community-edition /bin/bash -c \
+            "./vendor/bin/phpstan analyse --no-progress -c /data/extensions/magento-hyva-extension/phpstan.neon /data/extensions/magento-hyva-extension"
 
   # A real gate, deliberately not continue-on-error and not conditional
   # (TWO-25245). The company-search defects this suite pins — the magewire

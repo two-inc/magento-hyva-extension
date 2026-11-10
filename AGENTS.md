@@ -238,6 +238,18 @@ file as text, mutants, keyboard behaviour, duplicate ids in jsdom fixtures and
 why a test's author is not the one to review it. Tests touching the popover
 stub, order intent or address fixtures also have rules in the docs above.
 
+### Static analysis and the debrand guard
+
+CI runs PHPStan (`phpstan.neon`, the base module's level) over this module's PHP
+and `.phtml`, against the Hyvä / Magewire stubs in `dev/stub-hyva` and base
+`staging`. The `Debrand guard` job (`bash dev/debrand-guard.sh`) runs the base
+module's own brand scanner over this tree (TWO-27218): no literal brand name in
+templates (inline script comments and console messages included, outside PHP
+blocks and HTML comments), layout XML, `etc/adminhtml` other than `system.xml`,
+or plain PHP string literals. Take the name from the brand view model or say
+"the payment method"; prefix console messages with the module name
+(`Two_GatewayHyva:`), which the scanner does not read as the brand.
+
 ### Common Issues
 
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface

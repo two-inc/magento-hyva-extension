@@ -1,0 +1,17 @@
+parameters:
+    # Same level as the base module's PHPStan gate (TWO-27218).
+    level: 1
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # Magento's template engine injects $block and $escaper into every
+        # .phtml, and Hyvä adds $viewModels; Magewire adds $magewire to a
+        # component's template. None is assigned in the file itself.
+        - '#Variable \$(block|escaper|viewModels|magewire) might not be defined.#'
+        - '#Undefined variable: \$(block|escaper|viewModels|magewire)#'
+    fileExtensions:
+        - php
+        - phtml
+    excludePaths:
+        - Test/*
+        - dev/*
+        - node_modules/*
