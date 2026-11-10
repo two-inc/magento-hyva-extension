@@ -27,12 +27,18 @@ cannot wipe the one the buyer typed. The region goes only into a region control
 that is empty or still holds this module's own write. A field the record leaves
 out is cleared where it still holds this module's own earlier write, so an earlier
 company's postcode or second line does not stand beside the sole trader's address;
-a field the buyer has changed since stays. What this module wrote is kept per field
-node in `twoGatewayAutofillWrites`, not as an attribute, because a Magewire morph
-patches a kept node's attributes back to the server markup; a node the morph
-replaces loses its entry and its value reads as the buyer's. A registry pick keeps
-the rules above, blanks included, and retracts no address field. Neither ever
-writes the country, the email or the buyer's names.
+a field the buyer has changed since stays. A registry pick keeps the rules above,
+blanks included, and retracts no address field. Neither ever writes the country,
+the email or the buyer's names.
+
+**Every field this module writes, the phone included, is marked with
+`data-two-autofilled-value`** holding what was written (TWO-27212), so a country
+switch or a new pick clears only what still holds this module's value. The same
+value is also kept per field node in `twoGatewayAutofillWrites`, and
+`twoGatewayAutofillMarkOf()` reads the mark first and that record second. The
+record is there because a Magewire morph keeps a field's node but patches its
+attributes back to the server markup, which strips the mark while the value
+stays. A node the morph replaces loses both, and its value reads as the buyer's.
 
 **A registry pick also writes the company's registered phone and a fitted
 postcode** (TWO-27160). The base module's company relay fits each `postal_code`
@@ -46,12 +52,24 @@ the company field (TWO-27211, see company-search.md), and clears only a
 registry phone an earlier pick wrote into that field and the field still holds;
 a number the buyer typed or edited stays. The registry phone is recorded per
 telephone node in `twoGatewayRegistryPhoneWrites`, so each address form has its
-own. A sole trader's verified phone (`captureApplyTelephone()`)
-drops that record, so no later pick clears it. Only the latest lookup for a form
-writes anything: a reply to an earlier pick is ignored, and so is one that
-arrives after a sole trader's address or phone was written into that form. A country switch retracts
-nothing here, the phone included, because this checkout does not take an
-autofilled address back on a country switch either.
+own. A pick with no lookup id, or made while address search is off, clears that
+phone the same way (TWO-27212). A sole trader's verified phone
+(`captureApplyTelephone()`) is marked but drops that record, so no later pick and
+no country switch clears it. Only the latest lookup for an address role writes
+anything: a reply to an earlier pick is ignored, and so is one that arrives
+after a sole trader's address or phone was written into that form. The lookups
+are tracked per role (`twoGatewayAddressLookups`), not per form node, because the
+notice belongs to the role and a morph may rebuild the form between two picks.
+
+**A country switch takes the autofill back out of that panel's own form**
+(TWO-27212). The capture controller calls `revertAutofilledAddress()`, which
+retires a lookup still on the wire, empties each address line, city, postcode and
+region control that still holds this module's write, drops every mark in the
+form, and clears the registry phone as a pick with no phone would. What the buyer
+typed or edited stays, and so does a sole trader's verified phone. The other
+panel is never touched. The controller makes the same call when the buyer leaves
+sole-trader mode, so the sole trader's address does not go out under the next
+company, as on Luma.
 
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can

@@ -35,6 +35,8 @@ const fs = require("fs");
 const path = require("path");
 
 const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
+// The attribute every autofill write carries (TWO-27212).
+const MARK = "data-two-autofilled-value";
 
 describe("company-name field picker", () => {
   let env;
@@ -477,6 +479,12 @@ describe("company-name field picker", () => {
       expect(document.querySelector('input[name="street[0]"]').value).toBe(
         "1 Example Road",
       );
+      // TWO-27212: each written field is marked with what was written.
+      expect(
+        ["city", "postcode", "street[0]"].map((name) =>
+          document.querySelector('input[name="' + name + '"]').getAttribute(MARK),
+        ),
+      ).toEqual(["Oslo", "0150", "1 Example Road"]);
     });
 
     test("a failed detail lookup leaves what the buyer typed alone", async () => {
@@ -509,11 +517,13 @@ describe("company-name field picker", () => {
        */
       async function pick(reply) {
         picks += 1;
+        const noLookup = reply === "no lookup";
         component.selectItem({
           companyName: "Company " + picks,
           companyId: String(picks),
-          lookupId: "lookup-" + picks,
+          lookupId: noLookup ? "" : "lookup-" + picks,
         });
+        if (noLookup) return;
         const call = fetchStub.lastSearch();
         if (reply === "network") call.networkError();
         else if (typeof reply === "number")
@@ -524,6 +534,16 @@ describe("company-name field picker", () => {
             addresses: [{ city: "Oslo", phone_number: reply }],
           });
         await H.flushPromises();
+      }
+
+      /** The capture controller's pick of a company with no lookup id. */
+      function controllerPickWithNoLookup() {
+        picks += 1;
+        component.captureAddressLookup({
+          text: "Company " + picks,
+          companyId: String(picks),
+          lookupId: "",
+        });
       }
 
       /** @param {string} value what the buyer leaves in the field */
@@ -617,6 +637,43 @@ describe("company-name field picker", () => {
           PHONE_A,
           2,
         ],
+        // TWO-27212: a pick that looks nothing up still replaces the company.
+        [
+          "a re-pick with no lookup id clears the previous pick's",
+          [() => pick(PHONE_A), () => pick("no lookup")],
+          "",
+          2,
+        ],
+        [
+          "the controller's re-pick with no lookup id clears it",
+          [() => pick(PHONE_A), controllerPickWithNoLookup],
+          "",
+          2,
+        ],
+        [
+          "a re-pick with no lookup id keeps a typed one",
+          [() => type("+44 typed"), () => pick("no lookup")],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a re-pick with no lookup id keeps an edited registry phone",
+          [() => pick(PHONE_A), () => type("+47 edited"), () => pick("no lookup")],
+          "+47 edited",
+          1,
+        ],
+        [
+          "the controller's re-pick with no lookup id keeps a typed one",
+          [() => type("+44 typed"), controllerPickWithNoLookup],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a re-pick with no lookup id keeps a sole trader's verified phone",
+          [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("no lookup")],
+          PHONE_A,
+          2,
+        ],
       ])("%s", async (description, steps, expected, inputEvents) => {
         let announced = 0;
         telephone().addEventListener("input", () => (announced += 1));
@@ -693,6 +750,45 @@ describe("company-name field picker", () => {
         expect(document.querySelector('input[name="city"]').value).toBe(
           "Bergen",
         );
+      });
+
+      /*
+       * TWO-27212: every write is marked with what it wrote, and a retraction
+       * takes the mark with it. `null` is no mark at all.
+       */
+      test.each([
+        ["a registry phone", [() => pick(PHONE_A)], PHONE_A],
+        ["a sole trader's phone", [() => soleTrader(PHONE_B)], PHONE_B],
+        ["a retracted registry phone", [() => pick(PHONE_A), () => pick("")], null],
+        ["a phone the buyer typed", [() => type("+44 typed"), () => pick("")], null],
+      ])("%s carries the autofill mark it should", async (description, steps, expected) => {
+        for (const step of steps) await step();
+
+        expect([telephone().getAttribute(MARK), description]).toEqual([expected, description]);
+      });
+
+      /*
+       * The edge case a Magewire morph opens (TWO-27212): the form is rebuilt
+       * between two picks, so the first pick's token would sit on a node the
+       * second pick never sees. Its late failure must still say nothing under
+       * the second company, whose role the notice belongs to.
+       */
+      test("a pick's late failure says nothing after the form is rebuilt and the company re-picked", async () => {
+        component.selectItem({ companyName: "Slow", companyId: "1", lookupId: "lookup-slow" });
+        const slow = fetchStub.lastSearch();
+
+        const old = document.getElementById("address-container");
+        const rebuilt = old.cloneNode(true);
+        rebuilt.querySelector("#company-root").replaceWith(root);
+        old.replaceWith(rebuilt);
+        component.selectItem({ companyName: "Next", companyId: "2", lookupId: "" });
+
+        slow.respondProxy(null, false, 500);
+        await H.flushPromises();
+
+        expect(
+          window.twoGatewayCompanyIdentity(component.captureRole()).addressNotice(),
+        ).toBe("");
       });
     });
 

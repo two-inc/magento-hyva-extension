@@ -406,6 +406,172 @@ describe("address panels are isolated by role", () => {
     );
   });
 
+  /*
+   * TWO-27212. The controller calls its host's revertAutofilledAddress() when
+   * the buyer switches a panel's country, and when they leave sole-trader mode.
+   * Only what still holds this module's write goes, and only in that panel.
+   */
+  describe("a country switch takes the autofill back out of its own panel", () => {
+    const MARK = "data-two-autofilled-value";
+    const REGISTRY = {
+      city: "Oslo",
+      postal_code: "0150",
+      street_address: "1 Example Road",
+      phone_number: "+47 22 00 00 01",
+    };
+    let panels;
+
+    /** @param {string} role */
+    async function pickIn(role) {
+      panels[role].selectItem({
+        companyName: "Company " + role,
+        companyId: "1",
+        lookupId: "lookup-" + role,
+      });
+      fetchStub.lastSearch().respondProxy({ addresses: [REGISTRY] });
+      await H.flushPromises();
+    }
+
+    /** @param {string} role */
+    function revert(role) {
+      window.twoGatewayCompanyCaptureInstances[role]
+        .host()
+        .revertAutofilledAddress();
+    }
+
+    /**
+     * @param {string} role
+     * @returns {Array<string>} city, postcode, line 1 and phone, in that order
+     */
+    function values(role) {
+      return ["city", "postcode", "street[0]", "telephone"].map(
+        (name) => addressField(role, name).value,
+      );
+    }
+
+    const FILLED = ["Oslo", "0150", "1 Example Road", "+47 22 00 00 01"];
+
+    beforeEach(() => {
+      panels = {
+        shipping: mountPanel("shipping"),
+        billing: mountPanel("billing"),
+      };
+    });
+
+    test.each([
+      ["shipping", "billing"],
+      ["billing", "shipping"],
+    ])(
+      "a %s switch empties that panel and leaves the %s panel",
+      async (role, other) => {
+        await pickIn(role);
+        await pickIn(other);
+
+        revert(role);
+
+        expect([values(role), values(other)]).toEqual([
+          ["", "", "", ""],
+          FILLED,
+        ]);
+      },
+    );
+
+    test.each([
+      [
+        "a field the buyer edited stays",
+        (role) => {
+          addressField(role, "postcode").value = "9999";
+        },
+        ["", "9999", "", ""],
+      ],
+      [
+        "a phone the buyer edited stays",
+        (role) => {
+          addressField(role, "telephone").value = "+47 edited";
+        },
+        ["", "", "", "+47 edited"],
+      ],
+      [
+        "a sole trader's verified phone stays",
+        (role) => panels[role].captureApplyTelephone("+44 7700 900000"),
+        ["", "", "", "+44 7700 900000"],
+      ],
+      [
+        // What a Magewire morph does to a node it keeps: the record outlives it.
+        "a write whose mark a morph stripped still goes",
+        (role) =>
+          ["city", "postcode", "street[0]", "telephone"].forEach((name) =>
+            addressField(role, name).removeAttribute(MARK),
+          ),
+        ["", "", "", ""],
+      ],
+    ])("%s", async (_description, between, expected) => {
+      await pickIn("shipping");
+      between("shipping");
+
+      revert("shipping");
+
+      expect(values("shipping")).toEqual(expected);
+    });
+
+    test("a form the buyer filled by hand is left alone", () => {
+      ["city", "postcode", "street[0]", "telephone"].forEach((name, i) => {
+        addressField("shipping", name).value = FILLED[i];
+      });
+
+      revert("shipping");
+
+      expect(values("shipping")).toEqual(FILLED);
+    });
+
+    test("every field's mark goes with it", async () => {
+      await pickIn("shipping");
+      addressField("shipping", "postcode").value = "9999";
+
+      revert("shipping");
+
+      expect(
+        ["city", "postcode", "street[0]", "telephone"].filter((name) =>
+          addressField("shipping", name).hasAttribute(MARK),
+        ),
+      ).toEqual([]);
+    });
+
+    test("each emptied field announces itself for wire:model", async () => {
+      await pickIn("shipping");
+      const announced = [];
+      ["city", "postcode", "street[0]", "telephone"].forEach((name) =>
+        addressField("shipping", name).addEventListener("input", () =>
+          announced.push(name),
+        ),
+      );
+
+      revert("shipping");
+
+      expect(announced.sort()).toEqual([
+        "city",
+        "postcode",
+        "street[0]",
+        "telephone",
+      ]);
+    });
+
+    test("a lookup still on the wire writes nothing after the switch", async () => {
+      panels.shipping.selectItem({
+        companyName: "Slow",
+        companyId: "1",
+        lookupId: "lookup-slow",
+      });
+      const slow = fetchStub.lastSearch();
+
+      revert("shipping");
+      slow.respondProxy({ addresses: [REGISTRY] });
+      await H.flushPromises();
+
+      expect(values("shipping")).toEqual(["", "", "", ""]);
+    });
+  });
+
   describe("role resolution", () => {
     test.each([
       ["a form holding a billing- field", "billing-form", "billing"],
