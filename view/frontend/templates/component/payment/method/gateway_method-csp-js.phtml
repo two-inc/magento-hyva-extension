@@ -4874,21 +4874,11 @@ $quoteDetails = json_encode(
                     return parseFloat(surcharges[days] || 0) < 0.005;
                 });
                 if (allZero) return '';
-                const amount = parseFloat(surcharges[this.days] || 0);
-                const currency = this.$wire.currencyCode || 'EUR';
-                // Use the Magento store-view locale piped from PHP
-                // (`nl-NL`, `en-GB`, ...) so the chip's currency format
-                // matches the order summary. Browser default would
-                // produce `€16.03` while Magento formats `€ 16,03`.
-                const locale = this.$wire.currencyLocale || undefined;
-                try {
-                    return new Intl.NumberFormat(locale, {
-                        style: 'currency',
-                        currency: currency
-                    }).format(amount);
-                } catch (e) {
-                    return amount.toFixed(2);
-                }
+                // Written by the store's own price formatter on the server
+                // (TWO-27211), so the chip reads exactly as the order summary
+                // does. The server writes one for every offered term.
+                const texts = this.$wire.termSurchargeTexts || {};
+                return texts[this.days] || '';
             },
 
             get surchargeText() {
