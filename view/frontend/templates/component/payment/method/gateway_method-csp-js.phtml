@@ -2002,18 +2002,31 @@ $quoteDetails = json_encode(
      * mount point, so the two surfaces cannot say different things.
      *
      * The keys are the panel's own literals and must match them EXACTLY; a
-     * mismatch is silent, degrading to the untranslated English.
+     * mismatch is silent, degrading to the untranslated English. Every
+     * literal the shared modules pass to `translate()` needs a key here, which
+     * panel-strings-coverage.test.js checks against the base's own source.
+     *
+     * The unavailable line is the one key whose value is not its own literal:
+     * the shared module carries one platform's wording, and every host maps it
+     * to the standard sentence (TWO-27211).
      */
     window.twoGatewayPanelStrings = window.twoGatewayPanelStrings || {
         'Search for company': '<?= $escaper->escapeJs(__('Search for company')) ?>',
         'Enter %1 or more characters': '<?= $escaper->escapeJs(__('Enter %1 or more characters')) ?>',
         'No matches found': '<?= $escaper->escapeJs(__('No matches found')) ?>',
         'Company search is unavailable right now. Please try again shortly.':
-            '<?= $escaper->escapeJs(__('Company search is unavailable right now. Please try again shortly.')) ?>',
+            '<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again.')) ?>',
         'Registered company': '<?= $escaper->escapeJs(__('Registered company')) ?>',
         'Sole trader': '<?= $escaper->escapeJs(__('Sole trader')) ?>',
         'Enter manually': '<?= $escaper->escapeJs(__('Enter manually')) ?>',
         'Sign up or log in as a sole trader': '<?= $escaper->escapeJs(__('Sign up or log in as a sole trader')) ?>',
+        'Select a different sole trader': '<?= $escaper->escapeJs(__('Select a different sole trader')) ?>',
+        'Company Number': '<?= $escaper->escapeJs(__('Company Number')) ?>',
+        '1 result is available, use up and down arrow keys to navigate.':
+            '<?= $escaper->escapeJs(__('1 result is available, use up and down arrow keys to navigate.')) ?>',
+        // Keeps `%1`: the panel puts the count in after translating.
+        '%1 results are available, use up and down arrow keys to navigate.':
+            '<?= $escaper->escapeJs(__('%1 results are available, use up and down arrow keys to navigate.')) ?>',
     };
 
     /*

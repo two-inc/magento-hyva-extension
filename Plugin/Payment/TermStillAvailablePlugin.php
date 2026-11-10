@@ -48,10 +48,11 @@ class TermStillAvailablePlugin
 
         $offered = array_map('intval', $this->configRepository->getAllBuyerTerms((int) $quote->getStoreId()));
 
+        // The base module's own sentence for a term that is not on offer, so a
+        // buyer on this checkout reads what a Luma buyer reads at placement and
+        // what this checkout's chip already says (TWO-27211).
         if (count($offered) > 0 && !in_array($selectedTerm, $offered, true)) {
-            throw new LocalizedException(
-                __('The selected payment term is no longer available. Please review the payment options and place the order again.')
-            );
+            throw new LocalizedException(__('Selected payment term is not available.'));
         }
     }
 }

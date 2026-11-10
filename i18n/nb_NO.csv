@@ -9,5 +9,6 @@
 "Shown in the payment method — Enable company search in address entry is No.","Vises i betalingsmåten — Aktiver selskapssøk i adresseinntasting er Nei."
 "Could not update payment term. Please try again.","Kunne ikke oppdatere betalingsvilkåret. Prøv igjen."
 "Opening sole trader sign-up","Åpner registrering for enkeltpersonforetak"
-"The selected payment term is no longer available. Please review the payment options and place the order again.","Det valgte betalingsvilkåret er ikke lenger tilgjengelig. Gå gjennom betalingsalternativene og legg inn ordren på nytt."
 "This order by %1 (%2) is likely to be accepted by %3","Denne ordren fra %1 (%2) vil sannsynligvis bli akseptert av %3"
+"Company search is temporarily unavailable. Please try again.","Firmasøket er midlertidig utilgjengelig. Prøv igjen."
+"We could not fetch this company's address. Please enter it below.","Vi klarte ikke å hente adressen til dette selskapet. Skriv den inn nedenfor."
