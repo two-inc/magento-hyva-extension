@@ -1,5 +1,5 @@
 ---
-description: "How CI computes versions, how majors are declared, and how the deployed commit is resolved"
+description: "How CI computes versions, how majors are declared, how the deployed commit is resolved, and the manual checkout before promoting to main"
 ---
 
 # Release and versioning
@@ -84,6 +84,14 @@ the class — never on the strength of its version number.
 
 CI has no end-to-end test of the Hyvä checkout: Hyvä Checkout is a licensed
 package, and CI stubs it and Magewire. So before the `staging` into `main`
-promotion PR merges, run one manual checkout on the Hyvä staging shop: search
-for a company, let it autofill the address, and place an order with Two. Note
-the result on the promotion PR.
+promotion PR merges, run one manual checkout on a dev deployment that tracks
+`staging` (any one brand's will do; see
+[staging-dev-deployment.md](staging-dev-deployment.md) for which deployment
+that is and the git-sync wait):
+
+1. Check that the admin version field (`<version> (<sha7>)`, see
+   [Deployed-commit provenance](#deployed-commit-provenance)) shows the
+   promotion PR's head commit, so the pass tests the code being released.
+2. Search for a company, let it autofill the address, and place an order with
+   Two.
+3. Note the result and the commit on the promotion PR.
