@@ -164,7 +164,7 @@ function <?= $gwBase ?>CompanySearchField() {
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
-        countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+        countrySelectionMessage: '<?= $escaper->escapeJs(__('Select your country above to search for your company.')) ?>',
         getQuote: function () { return this.quoteData; },
         readSelection: function () { return twoAddressReadSelection(this.captureRole()); },
         writeSelection: function (patch) {
