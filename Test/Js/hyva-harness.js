@@ -659,6 +659,11 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayProxyPost",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The 429 park (TWO-27211): its default window, the Retry-After reader and
+  // the error that carries a status to it.
+  "TWO_GATEWAY_RATE_LIMIT_PARK_MS",
+  "twoGatewayRetryAfterMs",
+  "twoGatewayHttpError",
   // The popover's translated copy, and the register of live mounts a re-render
   // rebuilds from. Same `window.X = window.X || …` shape as the cache below, so
   // without these the FIRST test in a file wins the panel's strings for every
@@ -950,6 +955,7 @@ function installCompanyIdentityStub() {
     soleTraderAvailable: false,
     soleTraderAdopted: false,
     soleTraderBusy: false,
+    addressNotice: "",
   };
   const subscribers = [];
   let flightDepth = 0;
@@ -986,6 +992,7 @@ function installCompanyIdentityStub() {
     soleTraderAvailable: accessor("soleTraderAvailable", asBoolean),
     soleTraderAdopted: accessor("soleTraderAdopted", asBoolean),
     soleTraderBusy: accessor("soleTraderBusy", asBoolean),
+    addressNotice: accessor("addressNotice", asString),
     subscribe: function (subscriber) {
       subscribers.push(subscriber);
       return {
@@ -1039,12 +1046,18 @@ function installCompanyIdentityStub() {
       notify();
     },
     clear: function () {
-      if (!state.companyName && !state.companyId && !state.companyIdSource) {
+      if (
+        !state.companyName &&
+        !state.companyId &&
+        !state.companyIdSource &&
+        !state.addressNotice
+      ) {
         return;
       }
       state.companyName = "";
       state.companyId = "";
       state.companyIdSource = "";
+      state.addressNotice = "";
       notify();
     },
     beginFlight: function () {
@@ -1893,14 +1906,23 @@ function stubFetch() {
       record.rejectWith = reject;
     });
 
-    /** Resolve as an HTTP response. */
-    record.respond = function (body, status) {
+    /** Resolve as an HTTP response, with optional `{name: value}` headers. */
+    record.respond = function (body, status, headers) {
       if (record.settled) return;
       record.settled = true;
       const code = status === undefined ? 200 : status;
+      const named = headers || {};
       record.resolveWith({
         ok: code >= 200 && code < 300,
         status: code,
+        headers: {
+          get: function (name) {
+            const key = Object.keys(named).find(function (candidate) {
+              return candidate.toLowerCase() === String(name).toLowerCase();
+            });
+            return key === undefined ? null : named[key];
+          },
+        },
         json: function () {
           return Promise.resolve(body);
         },

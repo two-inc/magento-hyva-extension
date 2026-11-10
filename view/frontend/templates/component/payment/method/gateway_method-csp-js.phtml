@@ -772,6 +772,44 @@ $quoteDetails = json_encode(
     window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS = 30000;
 
     /**
+     * How long a surface stops searching after a 429 that names no retry
+     * window (TWO-27211). The base module's rate limit counts per minute and
+     * answers with no Retry-After, so this is that window, as Luma uses.
+     */
+    window.TWO_GATEWAY_RATE_LIMIT_PARK_MS = 60000;
+
+    /**
+     * Milliseconds to stay parked after a 429: the Retry-After it carried
+     * (seconds or an HTTP date), else the default above.
+     *
+     * @param {?string} retryAfter the header's value, if any
+     * @returns {number}
+     */
+    window.twoGatewayRetryAfterMs = window.twoGatewayRetryAfterMs || function(retryAfter) {
+        const value = String(retryAfter == null ? '' : retryAfter).trim();
+        if (/^\d+$/.test(value)) return parseInt(value, 10) * 1000;
+        const at = value ? Date.parse(value) : NaN;
+        if (!isNaN(at)) return Math.max(0, at - Date.now());
+        return window.TWO_GATEWAY_RATE_LIMIT_PARK_MS;
+    };
+
+    /**
+     * An Error for a non-ok answer that carries its status and Retry-After, so
+     * a caller can tell a 429 from any other failure.
+     *
+     * @param {string} message
+     * @param {number} status
+     * @param {?string} retryAfter
+     * @returns {Error}
+     */
+    window.twoGatewayHttpError = window.twoGatewayHttpError || function(message, status, retryAfter) {
+        const error = new Error(message);
+        error.status = status;
+        error.retryAfter = retryAfter == null ? null : retryAfter;
+        return error;
+    };
+
+    /**
      * Fallback config for a helper reached without one; else it builds a host-less relative URL that 404s as "no addresses".
      */
     window.TWO_GATEWAY_DIRECT_CALL_CONFIG = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {
@@ -892,7 +930,15 @@ $quoteDetails = json_encode(
                     + 'exposing it — run setup:upgrade and cache:flush on the store.'
                 );
             }
-            throw new Error('Error response from ' + path + ': ' + response.status);
+            // The base's rate limit refuses here, as a raw webapi fault, before
+            // the route runs; the status and Retry-After ride on the error.
+            throw window.twoGatewayHttpError(
+                'Error response from ' + path + ': ' + response.status,
+                response.status,
+                response.headers && typeof response.headers.get === 'function'
+                    ? response.headers.get('Retry-After')
+                    : null
+            );
         }
         return window.twoGatewayUnwrapProxyResponse(await response.json());
     };
@@ -911,6 +957,9 @@ $quoteDetails = json_encode(
      *   { status: 'empty',     items }  render "no matches"
      *   { status: 'degraded',  items }  render results AND the unavailable notice
      *   { status: 'failed',    items }  render the unavailable notice
+     *   { status: 'rate_limited', items, retryAfterMs }  a 429: render the
+     *                                    unavailable notice and stop searching
+     *                                    for retryAfterMs
      *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
      *
      * @param {Object} options
@@ -1036,11 +1085,21 @@ $quoteDetails = json_encode(
                     { country: country, query: term },
                     controller.signal
                 );
-                if (!envelope.ok) throw new Error('Company search responded ' + envelope.status);
+                if (!envelope.ok) {
+                    throw window.twoGatewayHttpError('Company search responded ' + envelope.status, envelope.status, null);
+                }
                 data = envelope.body;
             } else {
                 const response = await fetch(directUrl, { signal: controller.signal });
-                if (!response.ok) throw new Error('Company search responded ' + response.status);
+                if (!response.ok) {
+                    throw window.twoGatewayHttpError(
+                        'Company search responded ' + response.status,
+                        response.status,
+                        response.headers && typeof response.headers.get === 'function'
+                            ? response.headers.get('Retry-After')
+                            : null
+                    );
+                }
                 data = await response.json();
             }
             const items = mapItems(data);
@@ -1068,6 +1127,15 @@ $quoteDetails = json_encode(
             if (isCallerAbort) return { status: 'aborted', items: [] };
 
             console.error('Error fetching companies:', error);
+            // Told apart so the caller can stop asking until the window ends
+            // (TWO-27211); to the buyer it reads as any other failure.
+            if (error && error.status === 429) {
+                return {
+                    status: 'rate_limited',
+                    items: [],
+                    retryAfterMs: window.twoGatewayRetryAfterMs(error.retryAfter),
+                };
+            }
             return { status: 'failed', items: [] };
         } finally {
             clearTimeout(timer);
@@ -1268,6 +1336,10 @@ $quoteDetails = json_encode(
             // no-ops on a surface (the tile) that offers no address lookup.
             resolveAddressContainer: function () { return null; },
             addressContainerWarning: '',
+            // Says, or with '' withdraws, why a pick's address was not filled
+            // in (TWO-27211). Each surface puts it where its buyer will see it.
+            announceAddressNotice: function () {},
+            addressUnavailableMessage: '<?= $escaper->escapeJs(__('We could not fetch this company\'s address. Please enter it below.')) ?>',
             // Which form's country this surface reads, named by the surface
             // itself: its own root, a field it resolved by role, whatever
             // anchors it to one address form (see
@@ -1322,6 +1394,10 @@ $quoteDetails = json_encode(
             isSearching: false,
             isSearchUnavailable: false,
             searchAbortController: null,
+            // Epoch ms before which this surface asks the registry nothing,
+            // set by a 429 (TWO-27211). Per surface: a 429 one surface earned
+            // does not silence another's search.
+            registryParkedUntil: 0,
             countryCode: '',
             countrySelectionShown: false,
             // Latches a search-unavailable TOAST (`dispatchSearchUnavailableToast`)
@@ -1436,6 +1512,14 @@ $quoteDetails = json_encode(
                 }
 
                 this.abortCompanySearch();
+
+                // Parked by a 429: answer as unavailable without asking again,
+                // so each keystroke does not walk back into the limit.
+                if (Date.now() < this.registryParkedUntil) {
+                    this.applySearchResult(term, { status: 'failed', items: [] });
+                    return;
+                }
+
                 const controller = new AbortController();
                 this.searchAbortController = controller;
                 this.isSearching = true;
@@ -1488,8 +1572,23 @@ $quoteDetails = json_encode(
 
                 this.searchAbortController = null;
                 this.isSearching = false;
+                if (result.status === 'rate_limited') {
+                    this.registryParkedUntil = Date.now() + result.retryAfterMs;
+                }
+                this.applySearchResult(term, result);
+            },
+
+            /**
+             * Paint one search's outcome onto this surface's state.
+             *
+             * @param {string} term
+             * @param {{status: string, items: Array}} result
+             */
+            applySearchResult(term, result) {
                 this.items = result.items;
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+                this.isSearchUnavailable = result.status === 'failed'
+                    || result.status === 'degraded'
+                    || result.status === 'rate_limited';
                 if (!this.isSearchUnavailable) {
                     this.searchCompletedFor = term;
                     // A good result ends the "unavailable" run, so the next
@@ -1702,6 +1801,9 @@ $quoteDetails = json_encode(
             async addressLookup(lookupId, container) {
                 const lookup = {};
                 if (container) window.twoGatewayAddressLookups.set(container, lookup);
+                // Withdrawn as the pick starts, so no notice outlives the
+                // company it was about.
+                cfg.announceAddressNotice.call(this, '');
                 const data = await window.twoGatewayCompanyDetail(
                     this.restBaseUrl,
                     lookupId,
@@ -1718,7 +1820,13 @@ $quoteDetails = json_encode(
                 const address = data && data.addresses && data.addresses.length > 0
                     ? data.addresses[0]
                     : null;
-                if (address) this.setAddressData(address, container);
+                if (address) {
+                    this.setAddressData(address, container);
+                } else {
+                    // A failed lookup, or one with no address, says so under the
+                    // field rather than leaving empty fields unexplained.
+                    cfg.announceAddressNotice.call(this, cfg.addressUnavailableMessage);
+                }
                 // A pick that fills nothing still replaces the company, so it
                 // takes the previous pick's registry phone with it.
                 this.applyRegistryTelephone(address ? address.phone_number : '', container);
@@ -2581,6 +2689,12 @@ $quoteDetails = json_encode(
             // toast on top of it would say the same thing twice.
             dispatchSearchUnavailableToast: false,
             resolveNameField: function () { return this.companyNameField(); },
+            // The role's identity carries the notice and its capture
+            // controller renders it under the company field, as on Luma.
+            announceAddressNotice: function (text) {
+                const identity = window.twoGatewayCompanyIdentity(this.captureRole());
+                if (identity && typeof identity.addressNotice === 'function') identity.addressNotice(text);
+            },
             // Magewire may destroy and rebuild the subtree this is mounted in
             // while a search is on the wire. Fails CLOSED: once Alpine has torn
             // the subtree down there is no root to resolve.
