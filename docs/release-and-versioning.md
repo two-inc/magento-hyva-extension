@@ -79,3 +79,11 @@ only, for the reason set out under `getIsProxyAvailable()` in
 [api-proxy.md](api-proxy.md). Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
 the class — never on the strength of its version number.
+
+## Before promoting to `main`
+
+CI has no end-to-end test of the Hyvä checkout: Hyvä Checkout is a licensed
+package, and CI stubs it and Magewire. So before the `staging` into `main`
+promotion PR merges, run one manual checkout on the Hyvä staging shop: search
+for a company, let it autofill the address, and place an order with Two. Note
+the result on the promotion PR.
