@@ -111,8 +111,8 @@ rule across a Magewire re-render). `company-field-tab-stop.test.js`'s live half 
 the same way (TWO-27220): it mounts the address step and the payment tile from their real
 markup over the real files and pins the company field's tab stop as the popover opens and
 closes. Its markup half always runs: it refuses `tabindex`, `:tabindex`, `x-bind:tabindex`
-or a bare `x-bind` on the rendered field, and `tabindex` or `x-bind` anywhere in a template
-statement that assigns or appends to the input's attribute string (which the harness
+or a bare `x-bind` on the rendered field, and `tabindex` or `x-bind` anywhere in a line-leading
+statement in either surface's template that assigns or appends to the input's attribute string (which the harness
 otherwise replaces with a fixed value). Attributes Hyvä's field renderer adds on the address
 step at run time, or a value reaching that string through another variable, are outside it.
 Without the variable, `shared-modules-smoke` and this suite's live half are skipped, saying
