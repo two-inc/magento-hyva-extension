@@ -72,7 +72,8 @@ stays, and so does a sole trader's verified phone. The telephone keeps its mark
 in exactly those two cases: a registry phone the buyer edited, and a sole
 trader's phone. The address-book modal's country is heard by the shipping
 controller, but a switch there reverts the modal's own form, never the address
-step's. The other panel is never touched. The controller makes the same call,
+step's; a country field outside any form reverts nothing. The other panel is
+never touched. The controller makes the same call,
 on the surface's own form, when the buyer leaves sole-trader mode after an
 adoption, so the sole trader's address does not go out under the next company,
 as on Luma.
