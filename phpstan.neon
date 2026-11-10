@@ -8,6 +8,9 @@ parameters:
         # component's template. None is assigned in the file itself.
         - '#Variable \$(block|escaper|viewModels|magewire) might not be defined.#'
         - '#Undefined variable: \$(block|escaper|viewModels|magewire)#'
+        # BP, the Magento root path, is defined when Magento boots
+        # (app/autoload.php), which PHPStan does not run.
+        - '#Constant BP not found.#'
     fileExtensions:
         - php
         - phtml
