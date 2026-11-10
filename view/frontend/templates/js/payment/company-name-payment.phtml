@@ -145,7 +145,7 @@ $methodCode = $brandedViewModel->getMethodCode();
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is this brand's Two method */
+        /** Check if the selected payment method is this brand's method */
         if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
             // TWO-25554: the record answers for a page whose identities are not seeded.
             const invoiceCompany = (window.twoGatewayResolveInvoiceCompany
