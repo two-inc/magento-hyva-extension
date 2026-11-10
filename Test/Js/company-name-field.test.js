@@ -750,6 +750,38 @@ describe("company-name field picker", () => {
         expect(notice()).toBe("");
       });
 
+      /*
+       * A pick with no lookup id retires the pending one: its late reply,
+       * whatever it says, neither announces nor writes under the new company.
+       */
+      test.each([
+        ["the engine's pick", "fails", 500],
+        ["the engine's pick", "fills an address", "address"],
+        ["the controller's pick", "fails", 500],
+        ["the controller's pick", "fills an address", "address"],
+      ])("%s with no lookup id drops a pending lookup that later %s", async (path, _outcome, reply) => {
+        component.selectItem({ companyName: "Slow", companyId: "1", lookupId: "lookup-slow" });
+        const slow = fetchStub.lastSearch();
+
+        if (path === "the engine's pick") {
+          component.selectItem({ companyName: "Next", companyId: "2", lookupId: "" });
+        } else {
+          component.captureAddressLookup({ text: "Next", companyId: "2", lookupId: "" });
+        }
+        if (reply === "address") {
+          slow.respondProxy({ addresses: [{ city: "Oslo", phone_number: "+47 22 00 00 01" }] });
+        } else {
+          slow.respondProxy(null, false, reply);
+        }
+        await H.flushPromises();
+
+        expect([
+          notice(),
+          document.querySelector('input[name="city"]').value,
+          document.querySelector('input[name="telephone"]').value,
+        ]).toEqual(["", "", ""]);
+      });
+
       test("the notice is the guide's sentence, through the catalogue", () => {
         const template = fs.readFileSync(
           path.join(H.REPO_ROOT, H.GATEWAY_METHOD_TEMPLATE),

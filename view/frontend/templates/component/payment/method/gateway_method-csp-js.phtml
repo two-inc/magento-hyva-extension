@@ -1742,9 +1742,10 @@ $quoteDetails = json_encode(
 
                 cfg.onCompanyCommitted.call(this, this.companyName, this.companyId, this.companyIdSource);
 
-                this.withdrawAddressNotice();
+                const container = cfg.resolveAddressContainer.call(this);
+                this.supersedeAddressLookup(container);
                 if (this.isAddressSearchEnabled && item.lookupId) {
-                    this.addressLookup(item.lookupId, cfg.resolveAddressContainer.call(this));
+                    this.addressLookup(item.lookupId, container);
                 }
             },
 
@@ -1800,12 +1801,17 @@ $quoteDetails = json_encode(
 
             // --- address lookup (identical across every surface that offers it) ---
             /**
-             * Take down the previous pick's address notice. Every pick calls
-             * this before deciding whether to look anything up, so a pick that
-             * makes no lookup (no lookup id, autofill off) does not leave the
-             * last company's notice standing under the new one.
+             * Retire the previous pick's lookup for this form: take its notice
+             * down and forget its token, so a reply still on the wire writes
+             * and announces nothing. Every pick calls this before deciding
+             * whether to look anything up, so a pick that makes no lookup (no
+             * lookup id, autofill off) does not leave the last company's
+             * notice standing, or its late reply landing, under the new one.
+             *
+             * @param {?HTMLElement} container the address form the pick is for
              */
-            withdrawAddressNotice() {
+            supersedeAddressLookup(container) {
+                if (container) window.twoGatewayAddressLookups.delete(container);
                 cfg.announceAddressNotice.call(this, '');
             },
             async addressLookup(lookupId, container) {
@@ -2829,9 +2835,10 @@ $quoteDetails = json_encode(
                 return String(this.getCaptureQuote().quote_id || '');
             },
             captureAddressLookup(selectedItem) {
-                this.withdrawAddressNotice();
+                const container = this.resolveCaptureAddressContainer();
+                this.supersedeAddressLookup(container);
                 if (!this.isAddressSearchEnabled || !selectedItem.lookupId) return;
-                this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
+                this.addressLookup(selectedItem.lookupId, container);
             },
             captureApplyBuyerAddress(source) {
                 const container = this.resolveCaptureAddressContainer();

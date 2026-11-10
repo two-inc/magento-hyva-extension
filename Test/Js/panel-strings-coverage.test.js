@@ -47,6 +47,10 @@ function layoutModules() {
   return files;
 }
 
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
 /**
  * Every literal passed to a `translate(` call in one module, comments
  * stripped first so a phrase quoted in prose is not counted.
@@ -54,10 +58,6 @@ function layoutModules() {
  * @param {string} source
  * @returns {string[]}
  */
-function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-}
-
 function translatedLiterals(source) {
   const code = stripComments(source);
   const literals = [];
@@ -106,6 +106,18 @@ describe("the shared panel phrases this host translates", () => {
   });
 });
 
+describe("the unreadable-call check itself", () => {
+  it.each([
+    ["a constant", "x.translate(MESSAGE);", 1],
+    ["a concatenation", "x.translate('Company ' + 'Number');", 1],
+    ["a template", "x.translate(`Company ${n}`);", 1],
+    ["one literal", "x.translate('Company Number');", 0],
+    ["the controller's forward", "translate: function (text) { return self.translate(text); },", 0],
+  ])("%s: %s", (_label, code, expected) => {
+    expect(unreadableTranslateCalls(code)).toHaveLength(expected);
+  });
+});
+
 describeReal("every translate() literal in the base modules the checkout loads", () => {
   const modules = layoutModules();
   const keys = panelStringKeys();
@@ -123,16 +135,6 @@ describeReal("every translate() literal in the base modules the checkout loads",
   it.each(modules)("%s: every translate() call takes one string literal", (file) => {
     const source = fs.readFileSync(path.join(PLUGIN_DIR, "view/frontend/web/js/model", file), "utf8");
     expect(unreadableTranslateCalls(source)).toEqual([]);
-  });
-
-  it.each([
-    ["a constant", "x.translate(MESSAGE);", 1],
-    ["a concatenation", "x.translate('Company ' + 'Number');", 1],
-    ["a template", "x.translate(`Company ${n}`);", 1],
-    ["one literal", "x.translate('Company Number');", 0],
-    ["the controller's forward", "translate: function (text) { return self.translate(text); },", 0],
-  ])("the call check flags %s: %i", (_label, code, expected) => {
-    expect(unreadableTranslateCalls(code)).toHaveLength(expected);
   });
 
   it("the sweep reads the literals it is meant to (no silent empty match)", () => {
