@@ -107,10 +107,11 @@ with `TWO_MAGENTO_PLUGIN_DIR` naming a magento-plugin checkout,
 `loadRealCaptureModules()` evaluates the real four files over the stubs and the
 suite drives this host through them (construction against the real contract,
 manual entry, a Sole trader click pending over it, and the signup popup's press
-rule across a Magewire re-render). `company-field-tab-stop.test.js` is opt-in the same
-way (TWO-27220): it mounts the address step and the payment tile from their real markup
-over the real files and pins the company field's tab stop as the popover opens and
-closes. Without the variable both are skipped, saying so in their names; CI checks out
+rule across a Magewire re-render). `company-field-tab-stop.test.js`'s live half is opt-in
+the same way (TWO-27220): it mounts the address step and the payment tile from their real
+markup over the real files and pins the company field's tab stop as the popover opens and
+closes (its markup half, which refuses a static or Alpine-bound `tabindex` on the field,
+always runs). Without the variable both are skipped, saying so in their names; CI checks out
 magento-plugin `staging` and sets it, so both run there. Unlike `prestashop-plugin`, which loads the real
 jQuery UI because two of its target defects were properties _of the widget_, there is no
 npm distribution to load here — Hyvä checkout is a commercial package, the same reason CI stubs it for

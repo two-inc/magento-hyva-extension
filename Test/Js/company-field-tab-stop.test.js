@@ -10,10 +10,15 @@
  * carries `tabindex="-1"`, and once it closes the field gets back exactly what it
  * had before (no attribute at all on this checkout's markup, a theme's own value
  * where a theme set one). Without that the field's open-on-focus opener and the
- * query box trade focus on Shift+Tab, a keyboard trap. A mount here that wrote a
- * `tabindex` of its own onto the field would fight it, so the surfaces are
- * mounted from their REAL markup over the REAL shared modules, and nothing here
- * calls the panel directly: it is opened and closed the buyer's way.
+ * query box trade focus on Shift+Tab, a keyboard trap.
+ *
+ * Two halves. The live half mounts each surface from its REAL markup over the
+ * REAL shared modules and opens and closes the popover the buyer's way, never
+ * through the panel's API: it catches a static `tabindex` in the markup and
+ * anything this checkout's script writes onto the field. It cannot see an Alpine
+ * binding (`:tabindex`, `x-bind:tabindex`), because the harness evaluates no
+ * bindings, so the markup half reads each surface's rendered template and
+ * refuses any of the three on the company field.
  *
  * NOT COVERED HERE: the keyboard traversal itself. jsdom has no sequential focus
  * navigation, so this asserts the attribute the browser derives tab order from,
@@ -118,8 +123,9 @@ function mountAddressSurface(env) {
 }
 
 /**
- * The payment tile: the tile's real markup, mounted as the payment form's
- * component, which owns the control (it has no `x-data` of its own).
+ * The payment tile: the tile's real markup, mounted as the tile's payment-method
+ * component (`twoGatewayHyvaPaymentMethodBase`), where the control's state lives,
+ * as `tile-control-integration` mounts it. The control has no `x-data` of its own.
  */
 function mountTileSurface(env) {
   const markup = H.renderTemplateMarkup(H.GATEWAY_METHOD_MARKUP_TEMPLATE);
@@ -146,6 +152,28 @@ const SURFACES = [
   ["the address step's company field", mountAddressSurface],
   ["the payment tile's company field", mountTileSurface],
 ];
+
+/** `tabindex` itself, or Alpine binding it (shorthand, long form, modifiers). */
+const TABINDEX_ATTRIBUTE = /^(?:x-bind:|:)?tabindex(?:\..*)?$/i;
+
+describe.each([
+  ["the address step", H.COMPANY_NAME_MARKUP_TEMPLATE],
+  ["the payment tile", H.GATEWAY_METHOD_MARKUP_TEMPLATE],
+])("%s's rendered markup", (surfaceName, template) => {
+  test("puts no tabindex on the company input, static or Alpine-bound", () => {
+    const host = document.createElement("div");
+    host.innerHTML = H.renderTemplateMarkup(template);
+    const inputs = host.querySelectorAll(FIELD);
+    // Positive control: an empty match would pass for any markup.
+    expect(inputs).toHaveLength(1);
+
+    expect(
+      inputs[0]
+        .getAttributeNames()
+        .filter((name) => TABINDEX_ATTRIBUTE.test(name)),
+    ).toEqual([]);
+  });
+});
 
 describeReal.each(SURFACES)(
   `%s${PLUGIN_DIR ? "" : " (set TWO_MAGENTO_PLUGIN_DIR)"}`,
@@ -174,14 +202,14 @@ describeReal.each(SURFACES)(
 
     /** Opened the buyer's way, never through the panel's own API. */
     const OPENERS = [
-      ["a press on the field", () => press(field())],
-      ["focus arriving on the field", () => field().focus()],
+      ["the buyer presses the input", () => press(field())],
+      ["the input receives focus", () => field().focus()],
     ];
 
-    /** Each close the buyer can reach, and what it leaves focused. */
+    /** Each close the buyer can reach. */
     const CLOSES = [
       [
-        "Escape in the query box",
+        "the buyer hits Escape while typing a query",
         () => {
           document.querySelector(QUERY).dispatchEvent(
             new KeyboardEvent("keydown", {
@@ -193,11 +221,11 @@ describeReal.each(SURFACES)(
         },
       ],
       [
-        "a press outside the control",
+        "a click on page text beside the form",
         () => press(document.getElementById("page-text")),
       ],
       [
-        "taking a search result",
+        "the buyer picks the company it found",
         async () => {
           const query = document.querySelector(QUERY);
           query.value = "Example";
@@ -245,13 +273,13 @@ describeReal.each(SURFACES)(
       document.body.innerHTML = "";
     });
 
-    test("the mounted field carries no tabindex of its own", () => {
+    test("after mounting, the company input has no tabindex attribute at all", () => {
       expect(panelIsOpen()).toBe(false);
       expect(field().hasAttribute("tabindex")).toBe(false);
     });
 
     test.each(OPENERS)(
-      "the open popover holds the field out of the tab order (%s)",
+      "%s: while the popover shows, the company input reads tabindex -1",
       (why, open) => {
         open();
 
@@ -261,7 +289,7 @@ describeReal.each(SURFACES)(
     );
 
     test.each(CLOSES)(
-      "closing gives the field its tab stop back (%s)",
+      "%s: once the popover is gone, so is the input's tabindex",
       async (why, close) => {
         press(field());
         expect(field().getAttribute("tabindex")).toBe("-1");
@@ -273,7 +301,7 @@ describeReal.each(SURFACES)(
       },
     );
 
-    test("Escape hands focus back to the field it took out of the order", () => {
+    test("pressing Escape puts the caret back on the company input", () => {
       press(field());
       document.querySelector(QUERY).focus();
 
@@ -291,7 +319,7 @@ describeReal.each(SURFACES)(
       expect(field().hasAttribute("tabindex")).toBe(false);
     });
 
-    test("a theme's own tabindex is given back exactly, not removed", () => {
+    test("a store theme's tabindex value survives an open-and-close round trip", () => {
       field().setAttribute("tabindex", "3");
 
       press(field());
@@ -302,7 +330,7 @@ describeReal.each(SURFACES)(
       expect(field().getAttribute("tabindex")).toBe("3");
     });
 
-    test("a second open and close leaves the field as the first did", () => {
+    test("two open-and-close round trips end in the same state", () => {
       for (let i = 0; i < 2; i += 1) {
         press(field());
         expect(field().getAttribute("tabindex")).toBe("-1");

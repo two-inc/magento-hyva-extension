@@ -434,8 +434,9 @@ jobs:
       - run: npm ci --no-audit --no-fund
 
       # The suites that read the base plugin's shared capture modules
-      # (panel-strings-coverage, shared-modules-smoke) skip without a
-      # checkout of it, so this job gives them base staging (TWO-27211).
+      # (panel-strings-coverage, shared-modules-smoke, company-field-tab-stop)
+      # skip without a checkout of it, so this job gives them base staging
+      # (TWO-27211).
       - name: Checkout base module (staging)
         uses: actions/checkout@v7
         with:
