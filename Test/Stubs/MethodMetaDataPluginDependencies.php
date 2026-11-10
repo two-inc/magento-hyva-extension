@@ -71,8 +71,12 @@ namespace Magento\Framework\View {
             /** @var string */
             public $blockHtml = '';
 
-            public function createBlock(string $type): Template
+            /** @var array<int, array{type: string, name: string, arguments: array<string, mixed>}> */
+            public $createdBlocks = [];
+
+            public function createBlock(string $type, string $name = '', array $arguments = []): Template
             {
+                $this->createdBlocks[] = ['type' => $type, 'name' => $name, 'arguments' => $arguments];
                 $block = new Template();
                 $block->html = $this->blockHtml;
 

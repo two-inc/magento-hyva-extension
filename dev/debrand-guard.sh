@@ -30,17 +30,18 @@ else
         exit 1
     fi
     fetched=0
+    fetch_error=""
     for attempt in 1 2 3; do
-        if gh api -H "Accept: application/vnd.github.raw" \
+        if fetch_error=$(gh api -H "Accept: application/vnd.github.raw" \
                "repos/${canonical_repo}/contents/${canonical_path}?ref=${canonical_ref}" \
-               > "$scanner" 2>/dev/null; then
+               2>&1 > "$scanner"); then
             fetched=1
             break
         fi
         [ "$attempt" -lt 3 ] && sleep 3
     done
     if [ "$fetched" -ne 1 ]; then
-        echo "::error::debrand-guard: failed to fetch ${canonical_path} from ${canonical_repo}@${canonical_ref} after 3 attempts."
+        echo "::error::debrand-guard: failed to fetch ${canonical_path} from ${canonical_repo}@${canonical_ref} after 3 attempts: ${fetch_error}"
         exit 1
     fi
 fi

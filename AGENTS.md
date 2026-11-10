@@ -244,8 +244,9 @@ CI runs PHPStan (`phpstan.neon`, the base module's level) over this module's PHP
 and `.phtml`, against the Hyvä / Magewire stubs in `dev/stub-hyva` and base
 `staging`. The `Debrand guard` job (`bash dev/debrand-guard.sh`) runs the base
 module's own brand scanner over this tree (TWO-27218): no literal brand name in
-templates (inline script comments and console messages included, outside PHP
-blocks and HTML comments), layout XML, `etc/adminhtml` other than `system.xml`,
+templates (every line, inline script comments, console messages and the code
+inside `<?php ?>` / `<?= ?>` included; only HTML comments and PHP comments are
+exempt), layout XML, `etc/adminhtml` other than `system.xml`,
 or plain PHP string literals. Take the name from the brand view model or say
 "the payment method"; prefix console messages with the module name
 (`Two_GatewayHyva:`), which the scanner does not read as the brand.
