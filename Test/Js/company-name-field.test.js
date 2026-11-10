@@ -699,14 +699,21 @@ describe("company-name field picker", () => {
     describe("the address notice (TWO-27211)", () => {
       let picks = 0;
 
-      /** @param {string|number} reply as the registry-phone cases' pick() */
+      /**
+       * @param {string|number} reply as the registry-phone cases' pick(), or
+       *   `"no lookup"` for a hit with no lookup id, which asks nothing
+       */
       async function pick(reply) {
         picks += 1;
         component.selectItem({
           companyName: "Company " + picks,
           companyId: String(picks),
-          lookupId: "lookup-" + picks,
+          lookupId: reply === "no lookup" ? "" : "lookup-" + picks,
         });
+        if (reply === "no lookup") {
+          await H.flushPromises();
+          return;
+        }
         const call = fetchStub.lastSearch();
         if (reply === "network") call.networkError();
         else if (typeof reply === "number")
@@ -727,10 +734,20 @@ describe("company-name field picker", () => {
         ["the lookup fails", [500], H.ESCAPED_STRING],
         ["the lookup is lost on the network", ["network"], H.ESCAPED_STRING],
         ["a later pick that fills the address withdraws it", [500, "address"], ""],
+        ["a later pick with no lookup id withdraws it", [500, "no lookup"], ""],
       ])("%s", async (_description, replies, expected) => {
         for (const reply of replies) await pick(reply);
 
         expect(notice()).toBe(expected);
+      });
+
+      test("the controller's pick with no lookup id withdraws it too", async () => {
+        await pick(500);
+        expect(notice()).toBe(H.ESCAPED_STRING);
+
+        component.captureAddressLookup({ text: "Next", companyId: "9", lookupId: "" });
+
+        expect(notice()).toBe("");
       });
 
       test("the notice is the guide's sentence, through the catalogue", () => {

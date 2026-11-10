@@ -54,8 +54,12 @@ function layoutModules() {
  * @param {string} source
  * @returns {string[]}
  */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
 function translatedLiterals(source) {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = stripComments(source);
   const literals = [];
   const pattern = /\btranslate\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1\s*\)/g;
   let match;
@@ -63,6 +67,32 @@ function translatedLiterals(source) {
     literals.push(match[2].replace(/\\(['"\\])/g, "$1"));
   }
   return literals;
+}
+
+/**
+ * Every `translate(` call whose argument is anything but one string literal
+ * (a constant, a concatenation, a template), which the sweep above could not
+ * read and so would pass silently. The one exemption is the controller handing
+ * its own `translate` option on to the panel unchanged: it forwards whatever
+ * phrase the panel asks for, and those phrases are swept where they are written.
+ *
+ * @param {string} source
+ * @returns {string[]} each offending call, as written
+ */
+function unreadableTranslateCalls(source) {
+  const code = stripComments(source).replace(
+    /translate:\s*function\s*\(\s*(\w+)\s*\)\s*\{\s*return\s+\w+\.translate\(\s*\1\s*\)\s*;?\s*\}/g,
+    ""
+  );
+  const offending = [];
+  const call = /\btranslate\(/g;
+  const literal = /^\s*(['"])(?:\\.|(?!\1)[^\\])*\1\s*\)/;
+  let match;
+  while ((match = call.exec(code)) !== null) {
+    const rest = code.slice(match.index + match[0].length);
+    if (!literal.test(rest)) offending.push("translate(" + rest.slice(0, 60).split("\n")[0]);
+  }
+  return offending;
 }
 
 describe("the shared panel phrases this host translates", () => {
@@ -88,6 +118,21 @@ describeReal("every translate() literal in the base modules the checkout loads",
     const source = fs.readFileSync(path.join(PLUGIN_DIR, "view/frontend/web/js/model", file), "utf8");
     const missing = translatedLiterals(source).filter((literal) => keys.indexOf(literal) === -1);
     expect(missing).toEqual([]);
+  });
+
+  it.each(modules)("%s: every translate() call takes one string literal", (file) => {
+    const source = fs.readFileSync(path.join(PLUGIN_DIR, "view/frontend/web/js/model", file), "utf8");
+    expect(unreadableTranslateCalls(source)).toEqual([]);
+  });
+
+  it.each([
+    ["a constant", "x.translate(MESSAGE);", 1],
+    ["a concatenation", "x.translate('Company ' + 'Number');", 1],
+    ["a template", "x.translate(`Company ${n}`);", 1],
+    ["one literal", "x.translate('Company Number');", 0],
+    ["the controller's forward", "translate: function (text) { return self.translate(text); },", 0],
+  ])("the call check flags %s: %i", (_label, code, expected) => {
+    expect(unreadableTranslateCalls(code)).toHaveLength(expected);
   });
 
   it("the sweep reads the literals it is meant to (no silent empty match)", () => {
