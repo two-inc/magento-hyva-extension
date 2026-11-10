@@ -111,11 +111,12 @@ rule across a Magewire re-render). `company-field-tab-stop.test.js`'s live half 
 the same way (TWO-27220): it mounts the address step and the payment tile from their real
 markup over the real files and pins the company field's tab stop as the popover opens and
 closes. Its markup half always runs: it refuses `tabindex`, `:tabindex`, `x-bind:tabindex`
-or a bare `x-bind` on the rendered field, and in the PHP literals of the attribute string
-each surface's template assigns, which the harness otherwise replaces with a fixed value.
-Attributes Hyvä's field renderer adds on the address step at run time are outside it.
-Without the variable the live halves of both suites are skipped, saying so in their names;
-CI checks out magento-plugin `staging` and sets it, so both run there. Unlike `prestashop-plugin`, which loads the real
+or a bare `x-bind` on the rendered field, and `tabindex` or `x-bind` anywhere in a template
+statement that assigns or appends to the input's attribute string (which the harness
+otherwise replaces with a fixed value). Attributes Hyvä's field renderer adds on the address
+step at run time, or a value reaching that string through another variable, are outside it.
+Without the variable, `shared-modules-smoke` and this suite's live half are skipped, saying
+so in their names; CI checks out magento-plugin `staging` and sets it, so both run there. Unlike `prestashop-plugin`, which loads the real
 jQuery UI because two of its target defects were properties _of the widget_, there is no
 npm distribution to load here — Hyvä checkout is a commercial package, the same reason CI stubs it for
 `setup:di:compile`. The Alpine components are plain object literals with method shorthand,

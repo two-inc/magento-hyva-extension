@@ -18,12 +18,14 @@
  * markup and anything this checkout's script writes onto the field. It cannot see
  * an Alpine binding (the harness evaluates none), nor the input's attribute
  * string, which the harness replaces with one fixed value for both surfaces. So
- * the markup half refuses `tabindex`, `:tabindex`, `x-bind:tabindex` and a bare
- * `x-bind` (whose object form could set it) in two places: on the rendered
- * company field, and in the attribute string each surface's template assigns
- * in PHP. On the address step that string also carries attributes Hyvä's field
- * renderer supplies at run time from the field's config; those are not this
- * module's to write and nothing here sees them.
+ * the markup half checks two places. On the rendered company field it refuses
+ * `tabindex`, `:tabindex`, `x-bind:tabindex` and a bare `x-bind` (whose object
+ * form could set it). In each surface's template it refuses `tabindex` or
+ * `x-bind` anywhere in the text of a statement that assigns or appends to the
+ * input's attribute string, whatever the quoting. On the address step that
+ * string also carries attributes Hyvä's field renderer supplies at run time from
+ * the field's config, and a value reaching the string through another variable
+ * is out of sight too: neither is checked here.
  *
  * NOT COVERED HERE: the keyboard traversal itself. jsdom has no sequential focus
  * navigation, so this asserts the attribute the browser derives tab order from,
@@ -175,27 +177,25 @@ function tabStopAttributes(input) {
 }
 
 /**
- * The attribute string a surface's template assigns in PHP and the control
- * echoes onto the input, as the PHP literals it is built from.
+ * Every statement in a surface's template that assigns or appends to the
+ * attribute string the control echoes onto the company input, as raw text.
  *
- * Anchored on the whole assignment statement at the start of a line, which the
- * doc comments that mention the variable cannot reproduce (their lines start
- * with `*`). Only the single-quoted literals are kept: whatever else the
- * statement concatenates is computed at run time and is not this module's text.
+ * No PHP is parsed: a statement runs from the variable at the start of a line
+ * to the first `;` that ends a line, and is read whole, quotes and all. The
+ * line anchor is what keeps out the doc comments that mention the variable
+ * (their lines start with `*`).
  *
  * @param {string} template repo-relative path
- * @returns {string[]} one string per matched statement
+ * @returns {{append: boolean, text: string}[]} in source order
  */
-function assignedInputAttributes(template) {
+function inputAttributeStatements(template) {
   const source = fs.readFileSync(path.join(H.REPO_ROOT, template), "utf8");
-  const statements = source.match(
-    /^[ \t]*\$twoControlInputAttributes[ \t]*=[^;]*;/gm,
-  );
-  return (statements || []).map((statement) =>
-    (statement.match(/'(?:[^'\\]|\\.)*'/g) || [])
-      .map((literal) => literal.slice(1, -1).replace(/\\(['\\])/g, "$1"))
-      .join(""),
-  );
+  const statement =
+    /^[ \t]*\$twoControlInputAttributes[ \t]*(\.?)=[\s\S]*?;[ \t]*$/gm;
+  return Array.from(source.matchAll(statement), (match) => ({
+    append: match[1] === ".",
+    text: match[0],
+  }));
 }
 
 describe.each([
@@ -212,18 +212,19 @@ describe.each([
     expect(tabStopAttributes(inputs[0])).toEqual([]);
   });
 
-  test("the attribute string its template assigns adds no tabindex either", () => {
-    const assigned = assignedInputAttributes(template);
-    // Positive control: one statement, and its literals parsed into the
-    // attribute both surfaces' strings carry, so a missed match or a broken
-    // literal read cannot pass as clean.
-    expect(assigned).toHaveLength(1);
-    const host = document.createElement("div");
-    host.innerHTML = "<input " + assigned[0] + " />";
-    const input = host.querySelector("input");
-    expect(input.hasAttribute("data-validate")).toBe(true);
+  test("no statement building its input's attribute string mentions tabindex or x-bind", () => {
+    const statements = inputAttributeStatements(template);
+    // Positive control: exactly one plain assignment, carrying the attribute
+    // both surfaces' strings set, so a missed match cannot pass as clean.
+    const assignments = statements.filter((statement) => !statement.append);
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].text).toContain("data-validate");
 
-    expect(tabStopAttributes(input)).toEqual([]);
+    expect(
+      statements
+        .map((statement) => statement.text)
+        .filter((text) => /tabindex|x-bind/i.test(text)),
+    ).toEqual([]);
   });
 });
 
