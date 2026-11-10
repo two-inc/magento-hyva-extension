@@ -88,9 +88,12 @@ says whether checkout is withholding the company-search control and why. The
 base module's admin health checklist now carries the same report for every
 checkout theme (TWO-27224), but this module withholds the control on its own
 verdict, read through its local `Service/ApiKeyVerificationStatus.php` copy, not
-the base's. Until both conditions below hold, both rows can show at once; they
-ask the same question of the same key and agree, apart from a cache window of a
-minute or so. **Keep the row.** No released base carries that checklist row yet,
+the base's. Until both conditions below hold, both rows can show at once. They
+ask the same question of the same key and agree on the key verdict, apart from a
+cache window of up to five minutes. With Enable company search in address entry
+off, the base row also reflects whether the payment method itself is shown,
+which this module does not re-derive, so this row says the control shows in the
+payment method "when it is offered". **Keep the row.** No released base carries that checklist row yet,
 so removing this one would leave a Hyvä merchant on any base they can currently
 install with no admin explanation for a missing control. The base version floor
 in `composer.json` is not evidence to the contrary, for the reason given above.

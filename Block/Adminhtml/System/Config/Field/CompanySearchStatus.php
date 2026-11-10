@@ -58,7 +58,8 @@ class CompanySearchStatus extends Field
         $notShown = (string) __('Not shown at checkout');
         // The verdict first (TWO-27224): a missing or rejected key withholds the
         // control wherever it sits, because with the setting below off it moves
-        // into the payment tile, which the same verdict withholds.
+        // into the payment tile, which the base module withholds on its own
+        // copy of this verdict.
         switch ($this->apiKeyStatus->getStatus($storeId)) {
             case ApiKeyVerificationStatus::NOT_CONFIGURED:
                 return [
@@ -74,11 +75,15 @@ class CompanySearchStatus extends Field
         }
 
         // ABN-533: every other verdict falls through to the cached record, so
-        // the control is offered and the setting only decides where.
+        // the control is offered and the setting only decides where. In the
+        // payment tile it shows only when the base module offers the method,
+        // which this module does not re-derive; the value says so.
         if (!$this->configRepository->isCompanySearchEnabled($storeId)) {
             return [
                 'state' => 'ok',
-                'value' => (string) __('Shown in the payment method — Enable company search in address entry is No.'),
+                'value' => (string) __(
+                    'Shown in the payment method when it is offered (Enable company search in address entry is No)'
+                ),
             ];
         }
 
