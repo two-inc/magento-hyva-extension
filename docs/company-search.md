@@ -333,10 +333,13 @@ Shift+Tab returns to the field, and the opener pushes focus forward again (WCAG
 2.1.2). A mount must not write a `tabindex` onto that field.
 `company-field-tab-stop.test.js` pins this on the address step and the payment tile
 over the real shared modules (TWO-27220): opened by a press or by focus, closed by
-Escape, a press outside or a pick, a theme's own value given back. It also reads
-each surface's rendered markup for a `tabindex` on the field, static or Alpine-bound,
-since the harness evaluates no bindings. It asserts the attribute, not the keyboard
-traversal, which needs a real browser.
+Escape, a press outside or a pick, a theme's own value given back. Because the
+harness evaluates no Alpine bindings and fixes the input's attribute string, it
+also refuses a `tabindex` (static, `:tabindex`, `x-bind:tabindex` or a bare
+`x-bind`) on each surface's rendered field and in the PHP literals of the attribute
+string each surface's template assigns. Attributes Hyvä's field renderer adds on
+the address step at run time come from the field's config and are not checked. It
+asserts the attribute, not the keyboard traversal, which needs a real browser.
 
 ### A popup window is in no tab listing
 

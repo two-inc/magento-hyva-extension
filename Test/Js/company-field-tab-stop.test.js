@@ -14,11 +14,16 @@
  *
  * Two halves. The live half mounts each surface from its REAL markup over the
  * REAL shared modules and opens and closes the popover the buyer's way, never
- * through the panel's API: it catches a static `tabindex` in the markup and
- * anything this checkout's script writes onto the field. It cannot see an Alpine
- * binding (`:tabindex`, `x-bind:tabindex`), because the harness evaluates no
- * bindings, so the markup half reads each surface's rendered template and
- * refuses any of the three on the company field.
+ * through the panel's API: it catches a static `tabindex` in the shared control's
+ * markup and anything this checkout's script writes onto the field. It cannot see
+ * an Alpine binding (the harness evaluates none), nor the input's attribute
+ * string, which the harness replaces with one fixed value for both surfaces. So
+ * the markup half refuses `tabindex`, `:tabindex`, `x-bind:tabindex` and a bare
+ * `x-bind` (whose object form could set it) in two places: on the rendered
+ * company field, and in the attribute string each surface's template assigns
+ * in PHP. On the address step that string also carries attributes Hyvä's field
+ * renderer supplies at run time from the field's config; those are not this
+ * module's to write and nothing here sees them.
  *
  * NOT COVERED HERE: the keyboard traversal itself. jsdom has no sequential focus
  * navigation, so this asserts the attribute the browser derives tab order from,
@@ -27,15 +32,18 @@
  * The address-book modal is not here: it renders Hyvä Checkout's own dropdown,
  * not the shared popover.
  *
- * The modules are not in this repo, so, like `shared-modules-smoke`, the suite
- * runs only when TWO_MAGENTO_PLUGIN_DIR names a magento-plugin checkout (CI
+ * The modules are not in this repo, so, like `shared-modules-smoke`, the live
+ * half runs only when TWO_MAGENTO_PLUGIN_DIR names a magento-plugin checkout (CI
  * gives it base staging) and is skipped, saying so in its name, without one.
+ * The markup half needs no checkout and always runs.
  *
  *   TWO_MAGENTO_PLUGIN_DIR=../magento-plugin npm run test:js -- company-field-tab-stop
  */
 
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
 const H = require("./hyva-harness");
 
 const PLUGIN_DIR = process.env.TWO_MAGENTO_PLUGIN_DIR || "";
@@ -153,25 +161,69 @@ const SURFACES = [
   ["the payment tile's company field", mountTileSurface],
 ];
 
-/** `tabindex` itself, or Alpine binding it (shorthand, long form, modifiers). */
-const TABINDEX_ATTRIBUTE = /^(?:x-bind:|:)?tabindex(?:\..*)?$/i;
+/**
+ * `tabindex` itself, Alpine binding it (shorthand, long form, modifiers), or a
+ * bare `x-bind`, whose object form could bind it without naming it here.
+ */
+const TABINDEX_ATTRIBUTE = /^(?:(?:x-bind:|:)?tabindex(?:\..*)?|x-bind)$/i;
+
+/** @returns {string[]} the input's attribute names that could set a tab stop */
+function tabStopAttributes(input) {
+  return input
+    .getAttributeNames()
+    .filter((name) => TABINDEX_ATTRIBUTE.test(name));
+}
+
+/**
+ * The attribute string a surface's template assigns in PHP and the control
+ * echoes onto the input, as the PHP literals it is built from.
+ *
+ * Anchored on the whole assignment statement at the start of a line, which the
+ * doc comments that mention the variable cannot reproduce (their lines start
+ * with `*`). Only the single-quoted literals are kept: whatever else the
+ * statement concatenates is computed at run time and is not this module's text.
+ *
+ * @param {string} template repo-relative path
+ * @returns {string[]} one string per matched statement
+ */
+function assignedInputAttributes(template) {
+  const source = fs.readFileSync(path.join(H.REPO_ROOT, template), "utf8");
+  const statements = source.match(
+    /^[ \t]*\$twoControlInputAttributes[ \t]*=[^;]*;/gm,
+  );
+  return (statements || []).map((statement) =>
+    (statement.match(/'(?:[^'\\]|\\.)*'/g) || [])
+      .map((literal) => literal.slice(1, -1).replace(/\\(['\\])/g, "$1"))
+      .join(""),
+  );
+}
 
 describe.each([
   ["the address step", H.COMPANY_NAME_MARKUP_TEMPLATE],
   ["the payment tile", H.GATEWAY_METHOD_MARKUP_TEMPLATE],
-])("%s's rendered markup", (surfaceName, template) => {
-  test("puts no tabindex on the company input, static or Alpine-bound", () => {
+])("%s's markup", (surfaceName, template) => {
+  test("the rendered company input carries no tabindex, static or Alpine-bound", () => {
     const host = document.createElement("div");
     host.innerHTML = H.renderTemplateMarkup(template);
     const inputs = host.querySelectorAll(FIELD);
     // Positive control: an empty match would pass for any markup.
     expect(inputs).toHaveLength(1);
 
-    expect(
-      inputs[0]
-        .getAttributeNames()
-        .filter((name) => TABINDEX_ATTRIBUTE.test(name)),
-    ).toEqual([]);
+    expect(tabStopAttributes(inputs[0])).toEqual([]);
+  });
+
+  test("the attribute string its template assigns adds no tabindex either", () => {
+    const assigned = assignedInputAttributes(template);
+    // Positive control: one statement, and its literals parsed into the
+    // attribute both surfaces' strings carry, so a missed match or a broken
+    // literal read cannot pass as clean.
+    expect(assigned).toHaveLength(1);
+    const host = document.createElement("div");
+    host.innerHTML = "<input " + assigned[0] + " />";
+    const input = host.querySelector("input");
+    expect(input.hasAttribute("data-validate")).toBe(true);
+
+    expect(tabStopAttributes(input)).toEqual([]);
   });
 });
 
