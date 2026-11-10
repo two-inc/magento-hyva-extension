@@ -9,5 +9,6 @@
 "Shown in the payment method — Enable company search in address entry is No.","Se muestra en el método de pago: Activar la búsqueda de empresa en la introducción de la dirección está en No."
 "Could not update payment term. Please try again.","No se ha podido actualizar el plazo de pago. Inténtalo de nuevo."
 "Opening sole trader sign-up","Abriendo el registro de autónomo"
-"The selected payment term is no longer available. Please review the payment options and place the order again.","El plazo de pago seleccionado ya no está disponible. Revisa las opciones de pago y realiza el pedido de nuevo."
 "This order by %1 (%2) is likely to be accepted by %3","Es probable que este pedido de %1 (%2) sea aceptado por %3"
+"Company search is temporarily unavailable. Please try again.","La búsqueda de empresas no está disponible temporalmente. Inténtalo de nuevo."
+"We could not fetch this company's address. Please enter it below.","No hemos podido obtener la dirección de esta empresa. Introdúcela a continuación."

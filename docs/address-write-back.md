@@ -40,11 +40,13 @@ to its country's written format before it reaches the browser, so the postcode i
 written as it arrives. `addressLookup()` passes the address's `phone_number` to
 `applyRegistryTelephone()`, which writes it into the telephone field of the same
 form, replacing what the field holds. A pick with no phone, or one whose lookup
-fills nothing (no address, a failure, a rate limit), leaves the address as it was
-and clears only a registry phone an earlier pick wrote into that field and the
-field still holds; a number the buyer typed or edited stays. The registry phone is
-recorded per telephone node in `twoGatewayRegistryPhoneWrites`, so each address
-form has its own. A sole trader's verified phone (`captureApplyTelephone()`)
+fills nothing (no address, a failure, a rate limit), leaves the address as it was,
+says "We could not fetch this company's address. Please enter it below." under
+the company field (TWO-27211, see company-search.md), and clears only a
+registry phone an earlier pick wrote into that field and the field still holds;
+a number the buyer typed or edited stays. The registry phone is recorded per
+telephone node in `twoGatewayRegistryPhoneWrites`, so each address form has its
+own. A sole trader's verified phone (`captureApplyTelephone()`)
 drops that record, so no later pick clears it. Only the latest lookup for a form
 writes anything: a reply to an earlier pick is ignored, and so is one that
 arrives after a sole trader's address or phone was written into that form. A country switch retracts

@@ -269,8 +269,11 @@ describe("term chip accessible name", () => {
       el: el,
       wire: {
         termSurcharges: surcharges,
-        currencyCode: "EUR",
-        currencyLocale: "en-GB",
+        // The server's store-formatted text per term (TWO-27211).
+        termSurchargeTexts: Object.keys(surcharges).reduce(function (texts, days) {
+          texts[days] = "€" + parseFloat(surcharges[days]).toFixed(2);
+          return texts;
+        }, {}),
       },
     });
     mounted.init();

@@ -99,7 +99,7 @@ class SelectedTermReachesPlacementTest extends TestCase
     /** @return array<string, array{array<int, array{string, int}>, ?int, ?string, string}> */
     public static function journeyProvider(): array
     {
-        $gone = 'The selected payment term is no longer available. Please review the payment options and place the order again.';
+        $gone = 'Selected payment term is not available.';
 
         return [
             'default, no chip clicked (control)' => [

@@ -31,6 +31,25 @@ describe("term chip fee amount", () => {
   });
 
   /**
+   * What the server sends beside the fee map (TWO-27211): every offered term's
+   * fee in the store's price format, zero for a term the map lacks, nothing
+   * while the map is empty. A format no browser default produces, so a chip
+   * that formatted the amount itself would not match.
+   *
+   * @param {number[]} terms
+   * @param {Object} surcharges
+   * @returns {Object}
+   */
+  function storeTexts(terms, surcharges) {
+    if (!Object.keys(surcharges).length) return {};
+    const texts = {};
+    terms.forEach(function (days) {
+      texts[days] = parseFloat(surcharges[days] || 0).toFixed(2).replace(".", ",") + " EUR";
+    });
+    return texts;
+  }
+
+  /**
    * The fee text of each chip in one offered set, in order.
    *
    * @param {number[]} terms days per chip, as the template renders them
@@ -40,8 +59,7 @@ describe("term chip fee amount", () => {
   function chipFees(terms, surcharges) {
     const wire = {
       termSurcharges: surcharges,
-      currencyCode: "EUR",
-      currencyLocale: "en-GB",
+      termSurchargeTexts: storeTexts(terms, surcharges),
     };
 
     return terms.map(function (days) {
@@ -67,13 +85,13 @@ describe("term chip fee amount", () => {
     {
       terms: [30, 60],
       surcharges: { 30: "12.50", 60: "0" },
-      expected: ["+€12.50", "+€0.00"],
+      expected: ["+12,50 EUR", "+0,00 EUR"],
       description: "one priced term puts a zero amount on the zero-fee chip",
     },
     {
       terms: [30, 60],
       surcharges: { 30: "12.50", 60: "18.00" },
-      expected: ["+€12.50", "+€18.00"],
+      expected: ["+12,50 EUR", "+18,00 EUR"],
       description: "every priced term shows its own amount",
     },
     {
@@ -85,13 +103,13 @@ describe("term chip fee amount", () => {
     {
       terms: [30],
       surcharges: { 30: "9.00" },
-      expected: ["+€9.00"],
+      expected: ["+9,00 EUR"],
       description: "a lone priced chip shows its amount",
     },
     {
       terms: [30, 60],
       surcharges: { 30: "12.50" },
-      expected: ["+€12.50", "+€0.00"],
+      expected: ["+12,50 EUR", "+0,00 EUR"],
       description:
         "a term the map does not answer for shows a zero amount beside a priced sibling",
     },

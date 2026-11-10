@@ -231,6 +231,14 @@ lands after the chip does — which is why the chip binds its `title` and
 `aria-label` to a getter rather than taking the rendered literals and stopping
 there.
 
+**The amount is written by the store, not the browser** (TWO-27211). Beside the
+numeric `termSurcharges` map, which still decides whether any chip shows a fee,
+the component sends `termSurchargeTexts`: each offered term's fee formatted by
+the store's current currency, the formatter that prices the order summary, with
+a term the fee map lacks written as a zero. The chip shows that text as it
+stands. Formatting it in the browser with `Intl` let a store with its own price
+format show one amount two ways.
+
 ### The sole offered term is a disabled button
 
 One offered term is not a choice, but it still carries the name spelling the term

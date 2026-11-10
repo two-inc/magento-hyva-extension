@@ -67,7 +67,7 @@ class TermStillAvailablePluginTest extends TestCase
             $plugin->beforePlaceOrder($subject, new Quote());
             $this->fail("$because: expected LocalizedException, none thrown");
         } catch (LocalizedException $e) {
-            $this->assertStringContainsString('no longer available', (string) $e->getMessage(), $because);
+            $this->assertSame('Selected payment term is not available.', (string) $e->getMessage(), $because);
         }
     }
 

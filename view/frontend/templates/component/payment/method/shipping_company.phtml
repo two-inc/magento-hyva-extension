@@ -196,13 +196,21 @@ document.addEventListener('alpine:init', () => {
             dropdownSelector: '.max-h-select',
             itemSelector: 'div.cursor-pointer',
             countrySelectionMessage: "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
-            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again, or enter details manually.')) ?>",
+            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again.')) ?>",
             // This picker renders no inline "unavailable" notice or
             // min-characters hint of its own (its markup lives in Hyvä
             // Checkout's own address-book modal, outside this module) — a
             // toast is the ONLY signal a buyer gets, so unlike the address
             // step and the payment tile it dispatches one.
             dispatchSearchUnavailableToast: true,
+            // For the same reason, a pick whose address could not be fetched
+            // is told by toast (TWO-27211): there is no markup of ours under
+            // the modal's field to put the notice in.
+            announceAddressNotice: function (text) {
+                if (text && typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'warning', text: text }], 5000);
+                }
+            },
             getQuote: function () { return this.quote; },
             readSelection: function () { return twoShippingReadSelection(); },
             writeSelection: function (patch) { return twoShippingWriteSelection(patch); },

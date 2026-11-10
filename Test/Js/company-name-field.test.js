@@ -31,6 +31,8 @@
 "use strict";
 
 const H = require("./hyva-harness");
+const fs = require("fs");
+const path = require("path");
 
 const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
 
@@ -690,6 +692,103 @@ describe("company-name field picker", () => {
         expect(telephone().value).toBe(PHONE_B);
         expect(document.querySelector('input[name="city"]').value).toBe(
           "Bergen",
+        );
+      });
+    });
+
+    describe("the address notice (TWO-27211)", () => {
+      let picks = 0;
+
+      /**
+       * @param {string|number} reply as the registry-phone cases' pick(), or
+       *   `"no lookup"` for a hit with no lookup id, which asks nothing
+       */
+      async function pick(reply) {
+        picks += 1;
+        component.selectItem({
+          companyName: "Company " + picks,
+          companyId: String(picks),
+          lookupId: reply === "no lookup" ? "" : "lookup-" + picks,
+        });
+        if (reply === "no lookup") {
+          await H.flushPromises();
+          return;
+        }
+        const call = fetchStub.lastSearch();
+        if (reply === "network") call.networkError();
+        else if (typeof reply === "number")
+          call.respondProxy(null, false, reply);
+        else if (reply === "no address") call.respondProxy({ addresses: [] });
+        else call.respondProxy({ addresses: [{ city: "Oslo" }] });
+        await H.flushPromises();
+      }
+
+      /** What the role's identity holds for its controller to render. */
+      function notice() {
+        return window.twoGatewayCompanyIdentity(component.captureRole()).addressNotice();
+      }
+
+      test.each([
+        ["an address arrives", ["address"], ""],
+        ["the lookup has no address", ["no address"], H.ESCAPED_STRING],
+        ["the lookup fails", [500], H.ESCAPED_STRING],
+        ["the lookup is lost on the network", ["network"], H.ESCAPED_STRING],
+        ["a later pick that fills the address withdraws it", [500, "address"], ""],
+        ["a later pick with no lookup id withdraws it", [500, "no lookup"], ""],
+      ])("%s", async (_description, replies, expected) => {
+        for (const reply of replies) await pick(reply);
+
+        expect(notice()).toBe(expected);
+      });
+
+      test("the controller's pick with no lookup id withdraws it too", async () => {
+        await pick(500);
+        expect(notice()).toBe(H.ESCAPED_STRING);
+
+        component.captureAddressLookup({ text: "Next", companyId: "9", lookupId: "" });
+
+        expect(notice()).toBe("");
+      });
+
+      /*
+       * A pick with no lookup id retires the pending one: its late reply,
+       * whatever it says, neither announces nor writes under the new company.
+       */
+      test.each([
+        ["the engine's pick", "fails", 500],
+        ["the engine's pick", "fills an address", "address"],
+        ["the controller's pick", "fails", 500],
+        ["the controller's pick", "fills an address", "address"],
+      ])("%s with no lookup id drops a pending lookup that later %s", async (path, _outcome, reply) => {
+        component.selectItem({ companyName: "Slow", companyId: "1", lookupId: "lookup-slow" });
+        const slow = fetchStub.lastSearch();
+
+        if (path === "the engine's pick") {
+          component.selectItem({ companyName: "Next", companyId: "2", lookupId: "" });
+        } else {
+          component.captureAddressLookup({ text: "Next", companyId: "2", lookupId: "" });
+        }
+        if (reply === "address") {
+          slow.respondProxy({ addresses: [{ city: "Oslo", phone_number: "+47 22 00 00 01" }] });
+        } else {
+          slow.respondProxy(null, false, reply);
+        }
+        await H.flushPromises();
+
+        expect([
+          notice(),
+          document.querySelector('input[name="city"]').value,
+          document.querySelector('input[name="telephone"]').value,
+        ]).toEqual(["", "", ""]);
+      });
+
+      test("the notice is the guide's sentence, through the catalogue", () => {
+        const template = fs.readFileSync(
+          path.join(H.REPO_ROOT, H.GATEWAY_METHOD_TEMPLATE),
+          "utf8",
+        );
+        expect(template).toContain(
+          "addressUnavailableMessage: '<?= $escaper->escapeJs(__('We could not fetch this company\\'s address. Please enter it below.')) ?>'",
         );
       });
     });

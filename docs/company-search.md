@@ -107,8 +107,32 @@ re-render's own `element.updated` hook drives the re-bind instead. Do not reach
 into the panel; if it needs to do something new, change it in the base plugin so
 both checkouts get it.
 
-**Its markup is not testable here.** The file is not in this repo and there is no
-vendor tree in CI, so `Test/Js/hyva-harness.js` installs a RECORDING stub in
+**Every phrase the shared modules pass to `translate()` needs a key in
+`twoGatewayPanelStrings`** (TWO-27211). A missing key is silent: the phrase shows
+in English on every store. `panel-strings-coverage.test.js` reads the base
+modules the checkout layout loads and fails on any literal without a key. One key
+deliberately maps to other words: the shared module's search-unavailable line
+carries one platform's wording, and this host maps it to the standard "Company
+search is temporarily unavailable. Please try again.", which the address-book
+picker's toast uses too.
+
+**A 429 parks the surface that earned it** (TWO-27211). The engine records
+`registryParkedUntil` per instance: until then a search answers as unavailable
+without a request, so a buyer typing on does not walk back into the limit. The
+window is the answer's `Retry-After`, else `TWO_GATEWAY_RATE_LIMIT_PARK_MS` (the
+base limit's minute). Other surfaces keep searching, and other failures park
+nothing.
+
+**A pick whose address cannot be fetched says so** (TWO-27211). When the details
+lookup fails or carries no address, the engine's `announceAddressNotice` hook
+gets "We could not fetch this company's address. Please enter it below.", and
+`''` when the next pick starts. On the address step and the tile it writes the
+role's identity, whose capture controller renders the notice under the company
+field. The address-book modal says it by toast, because the field there is Hyvä
+Checkout's own markup.
+
+**Its markup is not testable here.** The file is not in this repo and the Jest
+suites run against no vendor tree, so `Test/Js/hyva-harness.js` installs a RECORDING stub in
 place of the real panel (`installHyvaEnvironment()` returns `companyPanels`,
 with `.options` and `.calls`). What this repo tests is its own half of the
 contract — the options the adapter passes and the search API it builds over the
