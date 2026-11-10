@@ -407,11 +407,13 @@ describe("address panels are isolated by role", () => {
   });
 
   /*
-   * TWO-27212. The controller calls its host's revertAutofilledAddress() when
-   * the buyer switches a panel's country, and when they leave sole-trader mode.
-   * Only what still holds this module's write goes, and only in that panel.
+   * TWO-27212. The capture controller reverts the autofill when the buyer
+   * switches a form's country and when they leave sole-trader mode after an
+   * adoption. Every case below drives it the way the page does: a real
+   * `change` on a country field, or the controller's own mode switch. Only
+   * what still holds this module's write goes, and only in the form concerned.
    */
-  describe("a country switch takes the autofill back out of its own panel", () => {
+  describe("the autofill is taken back out of the form concerned", () => {
     const MARK = "data-two-autofilled-value";
     const REGISTRY = {
       city: "Oslo",
@@ -419,6 +421,8 @@ describe("address panels are isolated by role", () => {
       street_address: "1 Example Road",
       phone_number: "+47 22 00 00 01",
     };
+    const FILLED = ["Oslo", "0150", "1 Example Road", "+47 22 00 00 01"];
+    const FIELDS = ["city", "postcode", "street[0]", "telephone"];
     let panels;
 
     /** @param {string} role */
@@ -432,11 +436,25 @@ describe("address panels are isolated by role", () => {
       await H.flushPromises();
     }
 
+    /**
+     * Select another country in a country field, as the buyer would.
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} country
+     */
+    function selectCountry(select, country) {
+      if (!select.querySelector('option[value="' + country + '"]')) {
+        const option = document.createElement("option");
+        option.value = country;
+        select.appendChild(option);
+      }
+      select.value = country;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
     /** @param {string} role */
-    function revert(role) {
-      window.twoGatewayCompanyCaptureInstances[role]
-        .host()
-        .revertAutofilledAddress();
+    function switchCountry(role) {
+      selectCountry(document.getElementById(role + "-country_id"), "SE");
     }
 
     /**
@@ -444,12 +462,8 @@ describe("address panels are isolated by role", () => {
      * @returns {Array<string>} city, postcode, line 1 and phone, in that order
      */
     function values(role) {
-      return ["city", "postcode", "street[0]", "telephone"].map(
-        (name) => addressField(role, name).value,
-      );
+      return FIELDS.map((name) => addressField(role, name).value);
     }
-
-    const FILLED = ["Oslo", "0150", "1 Example Road", "+47 22 00 00 01"];
 
     beforeEach(() => {
       panels = {
@@ -462,12 +476,12 @@ describe("address panels are isolated by role", () => {
       ["shipping", "billing"],
       ["billing", "shipping"],
     ])(
-      "a %s switch empties that panel and leaves the %s panel",
+      "a %s country switch empties that form and leaves the %s form",
       async (role, other) => {
         await pickIn(role);
         await pickIn(other);
 
-        revert(role);
+        switchCountry(role);
 
         expect([values(role), values(other)]).toEqual([
           ["", "", "", ""],
@@ -475,6 +489,15 @@ describe("address panels are isolated by role", () => {
         ]);
       },
     );
+
+    test("re-selecting the country already chosen takes nothing back", async () => {
+      switchCountry("shipping");
+      await pickIn("shipping");
+
+      switchCountry("shipping");
+
+      expect(values("shipping")).toEqual(FILLED);
+    });
 
     test.each([
       [
@@ -500,7 +523,7 @@ describe("address panels are isolated by role", () => {
         // What a Magewire morph does to a node it keeps: the record outlives it.
         "a write whose mark a morph stripped still goes",
         (role) =>
-          ["city", "postcode", "street[0]", "telephone"].forEach((name) =>
+          FIELDS.forEach((name) =>
             addressField(role, name).removeAttribute(MARK),
           ),
         ["", "", "", ""],
@@ -509,51 +532,64 @@ describe("address panels are isolated by role", () => {
       await pickIn("shipping");
       between("shipping");
 
-      revert("shipping");
+      switchCountry("shipping");
 
       expect(values("shipping")).toEqual(expected);
     });
 
     test("a form the buyer filled by hand is left alone", () => {
-      ["city", "postcode", "street[0]", "telephone"].forEach((name, i) => {
+      FIELDS.forEach((name, i) => {
         addressField("shipping", name).value = FILLED[i];
       });
 
-      revert("shipping");
+      switchCountry("shipping");
 
       expect(values("shipping")).toEqual(FILLED);
     });
 
-    test("every field's mark goes with it", async () => {
+    /*
+     * The marks a revert leaves: the phone keeps its own when the buyer edited
+     * the registry's number, or when it holds a sole trader's verified one.
+     */
+    test.each([
+      ["nothing edited", () => {}, []],
+      [
+        "the registry phone edited",
+        () => {
+          addressField("shipping", "telephone").value = "+47 edited";
+        },
+        ["telephone"],
+      ],
+      [
+        "a sole trader's phone written",
+        () => panels.shipping.captureApplyTelephone("+44 7700 900000"),
+        ["telephone"],
+      ],
+    ])("with %s, the marks left are %j", async (_label, between, expected) => {
       await pickIn("shipping");
-      addressField("shipping", "postcode").value = "9999";
+      between();
 
-      revert("shipping");
+      switchCountry("shipping");
 
       expect(
-        ["city", "postcode", "street[0]", "telephone"].filter((name) =>
+        FIELDS.filter((name) =>
           addressField("shipping", name).hasAttribute(MARK),
         ),
-      ).toEqual([]);
+      ).toEqual(expected);
     });
 
     test("each emptied field announces itself for wire:model", async () => {
       await pickIn("shipping");
       const announced = [];
-      ["city", "postcode", "street[0]", "telephone"].forEach((name) =>
+      FIELDS.forEach((name) =>
         addressField("shipping", name).addEventListener("input", () =>
           announced.push(name),
         ),
       );
 
-      revert("shipping");
+      switchCountry("shipping");
 
-      expect(announced.sort()).toEqual([
-        "city",
-        "postcode",
-        "street[0]",
-        "telephone",
-      ]);
+      expect(announced.sort()).toEqual(FIELDS.slice().sort());
     });
 
     test("a lookup still on the wire writes nothing after the switch", async () => {
@@ -564,11 +600,129 @@ describe("address panels are isolated by role", () => {
       });
       const slow = fetchStub.lastSearch();
 
-      revert("shipping");
+      switchCountry("shipping");
       slow.respondProxy({ addresses: [REGISTRY] });
       await H.flushPromises();
 
       expect(values("shipping")).toEqual(["", "", "", ""]);
+    });
+
+    /*
+     * The address-book modal's country is heard by the shipping controller,
+     * but its revert belongs to the modal's own form, never the address
+     * step's (as Luma reverts only the form whose country changed).
+     */
+    test("a country switch in the address-book modal reverts the modal's form alone", async () => {
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        [
+          '<form id="address-book-form">',
+          '  <select name="country_id"><option value="NO" selected>x</option></select>',
+          '  <input name="city" value="" data-panel="modal" />',
+          '  <input name="postcode" value="" data-panel="modal" />',
+          '  <input name="street[0]" value="" data-panel="modal" />',
+          '  <input name="telephone" value="" data-panel="modal" />',
+          "</form>",
+        ].join("\n"),
+      );
+      const modal = document.getElementById("address-book-form");
+      await pickIn("shipping");
+      panels.shipping.setAddressData(REGISTRY, modal);
+      panels.shipping.applyRegistryTelephone(REGISTRY.phone_number, modal);
+
+      selectCountry(modal.querySelector('select[name="country_id"]'), "SE");
+
+      expect([values("modal"), values("shipping")]).toEqual([
+        ["", "", "", ""],
+        FILLED,
+      ]);
+    });
+
+    describe("leaving sole-trader mode", () => {
+      const SOLE_TRADER = {
+        city: "Ashford",
+        postal_code: "TN23 1AA",
+        street_address: "Mill Lane",
+      };
+
+      /** @returns {Object} the shipping role's capture controller */
+      function controller() {
+        return window.twoGatewayCompanyCaptureInstances.shipping;
+      }
+
+      /** Enter sole-trader mode and write its address, adopted or not. */
+      function soleTraderWrites(adopted) {
+        controller().soleTraderMode();
+        if (adopted) {
+          controller().adoptSoleTrader({
+            company_name: "Jane Smith",
+            organization_number: "",
+          });
+        }
+        panels.shipping.captureApplyBuyerAddress(SOLE_TRADER);
+      }
+
+      test.each([
+        ["after an adoption takes its address back out", true, ["", "", ""]],
+        [
+          "with nothing adopted takes nothing back",
+          false,
+          ["Ashford", "TN23 1AA", "Mill Lane"],
+        ],
+      ])("%s", (_label, adopted, expected) => {
+        soleTraderWrites(adopted);
+
+        controller().registeredMode();
+
+        expect(values("shipping").slice(0, 3)).toEqual(expected);
+      });
+    });
+  });
+
+  /*
+   * The controller's first resolution of a country is a baseline, not a
+   * switch: an address with no country yet keeps its autofill when the buyer
+   * first chooses one.
+   */
+  describe("the first country chosen", () => {
+    beforeEach(() => {
+      fetchStub.restore();
+      env.restore();
+      document.body.innerHTML =
+        addressPanel("shipping", "") + addressPanel("billing", "");
+      env = H.installHyvaEnvironment();
+      fetchStub = H.stubFetch();
+      H.loadSharedHelpers();
+      H.loadTemplate(H.COMPANY_NAME_TEMPLATE, [
+        [/^\$isAddressAutopopulationEnabled$/, "true"],
+        [/^\$quoteDetailsJson$/, '{"quote_id":"test-quote-1"}'],
+      ]);
+      env.fireAlpineInit();
+    });
+
+    test("takes no autofill back", async () => {
+      const shipping = mountPanel("shipping");
+      shipping.selectItem({
+        companyName: "Company",
+        companyId: "1",
+        lookupId: "lookup-1",
+      });
+      fetchStub.lastSearch().respondProxy({
+        addresses: [{ city: "Oslo", postal_code: "0150" }],
+      });
+      await H.flushPromises();
+      const select = document.getElementById("shipping-country_id");
+      const option = document.createElement("option");
+      option.value = "NO";
+      select.appendChild(option);
+
+      select.value = "NO";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+
+      expect([
+        addressField("shipping", "city").value,
+        addressField("shipping", "postcode").value,
+      ]).toEqual(["Oslo", "0150"]);
     });
   });
 

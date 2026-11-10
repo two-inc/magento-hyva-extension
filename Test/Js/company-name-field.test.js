@@ -536,6 +536,11 @@ describe("company-name field picker", () => {
         await H.flushPromises();
       }
 
+      /** The merchant turns address search off. */
+      function searchOff() {
+        component.isAddressSearchEnabled = false;
+      }
+
       /** The capture controller's pick of a company with no lookup id. */
       function controllerPickWithNoLookup() {
         picks += 1;
@@ -673,6 +678,20 @@ describe("company-name field picker", () => {
           [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("no lookup")],
           PHONE_A,
           2,
+        ],
+        // With address search off nothing is looked up or retracted, as on
+        // Luma: no registry phone can have been written that way.
+        [
+          "with address search off, a re-pick leaves the phone",
+          [() => pick(PHONE_A), searchOff, () => pick("no lookup")],
+          PHONE_A,
+          1,
+        ],
+        [
+          "with address search off, the controller's re-pick leaves it",
+          [() => pick(PHONE_A), searchOff, controllerPickWithNoLookup],
+          PHONE_A,
+          1,
         ],
       ])("%s", async (description, steps, expected, inputEvents) => {
         let announced = 0;

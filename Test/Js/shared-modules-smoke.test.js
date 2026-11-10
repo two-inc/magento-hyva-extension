@@ -25,7 +25,10 @@ const MARKUP = [
   '<form id="billing-form">',
   '  <select id="billing-country_id" name="billing[country_id]">',
   '    <option value="GB" selected>GB</option>',
+  '    <option value="SE">SE</option>',
   "  </select>",
+  '  <input name="city" value="" />',
+  '  <input name="postcode" value="" />',
   "  <div><div><div>",
   '  <div id="billing-company-root" class="two-company-search"' +
     ' data-two-capture-host="address" data-two-capture-role="">',
@@ -146,6 +149,23 @@ describeReal(
     test("the host adapter satisfies the real controller's contract", () => {
       expect(window.twoGatewayCompanyCaptureInstances.billing).toBeTruthy();
       expect(console.error).not.toHaveBeenCalled();
+    });
+
+    // TWO-27212: the real controller hears the country field's own `change`
+    // and takes back what the autofill wrote, leaving what the buyer typed.
+    test("a country switch takes the autofill back out of the form", () => {
+      const form = document.getElementById("billing-form");
+      surface.setAddressData({ city: "Oslo", postal_code: "0150" }, form);
+      form.querySelector('input[name="postcode"]').value = "9999";
+      const select = document.getElementById("billing-country_id");
+
+      select.value = "SE";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+
+      expect([
+        form.querySelector('input[name="city"]').value,
+        form.querySelector('input[name="postcode"]').value,
+      ]).toEqual(["", "9999"]);
     });
 
     test("manual entry keeps the typed name and records manual entry", () => {

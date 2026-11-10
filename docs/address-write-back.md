@@ -52,8 +52,9 @@ the company field (TWO-27211, see company-search.md), and clears only a
 registry phone an earlier pick wrote into that field and the field still holds;
 a number the buyer typed or edited stays. The registry phone is recorded per
 telephone node in `twoGatewayRegistryPhoneWrites`, so each address form has its
-own. A pick with no lookup id, or made while address search is off, clears that
-phone the same way (TWO-27212). A sole trader's verified phone
+own. A pick with no lookup id clears that phone the same way (TWO-27212). With
+address search off a pick looks nothing up and clears nothing, as on Luma: no
+registry phone can have been written that way. A sole trader's verified phone
 (`captureApplyTelephone()`) is marked but drops that record, so no later pick and
 no country switch clears it. Only the latest lookup for an address role writes
 anything: a reply to an earlier pick is ignored, and so is one that arrives
@@ -61,15 +62,20 @@ after a sole trader's address or phone was written into that form. The lookups
 are tracked per role (`twoGatewayAddressLookups`), not per form node, because the
 notice belongs to the role and a morph may rebuild the form between two picks.
 
-**A country switch takes the autofill back out of that panel's own form**
-(TWO-27212). The capture controller calls `revertAutofilledAddress()`, which
-retires a lookup still on the wire, empties each address line, city, postcode and
-region control that still holds this module's write, drops every mark in the
-form, and clears the registry phone as a pick with no phone would. What the buyer
-typed or edited stays, and so does a sole trader's verified phone. The other
-panel is never touched. The controller makes the same call when the buyer leaves
-sole-trader mode, so the sole trader's address does not go out under the next
-company, as on Luma.
+**A country switch takes the autofill back out of the form whose country
+changed, and no other** (TWO-27212). The capture controller calls
+`revertAutofilledAddress()`, which retires a lookup still on the wire, empties
+each address line, city, postcode and region control that still holds this
+module's write, drops the mark on every one of those fields, and clears the
+registry phone as a pick with no phone would. What the buyer typed or edited
+stays, and so does a sole trader's verified phone. The telephone keeps its mark
+in exactly those two cases: a registry phone the buyer edited, and a sole
+trader's phone. The address-book modal's country is heard by the shipping
+controller, but a switch there reverts the modal's own form, never the address
+step's. The other panel is never touched. The controller makes the same call,
+on the surface's own form, when the buyer leaves sole-trader mode after an
+adoption, so the sole trader's address does not go out under the next company,
+as on Luma.
 
 `region` goes to a region select when the payload's `region_id` is one of
 its options (the module's company relay adds the store's own id when it can

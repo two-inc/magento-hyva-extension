@@ -1792,11 +1792,12 @@ $quoteDetails = json_encode(
 
                 const container = cfg.resolveAddressContainer.call(this);
                 this.supersedeAddressLookup(container);
-                if (this.isAddressSearchEnabled && item.lookupId) {
+                if (!this.isAddressSearchEnabled) return;
+                if (item.lookupId) {
                     this.addressLookup(item.lookupId, container);
                 } else {
-                    // A pick that looks nothing up still replaces the company,
-                    // so the previous pick's registry phone goes (TWO-27212).
+                    // A pick with no lookup id still replaces the company, so
+                    // the previous pick's registry phone goes (TWO-27212).
                     this.applyRegistryTelephone('', container);
                 }
             },
@@ -2592,6 +2593,8 @@ $quoteDetails = json_encode(
         /* The live surface of THIS role. Read fresh by every host function: the
          * component is replaced on every re-render while the controller is not. */
         let currentSurface = null;
+        /* The country field whose `change` the controller is handling, if any. */
+        let countryChangedIn = null;
         const twoGatewayOnSurface = function (member, args, fallback) {
             if (!currentSurface || typeof currentSurface[member] !== 'function') return fallback;
             return currentSurface[member].apply(currentSurface, args || []);
@@ -2710,7 +2713,15 @@ $quoteDetails = json_encode(
                         ) !== role) {
                         return;
                     }
-                    onChange(String(target.value || '').toLowerCase());
+                    // Held for the length of the controller's synchronous
+                    // handling, so a revert it makes reaches the form whose
+                    // country this is (TWO-27212).
+                    countryChangedIn = target;
+                    try {
+                        onChange(String(target.value || '').toLowerCase());
+                    } finally {
+                        countryChangedIn = null;
+                    }
                 }, true);
             },
 
@@ -2724,10 +2735,11 @@ $quoteDetails = json_encode(
             applyCompanyAddress(selectedItem) {
                 twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
             },
-            // On a country switch and on leaving sole-trader mode: this role's
-            // own form only (TWO-27212).
+            // On a country switch, the form whose country changed and no
+            // other; on leaving sole-trader mode, the surface's own form
+            // (TWO-27212).
             revertAutofilledAddress() {
-                twoGatewayOnSurface('captureRevertAutofilledAddress', []);
+                twoGatewayOnSurface('captureRevertAutofilledAddress', [countryChangedIn]);
             },
 
             tokensUrl() {
@@ -2939,7 +2951,8 @@ $quoteDetails = json_encode(
             captureAddressLookup(selectedItem) {
                 const container = this.resolveCaptureAddressContainer();
                 this.supersedeAddressLookup(container);
-                if (this.isAddressSearchEnabled && selectedItem.lookupId) {
+                if (!this.isAddressSearchEnabled) return;
+                if (selectedItem.lookupId) {
                     this.addressLookup(selectedItem.lookupId, container);
                 } else {
                     // As the engine's own pick: the previous pick's registry
@@ -2947,8 +2960,18 @@ $quoteDetails = json_encode(
                     this.applyRegistryTelephone('', container);
                 }
             },
-            captureRevertAutofilledAddress() {
-                this.revertAutofilledAddress(this.resolveCaptureAddressContainer());
+            /**
+             * @param {?HTMLElement} countryField the country field that changed,
+             *   or null when the revert is not about a country switch. A field
+             *   outside this surface's form (the address-book modal's) reverts
+             *   its own form, never this one.
+             */
+            captureRevertAutofilledAddress(countryField) {
+                const own = this.resolveCaptureAddressContainer();
+                const container = !countryField || (own && own.contains(countryField))
+                    ? own
+                    : countryField.closest('form');
+                this.revertAutofilledAddress(container);
             },
             captureApplyBuyerAddress(source) {
                 const container = this.resolveCaptureAddressContainer();
