@@ -49,7 +49,8 @@ anything about `.two-deployed-commit`; touching `Model/Provenance`, the admin
 version field or `two_hyva/general/version`; raising or relying on the base
 module's version floor in `composer.json`; replacing a local copy of a
 base-module class (`Provenance`, `Service/ApiKeyVerificationStatus.php`) with
-the base module's own; or opening or merging a `staging` into `main` promotion
+the base module's own; removing the admin group's Company search row
+(`CompanySearchStatus`); or opening or merging a `staging` into `main` promotion
 PR (it needs a manual checkout first).
 
 ## This is a public repository

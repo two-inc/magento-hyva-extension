@@ -48,7 +48,7 @@ SKIP=commit-msg bumpver update --patch --no-tag-commit --no-push  # or --minor, 
 
 ### Deployed-commit provenance
 
-The admin field at `Stores > Configuration > Two > Hyva Extension` renders
+The admin field at `Stores > Configuration > Two > Hyvä extension` renders
 `<version> (<sha7>)` — the version from the `two_hyva/general/version` CCD
 value plus the commit the deployed code was built from. The commit is resolved
 by `Two\GatewayHyva\Model\Provenance`, which tries three signals in
@@ -79,6 +79,22 @@ only, for the reason set out under `getIsProxyAvailable()` in
 [api-proxy.md](api-proxy.md). Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
 the class — never on the strength of its version number.
+
+### The admin group's Company search row
+
+The `Hyvä extension` admin group carries the Version row above and a Company
+search row (`Block/Adminhtml/System/Config/Field/CompanySearchStatus.php`), which
+says whether checkout is withholding the company-search control and why. The
+base module's admin health checklist now carries the same report for every
+checkout theme (TWO-27224), so this row duplicates it. **Keep the row.** No
+released base carries that checklist row yet, so removing this one would leave
+a Hyvä merchant on any base they can currently install with no admin
+explanation for a missing control. The base version floor in `composer.json` is
+not evidence to the contrary, for the reason given above. Delete the row, with
+its block, template, test and translations, once a base release is confirmed BY
+INSPECTION OF THAT RELEASE to carry the checklist row; never on the strength of
+its version number. The Version row stays either way: this module is versioned
+separately from the base.
 
 ## Before promoting to `main`
 
