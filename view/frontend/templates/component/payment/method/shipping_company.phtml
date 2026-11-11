@@ -17,6 +17,11 @@ use Magento\Framework\Escaper;
 /** @var Escaper $escaper */
 
 $configModel = $viewModels->require(CheckoutConfig::class);
+// The layout places this block unconditionally; the view model decides
+// whether it mounts (TWO-27227): nothing at all while the method is disabled.
+if (!$configModel->getIsShippingCompanyBlockMounted()) {
+    return;
+}
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 

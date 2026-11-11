@@ -200,6 +200,8 @@ namespace Two\Gateway\Api\Config {
             public function getPaymentTermsType(?int $storeId = null): string;
 
             public function isCompanySearchEnabled(?int $storeId = null): bool;
+
+            public function isActive(?int $storeId = null): bool;
         }
     }
 }

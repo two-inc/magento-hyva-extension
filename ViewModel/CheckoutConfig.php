@@ -291,13 +291,32 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
+     * Whether the shipping-address company block mounts at all: the search
+     * setting places it in address entry and the payment method is enabled.
+     * A disabled method mounts nothing there (TWO-27227). A rejected key still
+     * mounts it, with search off through getIsCompanySearchEnabled(), which
+     * is the plain-field state that block is built to run in.
+     */
+    public function getIsShippingCompanyBlockMounted(): bool
+    {
+        return $this->configRepository->isCompanySearchEnabled()
+            && $this->configRepository->isActive();
+    }
+
+    /**
      * A REJECTED key leaves a captured company nothing to feed, so the search
      * stands down (TWO-25326); an unreachable or erroring Two is not a
      * rejection and it keeps running (ABN-533).
+     *
+     * A disabled payment method stands it down too, unlogged because it is a
+     * setting (TWO-27227).
      */
     public function getIsCompanySearchEnabled()
     {
         if (!$this->configRepository->isCompanySearchEnabled()) {
+            return false;
+        }
+        if (!$this->configRepository->isActive()) {
             return false;
         }
         if (!$this->apiKeyVerificationStatus->isDefinitiveFailure()) {

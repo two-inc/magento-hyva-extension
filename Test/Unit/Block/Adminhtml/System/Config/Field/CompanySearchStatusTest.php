@@ -57,6 +57,7 @@ class CompanySearchStatusTest extends TestCase
             ->willReturn(ApiKeyVerificationStatus::OK);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->with($expectedStoreId)->willReturn(true);
+        $configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)->willReturn(true);
 
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturnCallback(
@@ -177,10 +178,52 @@ class CompanySearchStatusTest extends TestCase
         ];
     }
 
+    /**
+     * TWO-27227: a disabled method withholds the control whatever the verdict
+     * and wherever the setting places it. Re-enabling is every row of
+     * verdicts(), which builds an enabled method.
+     *
+     * @dataProvider disabledMethodCases
+     */
+    public function testADisabledMethodWithholdsTheRowWhateverTheVerdict(
+        string $verdictStatus,
+        bool $companySearchInAddressStep,
+        string $description
+    ): void {
+        $block = $this->block($verdictStatus, null, $companySearchInAddressStep, false);
+        $row = $block->getStatusRow();
+
+        $this->assertSame('withheld', $row['state'], $description);
+        $this->assertStringContainsString(
+            'the payment method is disabled. Check Enable payment method.',
+            $row['value'],
+            $description
+        );
+        $this->assertStringStartsWith('Not shown at checkout', $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string}>
+     */
+    public static function disabledMethodCases(): array
+    {
+        return [
+            'disabled, verified' => [ApiKeyVerificationStatus::OK, true,
+                'a verified key does not keep a disabled method searching'],
+            'disabled, verified, address entry search off' => [ApiKeyVerificationStatus::OK, false,
+                'nor does moving the control into the tile'],
+            'disabled, refused key' => [ApiKeyVerificationStatus::INVALID_KEY, true,
+                'the disabled method is named before the key'],
+            'disabled, API out of reach' => [ApiKeyVerificationStatus::UNREACHABLE, true,
+                'an outage does not reopen it'],
+        ];
+    }
+
     private function block(
         string $verdictStatus,
         ?int $code,
-        bool $companySearchInAddressStep
+        bool $companySearchInAddressStep,
+        bool $methodActive = true
     ): CompanySearchStatus {
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
@@ -189,6 +232,7 @@ class CompanySearchStatusTest extends TestCase
         $apiKeyStatus->method('getStatus')->willReturn($verdictStatus);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->willReturn($companySearchInAddressStep);
+        $configRepository->method('isActive')->willReturn($methodActive);
 
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturn('');
