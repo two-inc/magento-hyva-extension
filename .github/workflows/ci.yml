@@ -19,8 +19,8 @@ concurrency:
 jobs:
   # dev/magento-support-matrix.sh and dev/check-php-patch.sh are vendored
   # byte-for-byte from the vanilla two-inc/magento-plugin repo (its `staging`
-  # branch is the source of truth, or a paired branch of the same name on a PR —
-  # TWO-24998, TWO-27174). This job fails CI red if a local copy has drifted, so
+  # branch is the source of truth, or on a PR the same-named branch while it has
+  # an open PR into `staging`: TWO-24998, TWO-27174). This job fails CI red if a local copy has drifted, so
   # neither script can silently rot across the repos that share it.
   matrix-script-parity:
     name: Matrix-script parity

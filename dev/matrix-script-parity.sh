@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev/matrix-script-parity.sh — drift guard for the CI scripts vendored from
+# dev/matrix-script-parity.sh: drift guard for the CI scripts vendored from
 # the vanilla `two-inc/magento-plugin` repo:
 #
 #   dev/magento-support-matrix.sh  the version-support classifier (TWO-24998)
@@ -11,10 +11,11 @@
 # other.
 #
 # The canonical copy is read from magento-plugin's `staging`, except on a pull
-# request whose branch name also exists on magento-plugin: then it is read from
-# that paired branch, so a change to both copies can land as two PRs under the
-# same branch name. Merge the magento-plugin side first; once its branch is
-# deleted, this repo's next run compares against `staging` again.
+# request whose branch name matches an open magento-plugin PR into `staging`:
+# then it is read from that paired branch, so a change to both copies can land
+# as two PRs under the same branch name. Merge the magento-plugin side first;
+# once its PR is merged or closed, this repo's next run compares against
+# `staging` again.
 #
 # To update without a paired branch: change the canonical copy on
 # magento-plugin first, land it on `staging`, then copy the identical file here
@@ -35,8 +36,16 @@ fi
 
 canonical_ref="staging"
 paired="${GITHUB_HEAD_REF:-}"
-if [ -n "$paired" ] && gh api "repos/${canonical_repo}/branches/${paired}" >/dev/null 2>&1; then
-    canonical_ref="$paired"
+if [ -n "$paired" ]; then
+    # Only an open magento-plugin PR from its own branch into `staging` makes a
+    # same-named branch the canonical copy; a stale or unrelated branch of that
+    # name does not.
+    open_prs=$(gh pr list --repo "$canonical_repo" --head "$paired" --base staging \
+        --state open --json isCrossRepository \
+        --jq '[.[] | select(.isCrossRepository | not)] | length' 2>/dev/null) || open_prs=0
+    if [ "${open_prs:-0}" -gt 0 ]; then
+        canonical_ref="$paired"
+    fi
 fi
 echo "matrix-script-parity: comparing with ${canonical_repo}@${canonical_ref}"
 
@@ -52,11 +61,11 @@ for path in "${vendored[@]}"; do
         continue
     fi
 
-    # Fetch the raw file via the GitHub raw media type — avoids the JSON+base64
-    # round-trip (and `base64 -d`'s GNU/BSD flag portability quirk). Retry a
-    # few times so a transient API blip reds the check only for genuine drift,
-    # not a one-off network hiccup — parity with the classifier's own
-    # fetch_json retry.
+    # Fetch the raw file via the GitHub raw media type, which avoids the
+    # JSON+base64 round-trip (and `base64 -d`'s GNU/BSD flag portability
+    # quirk). Retry a few times so a transient API blip reds the check only for
+    # genuine drift, not a one-off network hiccup (parity with the classifier's
+    # own fetch_json retry).
     fetched=0
     for attempt in 1 2 3; do
         if gh api -H "Accept: application/vnd.github.raw" \

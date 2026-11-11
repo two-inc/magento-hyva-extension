@@ -263,7 +263,8 @@ behind php.net's newest patch for its minor (TWO-27174). Both scripts are
 byte-identical copies of the base module's, and the `Matrix-script parity` job
 (`dev/matrix-script-parity.sh`) fails on any drift. Change them on the base
 module first. A PR here compares against the base module's branch of the same
-name when one exists, otherwise its `staging`, so a paired change lands as two
+name while that branch has an open PR into `staging`, otherwise against its
+`staging`, so a paired change lands as two
 PRs under one branch name, the base module's merged first.
 
 ### Common Issues
