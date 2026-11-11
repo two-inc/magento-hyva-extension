@@ -46,16 +46,16 @@ jobs:
         # indistinguishable on the dashboard from one that ran and failed.
         run: bash dev/base-tile-copy-parity.sh
 
-  base-cache-tag-parity:
-    name: Base cache-tag parity
+  base-api-key-status-parity:
+    name: Base API-key status parity
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v7
-      - name: Check the stub's cache tag matches the base constant
+      - name: Check the base still declares the stubbed members and values
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Invoked through bash for the same reason as the job above.
-        run: bash dev/base-cache-tag-parity.sh
+        run: bash dev/base-api-key-status-parity.sh
 
   # No hardcoded brand name on a surface a brand overlay cannot debrand. Runs
   # the base module's own scanner from its `staging` branch over this tree, so
@@ -270,9 +270,9 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
-  # The base module's floor tracks a route set that exists on the base repo's
-  # `staging` branch only — no release carries it yet (see
-  # `getIsProxyAvailable()` in docs/api-proxy.md). Release timing there is a separate,
+  # The base module's floor (^4.1.0) exists on the base repo's `staging` branch
+  # only: no tagged release carries it yet (see the floor note in
+  # docs/api-proxy.md). Release timing there is a separate,
   # unrelated decision, so this leg proves the real dependency: this branch
   # against that staging code, installed via path repo instead of Packagist.
   # This is the required gate for merge; `di-compile` above stays pointed at

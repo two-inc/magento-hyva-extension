@@ -28,12 +28,6 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // Where `rest/V1/two/...` lives — see gateway_method-csp-js.phtml.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
-$isProxyAvailable = $configModel->getIsProxyAvailable();
-// The four below are read on the direct-call fallback only.
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
-$merchantShortName = $configModel->getMerchantShortName();
-$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -188,12 +182,6 @@ document.addEventListener('alpine:init', () => {
         twoGatewayCompanySearchEngineFn({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            // Bare boolean, not quoted — see gateway_method-csp-js.phtml.
-            isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
-            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-            merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
             isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',

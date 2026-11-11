@@ -47,8 +47,6 @@ describe("shared company-search helpers", () => {
         restBaseUrl: "https://shop.test.invalid",
         countryCode: "gb",
         query: "acme",
-        // Explicit: the helper's own default is the direct call.
-        useProxy: true,
       },
       overrides || {},
     );
@@ -495,7 +493,6 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "lookup-111",
-        null,
       );
 
       expect(fetchStub.last().url).toBe(
@@ -505,28 +502,6 @@ describe("shared company-search helpers", () => {
       fetchStub.last().respondProxy({ addresses: [{ city: "Oslo" }] });
 
       expect(await promise).toEqual({ addresses: [{ city: "Oslo" }] });
-    });
-
-    // A third argument that is not a config object carries no host. It warns,
-    // and then still serves the call off the store's own config — the whole
-    // URL is asserted because a host-less relative one contains the path too.
-    test("a non-config third argument warns and still builds a real URL", async () => {
-      const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-
-      const promise = window.twoGatewayCompanyDetail(
-        "https://shop.test.invalid",
-        "lookup-111",
-        "magento-hyva",
-      );
-
-      expect(warn.mock.calls[0][0]).toContain("no direct config");
-      expect(fetchStub.last().url).toBe(
-        "https://api.test.invalid/companies/v2/company/lookup-111" +
-          "?client=magento-hyva&client_v=2.1.0&merchant=Example+Shop",
-      );
-
-      fetchStub.last().respond({ addresses: [] });
-      await promise;
     });
 
     // Without a check on each layer an error body parses cleanly and silently
@@ -545,7 +520,6 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
-        null,
       );
       settle(fetchStub.last());
 
@@ -556,7 +530,6 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
-        null,
       );
       fetchStub.last().networkError();
 
@@ -568,7 +541,6 @@ describe("shared company-search helpers", () => {
       const promise = window.twoGatewayCompanyDetail(
         "https://shop.test.invalid",
         "x",
-        null,
       );
 
       jest.advanceTimersByTime(29999);

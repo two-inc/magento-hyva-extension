@@ -37,7 +37,6 @@ describe("company search: a 429 parks the calling surface", () => {
     const engine = window.twoGatewayCompanySearchEngine({
       checkoutApiUrl: "https://api.test.invalid",
       restBaseUrl: "https://shop.test.invalid",
-      isProxyAvailable: true,
       minSearchChars: 3,
       isCompanySearchEnabled: true,
       getQuote: function () {

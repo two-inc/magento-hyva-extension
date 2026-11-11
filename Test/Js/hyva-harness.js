@@ -81,13 +81,8 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$customHeaders[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     "{}",
   ],
-  // proxy-capability-fallback.test.js overrides this to `false`.
-  [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
+  // server-intent-capability.test.js overrides this to `false`.
   [/^\$isServerIntentAvailable \? "true" : "false"$/, "true"],
-  [/^\$clientName$/, "magento-hyva"],
-  [/^\$clientVersion$/, "2.1.0"],
-  [/^\$merchantShortName$/, "Example Shop"],
-  [/^\$companySearchLimit$/, "50"],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
   // the same meaning; the min-chars suite overrides it via `extraRules` with a
@@ -101,8 +96,6 @@ const PHP_VALUE_RULES = [
   [/^\$currentStoreId$/, "1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
-  [/^\$merchantName$/, "Example Shop"],
-  [/^\$orderIntentConfig\[.*\]$/, "test"],
   [/^\$quoteDetails(Json)?$/, QUOTE_JSON],
   // Bare, not quoted: json_encode() of a string yields a JSON string literal.
   // The optional `?: …` tail is the fallback for json_encode() returning false;

@@ -48,9 +48,8 @@ choosing a commit type that is not a plain patch (`feat`, a `!` type, a
 anything about `.two-deployed-commit`; touching `Model/Provenance`, the admin
 version field or `two_hyva/general/version`; raising or relying on the base
 module's version floor in `composer.json`; replacing a local copy of a
-base-module class (`Provenance`, `Service/ApiKeyVerificationStatus.php`) with
-the base module's own; removing the admin group's Company search row
-(`CompanySearchStatus`); or opening or merging a `staging` into `main` promotion
+base-module class (`Provenance`) with the base module's own; removing the admin
+group's Company search row (`CompanySearchStatus`); or opening or merging a `staging` into `main` promotion
 PR (it needs a manual checkout first).
 
 ## This is a public repository
@@ -190,10 +189,9 @@ rules and its styling live in the base plugin. Read
 
 Read [docs/api-proxy.md](docs/api-proxy.md) before changing how registry,
 order-intent or autofill calls reach the API: the `rest/V1/two/...` routes,
-`CheckoutConfig::getIsProxyAvailable()`, `getIsServerIntentAvailable()`,
-`getCustomHeaders()`, `twoGatewayProxyPost()`, the deprecated browser
-fallbacks, `/autofill/v1/buyer/current`, or the base module's version floor in
-`composer.json`.
+`CheckoutConfig::getIsServerIntentAvailable()`, `getCustomHeaders()`,
+`twoGatewayProxyPost()`, `/autofill/v1/buyer/current`, or the base module's
+version floor in `composer.json`.
 
 Read [docs/address-write-back.md](docs/address-write-back.md) before changing
 `setAddressData()`, how a search result or autofill fills address lines, the
