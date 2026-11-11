@@ -39,6 +39,11 @@ class TermStillAvailablePluginTest extends TestCase
                 return true;
             }
 
+            public function isActive(?int $storeId = null): bool
+            {
+                return true;
+            }
+
             public function getAllBuyerTerms(?int $storeId = null): array
             {
                 return $this->offeredTerms;

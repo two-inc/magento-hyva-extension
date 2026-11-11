@@ -372,6 +372,65 @@ class CheckoutConfigTest extends TestCase
     }
 
     /**
+     * TWO-27227: a disabled payment method stands company search down whatever
+     * the key verdict, and the shipping-address block does not mount at all.
+     * A rejected key alone still mounts the block, with search off. Each case
+     * then re-enables the method on the same view model.
+     *
+     * @dataProvider methodStateCases
+     */
+    public function testADisabledMethodStandsCompanySearchDown(
+        bool $active,
+        string $keyStatus,
+        bool $searchEnabled,
+        bool $blockMounted,
+        string $description
+    ): void {
+        $method = new \stdClass();
+        $method->active = $active;
+        $viewModel = $this->searchGateViewModel(true, $keyStatus, $method);
+
+        $this->assertSame($searchEnabled, $viewModel->getIsCompanySearchEnabled(), $description);
+        $this->assertSame($blockMounted, $viewModel->getIsShippingCompanyBlockMounted(), $description);
+
+        $method->active = true;
+        $this->assertSame(
+            $keyStatus === ApiKeyVerificationStatus::OK,
+            $viewModel->getIsCompanySearchEnabled(),
+            $description . ' (re-enabled)'
+        );
+        $this->assertTrue($viewModel->getIsShippingCompanyBlockMounted(), $description . ' (re-enabled)');
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: string, 2: bool, 3: bool, 4: string}>
+     */
+    public static function methodStateCases(): array
+    {
+        return [
+            'enabled, key ok' => [true, ApiKeyVerificationStatus::OK, true, true,
+                'the ordinary shop searches from address entry'],
+            'enabled, key rejected' => [true, ApiKeyVerificationStatus::INVALID_KEY, false, true,
+                'a rejected key keeps the block, with search off, as before'],
+            'disabled, key ok' => [false, ApiKeyVerificationStatus::OK, false, false,
+                'a disabled method neither searches nor mounts the block'],
+            'disabled, key rejected' => [false, ApiKeyVerificationStatus::INVALID_KEY, false, false,
+                'a disabled method with a rejected key mounts nothing either'],
+        ];
+    }
+
+    public function testTheShippingBlockNeedsTheAddressEntrySetting(): void
+    {
+        $method = new \stdClass();
+        $method->active = true;
+
+        $this->assertFalse(
+            $this->searchGateViewModel(false, ApiKeyVerificationStatus::OK, $method)->getIsShippingCompanyBlockMounted(),
+            'with the search in the payment tile the shipping block has nothing to host'
+        );
+    }
+
+    /**
      * Company search is off when the `enable_company_search` setting is off,
      * and when Two has rejected the key — but ABN-533: not when Two merely
      * failed to answer.
@@ -607,21 +666,46 @@ class CheckoutConfigTest extends TestCase
 
     private function isCompanySearchEnabledFor(bool $coreEnableCompanySearch, string $keyStatus): bool
     {
+        $method = new \stdClass();
+        $method->active = true;
+
+        return $this->searchGateViewModel($coreEnableCompanySearch, $keyStatus, $method)
+            ->getIsCompanySearchEnabled();
+    }
+
+    /**
+     * @param \stdClass $method `active` is the payment method's enabled flag,
+     *                          read live so a case can re-enable mid-test
+     */
+    private function searchGateViewModel(
+        bool $coreEnableCompanySearch,
+        string $keyStatus,
+        \stdClass $method
+    ): CheckoutConfig {
         $reflection = new ReflectionClass(CheckoutConfig::class);
         $viewModel = $reflection->newInstanceWithoutConstructor();
 
-        $configRepository = new class ($coreEnableCompanySearch) {
+        $configRepository = new class ($coreEnableCompanySearch, $method) {
             /** @var bool */
             private $enabled;
 
-            public function __construct(bool $enabled)
+            /** @var \stdClass */
+            private $method;
+
+            public function __construct(bool $enabled, \stdClass $method)
             {
                 $this->enabled = $enabled;
+                $this->method = $method;
             }
 
             public function isCompanySearchEnabled(): bool
             {
                 return $this->enabled;
+            }
+
+            public function isActive(): bool
+            {
+                return $this->method->active;
             }
         };
 
@@ -632,7 +716,7 @@ class CheckoutConfigTest extends TestCase
         );
         $reflection->getProperty('logRepository')->setValue($viewModel, $this->logRepositoryFake());
 
-        return $viewModel->getIsCompanySearchEnabled();
+        return $viewModel;
     }
 
     /**
@@ -651,6 +735,11 @@ class CheckoutConfigTest extends TestCase
 
         $configRepository = new class {
             public function isCompanySearchEnabled(): bool
+            {
+                return true;
+            }
+
+            public function isActive(): bool
             {
                 return true;
             }

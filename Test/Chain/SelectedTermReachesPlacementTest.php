@@ -290,6 +290,11 @@ class SelectedTermReachesPlacementTest extends TestCase
                 return 30;
             }
 
+            public function isActive(?int $storeId = null): bool
+            {
+                return true;
+            }
+
             public function isCompanySearchEnabled(?int $storeId = null): bool
             {
                 return false;

@@ -56,6 +56,16 @@ class CompanySearchStatus extends Field
     {
         $storeId = $this->resolveScopeStoreId();
         $notShown = (string) __('Not shown at checkout');
+        // A disabled method stands the control down wherever it sits, so it is
+        // named before the verdict (TWO-27227), as the base module's row does.
+        // The separator is the one the reasons below use.
+        if (!$this->configRepository->isActive($storeId)) {
+            return [
+                'state' => 'withheld',
+                'value' => $notShown . " \u{2014} "
+                    . (string) __('the payment method is disabled. Check Enable payment method.'),
+            ];
+        }
         // The verdict first (TWO-27224): a missing or rejected key withholds the
         // control wherever it sits, because with the setting below off it moves
         // into the payment tile, which the base module withholds on its own

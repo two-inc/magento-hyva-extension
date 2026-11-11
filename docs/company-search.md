@@ -182,6 +182,18 @@ Which of the first two renders is decided by the core module's
 `enable_company_search` setting — never both, never neither. See
 `CheckoutConfig::getIsCompanySearchInPaymentTile()`.
 
+**Whether any mount searches is `CheckoutConfig::getIsCompanySearchEnabled()`**:
+off with that setting off, while the payment method is disabled (TWO-27227), and
+while Two has rejected the key. The address-book modal's block mounts only where
+`getIsShippingCompanyBlockMounted()` says so, the setting on and the method
+enabled, both read through the base module's config repository rather than a
+layout `ifconfig`. A rejected key still mounts it with search off, so the company
+field stays plain; a disabled method mounts nothing. The deprecated direct-call
+fallback runs only from a mount whose search is on, so the same check gates it,
+and from the base release carrying TWO-27227 the base's company routes refuse
+for a disabled method too. The admin group's Company search row names a
+disabled method before the key.
+
 Each mount builds its panel from its own `init()`/`initialize()`, and
 `mountCompanyPopover()` re-points its role's existing panel rather than building
 a second one. It stamps `data-two-capture-role` on its control root and the
