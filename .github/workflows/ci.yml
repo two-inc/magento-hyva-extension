@@ -46,16 +46,16 @@ jobs:
         # indistinguishable on the dashboard from one that ran and failed.
         run: bash dev/base-tile-copy-parity.sh
 
-  base-cache-tag-parity:
-    name: Base cache-tag parity
+  base-api-key-status-parity:
+    name: Base API-key status parity
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v7
-      - name: Check the stub's cache tag matches the base constant
+      - name: Check the base still declares the stubbed members and values
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Invoked through bash for the same reason as the job above.
-        run: bash dev/base-cache-tag-parity.sh
+        run: bash dev/base-api-key-status-parity.sh
 
   # No hardcoded brand name on a surface a brand overlay cannot debrand. Runs
   # the base module's own scanner from its `staging` branch over this tree, so

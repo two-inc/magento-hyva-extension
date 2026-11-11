@@ -20,7 +20,7 @@ use Magento\Framework\View\Element\Block\ArgumentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 class CheckoutConfig implements ArgumentInterface
 {
@@ -83,9 +83,9 @@ class CheckoutConfig implements ArgumentInterface
     private $brandedViewModel;
 
     /**
-     * @var ApiKeyVerificationStatus
+     * @var ApiKeyStatus
      */
-    private $apiKeyVerificationStatus;
+    private $apiKeyStatus;
 
     /**
      * Memoized result of getOrderIntentConfig() — avoids repeating the
@@ -115,7 +115,7 @@ class CheckoutConfig implements ArgumentInterface
         Two $two,
         AssetRepository $assetRepository,
         BrandedHyvaViewModelInterface $brandedViewModel,
-        ApiKeyVerificationStatus $apiKeyVerificationStatus,
+        ApiKeyStatus $apiKeyStatus,
         CheckoutTileCopy $checkoutTileCopy,
         LogRepository $logRepository,
     ) {
@@ -125,7 +125,7 @@ class CheckoutConfig implements ArgumentInterface
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->brandedViewModel = $brandedViewModel;
-        $this->apiKeyVerificationStatus = $apiKeyVerificationStatus;
+        $this->apiKeyStatus = $apiKeyStatus;
         $this->checkoutTileCopy = $checkoutTileCopy;
         $this->logRepository = $logRepository;
     }
@@ -319,7 +319,7 @@ class CheckoutConfig implements ArgumentInterface
         if (!$this->configRepository->isActive()) {
             return false;
         }
-        if (!$this->apiKeyVerificationStatus->isDefinitiveFailure()) {
+        if (!$this->apiKeyStatus->isDefinitiveFailure()) {
             return true;
         }
         // Standing the control down is invisible to the merchant (ABN-518).
@@ -327,7 +327,7 @@ class CheckoutConfig implements ArgumentInterface
             $this->withholdLogged = true;
             $this->logRepository->addDebugLog(
                 'Hyva company search withheld from checkout: API key rejected',
-                ['status' => $this->apiKeyVerificationStatus->getStatus()]
+                ['status' => $this->apiKeyStatus->getStatus()['status']]
             );
         }
 

@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\GatewayHyva\Block\Adminhtml\System\Config\Field\CompanySearchStatus;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * ABN-518. This extension withholds the company-search control on its own
@@ -52,9 +52,9 @@ class CompanySearchStatusTest extends TestCase
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
 
-        $apiKeyStatus = $this->createMock(ApiKeyVerificationStatus::class);
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $apiKeyStatus->expects($this->once())->method('getStatus')->with($expectedStoreId)
-            ->willReturn(ApiKeyVerificationStatus::OK);
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->with($expectedStoreId)->willReturn(true);
         $configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)->willReturn(true);
@@ -128,51 +128,51 @@ class CompanySearchStatusTest extends TestCase
     {
         return [
             'verified' => [
-                ApiKeyVerificationStatus::OK, null, true, 'ok', 'Shown at checkout',
+                ApiKeyStatus::OK, null, true, 'ok', 'Shown at checkout',
                 'a working integration says so',
             ],
             'verified, address entry search off' => [
-                ApiKeyVerificationStatus::OK, null, false, 'ok', 'Shown in the payment method when it is offered',
+                ApiKeyStatus::OK, null, false, 'ok', 'Shown in the payment method when it is offered',
                 'with address entry search off the row names the tile and its condition',
             ],
             'nothing saved as the key' => [
-                ApiKeyVerificationStatus::NOT_CONFIGURED, null, true, 'withheld', 'no API key is saved',
+                ApiKeyStatus::NOT_CONFIGURED, null, true, 'withheld', 'no API key is saved',
                 'an install with no key is told to save one',
             ],
             'nothing saved as the key, address entry search off' => [
-                ApiKeyVerificationStatus::NOT_CONFIGURED, null, false, 'withheld', 'no API key is saved',
+                ApiKeyStatus::NOT_CONFIGURED, null, false, 'withheld', 'no API key is saved',
                 'a missing key keeps the tile, and so the control, off the page',
             ],
             'refused key' => [
-                ApiKeyVerificationStatus::INVALID_KEY, 401, true, 'withheld', 'the API key was rejected',
+                ApiKeyStatus::INVALID_KEY, 401, true, 'withheld', 'the API key was rejected',
                 'a refusal points the admin at key and environment',
             ],
             'refused key, address entry search off' => [
-                ApiKeyVerificationStatus::INVALID_KEY, 401, false, 'withheld', 'the API key was rejected',
+                ApiKeyStatus::INVALID_KEY, 401, false, 'withheld', 'the API key was rejected',
                 'moving the control into the tile does not escape a rejection',
             ],
             'server-side failure' => [
-                ApiKeyVerificationStatus::SERVICE_ERROR, 503, true, 'ok', 'Shown at checkout',
+                ApiKeyStatus::SERVICE_ERROR, 503, true, 'ok', 'Shown at checkout',
                 'ABN-533: a transient verdict falls through to the cached record',
             ],
             'server-side failure, address entry search off' => [
-                ApiKeyVerificationStatus::SERVICE_ERROR, 503, false, 'ok', 'Shown in the payment method when it is offered',
+                ApiKeyStatus::SERVICE_ERROR, 503, false, 'ok', 'Shown in the payment method when it is offered',
                 'a transient verdict in the tile falls through just the same',
             ],
             'API out of reach' => [
-                ApiKeyVerificationStatus::UNREACHABLE, null, true, 'ok', 'Shown at checkout',
+                ApiKeyStatus::UNREACHABLE, null, true, 'ok', 'Shown at checkout',
                 'and likewise when the API cannot be reached',
             ],
             'API out of reach, address entry search off' => [
-                ApiKeyVerificationStatus::UNREACHABLE, null, false, 'ok', 'Shown in the payment method when it is offered',
+                ApiKeyStatus::UNREACHABLE, null, false, 'ok', 'Shown in the payment method when it is offered',
                 'losing the API is no reason to report the tile control gone',
             ],
             'unclassified failure' => [
-                ApiKeyVerificationStatus::ERROR, 404, true, 'ok', 'Shown at checkout',
+                ApiKeyStatus::ERROR, 404, true, 'ok', 'Shown at checkout',
                 'an unclassified status is not evidence the key is wrong',
             ],
             'unclassified failure, address entry search off' => [
-                ApiKeyVerificationStatus::ERROR, 404, false, 'ok', 'Shown in the payment method when it is offered',
+                ApiKeyStatus::ERROR, 404, false, 'ok', 'Shown in the payment method when it is offered',
                 'nor is it evidence when the control sits in the tile',
             ],
         ];
@@ -208,13 +208,13 @@ class CompanySearchStatusTest extends TestCase
     public static function disabledMethodCases(): array
     {
         return [
-            'disabled, verified' => [ApiKeyVerificationStatus::OK, true,
+            'disabled, verified' => [ApiKeyStatus::OK, true,
                 'a verified key does not keep a disabled method searching'],
-            'disabled, verified, address entry search off' => [ApiKeyVerificationStatus::OK, false,
+            'disabled, verified, address entry search off' => [ApiKeyStatus::OK, false,
                 'nor does moving the control into the tile'],
-            'disabled, refused key' => [ApiKeyVerificationStatus::INVALID_KEY, true,
+            'disabled, refused key' => [ApiKeyStatus::INVALID_KEY, true,
                 'the disabled method is named before the key'],
-            'disabled, API out of reach' => [ApiKeyVerificationStatus::UNREACHABLE, true,
+            'disabled, API out of reach' => [ApiKeyStatus::UNREACHABLE, true,
                 'an outage does not reopen it'],
         ];
     }
@@ -228,8 +228,9 @@ class CompanySearchStatusTest extends TestCase
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
 
-        $apiKeyStatus = $this->createMock(ApiKeyVerificationStatus::class);
-        $apiKeyStatus->method('getStatus')->willReturn($verdictStatus);
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $apiKeyStatus->method('getStatus')
+            ->willReturn(['status' => $verdictStatus, 'code' => $code, 'merchant' => null]);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->willReturn($companySearchInAddressStep);
         $configRepository->method('isActive')->willReturn($methodActive);

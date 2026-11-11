@@ -12,14 +12,16 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * Why the Hyva company-search control is absent from checkout (ABN-518).
  *
- * This extension withholds the control on its OWN API-key verdict, which is a
- * separate read from the base module's, so the base module's health panel
- * cannot answer for it.
+ * Reads the same API-key verdict as the base module (its ApiKeyStatus
+ * service). The base module's admin health checklist reports company search
+ * too, but no tagged base release carries that row yet. Retire this row, with
+ * its template, test and translations, once a tagged base release carries the
+ * base company-search row (see docs/release-and-versioning.md).
  */
 class CompanySearchStatus extends Field
 {
@@ -29,7 +31,7 @@ class CompanySearchStatus extends Field
     protected $_template = 'Two_GatewayHyva::system/config/field/company-search-status.phtml';
 
     /**
-     * @var ApiKeyVerificationStatus
+     * @var ApiKeyStatus
      */
     protected $apiKeyStatus;
 
@@ -39,7 +41,7 @@ class CompanySearchStatus extends Field
     protected $configRepository;
 
     public function __construct(
-        ApiKeyVerificationStatus $apiKeyStatus,
+        ApiKeyStatus $apiKeyStatus,
         ConfigRepository $configRepository,
         Context $context,
         array $data = []
@@ -68,15 +70,15 @@ class CompanySearchStatus extends Field
         }
         // The verdict first (TWO-27224): a missing or rejected key withholds the
         // control wherever it sits, because with the setting below off it moves
-        // into the payment tile, which the base module withholds on its own
-        // copy of this verdict.
-        switch ($this->apiKeyStatus->getStatus($storeId)) {
-            case ApiKeyVerificationStatus::NOT_CONFIGURED:
+        // into the payment tile, which the base module withholds on this same
+        // verdict.
+        switch ($this->apiKeyStatus->getStatus($storeId)['status']) {
+            case ApiKeyStatus::NOT_CONFIGURED:
                 return [
                     'state' => 'withheld',
                     'value' => $notShown . ' — ' . (string) __('no API key is saved. Check API key.'),
                 ];
-            case ApiKeyVerificationStatus::INVALID_KEY:
+            case ApiKeyStatus::INVALID_KEY:
                 return [
                     'state' => 'withheld',
                     'value' => $notShown . ' — '

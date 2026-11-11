@@ -86,11 +86,10 @@ The `Hyvä extension` admin group carries the Version row above and a Company
 search row (`Block/Adminhtml/System/Config/Field/CompanySearchStatus.php`), which
 says whether checkout is withholding the company-search control and why. The
 base module's admin health checklist now carries the same report for every
-checkout theme (TWO-27224), but this module withholds the control on its own
-verdict, read through its local `Service/ApiKeyVerificationStatus.php` copy, not
-the base's. Until both conditions below hold, both rows can show at once. They
-ask the same question of the same key and agree on the key verdict, apart from a
-cache window of up to five minutes. With Enable company search in address entry
+checkout theme (TWO-27224), and this module withholds the control on the same
+verdict, read through the base's own `ApiKeyStatus` service (TWO-27237). Until
+both conditions below hold, both rows can show at once. They read the same
+cached key verdict, so they agree on it. With Enable company search in address entry
 off, the base row also reflects whether the payment method itself is shown,
 which this module does not re-derive, so this row says the control shows in the
 payment method "when it is offered". **Keep the row.** No released base carries
@@ -101,7 +100,7 @@ Delete the row, with its block, template, test and translations, only once BOTH
 hold: a base release is confirmed BY INSPECTION OF THAT RELEASE to carry the
 checklist row, never on the strength of its version number; and this module's
 local `ApiKeyVerificationStatus` copy has been replaced by the base's, because
-only then do both rows answer from the same verdict. The Version row stays
+only then do both rows answer from the same verdict (done in TWO-27237). The Version row stays
 either way: this module is versioned separately from the base.
 
 ## Before promoting to `main`

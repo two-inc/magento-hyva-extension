@@ -7,7 +7,7 @@ namespace Two\GatewayHyva\Test\Unit\ViewModel;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
@@ -395,7 +395,7 @@ class CheckoutConfigTest extends TestCase
 
         $method->active = true;
         $this->assertSame(
-            $keyStatus === ApiKeyVerificationStatus::OK,
+            $keyStatus === ApiKeyStatus::OK,
             $viewModel->getIsCompanySearchEnabled(),
             $description . ' (re-enabled)'
         );
@@ -408,13 +408,13 @@ class CheckoutConfigTest extends TestCase
     public static function methodStateCases(): array
     {
         return [
-            'enabled, key ok' => [true, ApiKeyVerificationStatus::OK, true, true,
+            'enabled, key ok' => [true, ApiKeyStatus::OK, true, true,
                 'the ordinary shop searches from address entry'],
-            'enabled, key rejected' => [true, ApiKeyVerificationStatus::INVALID_KEY, false, true,
+            'enabled, key rejected' => [true, ApiKeyStatus::INVALID_KEY, false, true,
                 'a rejected key keeps the block, with search off, as before'],
-            'disabled, key ok' => [false, ApiKeyVerificationStatus::OK, false, false,
+            'disabled, key ok' => [false, ApiKeyStatus::OK, false, false,
                 'a disabled method neither searches nor mounts the block'],
-            'disabled, key rejected' => [false, ApiKeyVerificationStatus::INVALID_KEY, false, false,
+            'disabled, key rejected' => [false, ApiKeyStatus::INVALID_KEY, false, false,
                 'a disabled method with a rejected key mounts nothing either'],
         ];
     }
@@ -425,7 +425,7 @@ class CheckoutConfigTest extends TestCase
         $method->active = true;
 
         $this->assertFalse(
-            $this->searchGateViewModel(false, ApiKeyVerificationStatus::OK, $method)->getIsShippingCompanyBlockMounted(),
+            $this->searchGateViewModel(false, ApiKeyStatus::OK, $method)->getIsShippingCompanyBlockMounted(),
             'with the search in the payment tile the shipping block has nothing to host'
         );
     }
@@ -456,23 +456,23 @@ class CheckoutConfigTest extends TestCase
     public static function companySearchGateCases(): array
     {
         return [
-            'setting on, verified' => [true, ApiKeyVerificationStatus::OK, true,
+            'setting on, verified' => [true, ApiKeyStatus::OK, true,
                 'the ordinary shop'],
-            'setting off, verified' => [false, ApiKeyVerificationStatus::OK, false,
+            'setting off, verified' => [false, ApiKeyStatus::OK, false,
                 'the merchant turned it off'],
-            'setting on, rejected key' => [true, ApiKeyVerificationStatus::INVALID_KEY, false,
+            'setting on, rejected key' => [true, ApiKeyStatus::INVALID_KEY, false,
                 'a captured company would have nothing to feed'],
-            'setting on, no key' => [true, ApiKeyVerificationStatus::NOT_CONFIGURED, false,
+            'setting on, no key' => [true, ApiKeyStatus::NOT_CONFIGURED, false,
                 'nothing is configured to feed'],
-            'setting on, unreachable' => [true, ApiKeyVerificationStatus::UNREACHABLE, true,
+            'setting on, unreachable' => [true, ApiKeyStatus::UNREACHABLE, true,
                 'an outage must not remove a working affordance'],
-            'setting on, service error' => [true, ApiKeyVerificationStatus::SERVICE_ERROR, true,
+            'setting on, service error' => [true, ApiKeyStatus::SERVICE_ERROR, true,
                 'a 5xx says nothing about the key'],
-            'setting on, other error' => [true, ApiKeyVerificationStatus::ERROR, true,
+            'setting on, other error' => [true, ApiKeyStatus::ERROR, true,
                 'a non-2xx that is not a 401/403 is not a rejection'],
-            'setting on, malformed' => [true, ApiKeyVerificationStatus::MALFORMED_RESPONSE, true,
+            'setting on, malformed' => [true, ApiKeyStatus::MALFORMED_RESPONSE, true,
                 'an unreadable answer is about the service, not the key'],
-            'setting off, rejected key' => [false, ApiKeyVerificationStatus::INVALID_KEY, false,
+            'setting off, rejected key' => [false, ApiKeyStatus::INVALID_KEY, false,
                 'both reasons at once still off'],
         ];
     }
@@ -710,9 +710,9 @@ class CheckoutConfigTest extends TestCase
         };
 
         $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
-        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
+        $reflection->getProperty('apiKeyStatus')->setValue(
             $viewModel,
-            $this->apiKeyVerificationStatusFake($keyStatus)
+            $this->apiKeyStatusFake($keyStatus)
         );
         $reflection->getProperty('logRepository')->setValue($viewModel, $this->logRepositoryFake());
 
@@ -747,9 +747,9 @@ class CheckoutConfigTest extends TestCase
         $log = $this->logRepositoryFake();
 
         $reflection->getProperty('configRepository')->setValue($viewModel, $configRepository);
-        $reflection->getProperty('apiKeyVerificationStatus')->setValue(
+        $reflection->getProperty('apiKeyStatus')->setValue(
             $viewModel,
-            $this->apiKeyVerificationStatusFake($keyStatus)
+            $this->apiKeyStatusFake($keyStatus)
         );
         $reflection->getProperty('logRepository')->setValue($viewModel, $log);
 
@@ -773,15 +773,15 @@ class CheckoutConfigTest extends TestCase
     public static function companySearchLogCases(): array
     {
         return [
-            'rejected key' => [ApiKeyVerificationStatus::INVALID_KEY, 1,
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 1,
                 'a definitive rejection is recorded once, however many reads'],
-            'no key saved' => [ApiKeyVerificationStatus::NOT_CONFIGURED, 1,
+            'no key saved' => [ApiKeyStatus::NOT_CONFIGURED, 1,
                 'and so is an unconfigured install'],
-            'verified' => [ApiKeyVerificationStatus::OK, 0,
+            'verified' => [ApiKeyStatus::OK, 0,
                 'nothing is withheld, so nothing is recorded'],
-            'service error' => [ApiKeyVerificationStatus::SERVICE_ERROR, 0,
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 0,
                 'ABN-533: a transient verdict withholds nothing, so it records nothing'],
-            'unreachable' => [ApiKeyVerificationStatus::UNREACHABLE, 0,
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, 0,
                 'nor does a network failure reaching us'],
         ];
     }
@@ -810,11 +810,11 @@ class CheckoutConfigTest extends TestCase
 
     /**
      * The real predicate over a stubbed category, so the gate cannot pass by
-     * disagreeing with ApiKeyVerificationStatus about which ones are fatal.
+     * disagreeing with the base ApiKeyStatus about which ones are fatal.
      */
-    private function apiKeyVerificationStatusFake(string $status): object
+    private function apiKeyStatusFake(string $status): object
     {
-        return new class ($status) extends ApiKeyVerificationStatus {
+        return new class ($status) extends ApiKeyStatus {
             /** @var string */
             private $status;
 
@@ -823,9 +823,9 @@ class CheckoutConfigTest extends TestCase
                 $this->status = $status;
             }
 
-            public function getStatus(?int $storeId = null): string
+            public function getStatus(?int $storeId = null, ?string $scope = null): array
             {
-                return $this->status;
+                return ['status' => $this->status, 'code' => null, 'merchant' => null];
             }
         };
     }
