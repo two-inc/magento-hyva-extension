@@ -13,8 +13,9 @@ use Two\GatewayHyva\Block\Adminhtml\System\Config\Field\CompanySearchStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * ABN-518. This extension withholds the company-search control on its own
- * API-key verdict, which the base module's health panel cannot answer for.
+ * ABN-518. This extension withholds the company-search control on the base
+ * module's API-key verdict, and keeps its own row until a tagged base release
+ * carries the base company-search row.
  */
 class CompanySearchStatusTest extends TestCase
 {

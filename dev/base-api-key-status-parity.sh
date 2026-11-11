@@ -72,6 +72,11 @@ for method in "${required_methods[@]}"; do
         status=1
     fi
 done
+# Call sites read getStatus()['status'], so its array return is part of what we rely on.
+if ! tr '\n' ' ' < "$canonical" | grep -qE "function[[:space:]]+getStatus[[:space:]]*\([^)]*\)[[:space:]]*:[[:space:]]*array\b"; then
+    echo "::error::base-api-key-status-parity: the base getStatus() no longer declares an array return; this module and ${stub_path} both need updating."
+    status=1
+fi
 for constant in "${required_constants[@]}"; do
     base_value=$(const_value "$constant" "$canonical")
     stub_value=$(const_value "$constant" "$stub_path")

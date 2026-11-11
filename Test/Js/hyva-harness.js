@@ -96,7 +96,6 @@ const PHP_VALUE_RULES = [
   [/^\$currentStoreId$/, "1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
-  [/^\$orderIntentConfig\[.*\]$/, "test"],
   [/^\$quoteDetails(Json)?$/, QUOTE_JSON],
   // Bare, not quoted: json_encode() of a string yields a JSON string literal.
   // The optional `?: …` tail is the fallback for json_encode() returning false;
