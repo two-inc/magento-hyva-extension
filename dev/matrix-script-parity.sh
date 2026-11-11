@@ -42,7 +42,10 @@ if [ -n "$paired" ]; then
     # name does not.
     open_prs=$(gh pr list --repo "$canonical_repo" --head "$paired" --base staging \
         --state open --json isCrossRepository \
-        --jq '[.[] | select(.isCrossRepository | not)] | length' 2>/dev/null) || open_prs=0
+        --jq '[.[] | select(.isCrossRepository | not)] | length' 2>/dev/null) || {
+        echo "::warning::matrix-script-parity: could not list ${canonical_repo} PRs for ${paired}; comparing with staging, so a paired change there reads as drift"
+        open_prs=0
+    }
     if [ "${open_prs:-0}" -gt 0 ]; then
         canonical_ref="$paired"
     fi
