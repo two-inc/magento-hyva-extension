@@ -17,7 +17,6 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\UrlCookie;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
-use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -68,11 +67,6 @@ class CheckoutConfig implements ArgumentInterface
     private $two;
 
     /**
-     * @var Adapter
-     */
-    private $adapter;
-
-    /**
      * @var AssetRepository
      */
     private $assetRepository;
@@ -86,14 +80,6 @@ class CheckoutConfig implements ArgumentInterface
      * @var ApiKeyStatus
      */
     private $apiKeyStatus;
-
-    /**
-     * Memoized result of getOrderIntentConfig() — avoids repeating the
-     * verify_api_key round trip when multiple templates on one page need it.
-     *
-     * @var array|null
-     */
-    private $orderIntentConfig;
 
     /**
      * @var CheckoutTileCopy
@@ -111,7 +97,6 @@ class CheckoutConfig implements ArgumentInterface
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
-        Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
         BrandedHyvaViewModelInterface $brandedViewModel,
@@ -121,7 +106,6 @@ class CheckoutConfig implements ArgumentInterface
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
-        $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->brandedViewModel = $brandedViewModel;
@@ -195,26 +179,6 @@ class CheckoutConfig implements ArgumentInterface
         return $this->configRepository->isInvoiceEmailsEnabled();
     }
 
-    public function getOrderIntentConfig()
-    {
-        if ($this->orderIntentConfig !== null) {
-            return $this->orderIntentConfig;
-        }
-
-        $merchant = null;
-        if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute(
-                "/v1/merchant/verify_api_key",
-                [],
-                "GET",
-            );
-        }
-        $this->orderIntentConfig = [
-            "merchant" => $merchant,
-        ];
-        return $this->orderIntentConfig;
-    }
-
     /**
      * Arbitrary merchant-configured headers for `/autofill/v1/buyer/current`,
      * the one browser-side call that cannot be proxied (see AGENTS.md). Empty
@@ -232,62 +196,15 @@ class CheckoutConfig implements ArgumentInterface
     }
 
     /**
-     * Whether the base exposes the proxy routes; false falls back to the direct call.
-     * Runtime check, not composer's ^2.3.0 floor — a version is not proof the code
-     * shipped. True proves autoload, not route registration (a stale route cache 404s
-     * until cache:flush). The registry interface stands in for the order-intent one,
-     * both landing in one base commit; if that stops holding add a second check.
-     * String literal, not an import that would itself fatal on the base being
-     * detected. Base-module literals are duplicated in this repo's tests, so drift
-     * surfaces only at runtime — accepted because it fails closed. The four getters
-     * below stay `@deprecated` so static-analysis noise at their call sites reminds
-     * a reader to delete them once the fallback goes.
-     */
-    public function getIsProxyAvailable(): bool
-    {
-        return interface_exists('Two\Gateway\Api\Webapi\CompanyLookupInterface');
-    }
-
-    /**
      * Whether the base composes order intent from the quote itself (TWO-26092),
-     * so the browser sends the buyer only. Same runtime check as the proxy.
+     * so the browser sends the buyer only. A runtime check, not the composer
+     * floor: a version is not proof the code shipped. True proves autoload, not
+     * route registration (a stale route cache 404s until cache:flush). String
+     * literal, not an import that would itself fatal on the base being detected.
      */
     public function getIsServerIntentAvailable(): bool
     {
         return interface_exists('Two\Gateway\Api\OrderPostprocessingInterface');
-    }
-
-    /**
-     * Plugin identifier for the `client` query param on browser-side Two API calls.
-     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
-     */
-    public function getClientName(): ?string
-    {
-        return $this->configRepository->getExtensionPlatformName();
-    }
-
-    /**
-     * Plugin version for the `client_v` query param on browser-side Two API calls.
-     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
-     */
-    public function getClientVersion(): ?string
-    {
-        return $this->configRepository->getExtensionDBVersion();
-    }
-
-    /**
-     * Merchant slug for the `merchant` query param on browser-side Two API calls.
-     * @deprecated Feeds the direct-call fallback only — see getIsProxyAvailable().
-     */
-    public function getMerchantShortName(): string
-    {
-        return $this->getOrderIntentConfig()["merchant"]["short_name"] ?? "";
-    }
-
-    /** @deprecated Fallback row bound; the proxy route sets its own. */
-    public function getCompanySearchLimit(): int
-    {
-        return 50;
     }
 
     /**
@@ -534,7 +451,7 @@ class CheckoutConfig implements ArgumentInterface
     public function getOrderIntentApprovedNotice(): ?array
     {
         // A base predating these registry methods means "no brand opinion": notice
-        // ON with platform default copy. Floor untrusted per getIsProxyAvailable().
+        // ON with platform default copy. Floor untrusted per getIsServerIntentAvailable().
         $enabled = method_exists($this->brandRegistry, "isIntentApprovedNoticeEnabled")
             ? $this->brandRegistry->isIntentApprovedNoticeEnabled()
             : true;

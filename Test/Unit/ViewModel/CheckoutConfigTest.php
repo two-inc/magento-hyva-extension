@@ -543,24 +543,6 @@ class CheckoutConfigTest extends TestCase
      * @runInSeparateProcess
      * @preserveGlobalState disabled
      */
-    public function testProxyAvailabilityTracksTheBaseModulesOwnInterface(): void
-    {
-        $reflection = new ReflectionClass(CheckoutConfig::class);
-        $viewModel = $reflection->newInstanceWithoutConstructor();
-
-        $this->assertFalse(
-            $viewModel->getIsProxyAvailable(),
-            'a base without the interface predates the routes'
-        );
-
-        eval('namespace Two\Gateway\Api\Webapi; interface CompanyLookupInterface {}');
-        $this->assertTrue($viewModel->getIsProxyAvailable(), 'interface present');
-    }
-
-    /**
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
     public function testServerIntentTracksTheBaseModulesOwnInterface(): void
     {
         $viewModel = (new ReflectionClass(CheckoutConfig::class))->newInstanceWithoutConstructor();
@@ -568,24 +550,6 @@ class CheckoutConfigTest extends TestCase
         $this->assertFalse($viewModel->getIsServerIntentAvailable(), 'a base that still takes amounts from the browser');
         eval('namespace Two\Gateway\Api; interface OrderPostprocessingInterface {}');
         $this->assertTrue($viewModel->getIsServerIntentAvailable(), 'the base composes intent from the quote');
-    }
-
-    /**
-     * The base composes intent server-side, so the page carries only the
-     * merchant identity the client params read (TWO-26092).
-     */
-    public function testOrderIntentConfigCarriesOnlyTheMerchant(): void
-    {
-        $reflection = new ReflectionClass(CheckoutConfig::class);
-        $viewModel = $reflection->newInstanceWithoutConstructor();
-        $reflection->getProperty('configRepository')->setValue($viewModel, new class {
-            public function __call(string $name, array $arguments)
-            {
-                return $name === 'getApiKey' ? '' : 'x';
-            }
-        });
-
-        $this->assertSame(['merchant' => null], $viewModel->getOrderIntentConfig());
     }
 
     /**

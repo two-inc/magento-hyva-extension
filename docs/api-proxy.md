@@ -1,5 +1,5 @@
 ---
-description: "Registry, order-intent and autofill calls: the base module REST routes, the proxy flag and the deprecated browser fallbacks"
+description: "Registry, order-intent and autofill calls: the base module REST routes, the server-intent flag and the composer floor"
 ---
 
 # Registry, order-intent and autofill calls
@@ -13,12 +13,12 @@ attached there without it ever reaching a buyer's browser. Each answers a
 must produce exactly what a failed direct call used to. Paging and client
 identification are the server's to set, so nothing here sends them.
 
-**What decides that is `CheckoutConfig::getIsProxyAvailable()`, not the
-base version floor in `composer.json`**: the reasoning is written once, in that
-method's docblock, and everything else points at it. Its answer reaches every
-mount as `isProxyAvailable`. `twoGatewayProxyPost()` deliberately has no
-runtime fallback for the 404 a stale route cache produces: a fallback that
-reopened the direct browser-to-API path would make a missed cache flush
+**There is no browser-to-API fallback for registry calls** (TWO-27237). The
+4.0.0 base release carries the routes, confirmed by inspecting that release,
+and this module's composer floor is above it, so the browser never calls the
+registry directly and never without the merchant's key.
+`twoGatewayProxyPost()` deliberately has no runtime fallback for the 404 a
+stale route cache produces either: one would make a missed cache flush
 invisible instead of loud.
 
 **A non-ok answer carries its status.** `twoGatewayProxyPost()` throws an error
@@ -27,22 +27,12 @@ with a raw 429 before the route runs), and company search reads an envelope's
 `status` the same way, so a 429 from either place parks the calling surface
 rather than reading as an ordinary failure (TWO-27211, see company-search.md).
 
-`false` — and, the flag being read by identity, anything that is not exactly
-`true` — takes the registry routes back to the **direct
-browser-to-API call they made before the routes existed** — query-string client
-identification and merchant name restored, and no firewall token on any of
-it. That is not a new exposure: it is precisely what ran on that base already,
-and it is the only path on which those fallbacks are reachable.
-
 **Order intent has no browser fallback** (TWO-26092). The base composes its
 amounts and lines from the quote and the tile sends the buyer only, so intent
 runs only while `CheckoutConfig::getIsServerIntentAvailable()` finds the base's
-`OrderPostprocessingInterface`; on an older base no intent is sent at all.
-
-Those fallback branches are **deprecated on arrival**. Delete them, and the
-flag threading them, once a base release is confirmed BY INSPECTION OF THAT
-RELEASE to carry the routes — never by raising the floor high enough to look
-safe.
+`OrderPostprocessingInterface`; on an older base no intent is sent at all. That
+method's docblock carries the floor note: a runtime check, not the base version
+floor in `composer.json`, because a version is not proof the code shipped.
 
 The one exception is `/autofill/v1/buyer/current`, which is authenticated by
 the buyer's own cookie on the API's domain and so cannot be proxied at all; it

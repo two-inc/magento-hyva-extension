@@ -75,7 +75,7 @@ copy.** No released base carries its own provenance model — the newest
 release, `2.1.2`, predates it — so injecting the base module's instead would
 fatal the admin field on every base a merchant can currently install. The base version
 floor in `composer.json` is not evidence to the contrary: it states intent
-only, for the reason set out under `getIsProxyAvailable()` in
+only, for the reason set out under `getIsServerIntentAvailable()` in
 [api-proxy.md](api-proxy.md). Delete the
 copy once a base release is confirmed BY INSPECTION OF THAT RELEASE to carry
 the class — never on the strength of its version number.
