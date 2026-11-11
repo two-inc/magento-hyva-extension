@@ -17,10 +17,12 @@ concurrency:
 # Tool name first so checks group naturally in the UI.
 
 jobs:
-  # dev/magento-support-matrix.sh is vendored byte-for-byte from the vanilla
-  # two-inc/magento-plugin repo (its `staging` branch is the source of truth —
-  # TWO-24998). This job fails CI red if the local copy has drifted, so the
-  # classifier can't silently rot across the three repos that share it.
+  # dev/magento-support-matrix.sh and dev/check-php-patch.sh are vendored
+  # byte-for-byte from the vanilla two-inc/magento-plugin repo (its `staging`
+  # branch is the source of truth, or on a PR the same-named branch while it has
+  # an open PR into `staging`: TWO-24998, TWO-27174). This job fails CI red if a
+  # local copy has drifted, so neither script can silently rot across the repos
+  # that share it.
   matrix-script-parity:
     name: Matrix-script parity
     runs-on: ${{ vars.RUNNER_STANDARD }}
@@ -227,6 +229,14 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
+      - name: Check the image runs the latest PHP patch
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
       - name: Upload tracked source into container
         # Ship only tracked files — avoids leaking .git/, dotfiles,
         # or any untracked working-tree state into the CI container.
@@ -385,6 +395,15 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
+      - name: Check the image runs the latest PHP patch
+        if: steps.compat.outputs.supported == 'true'
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
       - name: Upload tracked source into container
         if: steps.compat.outputs.supported == 'true'
         # Ship only tracked files — avoids leaking .git/, dotfiles,
@@ -459,6 +478,14 @@ jobs:
       - name: Start Magento docker container
         run: |
           docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Check the image runs the latest PHP patch
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container

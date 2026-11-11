@@ -253,6 +253,20 @@ or plain PHP string literals. Take the name from the brand view model or say
 "the payment method"; prefix console messages with the module name
 (`Two_GatewayHyva:`), which the scanner does not read as the brand.
 
+### The CI version matrix and its vendored scripts
+
+The DI compile and PHPStan legs run on the Magento × PHP matrix that
+`dev/magento-support-matrix.sh` discovers on every run, inside
+`michielgerritsen/magento-project-community-edition` images. Each leg first runs
+`dev/check-php-patch.sh`, which warns (never fails) when the image's PHP is
+behind php.net's newest patch for its minor (TWO-27174). Both scripts are
+byte-identical copies of the base module's, and the `Matrix-script parity` job
+(`dev/matrix-script-parity.sh`) fails on any drift. Change them on the base
+module first. A PR here compares against the base module's branch of the same
+name while that branch has an open PR into `staging`, otherwise against its
+`staging`, so a paired change lands as two
+PRs under one branch name, the base module's merged first.
+
 ### Common Issues
 
 1. **Magewire component not updating**: Check if component class has correct namespace and implements proper interface
