@@ -10,7 +10,6 @@ namespace Two\GatewayHyva\Model\Form\EntityFormModifier;
 
 use Hyva\Checkout\Model\Form\AbstractEntityForm;
 use Hyva\Checkout\Model\Form\AbstractEntityFormModifier;
-use Hyva\Checkout\Model\Form\EntityFormElementInterface;
 use Magento\Quote\Api\Data\AddressInterface;
 use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
@@ -26,9 +25,8 @@ use Two\GatewayHyva\ViewModel\CheckoutConfig;
 class CompanySortOrderModifier extends AbstractEntityFormModifier
 {
     /**
-     * The address fields in display order. Each takes one of the positions the
-     * store gave these fields, so anything else the store placed around the
-     * address keeps its place relative to it.
+     * The address fields in display order, placed where the street field sits
+     * in the store's order. Every other field keeps the store's order.
      */
     private const ADDRESS_ORDER = [
         AddressInterface::KEY_COUNTRY_ID,
@@ -52,27 +50,42 @@ class CompanySortOrderModifier extends AbstractEntityFormModifier
 
     public function apply(AbstractEntityForm $form): AbstractEntityForm
     {
-        if ($this->checkoutConfig->getIsCompanySearchInPaymentTile()) {
+        // Hyvä Checkout 1.3 renders a form in its context's element order. The
+        // order is set there rather than through field positions: the street
+        // field's position is the index of its first line, so changing it
+        // renames the input.
+        if ($this->checkoutConfig->getIsCompanySearchInPaymentTile() || !method_exists($form, 'context')) {
             return $form;
         }
 
-        $fields = array_values(array_filter(array_map([$form, 'getField'], self::ADDRESS_ORDER)));
-        $positions = array_map(static function ($field): int {
-            return $field->getSortOrder();
-        }, $fields);
-        sort($positions);
-        foreach ($fields as $index => $field) {
-            $field->setData(EntityFormElementInterface::POSITION, $positions[$index]);
+        return $form->registerModificationListener('two_company_sort_order', 'form:build', static function (AbstractEntityForm $form): void {
+            $elements = $form->context()->elements();
+            $elements->fill(self::arrange($elements->sort()->all()));
+        });
+    }
+
+    /**
+     * @param array<string, mixed> $elements keyed by field id, in the store's order
+     * @return array<string, mixed>
+     */
+    private static function arrange(array $elements): array
+    {
+        if (!isset($elements[AddressInterface::KEY_STREET])) {
+            return $elements;
         }
 
-        // From Hyvä Checkout 1.3 the form renders in the order of its context's
-        // elements, which the form's own sort() leaves untouched.
-        if (method_exists($form, 'context')) {
-            $form->registerModificationListener('two_company_sort_order', 'form:build', static function (AbstractEntityForm $form): void {
-                $form->context()->elements()->sort();
-            });
+        $address = array_intersect_key(array_flip(self::ADDRESS_ORDER), $elements);
+        $arranged = [];
+        foreach ($elements as $id => $element) {
+            if ($id === AddressInterface::KEY_STREET) {
+                foreach (array_keys($address) as $addressId) {
+                    $arranged[$addressId] = $elements[$addressId];
+                }
+            } elseif (!isset($address[$id])) {
+                $arranged[$id] = $element;
+            }
         }
 
-        return $form;
+        return $arranged;
     }
 }

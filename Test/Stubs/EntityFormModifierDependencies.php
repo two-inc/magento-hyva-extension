@@ -21,13 +21,6 @@ namespace Magento\Quote\Api\Data {
 }
 
 namespace Hyva\Checkout\Model\Form {
-    if (!interface_exists(EntityFormElementInterface::class, false)) {
-        interface EntityFormElementInterface
-        {
-            public const POSITION = 'position';
-        }
-    }
-
     if (!class_exists(AbstractEntityFormModifier::class, false)) {
         abstract class AbstractEntityFormModifier
         {
@@ -38,12 +31,27 @@ namespace Hyva\Checkout\Model\Form {
     if (!class_exists(EntityFormElementCollection::class, false)) {
         class EntityFormElementCollection
         {
-            /** @var int */
-            public $sorts = 0;
+            /** @var array<string, EntityField\AbstractEntityField> */
+            private $items = [];
+
+            /** @param array<string, EntityField\AbstractEntityField> $items */
+            public function fill(array $items): self
+            {
+                $this->items = $items;
+                return $this;
+            }
+
+            /** @return array<string, EntityField\AbstractEntityField> */
+            public function all(): array
+            {
+                return $this->items;
+            }
 
             public function sort(): self
             {
-                $this->sorts++;
+                uasort($this->items, static function ($a, $b): int {
+                    return $a->getSortOrder() - $b->getSortOrder();
+                });
                 return $this;
             }
         }
@@ -70,27 +78,26 @@ namespace Hyva\Checkout\Model\Form {
     if (!class_exists(AbstractEntityForm::class, false)) {
         class AbstractEntityForm
         {
-            /** @var array<string, EntityField\AbstractEntityField> */
-            public $fields = [];
-
             /** @var array<string, array<string, callable>> */
             public $listeners = [];
 
             /** @var AbstractEntityFormContext */
             private $context;
 
-            /** @param array<string, int> $positions */
+            /**
+             * The context's elements, in the order Hyvä's populate() leaves
+             * them, keyed by id.
+             *
+             * @param array<string, int> $positions
+             */
             public function __construct(array $positions)
             {
-                foreach ($positions as $name => $position) {
-                    $this->fields[$name] = new EntityField\AbstractEntityField($position);
-                }
                 $this->context = new AbstractEntityFormContext();
-            }
-
-            public function getField(string $name): ?EntityField\AbstractEntityField
-            {
-                return $this->fields[$name] ?? null;
+                $fields = [];
+                foreach ($positions as $id => $position) {
+                    $fields[$id] = new EntityField\AbstractEntityField($position);
+                }
+                $this->context->elements()->fill($fields);
             }
 
             public function registerModificationListener(string $name, string $event, callable $modifier): self
@@ -124,13 +131,6 @@ namespace Hyva\Checkout\Model\Form\EntityField {
             public function __construct(int $position)
             {
                 $this->position = $position;
-            }
-
-            /** @param mixed $value */
-            public function setData(string $key, $value): self
-            {
-                $this->position = $value;
-                return $this;
             }
 
             public function getSortOrder(): int

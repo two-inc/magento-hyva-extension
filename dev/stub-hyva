@@ -112,17 +112,9 @@ namespace Hyva\Checkout\Model\Form;
 
 class EntityFormElementCollection
 {
+    public function fill(array $elements): self { return $this; }
+    public function all(): array { return []; }
     public function sort(): self { return $this; }
-}
-PHP,
-
-    'Hyva/Checkout/Model/Form/EntityFormElementInterface.php' => <<<'PHP'
-<?php
-namespace Hyva\Checkout\Model\Form;
-
-interface EntityFormElementInterface
-{
-    const POSITION = 'position';
 }
 PHP,
 
