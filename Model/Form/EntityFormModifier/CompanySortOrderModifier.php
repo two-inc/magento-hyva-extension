@@ -10,55 +10,69 @@ namespace Two\GatewayHyva\Model\Form\EntityFormModifier;
 
 use Hyva\Checkout\Model\Form\AbstractEntityForm;
 use Hyva\Checkout\Model\Form\AbstractEntityFormModifier;
-use Hyva\Checkout\Model\Form\EntityField\AbstractEntityField;
 use Hyva\Checkout\Model\Form\EntityFormElementInterface;
 use Magento\Quote\Api\Data\AddressInterface;
+use Two\GatewayHyva\ViewModel\CheckoutConfig;
 
 /**
- * Modifier to position Country and Company fields before Street Address
+ * Orders the address fields for company search in the address form (ABN-627).
  *
- * Dynamically determines positions based on street field's current position,
- * placing country and company right before it.
+ * The buyer picks a country, which decides where the registry search looks,
+ * then searches for the company, and autofill fills the address below. So
+ * country and company come before the street, and the four half-width fields
+ * after it pair up as postcode + city and region + phone. With search in the
+ * payment tile the form keeps the store's own order.
  */
 class CompanySortOrderModifier extends AbstractEntityFormModifier
 {
-    public function apply(AbstractEntityForm $form): AbstractEntityForm
+    /**
+     * The address fields in display order. Each takes one of the positions the
+     * store gave these fields, so anything else the store placed around the
+     * address keeps its place relative to it.
+     */
+    private const ADDRESS_ORDER = [
+        AddressInterface::KEY_COUNTRY_ID,
+        AddressInterface::KEY_COMPANY,
+        AddressInterface::KEY_STREET,
+        AddressInterface::KEY_POSTCODE,
+        AddressInterface::KEY_CITY,
+        AddressInterface::KEY_REGION,
+        AddressInterface::KEY_TELEPHONE,
+    ];
+
+    /**
+     * @var CheckoutConfig
+     */
+    private $checkoutConfig;
+
+    public function __construct(CheckoutConfig $checkoutConfig)
     {
-        // Get street field's current position to place country and company before it
-        $streetPosition = $this->getStreetPosition($form);
-
-        $countryPosition = $streetPosition - 2;
-        $companyPosition = $streetPosition - 1;
-
-        // Move country before street
-        $form->modifyField(AddressInterface::KEY_COUNTRY_ID, function (
-            AbstractEntityField $field,
-        ) use ($countryPosition) {
-            $field->setData(
-                EntityFormElementInterface::POSITION,
-                $countryPosition,
-            );
-        });
-
-        // Move company right after country, before street
-        return $form->modifyField(AddressInterface::KEY_COMPANY, function (
-            AbstractEntityField $field,
-        ) use ($companyPosition) {
-            $field->setData(
-                EntityFormElementInterface::POSITION,
-                $companyPosition,
-            );
-        });
+        $this->checkoutConfig = $checkoutConfig;
     }
 
-    private function getStreetPosition(AbstractEntityForm $form): int
+    public function apply(AbstractEntityForm $form): AbstractEntityForm
     {
-        $streetField = $form->getField("street");
-        if ($streetField) {
-            return $streetField->getSortOrder();
+        if ($this->checkoutConfig->getIsCompanySearchInPaymentTile()) {
+            return $form;
         }
 
-        // Fallback to default street position if not found
-        return 7;
+        $fields = array_values(array_filter(array_map([$form, 'getField'], self::ADDRESS_ORDER)));
+        $positions = array_map(static function ($field): int {
+            return $field->getSortOrder();
+        }, $fields);
+        sort($positions);
+        foreach ($fields as $index => $field) {
+            $field->setData(EntityFormElementInterface::POSITION, $positions[$index]);
+        }
+
+        // From Hyvä Checkout 1.3 the form renders in the order of its context's
+        // elements, which the form's own sort() leaves untouched.
+        if (method_exists($form, 'context')) {
+            $form->registerModificationListener('two_company_sort_order', 'form:build', static function (AbstractEntityForm $form): void {
+                $form->context()->elements()->sort();
+            });
+        }
+
+        return $form;
     }
 }

@@ -91,17 +91,28 @@ class AbstractEntityForm
 {
     public function getField(string $name) { return null; }
     public function modifyField(string $name, callable $callback): self { return $this; }
+    public function registerModificationListener(string $name, string $event, callable $modifier): self { return $this; }
+    public function context(): AbstractEntityFormContext { return new AbstractEntityFormContext(); }
 }
 PHP,
 
-    'Hyva/Checkout/Model/Form/EntityField/AbstractEntityField.php' => <<<'PHP'
+    'Hyva/Checkout/Model/Form/AbstractEntityFormContext.php' => <<<'PHP'
 <?php
-namespace Hyva\Checkout\Model\Form\EntityField;
+namespace Hyva\Checkout\Model\Form;
 
-class AbstractEntityField
+class AbstractEntityFormContext
 {
-    public function setData(string $key, $value): self { return $this; }
-    public function getSortOrder(): int { return 0; }
+    public function elements(): EntityFormElementCollection { return new EntityFormElementCollection(); }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/EntityFormElementCollection.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form;
+
+class EntityFormElementCollection
+{
+    public function sort(): self { return $this; }
 }
 PHP,
 
