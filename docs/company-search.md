@@ -186,13 +186,17 @@ Which of the first two renders is decided by the core module's
 company, then the street** (ABN-627): the buyer picks a country, which decides
 where the registry searches, then searches for the company, and autofill fills
 the address below. `Model/Form/EntityFormModifier/CompanySortOrderModifier`
-reorders country, company, street, postcode, city, region and telephone into the
-positions the store gave those fields, so on a stock form the half-width fields
-pair as country + company, postcode + city and region + telephone. With search
-in the payment tile the form keeps the store's order. Hyvä Checkout 1.3 renders
-a form in its context's element order, which the form's own `sort()` leaves
-alone, so the modifier sorts the context on `form:build` (guarded with
-`method_exists`, since `composer.json` still allows 1.2).
+places country, company, street, postcode, city, region and telephone, in that
+order, where the street sits in the store's order, so on a stock form the
+half-width fields pair as country + company, postcode + city and region +
+telephone. Every other field keeps the store's order, and with search in the
+payment tile the whole form does. Hyvä Checkout 1.3 renders a form in its
+context's element order, which the form's own `sort()` leaves alone, so the
+modifier orders the context on `form:build`. It never changes a field's
+position: Hyvä reads the street field's position as the index of its first line,
+so moving it renames `street[0]`. Hyvä 1.2 forms have no context
+(`method_exists` guard; `composer.json` still allows 1.2) and keep the store's
+order.
 
 **Whether any mount searches is `CheckoutConfig::getIsCompanySearchEnabled()`**:
 off with that setting off, while the payment method is disabled (TWO-27227), and
