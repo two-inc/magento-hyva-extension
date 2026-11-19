@@ -182,6 +182,18 @@ Which of the first two renders is decided by the core module's
 `enable_company_search` setting — never both, never neither. See
 `CheckoutConfig::getIsCompanySearchInPaymentTile()`.
 
+**With search in the address form, both address forms show country, then
+company, then the street** (ABN-627): the buyer picks a country, which decides
+where the registry searches, then searches for the company, and autofill fills
+the address below. `Model/Form/EntityFormModifier/CompanySortOrderModifier`
+reorders country, company, street, postcode, city, region and telephone into the
+positions the store gave those fields, so on a stock form the half-width fields
+pair as country + company, postcode + city and region + telephone. With search
+in the payment tile the form keeps the store's order. Hyvä Checkout 1.3 renders
+a form in its context's element order, which the form's own `sort()` leaves
+alone, so the modifier sorts the context on `form:build` (guarded with
+`method_exists`, since `composer.json` still allows 1.2).
+
 **Whether any mount searches is `CheckoutConfig::getIsCompanySearchEnabled()`**:
 off with that setting off, while the payment method is disabled (TWO-27227), and
 while Two has rejected the key. The address-book modal's block mounts only where

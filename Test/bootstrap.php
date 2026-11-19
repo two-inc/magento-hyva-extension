@@ -17,6 +17,7 @@ require __DIR__ . '/Stubs/CheckoutTileCopy.php';
 require __DIR__ . '/Stubs/ApiKeyStatus.php';
 require __DIR__ . '/Stubs/GatewayMethodDependencies.php';
 require __DIR__ . '/Stubs/MethodMetaDataPluginDependencies.php';
+require __DIR__ . '/Stubs/EntityFormModifierDependencies.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';
