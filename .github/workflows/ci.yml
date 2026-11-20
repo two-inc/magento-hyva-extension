@@ -208,7 +208,7 @@ jobs:
         run: |
           docker run \
             --volume "$(pwd)/:/app/workdir" \
-            michielgerritsen/magento-coding-standard@sha256:48ad208ebbda2e60be6e6c4f1abfe41e75e6339619f109dbf0581624d79e815e \
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-coding-standard@sha256:48ad208ebbda2e60be6e6c4f1abfe41e75e6339619f109dbf0581624d79e815e \
             --severity=6
 
   di-compile:
@@ -227,7 +227,7 @@ jobs:
       - name: Start Magento docker container
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Check the image runs the latest PHP patch
         # TWO-27174: warns when the image is behind php.net's newest patch for
@@ -235,7 +235,7 @@ jobs:
         # base module; see dev/matrix-script-parity.sh.
         run: |
           bash dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
         # Ship only tracked files — avoids leaking .git/, dotfiles,
@@ -393,7 +393,7 @@ jobs:
         if: steps.compat.outputs.supported == 'true'
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Check the image runs the latest PHP patch
         if: steps.compat.outputs.supported == 'true'
@@ -402,7 +402,7 @@ jobs:
         # base module; see dev/matrix-script-parity.sh.
         run: |
           bash dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
         if: steps.compat.outputs.supported == 'true'
@@ -478,7 +478,7 @@ jobs:
       - name: Start Magento docker container
         run: |
           docker run --detach --name magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Check the image runs the latest PHP patch
         # TWO-27174: warns when the image is behind php.net's newest patch for
@@ -486,7 +486,7 @@ jobs:
         # base module; see dev/matrix-script-parity.sh.
         run: |
           bash dev/check-php-patch.sh magento-project-community-edition \
-            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+            europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
         run: |

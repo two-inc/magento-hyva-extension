@@ -52,7 +52,7 @@ set -euo pipefail
 # minors; it does NOT skip over image-less minors (see header note 2).
 SUPPORT_WINDOW=${SUPPORT_WINDOW:-3}
 
-CI_IMAGE_REPO="michielgerritsen/magento-project-community-edition"
+CI_IMAGE_REPO="europe-north1-docker.pkg.dev/two-artifacts/docker/michielgerritsen/magento-project-community-edition"
 
 # Combos we DELIBERATELY choose not to test even though a CI image exists.
 # This is NOT the place for "no image published yet" — that case is detected
