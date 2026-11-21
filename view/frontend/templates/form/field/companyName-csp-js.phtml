@@ -31,12 +31,6 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // Where `rest/V1/two/...` lives — see gateway_method-csp-js.phtml.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
-$isProxyAvailable = $configModel->getIsProxyAvailable();
-// The four below are read on the direct-call fallback only.
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
-$merchantShortName = $configModel->getMerchantShortName();
-$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -155,16 +149,10 @@ function <?= $gwBase ?>CompanySearchField() {
         manualEntryOffered: true,
         checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
         restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-        // Bare boolean, not quoted — see gateway_method-csp-js.phtml.
-        isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
-        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-        merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-        companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
         isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
         isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
         minSearchChars: <?= (int) $companySearchMinChars ?>,
-        countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+        countrySelectionMessage: '<?= $escaper->escapeJs(__('Select your country above to search for your company.')) ?>',
         getQuote: function () { return this.quoteData; },
         readSelection: function () { return twoAddressReadSelection(this.captureRole()); },
         writeSelection: function (patch) {
@@ -220,21 +208,23 @@ function <?= $gwBase ?>CompanySearchField() {
              * shipping company alone.
              */
             const role = this.captureRole();
-            const data = twoAddressReadSelection(role);
+            const stored = twoAddressReadSelection(role);
+            // TWO-26295: a company captured in another country than this
+            // form's is not restored. Guarded like the reads above, for the
+            // same CSP degradation.
+            const data = !window.twoGatewayCompanyRecordFits
+                || window.twoGatewayCompanyRecordFits(stored, this.resolveCountryCode(this.quoteData))
+                ? stored
+                : {};
             const identity = window.twoGatewayCompanyIdentity(role);
             // A sole-trader signup is live across rebuilds and its handshake
             // bails unless the mode is still `soletrader`, so the stored mode —
             // which that flow never writes — must not overwrite it.
+            // A record saying manual entry restores its name alone, never a
+            // number an earlier pick or sole trader left in it (TWO-26775).
             if (identity && !identity.isSoleTrader()) {
                 identity.captureMode(data.manual_mode ? 'manual' : 'registered');
-                identity.write(
-                    {
-                        companyName: data.company_name || '',
-                        companyId: data.company_id || '',
-                        companyIdSource: data.company_id_source || ''
-                    },
-                    { authoritative: true }
-                );
+                identity.write(window.twoGatewayRecordedCompany(data), { authoritative: true });
             }
 
             this.mountCompanyPopover();

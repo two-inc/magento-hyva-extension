@@ -11,7 +11,7 @@
         <section id="two_general">
             <group id="hyva" translate="label" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Hyva Extension</label>
+                <label>Hyvä extension</label>
                 <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Version</label>

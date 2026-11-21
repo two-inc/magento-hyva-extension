@@ -17,10 +17,12 @@ concurrency:
 # Tool name first so checks group naturally in the UI.
 
 jobs:
-  # dev/magento-support-matrix.sh is vendored byte-for-byte from the vanilla
-  # two-inc/magento-plugin repo (its `staging` branch is the source of truth —
-  # TWO-24998). This job fails CI red if the local copy has drifted, so the
-  # classifier can't silently rot across the three repos that share it.
+  # dev/magento-support-matrix.sh and dev/check-php-patch.sh are vendored
+  # byte-for-byte from the vanilla two-inc/magento-plugin repo (its `staging`
+  # branch is the source of truth, or on a PR the same-named branch while it has
+  # an open PR into `staging`: TWO-24998, TWO-27174). This job fails CI red if a
+  # local copy has drifted, so neither script can silently rot across the repos
+  # that share it.
   matrix-script-parity:
     name: Matrix-script parity
     runs-on: ${{ vars.RUNNER_STANDARD }}
@@ -44,16 +46,30 @@ jobs:
         # indistinguishable on the dashboard from one that ran and failed.
         run: bash dev/base-tile-copy-parity.sh
 
-  base-cache-tag-parity:
-    name: Base cache-tag parity
+  base-api-key-status-parity:
+    name: Base API-key status parity
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v7
-      - name: Check the stub's cache tag matches the base constant
+      - name: Check the base still declares the stubbed members and values
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Invoked through bash for the same reason as the job above.
-        run: bash dev/base-cache-tag-parity.sh
+        run: bash dev/base-api-key-status-parity.sh
+
+  # No hardcoded brand name on a surface a brand overlay cannot debrand. Runs
+  # the base module's own scanner from its `staging` branch over this tree, so
+  # the two repos share one rule (TWO-27218).
+  debrand-guard:
+    name: Debrand guard
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan templates, layouts and PHP literals for a hardcoded brand
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Invoked through bash for the same reason as the jobs above.
+        run: bash dev/debrand-guard.sh
 
   # Discovers the current Magento support window from upstream so the
   # PHPStan / DI-compile / lint matrices track Adobe's lifecycle without
@@ -157,6 +173,20 @@ jobs:
       - name: Run tests with coverage
         run: phpunit --coverage-clover coverage.xml --coverage-text
 
+      # The chain suite runs the buyer's chosen term from chip click to the quote
+      # payment against the base module's REAL charged-term resolver (ABN-621),
+      # so it needs the base's staging source, the same one the DI-compile leg
+      # below installs. Its bootstrap fails the run when the checkout is missing.
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
+      - name: Run the selected-term chain suite
+        run: phpunit -c phpunit.chain.xml
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -199,6 +229,14 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
+      - name: Check the image runs the latest PHP patch
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
       - name: Upload tracked source into container
         # Ship only tracked files — avoids leaking .git/, dotfiles,
         # or any untracked working-tree state into the CI container.
@@ -232,9 +270,9 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
-  # The base module's floor tracks a route set that exists on the base repo's
-  # `staging` branch only — no release carries it yet (see
-  # `getIsProxyAvailable()` in AGENTS.md). Release timing there is a separate,
+  # The base module's floor (^4.1.0) exists on the base repo's `staging` branch
+  # only: no tagged release carries it yet (see the floor note in
+  # docs/api-proxy.md). Release timing there is a separate,
   # unrelated decision, so this leg proves the real dependency: this branch
   # against that staging code, installed via path repo instead of Packagist.
   # This is the required gate for merge; `di-compile` above stays pointed at
@@ -357,6 +395,15 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
+      - name: Check the image runs the latest PHP patch
+        if: steps.compat.outputs.supported == 'true'
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
       - name: Upload tracked source into container
         if: steps.compat.outputs.supported == 'true'
         # Ship only tracked files — avoids leaking .git/, dotfiles,
@@ -401,6 +448,82 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
+  # Static analysis at the base module's level (phpstan.neon), over this
+  # module's PHP and templates, against the same Hyvä / Magewire stubs and base
+  # `staging` source as the leg above (TWO-27218). The image ships PHPStan.
+  #
+  # Not run on the post-merge push to `main`: that is the run release.yml
+  # consumes, and a maintenance release on an older major cannot install
+  # against base staging (see the compat step above). Every change reaching
+  # `main` was analysed on its pull request.
+  phpstan:
+    name: PHPStan (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    needs: discover-magento-matrix
+    if: ${{ !(github.event_name == 'push' && github.ref_name == 'main') }}
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Check the image runs the latest PHP patch
+        # TWO-27174: warns when the image is behind php.net's newest patch for
+        # its PHP minor, however long; never fails the leg. Vendored from the
+        # base module; see dev/matrix-script-parity.sh.
+        run: |
+          bash dev/check-php-patch.sh magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Upload tracked source into container
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-hyva-extension
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-hyva-extension
+
+      - name: Upload base module source into container
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2
+          git -C base-module ls-files -z | tar --null -cf - -C base-module -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/two-magento2
+
+      - name: Stub Hyvä / Magewire (no commercial credentials in CI)
+        run: |
+          docker exec magento-project-community-edition \
+            php /data/extensions/magento-hyva-extension/dev/stub-hyva
+
+      - name: Install extension from uploaded source
+        run: |
+          docker exec magento-project-community-edition \
+            composer config repositories.two-magento2 path /data/extensions/two-magento2
+          docker exec magento-project-community-edition \
+            composer config repositories.local path '/data/extensions/magento-hyva-extension'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2-hyva-checkout:*@dev' --no-plugins
+
+      - name: Activate extension
+        # Compiled so generated factories and interceptors resolve for PHPStan.
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+      - name: Run PHPStan
+        # This module only: the base module is analysed by its own CI.
+        run: |
+          docker exec magento-project-community-edition /bin/bash -c \
+            "./vendor/bin/phpstan analyse --no-progress -c /data/extensions/magento-hyva-extension/phpstan.neon /data/extensions/magento-hyva-extension"
+
   # A real gate, deliberately not continue-on-error and not conditional
   # (TWO-25245). The company-search defects this suite pins — the magewire
   # overlay latching on forever after "type three characters then backspace", a
@@ -418,7 +541,21 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci --no-audit --no-fund
+
+      # The suites that read the base plugin's shared capture modules
+      # (panel-strings-coverage, shared-modules-smoke, company-field-tab-stop)
+      # skip without a checkout of it, so this job gives them base staging
+      # (TWO-27211).
+      - name: Checkout base module (staging)
+        uses: actions/checkout@v7
+        with:
+          repository: two-inc/magento-plugin
+          ref: staging
+          path: base-module
+
       - run: npm run test:js
+        env:
+          TWO_MAGENTO_PLUGIN_DIR: ${{ github.workspace }}/base-module
 
   # NOTE: no `prettier --check` gate. It was considered (TWO-24999) but
   # deferred: the tree is not currently prettier-clean (23 files), so the gate

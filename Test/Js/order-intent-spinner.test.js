@@ -865,6 +865,7 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       expect(component.orderIntentDecisions["222222222"]).toEqual({
         name: "Beta Ltd",
         approved: false,
+        basket: "",
       });
     });
 
@@ -970,10 +971,12 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       expect(component.orderIntentDecisions["222222222"]).toEqual({
         name: "Beta Ltd",
         approved: false,
+        basket: "",
       });
       expect(component.orderIntentDecisions["111111111"]).toEqual({
         name: "Alpha Ltd",
         approved: true,
+        basket: "",
       });
 
       // Nothing about B is painted while A is on screen…

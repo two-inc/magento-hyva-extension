@@ -79,10 +79,11 @@ class MethodMetaDataPlugin
             if (!$this->systemConfigPayment->canDisplayMethodIcons()) {
                 $result = "";
             }
-            $block = $this->layout->createBlock(TemplateBlock::class);
-            $blockHtml = $block
-                ->setTemplate($iconProvider["template"])
-                ->toHtml();
+            $blockHtml = $this->layout->createBlock(
+                TemplateBlock::class,
+                "",
+                ["data" => ["template" => $iconProvider["template"]]]
+            )->toHtml();
             // Either half can be withheld, and an empty wrapper still occupies
             // its padding and its share of the row. trim(), not a byte compare:
             // a template hint or an html-after observer can pad a withheld

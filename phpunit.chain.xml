@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The chain suite: the buyer's chosen term from chip click to the quote payment,
+  run against the base module's real charged-term resolver. Needs a checkout of
+  the base module (see Test/bootstrap-chain.php), so it is a config of its own and
+  not part of the default unit run:  phpunit -c phpunit.chain.xml
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="Test/bootstrap-chain.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="Chain">
+            <directory>Test/Chain/</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>
