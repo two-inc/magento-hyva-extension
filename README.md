@@ -1,6 +1,6 @@
 # Two Gateway Hyva Extension
 
-- **Two Gateway Module Version**: 3.1.0
+- **Two Gateway Module Version**: 4.0.0
 
 ## Introduction
 
