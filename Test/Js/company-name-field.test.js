@@ -31,8 +31,12 @@
 "use strict";
 
 const H = require("./hyva-harness");
+const fs = require("fs");
+const path = require("path");
 
 const COMPONENT_NAME = "twoGatewayHyvaCompanySearchField";
+// The attribute every autofill write carries (TWO-27212).
+const MARK = "data-two-autofilled-value";
 
 describe("company-name field picker", () => {
   let env;
@@ -58,6 +62,7 @@ describe("company-name field picker", () => {
       '  <input name="city" value="" />',
       '  <input name="postcode" value="" />',
       '  <input name="street[0]" value="" />',
+      '  <input name="telephone" value="" />',
       "  <div><div><div>",
       '    <div id="company-root" class="two-company-search" data-two-capture-host="address">',
       '      <input type="text" id="company-field" data-two-capture-field value="" />',
@@ -137,7 +142,7 @@ describe("company-name field picker", () => {
   }
 
   test("custom headers reach the address-step surface's own capture config", () => {
-    // Never wired before now — see AGENTS.md's autofill exception. Default
+    // Never wired before now — see docs/api-proxy.md's autofill exception. Default
     // harness value is '{}'; the header itself is only ever read by the
     // shared sole-trader.js this repo does not test.
     expect(capture().config().customHeaders).toEqual({});
@@ -432,6 +437,8 @@ describe("company-name field picker", () => {
         company_name: "Acme Widgets",
         company_id: "111",
         company_id_source: "registry",
+        // TWO-26295: the country the company was captured in.
+        company_country: "GB",
         manual_mode: false,
       });
     });
@@ -472,6 +479,12 @@ describe("company-name field picker", () => {
       expect(document.querySelector('input[name="street[0]"]').value).toBe(
         "1 Example Road",
       );
+      // TWO-27212: each written field is marked with what was written.
+      expect(
+        ["city", "postcode", "street[0]"].map((name) =>
+          document.querySelector('input[name="' + name + '"]').getAttribute(MARK),
+        ),
+      ).toEqual(["Oslo", "0150", "1 Example Road"]);
     });
 
     test("a failed detail lookup leaves what the buyer typed alone", async () => {
@@ -484,6 +497,415 @@ describe("company-name field picker", () => {
       expect(document.querySelector('input[name="city"]').value).toBe(
         "Typed by the buyer",
       );
+    });
+
+    describe("the registry phone (TWO-27160)", () => {
+      const PHONE_A = "+47 22 00 00 01";
+      const PHONE_B = "+47 22 00 00 02";
+      let picks = 0;
+
+      /** @returns {HTMLInputElement} */
+      function telephone() {
+        return document.querySelector('input[name="telephone"]');
+      }
+
+      /**
+       * Pick a fresh company and settle its detail lookup.
+       *
+       * @param {string|number} reply a phone (`""` for an address with none),
+       *   `"no address"`, `"network"`, or an HTTP status the relay passed on
+       */
+      async function pick(reply) {
+        picks += 1;
+        const noLookup = reply === "no lookup";
+        component.selectItem({
+          companyName: "Company " + picks,
+          companyId: String(picks),
+          lookupId: noLookup ? "" : "lookup-" + picks,
+        });
+        if (noLookup) return;
+        const call = fetchStub.lastSearch();
+        if (reply === "network") call.networkError();
+        else if (typeof reply === "number")
+          call.respondProxy(null, false, reply);
+        else if (reply === "no address") call.respondProxy({ addresses: [] });
+        else
+          call.respondProxy({
+            addresses: [{ city: "Oslo", phone_number: reply }],
+          });
+        await H.flushPromises();
+      }
+
+      /** The merchant turns address search off. */
+      function searchOff() {
+        component.isAddressSearchEnabled = false;
+      }
+
+      /** The capture controller's pick of a company with no lookup id. */
+      function controllerPickWithNoLookup() {
+        picks += 1;
+        component.captureAddressLookup({
+          text: "Company " + picks,
+          companyId: String(picks),
+          lookupId: "",
+        });
+      }
+
+      /** @param {string} value what the buyer leaves in the field */
+      function type(value) {
+        telephone().value = value;
+      }
+
+      /** @param {string} value a sole trader's verified phone */
+      function soleTrader(value) {
+        component.isAddressAutopopulationEnabled = true;
+        component.captureApplyTelephone(value);
+      }
+
+      /*
+       * The last column counts the `input` events the telephone field got:
+       * `wire:model.defer` saves the phone with the quote only on that event,
+       * so every write and every clear has to announce itself, and a field
+       * left alone must not.
+       */
+      test.each([
+        [
+          "a pick with a phone fills an empty field",
+          [() => pick(PHONE_A)],
+          PHONE_A,
+          1,
+        ],
+        [
+          "a registry phone replaces a typed one",
+          [() => type("+44 typed"), () => pick(PHONE_A)],
+          PHONE_A,
+          1,
+        ],
+        [
+          "a re-pick's phone replaces the previous pick's",
+          [() => pick(PHONE_A), () => pick(PHONE_B)],
+          PHONE_B,
+          2,
+        ],
+        ["the phone is trimmed", [() => pick(" " + PHONE_A + " ")], PHONE_A, 1],
+        [
+          "a pick with no phone clears the previous pick's",
+          [() => pick(PHONE_A), () => pick("")],
+          "",
+          2,
+        ],
+        [
+          "a re-pick with no address clears it",
+          [() => pick(PHONE_A), () => pick("no address")],
+          "",
+          2,
+        ],
+        [
+          "a failed re-pick clears it",
+          [() => pick(PHONE_A), () => pick(500)],
+          "",
+          2,
+        ],
+        [
+          "a rate-limited re-pick clears it",
+          [() => pick(PHONE_A), () => pick(429)],
+          "",
+          2,
+        ],
+        [
+          "a re-pick lost on the network clears it",
+          [() => pick(PHONE_A), () => pick("network")],
+          "",
+          2,
+        ],
+        [
+          "a pick with no phone keeps a typed one",
+          [() => type("+44 typed"), () => pick("")],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a failed pick keeps a typed one",
+          [() => type("+44 typed"), () => pick(500)],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a pick with no phone keeps an edited registry phone",
+          [() => pick(PHONE_A), () => type("+47 edited"), () => pick("")],
+          "+47 edited",
+          1,
+        ],
+        [
+          "a sole trader's verified phone survives a pick with no phone",
+          [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("")],
+          PHONE_A,
+          2,
+        ],
+        // TWO-27212: a pick that looks nothing up still replaces the company.
+        [
+          "a re-pick with no lookup id clears the previous pick's",
+          [() => pick(PHONE_A), () => pick("no lookup")],
+          "",
+          2,
+        ],
+        [
+          "the controller's re-pick with no lookup id clears it",
+          [() => pick(PHONE_A), controllerPickWithNoLookup],
+          "",
+          2,
+        ],
+        [
+          "a re-pick with no lookup id keeps a typed one",
+          [() => type("+44 typed"), () => pick("no lookup")],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a re-pick with no lookup id keeps an edited registry phone",
+          [() => pick(PHONE_A), () => type("+47 edited"), () => pick("no lookup")],
+          "+47 edited",
+          1,
+        ],
+        [
+          "the controller's re-pick with no lookup id keeps a typed one",
+          [() => type("+44 typed"), controllerPickWithNoLookup],
+          "+44 typed",
+          0,
+        ],
+        [
+          "a re-pick with no lookup id keeps a sole trader's verified phone",
+          [() => pick(PHONE_A), () => soleTrader(PHONE_A), () => pick("no lookup")],
+          PHONE_A,
+          2,
+        ],
+        // With address search off nothing is looked up or retracted, as on
+        // Luma: no registry phone can have been written that way.
+        [
+          "with address search off, a re-pick leaves the phone",
+          [() => pick(PHONE_A), searchOff, () => pick("no lookup")],
+          PHONE_A,
+          1,
+        ],
+        [
+          "with address search off, the controller's re-pick leaves it",
+          [() => pick(PHONE_A), searchOff, controllerPickWithNoLookup],
+          PHONE_A,
+          1,
+        ],
+      ])("%s", async (description, steps, expected, inputEvents) => {
+        let announced = 0;
+        telephone().addEventListener("input", () => (announced += 1));
+
+        for (const step of steps) await step();
+
+        expect([telephone().value, announced, description]).toEqual([
+          expected,
+          inputEvents,
+          description,
+        ]);
+      });
+
+      test.each([
+        [
+          "a sole trader's address",
+          () =>
+            component.captureApplyBuyerAddress({
+              city: "Ashford",
+              postal_code: "TN23 1AA",
+              street_address: "Mill Lane",
+            }),
+          "Ashford",
+          "",
+        ],
+        [
+          "a sole trader's phone",
+          () => soleTrader("+44 7700 900000"),
+          "",
+          "+44 7700 900000",
+        ],
+      ])(
+        "%s written while a pick's lookup is in flight is not overwritten by its reply",
+        async (_label, verify, city, phone) => {
+          component.selectItem({
+            companyName: "Slow",
+            companyId: "1",
+            lookupId: "lookup-slow",
+          });
+          const slow = fetchStub.lastSearch();
+          verify();
+
+          slow.respondProxy({
+            addresses: [{ city: "Oslo", phone_number: PHONE_A }],
+          });
+          await H.flushPromises();
+
+          expect(document.querySelector('input[name="city"]').value).toBe(city);
+          expect(telephone().value).toBe(phone);
+        },
+      );
+
+      test("a reply to an earlier pick writes nothing over the latest", async () => {
+        component.selectItem({
+          companyName: "Slow",
+          companyId: "1",
+          lookupId: "lookup-slow",
+        });
+        const slow = fetchStub.lastSearch();
+        component.selectItem({
+          companyName: "Fast",
+          companyId: "2",
+          lookupId: "lookup-fast",
+        });
+        fetchStub.lastSearch().respondProxy({
+          addresses: [{ city: "Bergen", phone_number: PHONE_B }],
+        });
+        await H.flushPromises();
+
+        slow.respondProxy({ addresses: [{ city: "Oslo" }] });
+        await H.flushPromises();
+
+        expect(telephone().value).toBe(PHONE_B);
+        expect(document.querySelector('input[name="city"]').value).toBe(
+          "Bergen",
+        );
+      });
+
+      /*
+       * TWO-27212: every write is marked with what it wrote, and a retraction
+       * takes the mark with it. `null` is no mark at all.
+       */
+      test.each([
+        ["a registry phone", [() => pick(PHONE_A)], PHONE_A],
+        ["a sole trader's phone", [() => soleTrader(PHONE_B)], PHONE_B],
+        ["a retracted registry phone", [() => pick(PHONE_A), () => pick("")], null],
+        ["a phone the buyer typed", [() => type("+44 typed"), () => pick("")], null],
+      ])("%s carries the autofill mark it should", async (description, steps, expected) => {
+        for (const step of steps) await step();
+
+        expect([telephone().getAttribute(MARK), description]).toEqual([expected, description]);
+      });
+
+      /*
+       * The edge case a Magewire morph opens (TWO-27212): the form is rebuilt
+       * between two picks, so the first pick's token would sit on a node the
+       * second pick never sees. Its late failure must still say nothing under
+       * the second company, whose role the notice belongs to.
+       */
+      test("a pick's late failure says nothing after the form is rebuilt and the company re-picked", async () => {
+        component.selectItem({ companyName: "Slow", companyId: "1", lookupId: "lookup-slow" });
+        const slow = fetchStub.lastSearch();
+
+        const old = document.getElementById("address-container");
+        const rebuilt = old.cloneNode(true);
+        rebuilt.querySelector("#company-root").replaceWith(root);
+        old.replaceWith(rebuilt);
+        component.selectItem({ companyName: "Next", companyId: "2", lookupId: "" });
+
+        slow.respondProxy(null, false, 500);
+        await H.flushPromises();
+
+        expect(
+          window.twoGatewayCompanyIdentity(component.captureRole()).addressNotice(),
+        ).toBe("");
+      });
+    });
+
+    describe("the address notice (TWO-27211)", () => {
+      let picks = 0;
+
+      /**
+       * @param {string|number} reply as the registry-phone cases' pick(), or
+       *   `"no lookup"` for a hit with no lookup id, which asks nothing
+       */
+      async function pick(reply) {
+        picks += 1;
+        component.selectItem({
+          companyName: "Company " + picks,
+          companyId: String(picks),
+          lookupId: reply === "no lookup" ? "" : "lookup-" + picks,
+        });
+        if (reply === "no lookup") {
+          await H.flushPromises();
+          return;
+        }
+        const call = fetchStub.lastSearch();
+        if (reply === "network") call.networkError();
+        else if (typeof reply === "number")
+          call.respondProxy(null, false, reply);
+        else if (reply === "no address") call.respondProxy({ addresses: [] });
+        else call.respondProxy({ addresses: [{ city: "Oslo" }] });
+        await H.flushPromises();
+      }
+
+      /** What the role's identity holds for its controller to render. */
+      function notice() {
+        return window.twoGatewayCompanyIdentity(component.captureRole()).addressNotice();
+      }
+
+      test.each([
+        ["an address arrives", ["address"], ""],
+        ["the lookup has no address", ["no address"], H.ESCAPED_STRING],
+        ["the lookup fails", [500], H.ESCAPED_STRING],
+        ["the lookup is lost on the network", ["network"], H.ESCAPED_STRING],
+        ["a later pick that fills the address withdraws it", [500, "address"], ""],
+        ["a later pick with no lookup id withdraws it", [500, "no lookup"], ""],
+      ])("%s", async (_description, replies, expected) => {
+        for (const reply of replies) await pick(reply);
+
+        expect(notice()).toBe(expected);
+      });
+
+      test("the controller's pick with no lookup id withdraws it too", async () => {
+        await pick(500);
+        expect(notice()).toBe(H.ESCAPED_STRING);
+
+        component.captureAddressLookup({ text: "Next", companyId: "9", lookupId: "" });
+
+        expect(notice()).toBe("");
+      });
+
+      /*
+       * A pick with no lookup id retires the pending one: its late reply,
+       * whatever it says, neither announces nor writes under the new company.
+       */
+      test.each([
+        ["the engine's pick", "fails", 500],
+        ["the engine's pick", "fills an address", "address"],
+        ["the controller's pick", "fails", 500],
+        ["the controller's pick", "fills an address", "address"],
+      ])("%s with no lookup id drops a pending lookup that later %s", async (path, _outcome, reply) => {
+        component.selectItem({ companyName: "Slow", companyId: "1", lookupId: "lookup-slow" });
+        const slow = fetchStub.lastSearch();
+
+        if (path === "the engine's pick") {
+          component.selectItem({ companyName: "Next", companyId: "2", lookupId: "" });
+        } else {
+          component.captureAddressLookup({ text: "Next", companyId: "2", lookupId: "" });
+        }
+        if (reply === "address") {
+          slow.respondProxy({ addresses: [{ city: "Oslo", phone_number: "+47 22 00 00 01" }] });
+        } else {
+          slow.respondProxy(null, false, reply);
+        }
+        await H.flushPromises();
+
+        expect([
+          notice(),
+          document.querySelector('input[name="city"]').value,
+          document.querySelector('input[name="telephone"]').value,
+        ]).toEqual(["", "", ""]);
+      });
+
+      test("the notice is the guide's sentence, through the catalogue", () => {
+        const template = fs.readFileSync(
+          path.join(H.REPO_ROOT, H.GATEWAY_METHOD_TEMPLATE),
+          "utf8",
+        );
+        expect(template).toContain(
+          "addressUnavailableMessage: '<?= $escaper->escapeJs(__('We could not fetch this company\\'s address. Please enter it below.')) ?>'",
+        );
+      });
     });
 
     test("a company with no lookup id skips the detail request entirely", async () => {
@@ -617,14 +1039,15 @@ describe("company-name field picker", () => {
     test("does not disturb an intact registry pick whose field is not re-read", () => {
       // The field is empty on a freshly restored step while state holds the
       // stored company. Driving a search from that field would drop a registry
-      // number nothing was wrong with and re-ask for it.
+      // number nothing was wrong with and re-ask for it. Restored as a
+      // registered capture: a record saying manual entry restores no number at
+      // all (TWO-26775, pinned in manual-entry-restore.test.js).
       env.browserStorage.setItem(
         H.COMPANY_SELECTION_KEY,
         JSON.stringify({
           company_name: "Acme Ltd",
           company_id: "111",
           company_id_source: "registry",
-          manual_mode: true,
         }),
       );
       const restored = H.mountComponent(env.alpineComponents[COMPONENT_NAME], {

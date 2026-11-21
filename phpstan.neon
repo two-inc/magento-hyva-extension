@@ -1,0 +1,24 @@
+parameters:
+    # Same level as the base module's PHPStan gate (TWO-27218).
+    level: 1
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # Magento's template engine injects $block and $escaper into every
+        # .phtml, and Hyvä adds $viewModels; Magewire adds $magewire to a
+        # component's template. None is assigned in the file itself, so the
+        # ignore is for templates only: in a class these are real defects.
+        -
+            messages:
+                - '#Variable \$(block|escaper|viewModels|magewire) might not be defined.#'
+                - '#Undefined variable: \$(block|escaper|viewModels|magewire)#'
+            path: view/*.phtml
+        # BP, the Magento root path, is defined when Magento boots
+        # (app/autoload.php), which PHPStan does not run.
+        - '#Constant BP not found.#'
+    fileExtensions:
+        - php
+        - phtml
+    excludePaths:
+        - Test/*
+        - dev/*
+        - node_modules/*

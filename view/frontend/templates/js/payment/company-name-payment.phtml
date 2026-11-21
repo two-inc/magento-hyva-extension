@@ -145,7 +145,7 @@ $methodCode = $brandedViewModel->getMethodCode();
     window.addEventListener("checkout:payment:method-activate", (event) => {
         const paymentMethod = event.detail.method;
 
-        /** Check if the selected payment method is this brand's Two method */
+        /** Check if the selected payment method is this brand's method */
         if (paymentMethod === '<?= $escaper->escapeJs($methodCode) ?>') {
             // TWO-25554: the record answers for a page whose identities are not seeded.
             const invoiceCompany = (window.twoGatewayResolveInvoiceCompany
@@ -157,8 +157,11 @@ $methodCode = $brandedViewModel->getMethodCode();
 
             const billingCompanySelectionData = (window.twoGatewayReadBillingCompany
                 || function () { return {}; })();
-            const capturedCompany = billingCompanySelectionData.company_name || "";
-            const capturedCompanyId = billingCompanySelectionData.company_id || "";
+            // A record saying manual entry holds no number (TWO-26775).
+            const recorded = (window.twoGatewayRecordedCompany
+                || function () { return { companyName: "", companyId: "" }; })(billingCompanySelectionData);
+            const capturedCompany = recorded.companyName;
+            const capturedCompanyId = recorded.companyId;
 
             if (capturedCompany && capturedCompanyId) {
                 window.dispatchEvent(new Event("dispatch-order-intent"));

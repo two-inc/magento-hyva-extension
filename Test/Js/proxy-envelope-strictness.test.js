@@ -59,16 +59,8 @@ describe("proxy envelope strictness", () => {
     });
   });
 
-  test("the engine defaults to the direct path when a caller omits the flag", () => {
-    // The direct call works on every base; proxying to an absent route is a failed checkout.
-    expect(window.twoGatewayCompanySearchEngine({}).isProxyAvailable).toBe(
-      false,
-    );
-  });
-
   test('a search whose envelope says ok:"false" fails, and never renders as "no matches"', async () => {
     const search = window.twoGatewayCompanySearch({
-      useProxy: true,
       restBaseUrl: REST_BASE,
       countryCode: "GB",
       query: "Acme",
@@ -83,12 +75,11 @@ describe("proxy envelope strictness", () => {
     expect(result.status).toBe("failed");
   });
 
-  test("a 404 on a route the capability check said exists is called out as a stale cache", async () => {
-    // isProxyAvailable already ruled out "base too old", so a 404 can only be a stale route cache.
+  test("a 404 on a proxy route is called out as a stale cache", async () => {
+    // Every base within the floor registers the route, so a 404 points at a stale route cache.
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     const search = window.twoGatewayCompanySearch({
-      useProxy: true,
       restBaseUrl: REST_BASE,
       countryCode: "GB",
       query: "Acme",
@@ -110,7 +101,6 @@ describe("proxy envelope strictness", () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const search = window.twoGatewayCompanySearch({
-      useProxy: true,
       restBaseUrl: REST_BASE,
       countryCode: "GB",
       query: "Acme",
@@ -129,7 +119,6 @@ describe("proxy envelope strictness", () => {
     const error = jest.spyOn(console, "error").mockImplementation(() => {});
 
     const search = window.twoGatewayCompanySearch({
-      useProxy: true,
       restBaseUrl: REST_BASE,
       countryCode: "GB",
       query: "Acme",

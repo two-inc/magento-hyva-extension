@@ -54,6 +54,51 @@ class GetQuoteDetails implements ArgumentInterface
     }
 
     /**
+     * An opaque fingerprint of the totals an order intent is priced on
+     * (TWO-26296).
+     *
+     * The base module prices the intent from the quote when the request
+     * arrives, so a check made before shipping and tax were known is priced on
+     * a basket the order will not have. The tile renders this key outside its
+     * re-render-ignored form, so every re-render carries the current one, and
+     * checks again when it differs from the key its last check was sent under.
+     * Hashed so the page still carries no amounts (TWO-26092). Both addresses
+     * are read because a virtual quote keeps its totals on the billing one,
+     * and each address's country with them, which the intent is sent under.
+     *
+     * Returns '' when the quote cannot be loaded; the tile then never sees a
+     * change and behaves as it did before the key existed.
+     */
+    public function getIntentBasketKey(): string
+    {
+        try {
+            $quote = $this->sessionCheckout->getQuote();
+        } catch (LocalizedException $exception) {
+            return '';
+        }
+
+        $parts = [
+            (string) $quote->getQuoteCurrencyCode(),
+            sprintf('%.4F', (float) $quote->getGrandTotal()),
+            (string) $quote->getItemsQty(),
+        ];
+        foreach ([$quote->getBillingAddress(), $quote->getShippingAddress()] as $address) {
+            if (!$address) {
+                $parts[] = '-';
+                continue;
+            }
+            // The intent goes out under the address's country too, so a move
+            // that changes nothing else is still a different check.
+            $parts[] = (string) $address->getCountryId();
+            $parts[] = sprintf('%.4F', (float) $address->getTaxAmount());
+            $parts[] = sprintf('%.4F', (float) $address->getShippingAmount());
+            $parts[] = (string) $address->getShippingMethod();
+        }
+
+        return hash('sha256', implode('|', $parts));
+    }
+
+    /**
      * Get all available shipping methods.
      */
     public function getQuoteDetails()
@@ -87,27 +132,6 @@ class GetQuoteDetails implements ArgumentInterface
             }
 
             $shippingAddress = $quote->getShippingAddress();
-            $quoteDetails[
-                "shipping_incl_tax"
-            ] = $shippingAddress->getShippingInclTax();
-            $quoteDetails[
-                "shipping_amount"
-            ] = $shippingAddress->getShippingAmount();
-            $quoteDetails[
-                "shipping_tax_amount"
-            ] = $shippingAddress->getShippingTaxAmount();
-            $quoteDetails["tax_amount"] = $shippingAddress->getTaxAmount();
-            $totals = $quote->getTotals();
-            if (isset($totals["grand_total"])) {
-                $grandTotal = $totals["grand_total"]->getValue();
-                $quoteDetails["grand_total"] = $grandTotal;
-            }
-            $baseCurrencyCode = $quote->getBaseCurrencyCode();
-            $quoteCurrencyCode = $quote->getQuoteCurrencyCode();
-            if ($baseCurrencyCode || $quoteCurrencyCode) {
-                $quoteDetails["base_currency_code"] = $baseCurrencyCode;
-                $quoteDetails["quote_currency_code"] = $quoteCurrencyCode;
-            }
             $billingAddress = $quote->getBillingAddress();
             if ($billingAddress) {
                 $quoteDetails["country_id"] = $billingAddress->getCountryId();
@@ -128,36 +152,37 @@ class GetQuoteDetails implements ArgumentInterface
             );
             $quoteDetails["default_country_id"] = $defaultCountry;
 
-            $quoteItems = $quote->getItems();
-            if ($quoteItems) {
-                $mediaUrl = $this->_storeManager
-                    ->getStore()
-                    ->getBaseUrl(
-                        \Magento\Framework\UrlInterface::URL_TYPE_MEDIA,
-                    );
-                $items = [];
-                foreach ($quoteItems as $item) {
-                    $items[] = [
-                        "name" => $item->getName(),
-                        "description" => $item->getDescription() ?? "",
-                        "discount_amount" => $item->getDiscountAmount(),
-                        "row_total_incl_tax" => $item->getRowTotalInclTax(),
-                        "row_total" => $item->getRowTotal(),
-                        "qty" => $item->getQty(),
-                        "price" => $item->getPrice(),
-                        "tax_amount" => $item->getTaxAmount(),
-                        "tax_percent" => $item->getTaxPercent(),
-                        "thumbnail" =>
-                            $mediaUrl . $item->getProduct()->getThumbnail(),
-                        "is_virtual" => $item->getIsVirtual(),
-                    ];
-                }
-                $quoteDetails["items"] = $items;
-            }
             return $quoteDetails;
         } catch (LocalizedException $exception) {
             // Return empty array instead of null to prevent JS errors
             return [];
         }
+    }
+
+    /**
+     * The quote's billing and shipping countries as they are now (TWO-26295).
+     *
+     * getQuoteDetails() feeds the payment tile's form, which re-render ignores,
+     * so its countries are the ones from page load. A logged-in buyer who
+     * picks a saved address has no country field on the page to read
+     * instead, so the tile reads these, rendered outside that form on every
+     * re-render, to know the country the order intent goes out under.
+     *
+     * @return array{billing: string, shipping: string}
+     */
+    public function getLiveAddressCountries(): array
+    {
+        try {
+            $quote = $this->sessionCheckout->getQuote();
+        } catch (LocalizedException $exception) {
+            return ['billing' => '', 'shipping' => ''];
+        }
+        $billing = $quote->getBillingAddress();
+        $shipping = $quote->getShippingAddress();
+
+        return [
+            'billing' => $billing ? (string) $billing->getCountryId() : '',
+            'shipping' => $shipping ? (string) $shipping->getCountryId() : '',
+        ];
     }
 }

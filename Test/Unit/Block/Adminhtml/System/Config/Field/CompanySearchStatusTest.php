@@ -10,11 +10,12 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\GatewayHyva\Block\Adminhtml\System\Config\Field\CompanySearchStatus;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * ABN-518. This extension withholds the company-search control on its own
- * API-key verdict, which the base module's health panel cannot answer for.
+ * ABN-518. This extension withholds the company-search control on the base
+ * module's API-key verdict, and keeps its own row until a tagged base release
+ * carries the base company-search row.
  */
 class CompanySearchStatusTest extends TestCase
 {
@@ -24,11 +25,12 @@ class CompanySearchStatusTest extends TestCase
     public function testTheRowNamesTheActiveReason(
         string $verdictStatus,
         ?int $code,
+        bool $companySearchInAddressStep,
         string $expectedState,
         string $expectedFragment,
         string $description
     ): void {
-        $block = $this->block($verdictStatus, $code);
+        $block = $this->block($verdictStatus, $code, $companySearchInAddressStep);
         $row = $block->getStatusRow();
 
         $this->assertSame($expectedState, $row['state'], $description);
@@ -36,19 +38,6 @@ class CompanySearchStatusTest extends TestCase
         // A verdict that could not be reached must not be painted as a fault.
         $expectedColour = $expectedState === 'ok' ? '#079633' : '#e02b27';
         $this->assertSame($expectedColour, $block->getStatusColour($row), $description);
-    }
-
-    /**
-     * With company search in the payment tile, the address-step gate this row
-     * reports decides nothing — reporting the verdict there would name a
-     * setting the merchant has deliberately turned off.
-     */
-    public function testCompanySearchInThePaymentTileIsNotAWithholding(): void
-    {
-        $row = $this->block(ApiKeyVerificationStatus::INVALID_KEY, 401, false)->getStatusRow();
-
-        $this->assertSame('ok', $row['state']);
-        $this->assertStringContainsString('Shown in the payment method', $row['value']);
     }
 
     /**
@@ -64,11 +53,12 @@ class CompanySearchStatusTest extends TestCase
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
 
-        $apiKeyStatus = $this->createMock(ApiKeyVerificationStatus::class);
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $apiKeyStatus->expects($this->once())->method('getStatus')->with($expectedStoreId)
-            ->willReturn(ApiKeyVerificationStatus::OK);
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->with($expectedStoreId)->willReturn(true);
+        $configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)->willReturn(true);
 
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturnCallback(
@@ -128,50 +118,123 @@ class CompanySearchStatusTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int|null, 2: string, 3: string, 4: string}>
+     * The verdict decides first, then the setting says where the control sits
+     * (TWO-27224). With address entry search off the control lives in the
+     * payment tile, so a missing or rejected key keeps it off the page there
+     * too, and any other verdict says it shows only where the tile does.
+     *
+     * @return array<string, array{0: string, 1: int|null, 2: bool, 3: string, 4: string, 5: string}>
      */
     public static function verdicts(): array
     {
         return [
             'verified' => [
-                ApiKeyVerificationStatus::OK, null, 'ok', 'Shown at checkout',
+                ApiKeyStatus::OK, null, true, 'ok', 'Shown at checkout',
                 'a working integration says so',
             ],
-            'no key saved' => [
-                ApiKeyVerificationStatus::NOT_CONFIGURED, null, 'withheld', 'no API key is saved',
-                'an unconfigured install is not a rejected key',
+            'verified, address entry search off' => [
+                ApiKeyStatus::OK, null, false, 'ok', 'Shown in the payment method when it is offered',
+                'with address entry search off the row names the tile and its condition',
             ],
-            'key rejected' => [
-                ApiKeyVerificationStatus::INVALID_KEY, 401, 'withheld', 'the API key was rejected',
-                'a definitive rejection names both key and environment',
+            'nothing saved as the key' => [
+                ApiKeyStatus::NOT_CONFIGURED, null, true, 'withheld', 'no API key is saved',
+                'an install with no key is told to save one',
             ],
-            'service error' => [
-                ApiKeyVerificationStatus::SERVICE_ERROR, 503, 'ok', 'Shown at checkout',
+            'nothing saved as the key, address entry search off' => [
+                ApiKeyStatus::NOT_CONFIGURED, null, false, 'withheld', 'no API key is saved',
+                'a missing key keeps the tile, and so the control, off the page',
+            ],
+            'refused key' => [
+                ApiKeyStatus::INVALID_KEY, 401, true, 'withheld', 'the API key was rejected',
+                'a refusal points the admin at key and environment',
+            ],
+            'refused key, address entry search off' => [
+                ApiKeyStatus::INVALID_KEY, 401, false, 'withheld', 'the API key was rejected',
+                'moving the control into the tile does not escape a rejection',
+            ],
+            'server-side failure' => [
+                ApiKeyStatus::SERVICE_ERROR, 503, true, 'ok', 'Shown at checkout',
                 'ABN-533: a transient verdict falls through to the cached record',
             ],
-            'unreachable' => [
-                ApiKeyVerificationStatus::UNREACHABLE, null, 'ok', 'Shown at checkout',
-                'the same for a store that cannot reach us at all',
+            'server-side failure, address entry search off' => [
+                ApiKeyStatus::SERVICE_ERROR, 503, false, 'ok', 'Shown in the payment method when it is offered',
+                'a transient verdict in the tile falls through just the same',
             ],
-            'other error' => [
-                ApiKeyVerificationStatus::ERROR, 404, 'ok', 'Shown at checkout',
+            'API out of reach' => [
+                ApiKeyStatus::UNREACHABLE, null, true, 'ok', 'Shown at checkout',
+                'and likewise when the API cannot be reached',
+            ],
+            'API out of reach, address entry search off' => [
+                ApiKeyStatus::UNREACHABLE, null, false, 'ok', 'Shown in the payment method when it is offered',
+                'losing the API is no reason to report the tile control gone',
+            ],
+            'unclassified failure' => [
+                ApiKeyStatus::ERROR, 404, true, 'ok', 'Shown at checkout',
                 'an unclassified status is not evidence the key is wrong',
             ],
+            'unclassified failure, address entry search off' => [
+                ApiKeyStatus::ERROR, 404, false, 'ok', 'Shown in the payment method when it is offered',
+                'nor is it evidence when the control sits in the tile',
+            ],
+        ];
+    }
+
+    /**
+     * TWO-27227: a disabled method withholds the control whatever the verdict
+     * and wherever the setting places it. Re-enabling is every row of
+     * verdicts(), which builds an enabled method.
+     *
+     * @dataProvider disabledMethodCases
+     */
+    public function testADisabledMethodWithholdsTheRowWhateverTheVerdict(
+        string $verdictStatus,
+        bool $companySearchInAddressStep,
+        string $description
+    ): void {
+        $block = $this->block($verdictStatus, null, $companySearchInAddressStep, false);
+        $row = $block->getStatusRow();
+
+        $this->assertSame('withheld', $row['state'], $description);
+        $this->assertStringContainsString(
+            'the payment method is disabled. Check Enable payment method.',
+            $row['value'],
+            $description
+        );
+        $this->assertStringStartsWith('Not shown at checkout', $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string}>
+     */
+    public static function disabledMethodCases(): array
+    {
+        return [
+            'disabled, verified' => [ApiKeyStatus::OK, true,
+                'a verified key does not keep a disabled method searching'],
+            'disabled, verified, address entry search off' => [ApiKeyStatus::OK, false,
+                'nor does moving the control into the tile'],
+            'disabled, refused key' => [ApiKeyStatus::INVALID_KEY, true,
+                'the disabled method is named before the key'],
+            'disabled, API out of reach' => [ApiKeyStatus::UNREACHABLE, true,
+                'an outage does not reopen it'],
         ];
     }
 
     private function block(
         string $verdictStatus,
         ?int $code,
-        bool $companySearchInAddressStep = true
+        bool $companySearchInAddressStep,
+        bool $methodActive = true
     ): CompanySearchStatus {
         $reflection = new ReflectionClass(CompanySearchStatus::class);
         $block = $reflection->newInstanceWithoutConstructor();
 
-        $apiKeyStatus = $this->createMock(ApiKeyVerificationStatus::class);
-        $apiKeyStatus->method('getStatus')->willReturn($verdictStatus);
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $apiKeyStatus->method('getStatus')
+            ->willReturn(['status' => $verdictStatus, 'code' => $code, 'merchant' => null]);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('isCompanySearchEnabled')->willReturn($companySearchInAddressStep);
+        $configRepository->method('isActive')->willReturn($methodActive);
 
         $request = $this->createMock(RequestInterface::class);
         $request->method('getParam')->willReturn('');

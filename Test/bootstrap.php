@@ -14,9 +14,10 @@ require __DIR__ . '/Stubs/MagentoBlockArgumentInterface.php';
 require __DIR__ . '/Stubs/TermStillAvailablePlugin.php';
 require __DIR__ . '/Stubs/SurchargeDisplay.php';
 require __DIR__ . '/Stubs/CheckoutTileCopy.php';
-require __DIR__ . '/Stubs/TwoGatewayCacheType.php';
+require __DIR__ . '/Stubs/ApiKeyStatus.php';
 require __DIR__ . '/Stubs/GatewayMethodDependencies.php';
 require __DIR__ . '/Stubs/MethodMetaDataPluginDependencies.php';
+require __DIR__ . '/Stubs/EntityFormModifierDependencies.php';
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'Two\\GatewayHyva\\';

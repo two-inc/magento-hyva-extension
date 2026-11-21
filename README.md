@@ -1,6 +1,6 @@
 # Two Gateway Hyva Extension
 
-- **Two Gateway Module Version**: 3.0.1
+- **Two Gateway Module Version**: 4.0.0
 
 ## Introduction
 
@@ -11,7 +11,7 @@ This document provides instructions for installing the Two Gateway Payment Metho
 | Component          | Version | Link                                                                                                                    |
 | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Magento            | 2.4.x   | [Release Notes](https://experienceleague.adobe.com/en/docs/commerce-operations/release/notes/magento-open-source/2-4-8) |
-| Two Gateway Module | ^2.3.0  | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
+| Two Gateway Module | ^4.1.0  | [two-inc/magento-plugin](https://github.com/two-inc/magento-plugin)                                                     |
 | Hyvä Checkout      | ^1.2    | [Hyvä Checkout](https://www.hyva.io/hyva-checkout.html)                                                                 |
 
 ## Prerequisites
@@ -84,6 +84,21 @@ npm --prefix vendor/hyva-themes/magento2-default-theme/web/tailwind run build-pr
 
 Set up your Two Gateway credentials and settings in the Magento Admin:
 `Admin > Stores > Configuration > Two Gateway`
+
+### Product page promo message and "Buy with" button
+
+The base module's product page promo message and "Buy with <brand>" button are
+off by default and switched on separately in the Two Gateway configuration. Both
+work on Hyvä themes with no further setup. On Hyvä themes this module places
+both beneath the add-to-cart controls in the product information column, the
+button directly above the promo message as on Luma, and sizes their text to
+the theme's body text; Luma keeps the base module's placement and sizes. It also
+gives the button a Hyvä template (Luma keeps the base module's) that adds the
+product to the basket with the options and quantity chosen in the product form,
+then takes the buyer to checkout. In Hyvä Checkout the brand's payment method is
+then preselected, once, unless the buyer picks a method first or the method is
+not offered for the basket. The brand's name and texts come from the base
+module, as on Luma.
 
 ## Testing
 
