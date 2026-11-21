@@ -32,8 +32,8 @@ jobs:
       - uses: two-inc/actions-public/claude-reviewer@main
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_app_id: ${{ vars.TWO_INC_APP_ID }}
-          github_app_private_key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          github_app_client_id: ${{ vars.TWO_INC_READ_ONLY_APP_CLIENT_ID }}
+          github_app_private_key: ${{ secrets.TWO_INC_READ_ONLY_APP_PRIVATE_KEY }}
           extra_prompt: |
 
             ## Magento Hyvä Extension Specific Guidelines:
