@@ -152,6 +152,58 @@ describe("order intent through the plugin's own backend", () => {
     await expect(pending).rejects.toThrow();
   });
 
+  // ABN-643: the error handler tells a refusal from a failure by these fields.
+  test.each([
+    {
+      body: { error_code: "ORDER_INVALID" },
+      status: 400,
+      expected: {
+        status: 400,
+        errorCode: "ORDER_INVALID",
+        hasValidationErrors: false,
+      },
+      label: "an API refusal",
+    },
+    {
+      body: { error_json: [{ loc: ["body"], msg: "bad" }] },
+      status: 400,
+      expected: {
+        status: 400,
+        errorCode: undefined,
+        hasValidationErrors: true,
+      },
+      label: "a validation refusal",
+    },
+    {
+      body: { error_code: "PROXY_REFUSED" },
+      status: 503,
+      expected: {
+        status: 503,
+        errorCode: "PROXY_REFUSED",
+        hasValidationErrors: false,
+      },
+      label: "a module refusal",
+    },
+  ])(
+    "$label rejects carrying its status and error code",
+    async ({ body, status, expected, label }) => {
+      tile = mountTile();
+
+      const pending = tile.component.placeOrderIntent();
+      tile.fetchStub.last().respondProxy(body, false, status);
+      const error = await pending.catch((e) => e);
+
+      expect([
+        label,
+        {
+          status: error.status,
+          errorCode: error.errorCode,
+          hasValidationErrors: error.hasValidationErrors,
+        },
+      ]).toEqual([label, expected]);
+    },
+  );
+
   test("no company means no request at all", async () => {
     tile = mountTile();
     tile.component.companyId = "";

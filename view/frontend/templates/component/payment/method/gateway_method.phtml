@@ -409,9 +409,8 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
             /*
              * TWO-25326: the sibling "not approved / no intent" text. Same
              * shape and same reasoning as the approved notice above — a
-             * persistent inline element rather than a toast, gated on the
-             * identical brand switch (see
-             * CheckoutConfig::getOrderIntentNotAvailableNotice()) — but its own
+             * persistent inline element rather than a toast, its wording from
+             * CheckoutConfig::getOrderIntentNotAvailableNotice() — but its own
              * element, because it needs its own (unavailable, not success)
              * styling and its own `x-text`.
              *
@@ -421,31 +420,20 @@ $showChip = $magewire->showChip && count($magewire->availableTerms) > 1;
              * 5-second decline toast that used to fire alongside it is gone,
              * so one verdict produces exactly one notice.
              *
-             * Which makes the CONDITION on this element load-bearing beyond
-             * this file: when the brand switch suppresses the copy there is no
-             * element here at all, so `processOrderIntentSuccessResponse()`
-             * falls back to a toast for a decline that has no sentence to show.
-             *
-             * The two conditions are deliberately NOT the same test. This one
-             * decides whether the ELEMENT exists
-             * (`getOrderIntentNotAvailableNotice() !== null`); the JS one asks
-             * the wider question, whether there is a SENTENCE
-             * (`resolveOrderIntentNotAvailableNotice() === ''`), which is also
-             * true for copy that is present but unusable and would otherwise
-             * render this element empty and silent. Absent copy is the case
-             * where both agree, and it is the case this condition exists for.
+             * Rendered whatever the brand switch says (ABN-643): a brand that
+             * withholds its own declined copy gets the platform sentence in this
+             * box, because a decline is what disabled the button and is never
+             * silent.
              */
             ?>
-            <?php if ($configModel->getOrderIntentNotAvailableNotice() !== null): ?>
-                <div
-                    class="two-order-intent-box two-order-intent-message unavailable"
-                    x-cloak
-                    role="status"
-                    data-name="order_intent_not_available_message"
-                    x-show="twoTileNotAvailableVisible"
-                    x-text="orderIntentNotAvailableNotice"
-                ></div>
-            <?php endif ?>
+            <div
+                class="two-order-intent-box two-order-intent-message unavailable"
+                x-cloak
+                role="status"
+                data-name="order_intent_not_available_message"
+                x-show="twoTileNotAvailableVisible"
+                x-text="orderIntentNotAvailableNotice"
+            ></div>
             <?php
             /*
              * The THIRD verdict state (2026-08-05, cross-platform order-intent

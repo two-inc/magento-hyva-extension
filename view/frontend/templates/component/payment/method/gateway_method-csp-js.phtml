@@ -4143,7 +4143,7 @@ $quoteDetails = json_encode(
 
                 const failure = this.orderIntentFailures[companyId];
                 if (failure && failure.name === invoiceCompany.companyName) {
-                    return { kind: 'failure' };
+                    return { kind: 'failure', text: failure.text };
                 }
 
                 // A decision priced on another basket is no decision for this one (TWO-26296).
@@ -4220,8 +4220,9 @@ $quoteDetails = json_encode(
                 if (!record) return;
 
                 if (record.kind === 'failure') {
-                    if (!this.generalErrorMessage) return;
-                    this.orderIntentErrorNotice = this.generalErrorMessage;
+                    const failureText = record.text || this.generalErrorMessage;
+                    if (!failureText) return;
+                    this.orderIntentErrorNotice = failureText;
                     return;
                 }
 
@@ -4232,9 +4233,12 @@ $quoteDetails = json_encode(
                  * (This used to also decide whether to lower the progress row;
                  * the row is the setter's business now, and only its business.)
                  */
+                // A brand withholding its declined copy gets the sentence order
+                // create gives for the same decline (ABN-643): a decline is never
+                // silent, because it is what disabled the button.
                 const text = record.approved
                     ? this.resolveOrderIntentApprovedNotice()
-                    : this.resolveOrderIntentNotAvailableNotice();
+                    : (this.resolveOrderIntentNotAvailableNotice() || this.orderIntentDeclinedMessage);
                 if (!text) return;
 
                 if (record.approved) {
@@ -4411,7 +4415,16 @@ $quoteDetails = json_encode(
                         { payload: JSON.stringify(orderIntentRequestBody) }
                     );
 
-                    if (!envelope.ok) throw new Error(`HTTP error! Status: ${envelope.status}`);
+                    if (!envelope.ok) {
+                        // The status and error code ride on the error, so the
+                        // handler can tell an API refusal from a failure (ABN-643).
+                        const error = new Error(`HTTP error! Status: ${envelope.status}`);
+                        error.status = envelope.status;
+                        error.errorCode = envelope.body?.error_code;
+                        error.hasValidationErrors = Array.isArray(envelope.body?.error_json)
+                            && envelope.body.error_json.length > 0;
+                        throw error;
+                    }
                     return envelope.body;
                 } catch (error) {
                     console.error('Error in placeOrderIntent:', error);
@@ -4654,62 +4667,11 @@ $quoteDetails = json_encode(
                 this.placeOrderIntentFlag = Boolean(response.approved);
 
                 /*
-                 * ONE VERDICT, ONE NOTICE — and never the toast while the box
-                 * exists (TWO-25326).
-                 *
-                 * A decline used to raise a 5-second `dispatchMessages()` toast
-                 * AS WELL AS the in-tile "not available" box. A pair of notices for one
-                 * verdict, and the toast is the weaker of the two: it
-                 * self-dismisses, it lands at the top of the page rather than in
-                 * the tile the buyer is reading, and it says the same thing the
-                 * box beside their company already says and keeps saying.
-                 *
-                 * The box is not unconditional, though, which is why this is a
-                 * FALLBACK rather than a deletion. Its ELEMENT is
-                 * only rendered when the brand has not switched the notice copy
-                 * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
-                 * today does switch it off), so on such a brand deleting the toast
-                 * outright left a declined buyer with no signal whatsoever.
-                 *
-                 * Gated on the RESOLVED SENTENCE being empty, not on the copy
-                 * being null. The two agree for the brand switch,
-                 * which is the case that matters — `resolveOrderIntentNotAvailable
-                 * Notice()` returns '' for absent copy — but the resolver also
-                 * returns '' for copy that is present and unusable (a malformed
-                 * object missing its sentence, which it deliberately degrades to a
-                 * silent box for rather than throwing). Asking "is there a
-                 * sentence to show" covers both; asking "is the copy null" leaves
-                 * the malformed case with a rendered-but-empty box and no toast,
-                 * i.e. silence again, from the exact defensive branch that exists
-                 * to avoid a dead tile.
-                 *
-                 * Reached only past the `decidedCompanyId !== this.companyId`
-                 * guard above, so the resolver's reads of live `companyName` /
-                 * `companyId` are provably about the company this reply decided.
-                 *
-                 * Above the panel-open guard below, deliberately: that guard
-                 * defers only the BOX, and a brand with no box has nothing to
-                 * defer.
-                 *
-                 * The FAILED-check path (processOrderIntentErrorResponse below)
-                 * toasts unconditionally, for a different reason: it carries the
-                 * API's own diagnostic detail, which the box deliberately does not
-                 * show.
+                 * ONE VERDICT, ONE NOTICE (TWO-25326): a decline raises no toast.
+                 * The box always has a sentence for it, the brand's own or, where
+                 * the brand withholds it, the platform's (ABN-643), so a toast
+                 * would only repeat it somewhere the buyer is not reading.
                  */
-                if (!response.approved && this.resolveOrderIntentNotAvailableNotice() === '') {
-                    // Guarded HERE, not "like every other call site" — three of
-                    // the six in this file are unguarded, the failed-check toast
-                    // below among them. The reason to guard this one is that it
-                    // is the ONLY signal a declined buyer gets on a brand with
-                    // no inline notice, so a missing global must not turn "you
-                    // were declined" into a thrown error and nothing on screen.
-                    if (typeof window.dispatchMessages === 'function') {
-                        window.dispatchMessages(
-                            [{ type: 'error', text: this.orderIntentDeclinedMessage }],
-                            5000
-                        );
-                    }
-                }
 
                 /*
                  * RECORDED above, PAINTED by one place. This handler no longer
@@ -4753,6 +4715,15 @@ $quoteDetails = json_encode(
                 // method — it clears unconditionally before deciding what may be
                 // shown. An explicit clear here was a second copy of that.
                 let message = this.generalErrorMessage;
+
+                // An API refusal (a 4xx other than a rate limit, with no validation
+                // errors, not one this module made itself) reads as the decline it
+                // is, in the sentence order create gives for it (ABN-643). The box
+                // carries it and no toast repeats it.
+                const status = response?.status || 0;
+                const isRefusal = status >= 400 && status < 500 && status !== 429
+                    && response.errorCode !== 'PROXY_REFUSED' && !response.hasValidationErrors;
+                if (isRefusal) message = this.orderIntentDeclinedMessage;
 
                 if (response?.responseJSON) {
                     const { error_code, error_message, error_details, error_json } = response.responseJSON;
@@ -4812,7 +4783,7 @@ $quoteDetails = json_encode(
                 // per field instead) and wording to say it in. Deliberately not
                 // "the text to paint": the painting is refresh's, and it reads
                 // `generalErrorMessage` itself.
-                const isReportable = Boolean(message && this.generalErrorMessage);
+                const isReportable = Boolean(message && (isRefusal || this.generalErrorMessage));
 
                 if (isReportable && invoiceCompany.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
@@ -4825,6 +4796,7 @@ $quoteDetails = json_encode(
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
                             : invoiceCompany.companyName,
+                        text: isRefusal ? message : '',
                     };
                 }
 
@@ -4832,7 +4804,7 @@ $quoteDetails = json_encode(
                 // re-derive here, and refresh() decides whether a box may appear.
                 this.refreshOrderIntentVerdict();
 
-                if (message) {
+                if (message && !isRefusal) {
                     window.dispatchMessages([{ type: 'error', text: message }], 3000);
                 }
             },

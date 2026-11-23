@@ -659,23 +659,26 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       });
 
       /**
-       * The case that keeps a toast: the box's ELEMENT is only
-       * rendered when the brand has not switched the notice copy off, and a
-       * brand shipping today does switch it off — so a declined buyer there gets
-       * the toast rather than nothing at all.
-       *
-       * Null copy is the PRECONDITION this test sets up, not the gate. The gate
-       * asks the wider question — `resolveOrderIntentNotAvailableNotice() === ''`
-       * — which also catches copy that is present but unusable; the sibling test
-       * below covers that half.
+       * ABN-643: a brand that withholds its declined copy (null copy) or ships
+       * copy that resolves to nothing still has the decline stated, in the
+       * platform sentence, in the box and not a toast.
        */
-      test("a brand with no inline notice at all still gets told", () => {
-        // `beforeEach` already nulls both copies, which IS the suppressed
-        // brand; asserted explicitly so the precondition is not incidental.
-        expect(component.orderIntentNotAvailableCopy).toBeNull();
+      test.each([
+        { copy: null, case: "a brand with no declined copy at all" },
+        {
+          copy: {
+            // No `withCompany` string: resolves to '' for a named company.
+            withoutCompany: "NO",
+            companyNameToken: "{{companyName}}",
+            companyNumberToken: "{{companyNumber}}",
+          },
+          case: "copy that is present but unusable",
+        },
+      ])("$case: the box states the platform sentence", ({ copy, case: description }) => {
         component.companyName = "Alpha Ltd";
         component.companyId = "111111111";
         component.orderIntentDeclinedMessage = "SENTINEL-declined";
+        component.orderIntentNotAvailableCopy = copy;
 
         component.processOrderIntentSuccessResponse(
           { approved: false },
@@ -683,40 +686,35 @@ describe("order-intent progress indicator (TWO-25326)", () => {
           "Alpha Ltd",
         );
 
-        expect(env.messages).toEqual([
-          [{ type: "error", text: "SENTINEL-declined" }],
+        expect([description, component.orderIntentNotAvailableNotice]).toEqual([
+          description,
+          "SENTINEL-declined",
         ]);
-        // And there is genuinely no box to have shown instead.
-        expect(component.orderIntentNotAvailableNotice).toBe("");
-        expect(component.twoTileNotAvailableVisible).toBe(false);
+        expect([description, env.messages]).toEqual([description, []]);
       });
 
-      test("copy that is present but unusable falls back too", () => {
-        // The resolver deliberately degrades malformed copy to
-        // a SILENT box rather than throwing, so gating the fallback on "the
-        // copy is null" left exactly that defensive branch showing a rendered,
-        // empty box and no toast — silence, from the guard that exists to stop
-        // the tile going dead.
+      /**
+       * ABN-643: an API refusal reads as the decline it is, in the error box
+       * with no toast; anything else stays the general failure with its toast.
+       */
+      test.each([
+        { error: { status: 400, errorCode: "BUYER_REFUSED" }, notice: "SENTINEL-declined", toasts: 0, case: "an API refusal" },
+        { error: { status: 403 }, notice: "SENTINEL-declined", toasts: 0, case: "a bodyless API refusal" },
+        { error: { status: 400, hasValidationErrors: true }, notice: "SENTINEL-general-error", toasts: 1, case: "a validation refusal" },
+        { error: { status: 403, errorCode: "PROXY_REFUSED" }, notice: "SENTINEL-general-error", toasts: 1, case: "a refusal this module made" },
+        { error: { status: 429 }, notice: "SENTINEL-general-error", toasts: 1, case: "a rate limit" },
+        { error: { status: 503 }, notice: "SENTINEL-general-error", toasts: 1, case: "a server error" },
+        { error: {}, notice: "SENTINEL-general-error", toasts: 1, case: "a transport failure" },
+      ])("$case: the error box states the right sentence", ({ error, notice, toasts, case: description }) => {
         component.companyName = "Alpha Ltd";
         component.companyId = "111111111";
         component.orderIntentDeclinedMessage = "SENTINEL-declined";
-        component.orderIntentNotAvailableCopy = {
-          // No `withCompany` string: resolves to '' for a named company.
-          withoutCompany: "NO",
-          companyNameToken: "{{companyName}}",
-          companyNumberToken: "{{companyNumber}}",
-        };
+        component.generalErrorMessage = "SENTINEL-general-error";
 
-        component.processOrderIntentSuccessResponse(
-          { approved: false },
-          "111111111",
-          "Alpha Ltd",
-        );
+        component.processOrderIntentErrorResponse(error, "111111111", "Alpha Ltd");
 
-        expect(component.orderIntentNotAvailableNotice).toBe("");
-        expect(env.messages).toEqual([
-          [{ type: "error", text: "SENTINEL-declined" }],
-        ]);
+        expect([description, component.orderIntentErrorNotice]).toEqual([description, notice]);
+        expect([description, env.messages.length]).toEqual([description, toasts]);
       });
 
       test("an APPROVAL on that same brand raises nothing", () => {
@@ -1166,6 +1164,7 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       // On record, so closing the panel reports it.
       expect(component.orderIntentFailures["111111111"]).toEqual({
         name: "Alpha Ltd",
+        text: "",
       });
       closeCompanyPopover(env);
       component.refreshOrderIntentVerdict();
