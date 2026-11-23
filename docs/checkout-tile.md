@@ -126,9 +126,12 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the page rather than beside the company it is about, so it could only repeat
   what the box already says permanently. The box always has a sentence for a
   decline (the brand's, or the platform's where the brand withholds it, ABN-643),
-  so a decline never toasts. An API refusal (a 4xx other than a rate limit, with
-  no validation errors and not made by this module) is stated in the error box in
-  the same platform sentence, also without a toast. Any other FAILED check keeps
+  so a decline never toasts. An API refusal (a 4xx the API gave through the
+  proxy envelope, other than a rate limit, with no validation errors and not made
+  by this module) is stated in the error box in the same platform sentence, also
+  without a toast. A fault the shop's own route raises (a 404 after a missed
+  cache flush, a webapi input fault) carries no `upstream` mark on its error and
+  is never read as a refusal. Any other FAILED check keeps
   its toast, because that one carries the API's own diagnostic strings and the
   box deliberately shows the general wording instead.
 - **Every order-intent gate asks `twoGatewayInvoiceCompany()`** (TWO-25554)

@@ -4418,7 +4418,11 @@ $quoteDetails = json_encode(
                     if (!envelope.ok) {
                         // The status and error code ride on the error, so the
                         // handler can tell an API refusal from a failure (ABN-643).
+                        // `upstream` marks a reply the API gave through the
+                        // envelope; a fault the shop's own route raised throws
+                        // from twoGatewayProxyPost without it.
                         const error = new Error(`HTTP error! Status: ${envelope.status}`);
+                        error.upstream = true;
                         error.status = envelope.status;
                         error.errorCode = envelope.body?.error_code;
                         error.hasValidationErrors = Array.isArray(envelope.body?.error_json)
@@ -4716,12 +4720,15 @@ $quoteDetails = json_encode(
                 // shown. An explicit clear here was a second copy of that.
                 let message = this.generalErrorMessage;
 
-                // An API refusal (a 4xx other than a rate limit, with no validation
-                // errors, not one this module made itself) reads as the decline it
-                // is, in the sentence order create gives for it (ABN-643). The box
-                // carries it and no toast repeats it.
+                // An API refusal (a 4xx the API gave through the proxy envelope,
+                // other than a rate limit, with no validation errors, not one this
+                // module made itself) reads as the decline it is, in the sentence
+                // order create gives for it (ABN-643). The box carries it and no
+                // toast repeats it. A fault the shop's own route raised (a 404
+                // after a missed cache flush) is not a decline and stays general.
                 const status = response?.status || 0;
-                const isRefusal = status >= 400 && status < 500 && status !== 429
+                const isRefusal = response?.upstream === true
+                    && status >= 400 && status < 500 && status !== 429
                     && response.errorCode !== 'PROXY_REFUSED' && !response.hasValidationErrors;
                 if (isRefusal) message = this.orderIntentDeclinedMessage;
 
@@ -4796,7 +4803,9 @@ $quoteDetails = json_encode(
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
                             : invoiceCompany.companyName,
-                        text: isRefusal ? message : '',
+                        // The fixed sentence, never `message`: the API's own
+                        // text must not reach the persistent box.
+                        text: isRefusal ? this.orderIntentDeclinedMessage : '',
                     };
                 }
 

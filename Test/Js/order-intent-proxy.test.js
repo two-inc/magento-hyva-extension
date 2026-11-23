@@ -153,56 +153,32 @@ describe("order intent through the plugin's own backend", () => {
   });
 
   // ABN-643: the error handler tells a refusal from a failure by these fields.
+  // Only a reply the API gave through the envelope is `upstream`; a fault the
+  // shop's own route raised (a 404 after a missed cache flush, a webapi 400)
+  // never is, whatever its status.
   test.each([
-    {
-      body: { error_code: "ORDER_INVALID" },
-      status: 400,
-      expected: {
-        status: 400,
-        errorCode: "ORDER_INVALID",
-        hasValidationErrors: false,
-      },
-      label: "an API refusal",
-    },
-    {
-      body: { error_json: [{ loc: ["body"], msg: "bad" }] },
-      status: 400,
-      expected: {
-        status: 400,
-        errorCode: undefined,
-        hasValidationErrors: true,
-      },
-      label: "a validation refusal",
-    },
-    {
-      body: { error_code: "PROXY_REFUSED" },
-      status: 503,
-      expected: {
-        status: 503,
-        errorCode: "PROXY_REFUSED",
-        hasValidationErrors: false,
-      },
-      label: "a module refusal",
-    },
-  ])(
-    "$label rejects carrying its status and error code",
-    async ({ body, status, expected, label }) => {
-      tile = mountTile();
+    { settle: (c) => c.respondProxy({ error_code: "ORDER_INVALID" }, false, 400), expected: { upstream: true, status: 400, errorCode: "ORDER_INVALID", hasValidationErrors: false }, label: "an API refusal" },
+    { settle: (c) => c.respondProxy({ error_json: [{ loc: ["body"], msg: "bad" }] }, false, 400), expected: { upstream: true, status: 400, errorCode: undefined, hasValidationErrors: true }, label: "a validation refusal" },
+    { settle: (c) => c.respondProxy({ error_code: "PROXY_REFUSED" }, false, 503), expected: { upstream: true, status: 503, errorCode: "PROXY_REFUSED", hasValidationErrors: false }, label: "a module refusal" },
+    { settle: (c) => c.respondWithStatus(404), expected: { upstream: undefined, status: 404, errorCode: undefined, hasValidationErrors: undefined }, label: "the shop route missing" },
+    { settle: (c) => c.respondWithStatus(400), expected: { upstream: undefined, status: 400, errorCode: undefined, hasValidationErrors: undefined }, label: "a shop webapi 400" },
+  ])("$label rejects carrying its origin, status and error code", async ({ settle, expected, label }) => {
+    tile = mountTile();
 
-      const pending = tile.component.placeOrderIntent();
-      tile.fetchStub.last().respondProxy(body, false, status);
-      const error = await pending.catch((e) => e);
+    const pending = tile.component.placeOrderIntent();
+    settle(tile.fetchStub.last());
+    const error = await pending.catch((e) => e);
 
-      expect([
-        label,
-        {
-          status: error.status,
-          errorCode: error.errorCode,
-          hasValidationErrors: error.hasValidationErrors,
-        },
-      ]).toEqual([label, expected]);
-    },
-  );
+    expect([
+      label,
+      {
+        upstream: error.upstream,
+        status: error.status,
+        errorCode: error.errorCode,
+        hasValidationErrors: error.hasValidationErrors,
+      },
+    ]).toEqual([label, expected]);
+  });
 
   test("no company means no request at all", async () => {
     tile = mountTile();

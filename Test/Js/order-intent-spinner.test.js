@@ -694,16 +694,21 @@ describe("order-intent progress indicator (TWO-25326)", () => {
       });
 
       /**
-       * ABN-643: an API refusal reads as the decline it is, in the error box
-       * with no toast; anything else stays the general failure with its toast.
+       * ABN-643: a refusal the API gave (`upstream`, set only for a reply
+       * through the proxy envelope) reads as the decline it is, in the error
+       * box with no toast; anything else, above all a fault the shop's own
+       * route raised, stays the general failure with its toast.
        */
       test.each([
-        { error: { status: 400, errorCode: "BUYER_REFUSED" }, notice: "SENTINEL-declined", toasts: 0, case: "an API refusal" },
-        { error: { status: 403 }, notice: "SENTINEL-declined", toasts: 0, case: "a bodyless API refusal" },
-        { error: { status: 400, hasValidationErrors: true }, notice: "SENTINEL-general-error", toasts: 1, case: "a validation refusal" },
-        { error: { status: 403, errorCode: "PROXY_REFUSED" }, notice: "SENTINEL-general-error", toasts: 1, case: "a refusal this module made" },
+        { error: { upstream: true, status: 400, errorCode: "BUYER_REFUSED" }, notice: "SENTINEL-declined", toasts: 0, case: "an API refusal" },
+        { error: { upstream: true, status: 403 }, notice: "SENTINEL-declined", toasts: 0, case: "a bodyless API refusal" },
+        { error: { upstream: true, status: 400, hasValidationErrors: true }, notice: "SENTINEL-general-error", toasts: 1, case: "a validation refusal" },
+        { error: { upstream: true, status: 403, errorCode: "PROXY_REFUSED" }, notice: "SENTINEL-general-error", toasts: 1, case: "a refusal this module made" },
+        { error: { upstream: true, status: 503 }, notice: "SENTINEL-general-error", toasts: 1, case: "an API server error" },
+        { error: { status: 404 }, notice: "SENTINEL-general-error", toasts: 1, case: "the shop route missing after a cache flush" },
+        { error: { status: 400 }, notice: "SENTINEL-general-error", toasts: 1, case: "a shop webapi 400" },
+        { error: { status: 401 }, notice: "SENTINEL-general-error", toasts: 1, case: "a shop webapi auth fault" },
         { error: { status: 429 }, notice: "SENTINEL-general-error", toasts: 1, case: "a rate limit" },
-        { error: { status: 503 }, notice: "SENTINEL-general-error", toasts: 1, case: "a server error" },
         { error: {}, notice: "SENTINEL-general-error", toasts: 1, case: "a transport failure" },
       ])("$case: the error box states the right sentence", ({ error, notice, toasts, case: description }) => {
         component.companyName = "Alpha Ltd";
@@ -715,6 +720,22 @@ describe("order-intent progress indicator (TWO-25326)", () => {
 
         expect([description, component.orderIntentErrorNotice]).toEqual([description, notice]);
         expect([description, env.messages.length]).toEqual([description, toasts]);
+      });
+
+      test("a refusal carrying the API's own text still boxes only the fixed sentence", () => {
+        component.companyName = "Alpha Ltd";
+        component.companyId = "111111111";
+        component.orderIntentDeclinedMessage = "SENTINEL-declined";
+        component.generalErrorMessage = "SENTINEL-general-error";
+
+        component.processOrderIntentErrorResponse(
+          { upstream: true, status: 400, errorCode: "ORDER_INVALID", responseJSON: { error_code: "ORDER_INVALID", error_message: "API text", error_details: "detail" } },
+          "111111111",
+          "Alpha Ltd",
+        );
+
+        expect(component.orderIntentErrorNotice).toBe("SENTINEL-declined");
+        expect(env.messages).toEqual([]);
       });
 
       test("an APPROVAL on that same brand raises nothing", () => {
