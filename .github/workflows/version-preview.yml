@@ -1,0 +1,104 @@
+name: Version preview
+
+# Advisory only (ISEC-853). Shows on the PR the version it should land on
+# `staging` with. The REQUIRED gate is the `version-current` commit status that
+# "Version bump" posts as the org App; that workflow runs when this one
+# completes, reads its code from `staging`, and pushes the bump. A PR can edit
+# this file, which is why it is not the gate.
+#
+# TRANSITION: until infra pins `version-current` to the org App, this job also
+# supplies a `version-current` check run (job id and name), failing while the
+# PR head lacks the computed version, as the check it replaces did. Once the
+# context is pinned to the App, only the trusted status counts. The workflow
+# name stays "Version preview": "Version bump" listens for it.
+#
+# Read-only: no secrets and no App token, so it is safe on any PR, forks
+# included. It always runs to completion (exempt PRs pass in a step, not by
+# skipping the job), so "Version bump" is triggered for every PR.
+on:
+  pull_request:
+    branches: [staging, main, release]
+    # edited: a retarget to staging fires only this, and must be re-decided.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  version-current:
+    name: version-current
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    timeout-minutes: 10
+    steps:
+      - name: Scope
+        id: scope
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          # Promotion and merge-back PRs carry a version already decided.
+          if [ "$BASE" != staging ] || { [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ] && { [ "$HEAD" = main ] || [ "$HEAD" = staging ]; }; }; then
+            echo "exempt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exempt=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out staging (the code this job runs)
+        if: steps.scope.outputs.exempt == 'false'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Test the version computation
+        if: steps.scope.outputs.exempt == 'false'
+        working-directory: trusted
+        run: .github/scripts/test-decide-bump-level.sh
+
+      - name: Check out the PR head (data only)
+        if: steps.scope.outputs.exempt == 'false'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch main and staging
+        if: steps.scope.outputs.exempt == 'false'
+        working-directory: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/staging:refs/remotes/origin/staging"
+
+      - name: Compute the version
+        if: steps.scope.outputs.exempt == 'false'
+        id: decide
+        working-directory: pr
+        run: ../trusted/.github/scripts/decide-bump-level.sh origin/staging HEAD
+
+      - name: Show the version
+        if: steps.scope.outputs.exempt == 'false'
+        env:
+          SET_VERSION: ${{ steps.decide.outputs.set_version }}
+          CHANGED: ${{ steps.decide.outputs.changed }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: |
+          if [ "$CHANGED" = "true" ]; then
+            echo "This PR should land as ${SET_VERSION} (${REASON}). \"Version bump\" pushes that commit for a PR from this repo; a fork PR sets it by hand." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Version is ${SET_VERSION}: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fail until the version is current
+        if: steps.scope.outputs.exempt == 'false' && steps.decide.outputs.changed != 'false'
+        env:
+          SET_VERSION: ${{ steps.decide.outputs.set_version }}
+        run: |
+          echo "::error::The PR head does not carry ${SET_VERSION} yet. \"Version bump\" pushes it for a PR from this repo; a fork PR sets it by hand."
+          exit 1
