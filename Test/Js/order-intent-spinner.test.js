@@ -701,7 +701,11 @@ describe("order-intent progress indicator (TWO-25326)", () => {
        */
       test.each([
         { error: { upstream: true, status: 400, errorCode: "BUYER_REFUSED" }, notice: "SENTINEL-declined", toasts: 0, case: "an API refusal" },
-        { error: { upstream: true, status: 403 }, notice: "SENTINEL-declined", toasts: 0, case: "a bodyless API refusal" },
+        // The two bodies the envelope relays for a refusal with nothing relayable:
+        // the adapter's own reading of an empty body (error_code 400), and its
+        // stand-in for a body carrying none of the relayed keys (PROXY_REFUSED).
+        { error: { upstream: true, status: 403, errorCode: 400, hasValidationErrors: false }, notice: "SENTINEL-declined", toasts: 0, case: "an API refusal with an empty body" },
+        { error: { upstream: true, status: 403, errorCode: "PROXY_REFUSED", hasValidationErrors: false }, notice: "SENTINEL-general-error", toasts: 1, case: "an API refusal with no relayable keys" },
         { error: { upstream: true, status: 400, hasValidationErrors: true }, notice: "SENTINEL-general-error", toasts: 1, case: "a validation refusal" },
         { error: { upstream: true, status: 403, errorCode: "PROXY_REFUSED" }, notice: "SENTINEL-general-error", toasts: 1, case: "a refusal this module made" },
         { error: { upstream: true, status: 503 }, notice: "SENTINEL-general-error", toasts: 1, case: "an API server error" },
