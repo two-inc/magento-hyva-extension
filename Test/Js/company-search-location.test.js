@@ -57,7 +57,7 @@ describe("company-search location (TWO-25326)", () => {
       expect(doc.querySelector('[data-manual="true"]')).toBeNull();
     });
 
-    test("the not-available notice element exists, gated on the same brand switch as the approved one", () => {
+    test("the not-available notice element exists whatever the brand switch says (ABN-643)", () => {
       const showBinding = H.readAlpineBinding(
         H.GATEWAY_METHOD_MARKUP_TEMPLATE,
         '[data-name="order_intent_not_available_message"]',

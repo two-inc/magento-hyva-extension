@@ -22,12 +22,14 @@ The theme's payment-method-icon toggle gates the brand logo, not the explainer:
 `MethodMetaDataPlugin` gates each half on its own rule and wraps neither when it
 is withheld, an empty wrapper still costing its padding and its share of the row.
 
-Whether the intent-declined notice renders at all, and its wording, come from two
-separate brand-registry declarations: only the switch suppresses it, and the copy
-override is inert when empty — an empty override never doubles as an off switch
+The intent-declined notice's wording comes from two separate brand-registry
+declarations: the switch withholds the brand's own copy, and the copy override
+is inert when empty, so an empty override never doubles as an off switch
 (TWO-25326). A base declaring no declined switch falls back to the approved
-notice's switch, so a brand that turned that one off gets neither; a base
-declaring no switch of either kind leaves the notice on.
+notice's switch; a base declaring no switch of either kind keeps the brand copy.
+The switch cannot make a decline silent: where the brand copy is withheld, the
+box states the sentence order create gives for a decline, "Invoice purchase with
+%1 is not available for this order." (ABN-643).
 
 `dev/base-tile-copy-parity.sh` pins the tile-copy methods this checkout calls
 against the base module's declarations, and `ci.yml` invokes it as
@@ -122,18 +124,16 @@ be up alongside nothing. All four are one box style in one place. The rules that
 - **ONE VERDICT, ONE NOTICE — never a toast while the box exists** (TWO-25326).
   A decline used to raise both; the toast self-dismisses and lands at the top of
   the page rather than beside the company it is about, so it could only repeat
-  what the box already says permanently. Two exceptions, each for its own
-  reason: a FAILED check keeps its toast because that one carries the API's own
-  diagnostic strings and the box deliberately shows the general wording instead;
-  and a decline with NO INLINE SENTENCE TO SHOW falls back to the toast, because
-  the alternative is telling a declined buyer nothing whatsoever. That second
-  exception is gated on `resolveOrderIntentNotAvailableNotice() === ''` — "is
-  there a sentence", not "is the copy null". The two agree for the brand switch
-  (whose null copy means the box's element is never rendered at all, and a brand
-  shipping today is in that state), but the resolver also answers `''` for copy
-  that is present and malformed, which it degrades to a silent box for rather
-  than throwing — and that case needs the fallback just as much. Gate a fallback
-  on there being nothing to say, never on any narrower proxy for it.
+  what the box already says permanently. The box always has a sentence for a
+  decline (the brand's, or the platform's where the brand withholds it, ABN-643),
+  so a decline never toasts. An API refusal (a 4xx the API gave through the
+  proxy envelope, other than a rate limit, with no validation errors and not made
+  by this module) is stated in the error box in the same platform sentence, also
+  without a toast. A fault the shop's own route raises (a 404 after a missed
+  cache flush, a webapi input fault) carries no `upstream` mark on its error and
+  is never read as a refusal. Any other FAILED check keeps
+  its toast, because that one carries the API's own diagnostic strings and the
+  box deliberately shows the general wording instead.
 - **Every order-intent gate asks `twoGatewayInvoiceCompany()`** (TWO-25554)
   — the dispatch trigger, the per-company dedup and verdict records, the notice
   copy and the tile label alike, so a company picked in the DELIVERY form gets the

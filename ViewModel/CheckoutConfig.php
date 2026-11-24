@@ -553,10 +553,14 @@ class CheckoutConfig implements ArgumentInterface
         ];
     }
 
+    /**
+     * What a declined or refused buyer reads when the brand withholds its own
+     * declined notice: the sentence order create gives for a decline (ABN-643).
+     */
     public function getOrderIntentDeclinedMessage()
     {
         $orderIntentDeclinedMessage = __(
-            "Your invoice purchase with %1 has been declined.",
+            "Invoice purchase with %1 is not available for this order.",
             $this->brandRegistry->getProductName(),
         );
         return $orderIntentDeclinedMessage;
