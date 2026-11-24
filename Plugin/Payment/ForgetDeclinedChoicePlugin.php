@@ -23,8 +23,9 @@ use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
  * marker. Hyvä Checkout can still pick a method on that landing (its
  * auto-select on checkout init, for example), and its payment list takes the
  * selection from the quote when it boots. So on the landing request only,
- * after the list has booted, this method is taken off the quote and out of the
- * list's selection. It stays offered, and any other method is left alone.
+ * after the list has booted, this method is cleared from the quote's payment
+ * and from the list's selection. It stays offered, and any other method is
+ * left alone.
  *
  * Only the landing request carries the marker: Magewire's own round trips do
  * not, and the landing template removes it from the address bar, so a reload
@@ -75,7 +76,10 @@ class ForgetDeclinedChoicePlugin
         $methodCode = $this->brandedViewModel->getMethodCode();
         $quote = $this->checkoutSession->getQuote();
         if ((string)$quote->getPayment()->getMethod() === $methodCode) {
-            $quote->removePayment();
+            // Cleared on the payment itself: removePayment() only flags the
+            // loaded payment, which the quote's save then never writes, so the
+            // stored method would come back on the next boot.
+            $quote->getPayment()->setMethod(null);
             $this->cartRepository->save($quote);
         }
         if (property_exists($subject, 'method') && $subject->method === $methodCode) {

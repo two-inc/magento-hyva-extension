@@ -14,9 +14,14 @@ use Two\GatewayHyva\Plugin\Payment\ForgetDeclinedChoicePlugin;
 use Two\GatewayHyva\ViewModel\BrandedHyvaViewModelInterface;
 
 /**
- * TWO-27396: on the decline return's landing, this brand's method is taken off
- * the quote and out of the payment list's selection, once; any other method,
- * and any request without the marker, is left alone.
+ * TWO-27396: on the decline return's landing, this brand's method is cleared
+ * from the quote's stored payment and from the payment list's selection, once;
+ * any other method, and any request without the marker, is left alone.
+ *
+ * The repository double stores the method the saved quote's payment carries,
+ * and each boot loads the quote from that store, as a new request does. So a
+ * clear that never reaches the stored payment shows up as the method coming
+ * back on the next boot.
  */
 class ForgetDeclinedChoicePluginTest extends TestCase
 {
@@ -27,49 +32,75 @@ class ForgetDeclinedChoicePluginTest extends TestCase
      */
     public function testLandingForgetsOnlyThisMethod(
         ?string $marker,
-        ?string $quoteMethod,
+        ?string $storedMethod,
         ?string $listMethod,
-        ?string $expectedQuoteMethod,
+        ?string $expectedStored,
         ?string $expectedListMethod,
-        int $expectedSaves,
         string $because
     ): void {
-        $quote = new Quote();
-        $quote->getPayment()->setMethod($quoteMethod);
-        $session = new Session();
-        $session->setQuote($quote);
-        $repository = $this->recordingRepository();
+        $repository = $this->storingRepository($storedMethod);
         $list = new MethodList();
         $list->method = $listMethod;
 
-        $plugin = new ForgetDeclinedChoicePlugin(
-            $this->request($marker),
-            $session,
-            $repository,
-            $this->brandedViewModel()
-        );
-        $plugin->afterBoot($list);
+        $this->boot($repository, $list, $marker);
 
-        $this->assertSame($expectedQuoteMethod, $session->getQuote()->getPayment()->getMethod(), "$because: quote");
+        $this->assertSame($expectedStored, $repository->stored, "$because: stored quote payment");
         $this->assertSame($expectedListMethod, $list->method, "$because: list selection");
-        $this->assertSame($expectedSaves, $repository->saves, "$because: quote saves");
     }
 
-    /** @return array<int, array{?string, ?string, ?string, ?string, ?string, int, string}> */
+    /** @return array<int, array{?string, ?string, ?string, ?string, ?string, string}> */
     public static function landingProvider(): array
     {
         $brand = self::BRAND_METHOD;
 
         return [
-            // marker, quote method, list method, quote after, list after, saves, description
-            ['1', $brand, $brand, null, null, 1, 'the landing forgets this method on the quote and in the list'],
-            ['1', null, $brand, null, null, 0, 'a list selection the quote does not hold is still cleared'],
-            ['1', 'checkmo', 'checkmo', 'checkmo', 'checkmo', 0, 'another method is left alone'],
-            ['1', 'two_payment', 'two_payment', 'two_payment', 'two_payment', 0, 'only this brand\'s code counts'],
-            ['1', null, null, null, null, 0, 'nothing selected: nothing to do'],
-            [null, $brand, $brand, $brand, $brand, 0, 'no marker (a reload, a Magewire round trip): kept'],
-            ['0', $brand, $brand, $brand, $brand, 0, 'another value is not the marker'],
+            // marker, stored method, list method, stored after, list after, description
+            ['1', $brand, $brand, null, null, 'the landing clears this method on the stored payment and in the list'],
+            ['1', null, $brand, null, null, 'a list selection the quote does not hold is still cleared'],
+            ['1', 'checkmo', 'checkmo', 'checkmo', 'checkmo', 'another method is left alone'],
+            ['1', 'two_payment', 'two_payment', 'two_payment', 'two_payment', 'only this brand\'s code counts'],
+            ['1', null, null, null, null, 'nothing selected: nothing to do'],
+            [null, $brand, $brand, $brand, $brand, 'no marker (a reload, a Magewire round trip): kept'],
+            ['0', $brand, $brand, $brand, $brand, 'another value is not the marker'],
         ];
+    }
+
+    public function testTheNextBootWithoutTheMarkerDoesNotBringTheMethodBack(): void
+    {
+        $repository = $this->storingRepository(self::BRAND_METHOD);
+        $landing = new MethodList();
+        $landing->method = self::BRAND_METHOD;
+        $this->boot($repository, $landing, '1');
+
+        // The next request: Hyvä's list boots from the stored quote, as its own
+        // boot does, and the marker is gone.
+        $reboot = new MethodList();
+        $reboot->method = $repository->stored;
+        $this->boot($repository, $reboot, null);
+
+        $this->assertNull($repository->stored, 'the stored payment keeps no method');
+        $this->assertNull($reboot->method, 'the next boot selects nothing');
+    }
+
+    /**
+     * One request: the quote loaded from the store, then the plugin after the
+     * list's boot.
+     *
+     * @param CartRepositoryInterface&object{stored: ?string} $repository
+     */
+    private function boot(CartRepositoryInterface $repository, MethodList $list, ?string $marker): void
+    {
+        $quote = new Quote();
+        $quote->getPayment()->setMethod($repository->stored);
+        $session = new Session();
+        $session->setQuote($quote);
+
+        (new ForgetDeclinedChoicePlugin(
+            $this->request($marker),
+            $session,
+            $repository,
+            $this->brandedViewModel()
+        ))->afterBoot($list);
     }
 
     private function request(?string $marker): RequestInterface
@@ -90,15 +121,21 @@ class ForgetDeclinedChoicePluginTest extends TestCase
         };
     }
 
-    /** @return CartRepositoryInterface&object{saves: int} */
-    private function recordingRepository(): CartRepositoryInterface
+    /** @return CartRepositoryInterface&object{stored: ?string} */
+    private function storingRepository(?string $stored): CartRepositoryInterface
     {
-        return new class implements CartRepositoryInterface {
-            public int $saves = 0;
+        return new class ($stored) implements CartRepositoryInterface {
+            /** @var ?string the method on the stored quote payment */
+            public $stored;
+
+            public function __construct(?string $stored)
+            {
+                $this->stored = $stored;
+            }
 
             public function save(Quote $quote): void
             {
-                $this->saves++;
+                $this->stored = $quote->getPayment()->getMethod();
             }
         };
     }

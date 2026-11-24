@@ -113,13 +113,6 @@ namespace Magento\Quote\Model {
             {
                 return 'EUR';
             }
-
-            /** Mirrors the framework: the payment goes, and a fresh one has no method. */
-            public function removePayment(): self
-            {
-                $this->payment = null;
-                return $this;
-            }
         }
     }
 }
