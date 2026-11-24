@@ -1,105 +1,107 @@
 name: Version bump
 
-# Computes the version a pull request should land on `staging` with, and commits
-# it onto the PR's own head branch.
+# Commits the version a pull request should land on `staging` with onto the
+# PR's own head branch. The version scheme is TWO-25256's: it describes the
+# CHANGE, from the conventional-commit types of the commits the PR adds, and
+# .github/scripts/decide-bump-level.sh owns the whole decision. See README for
+# the rules.
 #
-# The version now describes the CHANGE, derived from the conventional-commit
-# types of the commits the PR adds, which is what semver actually asks for. The
-# previous scheme bumped by branch rule (patch on `staging`, minor on `main`),
-# so the same change got a different version depending on where it merged. That
-# is not semver, and the number carried no information.
+# WHY workflow_run (ISEC-853). This workflow used to run on `pull_request`,
+# which reads the workflow file from the PR head: any same-repo PR could edit
+# the job and take the org App token it mints (PLAT-2318). A `workflow_run`
+# workflow is always read from the default branch (`staging`), so the PR cannot
+# change what runs here. It also runs no code from the PR head:
 #
-# Trigger is `pull_request` to `staging` ONLY. In particular:
+#   - decide-bump-level.sh and its tests come from the `staging` checkout in
+#     `trusted/`; the PR head is checked out in `pr/` and only read as git data;
+#   - bumpver only rewrites the files bumpver.toml lists, and the job refuses a
+#     PR whose bumpver.toml differs from `staging`'s beyond `current_version`,
+#     so a PR cannot add hooks or retarget it;
+#   - commit messages reach the script through git, never through `${{ }}`.
 #
-#   - NEVER on a `staging -> main` PR. Promotion to `main` does not invent a new
-#     version; it releases the version already in the tree. The `main` side only
-#     tags what is there and cuts the Release.
-#   - No longer on `push:` to `staging`. Bumping after the merge meant the
-#     version that reviewers saw was never the version that shipped, and it also
-#     needed a push to a protected branch (see the token note below).
+# The App token is minted only for the final push, and only when a bump is due.
+# Its key is read from Secret Manager by gha-app-key-reader, which is bound to
+# exactly this file on `staging` (infra two-artifacts app-key.tf).
 #
-# The whole decision lives in .github/scripts/decide-bump-level.sh, which emits
-# an ABSOLUTE `set_version`. It is idempotent by construction (`max()` against
-# the version already on the head), so a re-run, a synchronize triggered by this
-# workflow's own bump commit, or a second fix commit on the same PR all compute
-# the same answer and commit nothing.
+# WHEN. It runs after "Version current" completes on a PR. That check is
+# required on `staging` and fails until the PR head carries the version this
+# workflow computes, so a PR cannot merge before its bump lands. The bump
+# commit is pushed with the App token, which triggers CI on it again; the second
+# pass finds the version already correct and writes nothing.
 #
-# TOKEN: the org App, not the default GITHUB_TOKEN. Two reasons, both hard
-# requirements rather than preferences:
-#
-#   1. Pushes made with GITHUB_TOKEN do not trigger workflows, so CI would never
-#      re-run on the bump commit and the PR's checks would refer to a SHA that
-#      is no longer the head.
-#   2. The App (id 2603046) holds `bypass_mode: always` on the branch-protection
-#      ruleset in each of these repos.
-#
-# It is minted for the final push only, after every step that runs code from the
-# PR head, so it is not on disk while those steps run. That is hygiene rather than
-# a boundary, and two routes get past it. `pull_request` reads this workflow from
-# the PR head, so a same-repo PR can edit the job itself. And steps share a
-# filesystem and a $HOME, so PR code in an earlier step can leave a git shim on
-# PATH or a credential helper in .gitconfig for the push step to hand the token
-# to. Closing either needs the App off the ruleset bypass list, or a trigger whose
-# workflow is read from the default branch. See PLAT-2318.
-#
-# On (2): this scheme also sidesteps the GH013 failure that the old
-# push-to-staging workflow hits, because the bump is now a commit on the PR's
-# own head branch, and `terraform-managed-branch-protection` only targets
-# refs/heads/{main,release,staging}. A feature branch is outside its conditions
-# entirely.
+# TOKEN: the org App, not GITHUB_TOKEN, because pushes made with GITHUB_TOKEN
+# do not trigger workflows, so CI and "Version current" would never re-run on
+# the bump commit.
 on:
-  pull_request:
-    branches: [staging]
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: [Version current]
+    types: [completed]
 
 permissions:
-  # Read is enough: the checkout and the fetch below are the only things using
-  # this token, and the push carries the App token instead.
   contents: read
 
 # Never cancel in flight: a cancelled run could be killed between the bump
-# commit and the push.
+# commit and the push. One queue per PR branch.
 concurrency:
-  group: version-bump-${{ github.event.pull_request.number }}
+  group: version-bump-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
-  self-test:
-    # The version arithmetic is unit-tested against throwaway git repos (no
-    # network, no docker, a couple of seconds). It gates the bump below rather
-    # than living in the main CI workflow, so the logic can never write a commit
-    # it cannot pass its own tests on.
-    name: Test the version computation
-    runs-on: ${{ vars.RUNNER_STANDARD }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - run: .github/scripts/test-decide-bump-level.sh
-
   bump:
     name: Compute version for this PR
-    needs: self-test
     runs-on: ${{ vars.RUNNER_STANDARD }}
     timeout-minutes: 10
-    # Fork PRs cannot be pushed to. Nothing here is secret-dependent for a fork
-    # to abuse; it simply has nowhere to write, so skip rather than fail red.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A PR into `staging` from a branch of THIS repo. Fork PRs have nowhere to
+    # be pushed to; their "Version current" check names the version to set by
+    # hand. `staging` and `main` heads are promotion and merge-back PRs, which
+    # carry versions already decided.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch != 'staging' &&
+      github.event.workflow_run.head_branch != 'main' &&
+      github.event.workflow_run.pull_requests[0].base.ref == 'staging'
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out staging (the code this job runs)
+        uses: actions/checkout@v6
         with:
-          # The PR's head BRANCH, not the merge ref: the bump commit has to land
-          # on the contributor's branch, so HEAD must be the branch tip and not
-          # a detached merge commit.
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-          # Nothing on disk for the steps below, which run code from the PR head.
-          # The fetch and the push each carry their own credential.
+          ref: staging
+          path: trusted
           persist-credentials: false
 
+      - name: Test the version computation
+        working-directory: trusted
+        run: .github/scripts/test-decide-bump-level.sh
+
+      - name: Check out the PR head (data only)
+        uses: actions/checkout@v6
+        with:
+          # The head BRANCH, so HEAD is its tip and the bump commit lands on it.
+          ref: ${{ github.event.workflow_run.head_branch }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Skip if the branch has moved on
+        id: current
+        working-directory: pr
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$RUN_SHA" ]; then
+            echo "::notice::The branch moved past ${RUN_SHA}; the run for its new head decides instead."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch main and staging
-        # The decision reads the released version off `origin/main` and the PR's
-        # commit range off `origin/staging`. Explicit refspecs because
-        # actions/checkout only guarantees the ref it was asked for.
+        if: steps.current.outputs.stale == 'false'
+        working-directory: pr
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -107,10 +109,21 @@ jobs:
             "+refs/heads/main:refs/remotes/origin/main" \
             "+refs/heads/staging:refs/remotes/origin/staging"
 
-      - name: Compute the version
-        id: decide
-        run: .github/scripts/decide-bump-level.sh origin/staging HEAD
+      - name: Refuse a changed bumpver.toml
+        if: steps.current.outputs.stale == 'false'
+        run: |
+          set -euo pipefail
+          strip() { sed '/^[[:space:]]*current_version[[:space:]]*=/d' "$1"; }
+          if ! diff <(strip trusted/bumpver.toml) <(strip pr/bumpver.toml) >/dev/null; then
+            echo "::error::This PR changes bumpver.toml beyond current_version, so the bump is not automated. Land the bumpver.toml change on its own and set the version by hand, as \"Version current\" names it."
+            exit 1
+          fi
 
+      - name: Compute the version
+        if: steps.current.outputs.stale == 'false'
+        id: decide
+        working-directory: pr
+        run: ../trusted/.github/scripts/decide-bump-level.sh origin/staging HEAD
       - uses: actions/setup-python@v6
         if: steps.decide.outputs.changed == 'true'
         with:
@@ -118,50 +131,62 @@ jobs:
 
       - name: Install bumpver
         if: steps.decide.outputs.changed == 'true'
+        working-directory: trusted
         run: pip install bumpver
 
       - name: Configure git identity
         if: steps.decide.outputs.changed == 'true'
+        working-directory: pr
+        env:
+          APP_ID: ${{ vars.TWO_INC_APP_ID }}
         run: |
           git config user.name "two-inc-app[bot]"
-          git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
+          git config user.email "${APP_ID}+two-inc-app[bot]@users.noreply.github.com"
 
       - name: Write the version (files + commit only)
         if: steps.decide.outputs.changed == 'true'
+        working-directory: pr
         env:
           SET_VERSION: ${{ steps.decide.outputs.set_version }}
         run: |
           set -euo pipefail
-          # bumpver.toml is the single source of truth for which files carry the
-          # version. --set-version because the script hands over an absolute
-          # version, not a level: no level can express "clamp to the version the
-          # tree already has". --no-tag-commit --no-push because tags belong to
-          # `main` and the push is done explicitly below.
-          bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
+          # --set-version because the script hands over an absolute version.
+          # --no-tag-commit --no-push: tags belong to `main` and the push is
+          # done explicitly below. --no-fetch: this checkout carries no
+          # credential, and nothing here creates a tag for a fetch to protect.
+          bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push --no-fetch
 
       - name: Mint GitHub App token
         id: app-token
         if: steps.decide.outputs.changed == 'true'
-        uses: actions/create-github-app-token@v3
+        uses: two-inc/actions-public/app-token@main
         with:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
 
       - name: Push onto the PR branch
         if: steps.decide.outputs.changed == 'true'
+        working-directory: pr
         env:
           TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "HEAD:refs/heads/${HEAD_REF}"
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          [ -n "$TOKEN" ] || { echo "::error::No App token: the key could not be read from Secret Manager."; exit 1; }
+          # A plain push is fast-forward only: if the branch moved since the
+          # check above, it is refused and the run for the new head decides.
+          git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "HEAD:refs/heads/${HEAD_REF}"
 
       - name: Summary
+        if: steps.current.outputs.stale == 'false'
         env:
           SET_VERSION: ${{ steps.decide.outputs.set_version }}
           CHANGED: ${{ steps.decide.outputs.changed }}
           REASON: ${{ steps.decide.outputs.reason }}
         run: |
           if [ "$CHANGED" = "true" ]; then
-            echo "Version set to ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Version set to ${SET_VERSION}: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Version already correct at ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Version already correct at ${SET_VERSION}: ${REASON}" >> "$GITHUB_STEP_SUMMARY"
           fi
