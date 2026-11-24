@@ -223,6 +223,16 @@ checkout marker on sight and selects the brand's method by clicking its radio
 in Hyvä Checkout's payment list, so Magewire saves it through its own binding.
 It never overrides a method the buyer picked first.
 
+### Decline return landing
+
+The base module's decline return restores the basket with no payment method
+selected and lands the buyer on the checkout with its documented
+`two_declined=1` marker, to choose another method (TWO-27396). Hyvä then renders
+no method selected, so this module adds no server code for it.
+`checkout/declined-landing.phtml` only takes the marker out of the address bar.
+The return's message is the shop's own page message, shown by the theme;
+nothing here touches it.
+
 ### Staging Cache Refresh (git-sync workflow)
 
 Read [docs/staging-dev-deployment.md](docs/staging-dev-deployment.md) before
