@@ -67,6 +67,10 @@
                     </argument>
                 </arguments>
             </block>
+            <!-- TWO-27396: takes the decline return's marker out of the
+                 address bar once the server has acted on it. -->
+            <block name="two.declined.landing"
+                   template="Two_GatewayHyva::checkout/declined-landing.phtml" after="-"/>
         </referenceBlock>
     </body>
 </page>

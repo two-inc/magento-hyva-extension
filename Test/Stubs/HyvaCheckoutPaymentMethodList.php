@@ -46,6 +46,13 @@ namespace Hyva\Checkout\Magewire\Checkout\Payment {
     if (!class_exists(MethodList::class, false)) {
         class MethodList extends Component
         {
+            /** The selected method, which the real list takes from the quote on boot. */
+            public ?string $method = null;
+
+            public function boot(): void
+            {
+            }
+
             protected $listeners = [
                 'billing_address_saved' => 'refresh',
                 'shipping_address_saved' => 'refresh',

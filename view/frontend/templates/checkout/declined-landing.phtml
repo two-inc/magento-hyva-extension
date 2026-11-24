@@ -1,0 +1,49 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+
+declare(strict_types=1);
+
+use Hyva\Theme\Model\ViewModelRegistry;
+use Hyva\Theme\ViewModel\HyvaCsp;
+
+/** @var \Magento\Framework\View\Element\Template $block */
+/** @var ViewModelRegistry $viewModels */
+/** @var HyvaCsp $hyvaCsp */
+
+/*
+ * TWO-27396: the base module's decline return lands the buyer on this checkout
+ * with its documented `two_declined=1` marker, so the server can take the
+ * method that did not approve them out of the selection on that one request
+ * (Plugin\Payment\ForgetDeclinedChoicePlugin). The marker is spent once read:
+ * this takes it out of the address bar, so a reload or a copied link keeps
+ * whatever method the buyer has chosen since. The return's message is the shop's
+ * own page message and is left to the theme, which shows it once.
+ */
+
+$hyvaCsp = $viewModels->require(HyvaCsp::class);
+?>
+<script>
+    (() => {
+        const search = (window.location && window.location.search) || '';
+        const pairs = search.replace(/^\?/, '').split('&');
+        const isMarker = (pair) => pair === 'two_declined=1';
+        if (!pairs.some(isMarker)) {
+            return;
+        }
+        const kept = pairs.filter((pair) => pair !== '' && !isMarker(pair));
+        try {
+            window.history.replaceState(
+                window.history.state,
+                '',
+                window.location.pathname + (kept.length ? '?' + kept.join('&') : '') + window.location.hash
+            );
+        } catch (e) {
+            // Refused (an embedded or sandboxed view): the marker stays in this
+            // page's address, and only a reload of it forgets the choice again.
+        }
+    })();
+</script>
+<?php $hyvaCsp->registerInlineScript(); ?>
