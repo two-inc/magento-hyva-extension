@@ -4722,10 +4722,10 @@ $quoteDetails = json_encode(
 
                 // A rate limit (the shop's own, refused as a webapi fault before
                 // the route runs) is a wait, not an answer: it keeps the general
-                // wording and its toast. Every other failure, whether Two refused,
+                // wording and its toast. Every other failure, whether the API refused,
                 // erred or timed out, the shop's own route faulted (a 404 after a
-                // missed cache flush) or the base module refused before calling
-                // Two, states the "not available for this order" sentence a
+                // missed cache flush) or the base module refused before calling the
+                // API, states the "not available for this order" sentence a
                 // decline gives, company name included, in the box and with no
                 // toast (ABN-643). The detail stays in the console line
                 // placeOrderIntent() writes and the base module's error log.
