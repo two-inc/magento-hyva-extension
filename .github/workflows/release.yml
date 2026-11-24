@@ -48,14 +48,18 @@ jobs:
     # CI must also have run for a push. The branch filters match
     # head_branch by name, so a pull request from a fork whose branch is
     # called `main` passes them; such a run must not mint the App token.
-    if: >
+    # It must also be a push to this repo's own `main`, which requires a pull
+    # request. The event check alone passes a push to any branch, and a push
+    # in a fork carries the fork as head_repository. This job mints the org
+    # App token, so nothing else may start it (ISEC-853).
+    if: |
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      (github.event.workflow_run.head_branch == 'main' ||
-       github.event.workflow_run.head_branch == 'staging')
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
     env:
-      # The branch CI ran for — `main` or `staging`. Every step that needs
-      # to know which of the two behaviours applies reads this.
+      # The branch CI ran for. Always `main` now (the trigger's `branches:`
+      # filter never let `staging` through); kept because the steps read it.
       BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
       - name: Mint GitHub App token
