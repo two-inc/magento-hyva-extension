@@ -211,3 +211,33 @@ jobs:
             --target main \
             --title "${NEW}" \
             --notes-file release-notes.md
+
+      # The App token above is scoped to this repo only, so the dispatch
+      # needs its own token that can reach platform-tools.
+      - name: Mint platform-tools dispatch token
+        id: dispatch-token
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          owner: two-inc
+          repositories: platform-tools
+
+      # Tells platform-tools a Release was published, so it rolls the
+      # release-tracking Magento staging shops (TWO-25769). This used to be
+      # release-dispatch.yml on the release event, which runs the workflow
+      # file at the tag's commit and so could not be bound to the App-key
+      # reader (ISEC-853). platform-tools' daily reconcile is the backstop for
+      # a Release published any other way.
+      - name: Dispatch plugin-release-published
+        if: steps.gate.outputs.skip == '0' && env.BRANCH == 'main'
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          # The receiver maps this to a shop and fails on a repository it has
+          # no mapping for.
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          gh api repos/two-inc/platform-tools/dispatches \
+            -f event_type=plugin-release-published \
+            -f "client_payload[repository]=$SOURCE_REPO"
