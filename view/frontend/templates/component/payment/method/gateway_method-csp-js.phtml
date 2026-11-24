@@ -4424,18 +4424,10 @@ $quoteDetails = json_encode(
 
                     if (!envelope.ok) {
                         // The status rides on the error, so the handler can tell
-                        // a rate limit from every other failure. The rest is for
-                        // the console line below, the merchant's trail: the buyer
-                        // sees one sentence whatever failed (ABN-643). `upstream`
-                        // marks a reply the API gave through the envelope; a fault
-                        // the shop's own route raised throws from
-                        // twoGatewayProxyPost without it.
+                        // a rate limit from every other failure; the buyer sees
+                        // one sentence whatever else failed (ABN-643).
                         const error = new Error(`HTTP error! Status: ${envelope.status}`);
-                        error.upstream = true;
                         error.status = envelope.status;
-                        error.errorCode = envelope.body?.error_code;
-                        error.hasValidationErrors = Array.isArray(envelope.body?.error_json)
-                            && envelope.body.error_json.length > 0;
                         throw error;
                     }
                     return envelope.body;
