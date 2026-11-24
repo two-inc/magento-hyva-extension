@@ -126,14 +126,15 @@ be up alongside nothing. All four are one box style in one place. The rules that
   the page rather than beside the company it is about, so it could only repeat
   what the box already says permanently. The box always has a sentence for a
   decline (the brand's, or the platform's where the brand withholds it, ABN-643),
-  so a decline never toasts. An API refusal (a 4xx the API gave through the
-  proxy envelope, other than a rate limit, with no validation errors and not made
-  by this module) is stated in the error box in the same platform sentence, also
-  without a toast. A fault the shop's own route raises (a 404 after a missed
-  cache flush, a webapi input fault) carries no `upstream` mark on its error and
-  is never read as a refusal. Any other FAILED check keeps
-  its toast, because that one carries the API's own diagnostic strings and the
-  box deliberately shows the general wording instead.
+  so a decline never toasts. A FAILED check is stated in the error box in the
+  decline's own sentence, company name included, also without a toast, as the
+  other plugins do (ABN-643): a refusal, server error or timeout from Two, a
+  fault the shop's own route raises (a 404 after a missed cache flush, a webapi
+  input fault) and a refusal the base module made before calling Two alike. The
+  failure record carries only whether it was a rate limit, and the painter
+  resolves the wording. A rate limit is a wait rather than an answer, so it keeps
+  the general wording and its toast. The diagnostic detail is in the console line
+  `placeOrderIntent()` writes and in the base module's error log, never on screen.
 - **Every order-intent gate asks `twoGatewayInvoiceCompany()`** (TWO-25554)
   — the dispatch trigger, the per-company dedup and verdict records, the notice
   copy and the tile label alike, so a company picked in the DELIVERY form gets the

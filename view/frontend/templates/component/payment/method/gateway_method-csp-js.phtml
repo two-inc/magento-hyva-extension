@@ -3660,7 +3660,7 @@ $quoteDetails = json_encode(
              *
              * `orderIntentDecisions[id] = { name, approved, basket }` for a company
              * whose check reached a decision, `basket` being the fingerprint the
-             * request was sent under (TWO-26296); `orderIntentFailures[id] = { name }` for
+             * request was sent under (TWO-26296); `orderIntentFailures[id] = { name, rateLimited }` for
              * one whose check could not be completed. A decision for a company
              * removes its failure — the question has been answered.
              *
@@ -4132,7 +4132,7 @@ $quoteDetails = json_encode(
 
             /**
              * @returns {Object|null} what is on record for the company on screen —
-             *   `{ kind: 'decision', approved }` or `{ kind: 'failure' }` — or null
+             *   `{ kind: 'decision', approved }` or `{ kind: 'failure', rateLimited }`, or null
              *   when nothing is, INCLUDING when the record's name no longer
              *   matches the name on screen.
              */
@@ -4143,7 +4143,7 @@ $quoteDetails = json_encode(
 
                 const failure = this.orderIntentFailures[companyId];
                 if (failure && failure.name === invoiceCompany.companyName) {
-                    return { kind: 'failure', text: failure.text };
+                    return { kind: 'failure', rateLimited: failure.rateLimited === true };
                 }
 
                 // A decision priced on another basket is no decision for this one (TWO-26296).
@@ -4219,8 +4219,15 @@ $quoteDetails = json_encode(
                 const record = this.orderIntentRecordForCurrentCompany();
                 if (!record) return;
 
+                // A failed check states the decline's not-available sentence,
+                // company name included (ABN-643); a rate limit, a wait rather
+                // than an answer, keeps the general wording.
                 if (record.kind === 'failure') {
-                    const failureText = record.text || this.generalErrorMessage;
+                    const failureText = record.rateLimited
+                        ? this.generalErrorMessage
+                        : (this.resolveOrderIntentNotAvailableNotice()
+                            || this.orderIntentDeclinedMessage
+                            || this.generalErrorMessage);
                     if (!failureText) return;
                     this.orderIntentErrorNotice = failureText;
                     return;
@@ -4416,11 +4423,13 @@ $quoteDetails = json_encode(
                     );
 
                     if (!envelope.ok) {
-                        // The status and error code ride on the error, so the
-                        // handler can tell an API refusal from a failure (ABN-643).
-                        // `upstream` marks a reply the API gave through the
-                        // envelope; a fault the shop's own route raised throws
-                        // from twoGatewayProxyPost without it.
+                        // The status rides on the error, so the handler can tell
+                        // a rate limit from every other failure. The rest is for
+                        // the console line below, the merchant's trail: the buyer
+                        // sees one sentence whatever failed (ABN-643). `upstream`
+                        // marks a reply the API gave through the envelope; a fault
+                        // the shop's own route raised throws from
+                        // twoGatewayProxyPost without it.
                         const error = new Error(`HTTP error! Status: ${envelope.status}`);
                         error.upstream = true;
                         error.status = envelope.status;
@@ -4718,79 +4727,31 @@ $quoteDetails = json_encode(
                 // dropped by refreshOrderIntentVerdict() at the end of this
                 // method — it clears unconditionally before deciding what may be
                 // shown. An explicit clear here was a second copy of that.
-                let message = this.generalErrorMessage;
 
-                // An API refusal (a 4xx the API gave through the proxy envelope,
-                // other than a rate limit, with no validation errors, not one this
-                // module made itself) reads as the decline it is, in the sentence
-                // order create gives for it (ABN-643). The box carries it and no
-                // toast repeats it. A fault the shop's own route raised (a 404
-                // after a missed cache flush) is not a decline and stays general.
-                const status = response?.status || 0;
-                const isRefusal = response?.upstream === true
-                    && status >= 400 && status < 500 && status !== 429
-                    && response.errorCode !== 'PROXY_REFUSED' && !response.hasValidationErrors;
-                if (isRefusal) message = this.orderIntentDeclinedMessage;
+                // A rate limit (the shop's own, refused as a webapi fault before
+                // the route runs) is a wait, not an answer: it keeps the general
+                // wording and its toast. Every other failure, whether Two refused,
+                // erred or timed out, the shop's own route faulted (a 404 after a
+                // missed cache flush) or the base module refused before calling
+                // Two, states the "not available for this order" sentence a
+                // decline gives, company name included, in the box and with no
+                // toast (ABN-643). The detail stays in the console line
+                // placeOrderIntent() writes and the base module's error log.
+                const isRateLimited = response?.status === 429;
 
-                if (response?.responseJSON) {
-                    const { error_code, error_message, error_details, error_json } = response.responseJSON;
-
-                    switch (error_code) {
-                        case 'SCHEMA_ERROR':
-                            if (error_json) {
-                                message = '';
-                                error_json.forEach(error => {
-                                    window.dispatchMessages([{ type: 'error', text: error.msg }], 3000);
-                                });
-                            }
-                            break;
-                        case 'JSON_MISSING_FIELD':
-                            if (error_details) message = error_details;
-                            break;
-                        case 'MERCHANT_NOT_FOUND_ERROR':
-                        case 'ORDER_INVALID':
-                            message = error_message + (error_details ? ' - ' + error_details : '');
-                            break;
-                    }
-                }
-
-                // The persistent box, alongside the toast this path still
-                // raises rather than instead of it. A FAILED check is the one
-                // verdict that keeps both: the toast carries the API's own
-                // diagnostic detail, which the box deliberately does not show
-                // (see below). A DECLINE has no toast any more — one verdict,
-                // one notice (2026-08-06, see the success handler above).
-                //
-                // The box gets the GENERAL wording, never the API's own
-                // `error_message`/`error_details`. Those are diagnostic strings
-                // written for a developer, and the box does not self-dismiss —
-                // parking raw upstream text permanently in a buyer's checkout is
-                // not the same decision as flashing it for three seconds. The
-                // toast below still carries the detail for whoever is watching.
-                //
-                // Empty (and so hidden) exactly when there is no sentence to
-                // show: SCHEMA_ERROR sets `message` to '' and toasts one message
-                // per offending field instead.
                 /*
                  * RECORDING the failure and DISPLAYING it are two decisions.
                  *
                  * The record is what lets the panel closing report a failure that
                  * happened while the buyer was mid-search, so it is written
-                 * whenever there is a sentence to show — independent of whether
+                 * whenever there is a sentence to show, independent of whether
                  * this moment is one where a box may appear. Gating them together
                  * is how an earlier attempt at this ended up writing neither.
-                 *
-                 * `boxText`, not `message`: the box carries the GENERAL wording
-                 * (the API's own diagnostic strings are for the toast, which
-                 * self-dismisses), and an empty `generalErrorMessage` must leave
-                 * no record, or the record would be one nothing could ever paint.
+                 * The painter resolves the wording from the record's kind, so a
+                 * rate limit with an empty `generalErrorMessage` leaves no record
+                 * nothing could ever paint.
                  */
-                // Whether this failure is REPORTABLE at all: there must be
-                // something to say (`message` — SCHEMA_ERROR clears it and toasts
-                // per field instead) and wording to say it in. Deliberately not
-                // "the text to paint": the painting is refresh's, and it reads
-                // `generalErrorMessage` itself.
-                const isReportable = Boolean(message && (isRefusal || this.generalErrorMessage));
+                const isReportable = !isRateLimited || Boolean(this.generalErrorMessage);
 
                 if (isReportable && invoiceCompany.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
@@ -4803,9 +4764,7 @@ $quoteDetails = json_encode(
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
                             : invoiceCompany.companyName,
-                        // The fixed sentence, never `message`: the API's own
-                        // text must not reach the persistent box.
-                        text: isRefusal ? this.orderIntentDeclinedMessage : '',
+                        rateLimited: isRateLimited,
                     };
                 }
 
@@ -4813,8 +4772,8 @@ $quoteDetails = json_encode(
                 // re-derive here, and refresh() decides whether a box may appear.
                 this.refreshOrderIntentVerdict();
 
-                if (message && !isRefusal) {
-                    window.dispatchMessages([{ type: 'error', text: message }], 3000);
+                if (isRateLimited && this.generalErrorMessage) {
+                    window.dispatchMessages([{ type: 'error', text: this.generalErrorMessage }], 3000);
                 }
             },
         });
