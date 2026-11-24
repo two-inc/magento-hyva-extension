@@ -137,9 +137,7 @@ use Magewirephp\Magewire\Component;
 
 class MethodList extends Component
 {
-    public ?string $method = null;
     protected $listeners = [];
-    public function boot(): void {}
     public function getListeners(): array { return $this->listeners; }
 }
 PHP,

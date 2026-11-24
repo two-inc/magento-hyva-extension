@@ -25,11 +25,6 @@
         <!-- ABN-556: state the charged term on the payload placement composes the order from -->
         <plugin name="TwoGatewayHyva::recordSelectedTerm" type="Two\GatewayHyva\Plugin\Payment\RecordSelectedTermPlugin" sortOrder="20"/>
     </type>
-    <!-- TWO-27396: on the decline return's landing, this method is not left
-         selected; on Hyvä's own list type, so any list a store swaps in is covered -->
-    <type name="Hyva\Checkout\Magewire\Checkout\Payment\MethodList">
-        <plugin name="TwoGatewayHyva::forgetDeclinedChoice" type="Two\GatewayHyva\Plugin\Payment\ForgetDeclinedChoicePlugin"/>
-    </type>
     <!-- ABN-627: country, then company, above the street while search is in the address form -->
     <type name="Hyva\Checkout\Model\Form\EntityForm\EavAttributeShippingAddressForm">
         <arguments>

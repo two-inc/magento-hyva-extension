@@ -225,19 +225,13 @@ It never overrides a method the buyer picked first.
 
 ### Decline return landing
 
-The base module's decline return restores the basket and lands the buyer on the
-checkout with its documented `two_declined=1` marker, to choose another method
-(TWO-27396). On that request only, `Plugin\Payment\ForgetDeclinedChoicePlugin`
-(an `afterBoot` plugin on Hyvä's own payment `MethodList` type, so a store's
-replacement list is covered too) clears the brand's method from the quote's
-payment and saves the quote, and clears the list's selection, whatever Hyvä
-chose on checkout init. It sets the method to null rather than calling the
-quote's `removePayment()`, which only flags the loaded payment so the quote's
-save never writes it, and the stored method returns on the next boot. The method
-stays offered and any other method is left alone. `checkout/declined-landing.phtml`
-then takes the marker out of the address bar, so a reload keeps the buyer's
-later choice. The return's message is the shop's own page message, shown by the
-theme; nothing here touches it.
+The base module's decline return restores the basket with no payment method
+selected and lands the buyer on the checkout with its documented
+`two_declined=1` marker, to choose another method (TWO-27396). Hyvä then renders
+no method selected, so this module adds no server code for it.
+`checkout/declined-landing.phtml` only takes the marker out of the address bar.
+The return's message is the shop's own page message, shown by the theme;
+nothing here touches it.
 
 ### Staging Cache Refresh (git-sync workflow)
 

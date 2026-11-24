@@ -4,8 +4,7 @@
  *
  * TWO-27396. The decline return's `two_declined=1` marker is spent on the
  * landing: the template takes it out of the address bar, keeping every other
- * part of the URL, so a reload cannot make the server forget a method the buyer
- * has chosen since.
+ * part of the URL, so a reload or a copied link does not carry it.
  */
 
 "use strict";

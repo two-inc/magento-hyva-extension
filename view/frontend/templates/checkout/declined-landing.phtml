@@ -15,12 +15,12 @@ use Hyva\Theme\ViewModel\HyvaCsp;
 
 /*
  * TWO-27396: the base module's decline return lands the buyer on this checkout
- * with its documented `two_declined=1` marker, so the server can take the
- * method that did not approve them out of the selection on that one request
- * (Plugin\Payment\ForgetDeclinedChoicePlugin). The marker is spent once read:
- * this takes it out of the address bar, so a reload or a copied link keeps
- * whatever method the buyer has chosen since. The return's message is the shop's
- * own page message and is left to the theme, which shows it once.
+ * with its documented `two_declined=1` marker. The base module has already
+ * cleared the declined method from the restored basket, so Hyvä renders no
+ * method selected and nothing here reads the marker: this only takes it out of
+ * the address bar, so a reload or a copied link does not carry it. The return's
+ * message is the shop's own page message and is left to the theme, which shows
+ * it once.
  */
 
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
@@ -42,7 +42,7 @@ $hyvaCsp = $viewModels->require(HyvaCsp::class);
             );
         } catch (e) {
             // Refused (an embedded or sandboxed view): the marker stays in this
-            // page's address, and only a reload of it forgets the choice again.
+            // page's address, which is harmless.
         }
     })();
 </script>
