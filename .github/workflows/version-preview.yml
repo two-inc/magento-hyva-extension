@@ -76,6 +76,20 @@ jobs:
             "+refs/heads/main:refs/remotes/origin/main" \
             "+refs/heads/staging:refs/remotes/origin/staging"
 
+      - uses: actions/setup-python@v6
+        if: steps.scope.outputs.exempt == 'false'
+        with:
+          python-version: "3.12"
+
+      - name: Test set-version.py and materialise-pr-files.sh
+        # This PR's own copy, so a change to the script is tested here.
+        # "Version bump" runs staging's copy of the same tests before deciding.
+        if: steps.scope.outputs.exempt == 'false'
+        working-directory: pr
+        run: |
+          python3 .github/scripts/test-set-version.py
+          bash .github/scripts/test-materialise-pr-files.sh
+
       - name: Compute the version
         if: steps.scope.outputs.exempt == 'false'
         id: decide
