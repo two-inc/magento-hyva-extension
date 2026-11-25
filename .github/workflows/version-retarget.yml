@@ -1,0 +1,51 @@
+name: Version retarget
+
+# Starts "Version bump" from a definition the PR cannot change (ISEC-853).
+# "Version preview" runs on `pull_request`, so it is read from the PR's own
+# merge commit: a PR could drop a trigger there, receive `version-current`
+# success, then retarget or re-push the same SHA with nothing re-deciding it.
+#
+# `pull_request_target` always reads this file from the default branch
+# (`staging`), whatever the PR's base, so the PR cannot change it. It runs no
+# PR code, checks nothing out, has no token permissions and reads no secret:
+# it only completes, which triggers "Version bump". The run name carries the
+# PR head SHA, because a `pull_request_target` run's own head SHA is the base
+# branch's.
+#
+# Hands over when a PR into staging, main or release is opened, reopened,
+# pushed to or closed (closing a PR changes the PR set its head SHA serves),
+# and on any change of base into or out of those branches. A title or body
+# edit, or a PR elsewhere, hands over nothing: the run is named "no-op" and
+# its job skipped, and "Version bump" starts only for a successful run named
+# with a SHA. A fork PR starts one decision per event without approval; it
+# runs only staging's code, and posts only the status that code computes.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, closed, edited]
+
+run-name: >-
+  ${{
+    ((github.event.action != 'edited' && contains(fromJSON('["staging","main","release"]'), github.event.pull_request.base.ref)) ||
+     (github.event.action == 'edited' && github.event.changes.base != null &&
+      (contains(fromJSON('["staging","main","release"]'), github.event.pull_request.base.ref) ||
+       contains(fromJSON('["staging","main","release"]'), github.event.changes.base.ref.from))))
+    && github.event.pull_request.head.sha || 'no-op'
+  }}
+
+permissions: {}
+
+jobs:
+  trigger:
+    name: Trigger Version bump
+    if: >-
+      (github.event.action != 'edited' && contains(fromJSON('["staging","main","release"]'), github.event.pull_request.base.ref)) ||
+      (github.event.action == 'edited' && github.event.changes.base != null &&
+       (contains(fromJSON('["staging","main","release"]'), github.event.pull_request.base.ref) ||
+        contains(fromJSON('["staging","main","release"]'), github.event.changes.base.ref.from)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Hand over to Version bump
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: echo "Version bump re-decides version-current for ${HEAD_SHA}."

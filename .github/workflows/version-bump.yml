@@ -14,34 +14,46 @@ name: Version bump
 #   publish  id-token: write, for the org App key. Checks out nothing from the
 #            PR. It rewrites the version strings with staging's
 #            set-version.py over file contents fetched as data, then commits
-#            through the Git Data API. bumpver is never run, so no
+#            through the GraphQL API. bumpver is never run, so no
 #            PR-supplied config (pycalver.toml, .bumpver.toml, pyproject.toml,
 #            setup.cfg) or hook is ever loaded.
 #
-# The App key is read from Secret Manager by gha-app-key-reader, which is
-# bound to exactly this file on `staging` (infra two-artifacts app-key.tf).
+# The org App key is released only to this file running on `staging`
+# (ISEC-853).
 #
 # THE GATE. `version-current` is a commit status posted by the App on the PR
 # head, and the branch ruleset requires it FROM THAT APP, with the branch up to
 # date. Every PR gets one: success when the head carries the computed version
-# (or the PR is a promotion or merge-back), pending while a bump is being
-# pushed, failure when the bump cannot be automated. A PR cannot post it or
+# (or the PR is a promotion or merge-back), failure when the bump cannot be
+# automated. A head the bump was pushed on top of gets a terminal failure
+# ("Superseded by the version bump"): it is no longer the same-repo PR's head,
+# and a fork PR that mirrors it must rebase onto the bump. A PR cannot post it or
 # edit this workflow, so nothing merges before its bump lands. The bump commit
 # triggers "Version preview" again, and the run for it posts success.
 #
-# TRIGGER. "Version preview" runs on every PR into a protected branch and is
-# advisory only. A PR that edits or removes it gets no `version-current` at all,
-# so it fails closed.
+# TRIGGERS. "Version preview" runs on every push to a PR into a protected
+# branch and is advisory only. "Version retarget" runs on `pull_request_target`
+# (always read from the default branch, `staging`, so the PR cannot change it)
+# on every push, open, reopen, close and change of base of a PR touching
+# staging, main or release, so a SHA that already holds a status is always
+# re-decided for its current PR set, even if the PR removes "Version preview".
+# Its run name is the PR head SHA, or "no-op" when it has nothing to hand
+# over; only a successful run named with a SHA starts a decision here.
 on:
   workflow_run:
-    workflows: [Version preview]
+    workflows: [Version preview, Version retarget]
     types: [completed]
 
 permissions:
   contents: read
 
+# One queue per head SHA: every run that writes this SHA's status is
+# serialised, so the newest verdict is posted last. GitHub keeps only one
+# pending run per group, and dropping a duplicate for the same SHA loses
+# nothing. Runs for different SHAs may overlap: a stale one finds no PR on its
+# SHA, or its commit is refused because the branch moved.
 concurrency:
-  group: version-bump-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  group: version-bump-${{ github.event.workflow_run.event == 'pull_request_target' && github.event.workflow_run.display_title || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -49,145 +61,148 @@ jobs:
     name: Decide the version
     runs-on: ${{ vars.RUNNER_STANDARD }}
     timeout-minutes: 10
-    if: github.event.workflow_run.event == 'pull_request'
+    if: |
+      github.event.workflow_run.event == 'pull_request' ||
+      (github.event.workflow_run.event == 'pull_request_target' &&
+       startsWith(github.event.workflow_run.path, '.github/workflows/version-retarget.yml') &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.display_title != 'no-op')
     permissions:
       contents: read
       pull-requests: read
     outputs:
+      head_sha: ${{ steps.sha.outputs.head_sha }}
       skip: ${{ steps.pr.outputs.skip }}
+      signature: ${{ steps.pr.outputs.signature }}
       state: ${{ steps.result.outputs.state }}
       description: ${{ steps.result.outputs.description }}
       push: ${{ steps.result.outputs.push }}
       old_version: ${{ steps.result.outputs.old_version }}
       set_version: ${{ steps.result.outputs.set_version }}
       head_branch: ${{ steps.pr.outputs.head_branch }}
-      trusted_sha: ${{ steps.result.outputs.trusted_sha }}
+      trusted_sha: ${{ steps.trusted.outputs.trusted_sha }}
+      post: ${{ steps.result.outputs.post }}
     steps:
-      - name: Find the pull request
-        id: pr
+      # First, before anything that can fail: publish posts on this SHA even
+      # when a later step fails, so a failed decision is an error, never a
+      # stale success left in place.
+      - name: Which head
+        id: sha
         env:
-          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event.workflow_run.event }}
           RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
         run: |
           set -euo pipefail
-          # A commit status belongs to the SHA, not to one PR, so decide for
-          # every open PR whose head is this SHA, whichever branch it is on.
-          # (workflow_run lists no PRs for a fork, and several for a shared
-          # head, so its own association cannot pick the PR.)
-          prs=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-            --jq '.[] | select(.head.sha == env.RUN_SHA) | {number, base: .base.ref, head_ref: .head.ref, head_repo: .head.repo.full_name}' | jq -s .)
-          into_staging=$(jq '[.[] | select(.base == "staging")]' <<<"$prs")
-          n_staging=$(jq length <<<"$into_staging")
-          verdict() { # state description
-            { echo "skip=false"; echo "verdict_state=$1"; echo "verdict_description=$2"; } >> "$GITHUB_OUTPUT"
-          }
-          # PRs into main or release on this SHA that are not same-repo promotions.
-          n_other=$(jq --arg r "$GITHUB_REPOSITORY" '[.[] | select(.base != "staging") | select((.head_repo == $r and (.head_ref == "staging" or .head_ref == "main")) | not)] | length' <<<"$prs")
-          if [ "$n_staging" -gt 1 ]; then
-            verdict failure "Several PRs into staging share this head: give each its own commit"; exit 0
-          elif [ "$n_staging" -eq 1 ] && [ "$n_other" -gt 0 ]; then
-            # One status serves every PR on this SHA, so the staging verdict would
-            # also pass a PR into main or release that is not a promotion.
-            verdict failure "A PR into staging and a PR into main or release share this head: give each its own commit"; exit 0
-          elif [ "$n_staging" -eq 1 ]; then
-            pr=$(jq '.[0]' <<<"$into_staging")
-          elif [ "$(jq length <<<"$prs")" -gt 0 ]; then
-            # Only PRs into main or release have this head, and no PR into
-            # staging does. main and release require this status too (the
-            # ruleset covers all three branches), so a promotion (head
-            # staging or main, from this repo) gets success: its version was
-            # decided on staging, and its head can never be retargeted to
-            # staging, so the success cannot go stale there. Any other PR into
-            # main or release gets failure, so a later retarget to staging
-            # finds no success to reuse and is re-decided on `edited`.
-            if jq -e --arg r "$GITHUB_REPOSITORY" 'all(.[]; .head_repo == $r and (.head_ref == "staging" or .head_ref == "main"))' <<<"$prs" >/dev/null; then
-              verdict success "Promotion PR: version already decided"; exit 0
-            fi
-            verdict failure "Only promotions from staging or main may target main or release"; exit 0
-          else
-            verdict failure "No open PR has this head"; exit 0
-          fi
-          head_repo=$(jq -r .head_repo <<<"$pr")
-          head_ref=$(jq -r .head_ref <<<"$pr")
-          # The head branch becomes part of an API path, so refuse anything odd.
-          if ! [[ "$head_ref" =~ ^[A-Za-z0-9._/-]+$ ]] || [[ "$head_ref" == */ || "$head_ref" == /* || "$head_ref" == *..* ]]; then
-            verdict failure "Unsupported head branch name: rename the branch"; exit 0
-          fi
-          # A PR from main into staging is a merge-back (decided below). Nothing
-          # may bump staging or release themselves.
-          if [ "$head_ref" = staging ] || [ "$head_ref" = release ]; then
-            verdict failure "Head branch ${head_ref} cannot be bumped"; exit 0
-          fi
-          {
-            echo "skip=false"
-            echo "number=$(jq -r .number <<<"$pr")"
-            echo "base=staging"
-            echo "head_branch=${head_ref}"
-            echo "same_repo=$([ "$head_repo" = "$GITHUB_REPOSITORY" ] && echo true || echo false)"
-          } >> "$GITHUB_OUTPUT"
+          # A pull_request_target run's own head SHA is the base branch's;
+          # "Version retarget" names the PR head in its run name instead.
+          if [ "$EVENT" = pull_request_target ]; then sha=$TITLE; else sha=$RUN_SHA; fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected head SHA."; exit 1; }
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Check out staging (the code this job runs)
-        if: steps.pr.outputs.skip == 'false' && steps.pr.outputs.verdict_state == ''
         uses: actions/checkout@v6
         with:
           ref: staging
           path: trusted
           persist-credentials: false
 
-      - name: Check out the PR head (data only)
-        if: steps.pr.outputs.skip == 'false' && steps.pr.outputs.verdict_state == ''
-        uses: actions/checkout@v6
+      - name: Pin the staging commit
+        id: trusted
+        run: echo "trusted_sha=$(git -C trusted rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Find the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.sha.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          # workflow_run lists no PRs for a fork, and several for a shared
+          # head, so its own association cannot pick the PR.
+          found=$(bash trusted/.github/scripts/find-version-pr.sh)
+          { echo "skip=false"; printf '%s\n' "$found"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v6
+        if: steps.pr.outputs.verdict_state == ''
         with:
-          ref: refs/pull/${{ steps.pr.outputs.number }}/head
-          path: pr
-          fetch-depth: 0
-          persist-credentials: false
+          python-version: "3.12"
+
+      - name: Fetch the PR head (git objects only, no checkout)
+        id: fetch
+        if: steps.pr.outputs.verdict_state == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -euo pipefail
+          # The PR head is never checked out here. A working tree would let a
+          # PR (a fork's included) commit a symlink, say `.next-major` ->
+          # /proc/self/environ, that a later read follows and prints. Only git
+          # objects are fetched; staging's scripts read them through git, and
+          # the few files they read as files are written out from blobs, and
+          # only if the tree records them as regular files.
+          [[ "$NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Unexpected PR number."; exit 1; }
+          git init -q pr
+          git -C pr fetch -q --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
+            "+refs/pull/${NUMBER}/head:refs/heads/pr-head" \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/staging:refs/remotes/origin/staging"
+          git -C pr symbolic-ref HEAD refs/heads/pr-head
+          bash trusted/.github/scripts/materialise-pr-files.sh pr trusted/bumpver.toml >> "$GITHUB_OUTPUT"
 
       - name: Decide
         id: result
-        if: steps.pr.outputs.skip == 'false'
         env:
-          GH_TOKEN: ${{ github.token }}
-          BASE: ${{ steps.pr.outputs.base }}
           SAME_REPO: ${{ steps.pr.outputs.same_repo }}
           HEAD_BRANCH: ${{ steps.pr.outputs.head_branch }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ steps.sha.outputs.head_sha }}
           VERDICT_STATE: ${{ steps.pr.outputs.verdict_state }}
           VERDICT_DESCRIPTION: ${{ steps.pr.outputs.verdict_description }}
+          UNSAFE: ${{ steps.fetch.outputs.unsafe }}
+          EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
           out() { # state description push
             { echo "state=$1"; echo "description=$2"; echo "push=$3"; } >> "$GITHUB_OUTPUT"
           }
           # The lookup already decided (several or no PRs into staging, or a promotion).
-          if [ -n "$VERDICT_STATE" ]; then out "$VERDICT_STATE" "$VERDICT_DESCRIPTION" false; exit 0; fi
-          [ "$(git -C pr rev-parse HEAD)" = "$RUN_SHA" ] || { out failure "Checked-out head is not the run's head" false; exit 0; }
-          echo "trusted_sha=$(git -C trusted rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ -n "$VERDICT_STATE" ]; then
+            # A "Version retarget" run for a PR that closed leaves a SHA with no
+            # open PR: nothing needs its status, so leave it as it is rather
+            # than mark a merged commit failed.
+            if [ "$EVENT" = pull_request_target ] && [ "$VERDICT_DESCRIPTION" = "No open PR has this head" ]; then
+              echo "post=false" >> "$GITHUB_OUTPUT"
+            fi
+            out "$VERDICT_STATE" "$VERDICT_DESCRIPTION" false; exit 0
+          fi
+          [ "$(git -C pr rev-parse HEAD)" = "$HEAD_SHA" ] || { out failure "Fetched head is not the run's head" false; exit 0; }
+          [ -z "$UNSAFE" ] || { out failure "${UNSAFE} must be a regular file, not a symlink or submodule" false; exit 0; }
 
           # A merge-back (main -> staging) PR carries a version already decided.
-          if [ "$SAME_REPO" = true ] && { [ "$HEAD_BRANCH" = main ] || [ "$HEAD_BRANCH" = staging ]; }; then
+          if [ "$SAME_REPO" = true ] && [ "$HEAD_BRANCH" = main ]; then
             out success "Merge-back PR: version already decided" false; exit 0
           fi
 
-          (cd trusted && .github/scripts/test-decide-bump-level.sh)
+          (cd trusted && .github/scripts/test-decide-bump-level.sh && python3 .github/scripts/test-set-version.py && bash .github/scripts/test-materialise-pr-files.sh)
 
-          git -C pr fetch --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
-            "+refs/heads/main:refs/remotes/origin/main" \
-            "+refs/heads/staging:refs/remotes/origin/staging"
-
-          strip() { sed '/^[[:space:]]*current_version[[:space:]]*=/d' "$1"; }
+          # The same current_version grammar set-version.py rewrites: optional
+          # indentation, a double-quoted value, an optional trailing comment.
+          CV_RE='^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*(#.*)?$'
+          strip() { grep -vE "$CV_RE" "$1" || true; }
           # A PR that changes bumpver.toml beyond current_version is never bumped
           # automatically: it passes only if its head already carries the version
           # staging's script computes, set by hand.
           CONFIG_CHANGED=false
           diff <(strip trusted/bumpver.toml) <(strip pr/bumpver.toml) >/dev/null || CONFIG_CHANGED=true
           n_cv=$(grep -cE '^[[:space:]]*current_version[[:space:]]*=' pr/bumpver.toml || true)
-          [ "$n_cv" = 1 ] || { out failure "bumpver.toml must have exactly one current_version line" false; exit 0; }
+          n_ok=$(grep -cE "$CV_RE" pr/bumpver.toml || true)
+          [ "$n_cv" = 1 ] && [ "$n_ok" = 1 ] || { out failure 'bumpver.toml must have exactly one current_version = "X.Y.Z" line' false; exit 0; }
 
           decision=$(cd pr && GITHUB_OUTPUT=/dev/null ../trusted/.github/scripts/decide-bump-level.sh origin/staging HEAD)
           SET_VERSION=$(sed -n 's/^set_version=//p' <<<"$decision")
           CHANGED=$(sed -n 's/^changed=//p' <<<"$decision")
-          OLD_VERSION=$(sed -n 's/^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' pr/bumpver.toml)
+          OLD_VERSION=$(grep -E "$CV_RE" pr/bumpver.toml | sed -E 's/^[^"]*"([^"]*)".*/\1/')
           for v in "$SET_VERSION" "$OLD_VERSION"; do
             # MAJOR.MINOR.PATCH with an optional bumpver tag and number. A fixed
             # character set, so a value cannot carry a second output line.
@@ -196,7 +211,13 @@ jobs:
           { echo "set_version=$SET_VERSION"; echo "old_version=$OLD_VERSION"; } >> "$GITHUB_OUTPUT"
 
           if [ "$CHANGED" != true ]; then
-            out success "Version ${SET_VERSION} is current" false
+            # current_version alone is not enough: every file staging's
+            # bumpver.toml names must declare the same version, exactly once.
+            if ! python3 trusted/.github/scripts/set-version.py --check trusted/bumpver.toml pr "$SET_VERSION"; then
+              out failure "A file bumpver.toml lists does not declare ${SET_VERSION}: set it by hand" false
+            else
+              out success "Version ${SET_VERSION} is current" false
+            fi
           elif [ "$CONFIG_CHANGED" = true ]; then
             out failure "bumpver.toml changed: set the version to ${SET_VERSION} by hand" false
           elif [ "$SAME_REPO" = true ]; then
@@ -208,12 +229,15 @@ jobs:
   publish:
     name: Push the bump and post version-current
     needs: decide
-    if: always() && needs.decide.result != 'skipped' && needs.decide.outputs.skip != 'true'
+    # Runs whenever decide ran, failed or not, so a failed decision still posts
+    # an error on the head (from the run itself if decide never resolved it).
+    if: always() && needs.decide.result != 'skipped' && needs.decide.outputs.post != 'false'
     runs-on: ${{ vars.RUNNER_STANDARD }}
     timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
+      pull-requests: read
     steps:
       - name: Check out staging (the code this job runs)
         uses: actions/checkout@v6
@@ -243,10 +267,12 @@ jobs:
         if: needs.decide.outputs.push == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ needs.decide.outputs.head_sha }}
           HEAD_BRANCH: ${{ needs.decide.outputs.head_branch }}
           OLD_VERSION: ${{ needs.decide.outputs.old_version }}
           SET_VERSION: ${{ needs.decide.outputs.set_version }}
+          SIGNATURE: ${{ needs.decide.outputs.signature }}
+          LOOKUP_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [ -n "$GH_TOKEN" ] || { echo "::error::No App token: the key could not be read from Secret Manager."; exit 1; }
@@ -260,44 +286,123 @@ jobs:
             gh api -H "Accept: application/vnd.github.raw" "repos/${GITHUB_REPOSITORY}/contents/${f}?ref=${HEAD_SHA}" > "data/$f"
           done <<<"$files"
           message=$(python3 trusted/.github/scripts/set-version.py trusted/bumpver.toml data "$OLD_VERSION" "$SET_VERSION")
-          base_tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${HEAD_SHA}" --jq .tree.sha)
-          tree_json=$(while IFS= read -r f; do
-            blob=$(base64 -w0 "data/$f" | jq -Rs '{content: ., encoding: "base64"}' | gh api "repos/${GITHUB_REPOSITORY}/git/blobs" --input - --jq .sha)
-            jq -n --arg p "$f" --arg s "$blob" '{path: $p, mode: "100644", type: "blob", sha: $s}'
-          done <<<"$files" | jq -s --arg b "$base_tree" '{base_tree: $b, tree: .}')
-          tree=$(gh api "repos/${GITHUB_REPOSITORY}/git/trees" --input - --jq .sha <<<"$tree_json")
-          commit=$(jq -n --arg m "$message" --arg t "$tree" --arg p "$HEAD_SHA" '{message: $m, tree: $t, parents: [$p]}' \
-            | gh api "repos/${GITHUB_REPOSITORY}/git/commits" --input - --jq .sha)
-          # force=false: fast-forward only. If the branch moved, this is
-          # refused and the run for the new head decides.
-          ref_path=$(jq -rn --arg b "$HEAD_BRANCH" '$b | split("/") | map(@uri) | join("/")')
-          want="refs/heads/${HEAD_BRANCH}"
-          got=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${ref_path}" --jq .ref)
-          [ "$got" = "$want" ] || { echo "::error::Ref resolved to ${got}, not ${want}; refusing to update it."; exit 1; }
-          got=$(gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/${ref_path}" -f "sha=${commit}" -F force=false --jq .ref)
-          [ "$got" = "$want" ] || { echo "::error::The update landed on ${got}, not ${want}."; exit 1; }
+          # createCommitOnBranch commits onto the branch only if its head is
+          # still HEAD_SHA (expectedHeadOid), atomically. If the branch moved,
+          # forwards or backwards, it is refused and the run for the new head
+          # decides, so the App can never restore commits someone removed.
+          additions=$(while IFS= read -r f; do
+            jq -n --arg p "$f" --arg c "$(base64 < "data/$f" | tr -d '\n')" '{path: $p, contents: $c}'
+          done <<<"$files" | jq -s .)
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$HEAD_BRANCH" --arg head "$HEAD_SHA" \
+            --arg m "$message" --argjson add "$additions" '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $head,
+                message: {headline: $m},
+                fileChanges: {additions: $add}}}}' > mutation.json
+          # Last moment before writing: the PR this bump is for must still be
+          # the one decided for (not closed, nor retargeted away). If not, push
+          # nothing and let the status step decide what to post.
+          # The PR lookup, retried with a short backoff: a transient API failure
+          # must not read as "the PRs changed". Prints the signature, or fails.
+          lookup() {
+            local i out
+            for i in 1 2 3; do
+              if out=$(GH_TOKEN=$LOOKUP_TOKEN bash trusted/.github/scripts/find-version-pr.sh); then
+                sed -n 's/^signature=//p' <<<"$out"; return 0
+              fi
+              [ "$i" = 3 ] || sleep $((i * 5))
+            done
+            return 1
+          }
+          if ! now=$(lookup); then
+            echo "::error::Could not re-check the open PRs on this commit; not pushing the bump."
+            echo "recheck_failed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$now" != "$SIGNATURE" ]; then
+            echo "::warning::The open PRs on this commit changed while deciding; not pushing the bump."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          commit=$(gh api graphql --input mutation.json --jq '.data.createCommitOnBranch.commit.oid')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The bump commit was not created."; exit 1; }
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
       - name: Post version-current
         if: always() && steps.app-token.outputs.token != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ needs.decide.outputs.head_sha || (github.event.workflow_run.event == 'pull_request_target' && github.event.workflow_run.display_title || github.event.workflow_run.head_sha) }}
           DECIDED: ${{ needs.decide.result }}
+          SIGNATURE: ${{ needs.decide.outputs.signature }}
           STATE: ${{ needs.decide.outputs.state }}
           DESCRIPTION: ${{ needs.decide.outputs.description }}
           BUMP: ${{ steps.bump.outcome }}
           PUSH: ${{ needs.decide.outputs.push }}
           COMMIT: ${{ steps.bump.outputs.commit }}
+          SKIPPED: ${{ steps.bump.outputs.skipped }}
+          RECHECK_FAILED: ${{ steps.bump.outputs.recheck_failed }}
+          LOOKUP_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected head SHA."; exit 1; }
+          # The PR lookup, retried with a short backoff: a transient API failure
+          # must not read as "the PRs changed". Prints the signature, or fails.
+          lookup() {
+            local i out
+            for i in 1 2 3; do
+              if out=$(GH_TOKEN=$LOOKUP_TOKEN bash trusted/.github/scripts/find-version-pr.sh); then
+                sed -n 's/^signature=//p' <<<"$out"; return 0
+              fi
+              [ "$i" = 3 ] || sleep $((i * 5))
+            done
+            return 1
+          }
           if [ "$DECIDED" != success ] || [ -z "$STATE" ]; then
             STATE=error; DESCRIPTION="Version bump could not decide; see the run"
           elif [ "$PUSH" = true ] && [ "$BUMP" != success ]; then
             STATE=failure; DESCRIPTION="Could not push the bump; see the run"
+          elif [ "$RECHECK_FAILED" = true ]; then
+            STATE=error; DESCRIPTION="Could not re-check the PRs on this commit; re-run Version bump"
+          elif [ "$SKIPPED" = true ]; then
+            # The bump was not pushed because the PR set changed; the run for
+            # the new state decides.
+            echo "The open PRs on this commit changed before the bump: posting nothing."
+            exit 0
           elif [ -n "$COMMIT" ]; then
-            DESCRIPTION="${DESCRIPTION}: pushed ${COMMIT:0:7}"
+            # The bump moved only the same-repo branch. The old SHA stays the
+            # head of any fork PR that mirrors it, and nothing will decide it
+            # again, so give it a terminal verdict rather than leave it pending.
+            # The same-repo PR's new head is decided by the run its push starts.
+            STATE=failure; DESCRIPTION="Superseded by the version bump in ${COMMIT:0:7}; rebase onto it"
+          fi
+          if [ -n "$SIGNATURE" ] && [ -z "$COMMIT" ] && [ "$RECHECK_FAILED" != true ]; then
+            # The open PRs on this SHA may have changed since decide looked (a
+            # PR opened, closed, pushed to or retargeted), and GitHub does not
+            # promise to run queued runs in order. So a verdict is posted only
+            # if the same lookup still gives the same answer now. If it gives
+            # another (a successful lookup, different PRs), post nothing: every
+            # such change starts a run of its own
+            # (through "Version retarget"), which posts the verdict for the new
+            # state, and this older one must not land after it. This covers an
+            # error from a failed decision too, whenever the lookup ran: if no
+            # PR is left on the SHA, nothing is posted, so a closed or merged
+            # commit never keeps an error. A superseded head (COMMIT set)
+            # keeps its terminal failure regardless.
+            if ! now=$(lookup); then
+              # Can't tell, so post neither verdict: an error, which blocks the
+              # merge until Version bump is re-run.
+              STATE=error; DESCRIPTION="Could not re-check the PRs on this commit; re-run Version bump"
+            elif [ "$now" = "failure:No open PR has this head" ]; then
+              echo "No open PR has this head: posting nothing."
+              exit 0
+            elif [ "$now" != "$SIGNATURE" ]; then
+              echo "The open PRs on this commit changed since the decision (${SIGNATURE} -> ${now}): posting nothing; the run for the new state posts its own verdict."
+              exit 0
+            fi
           fi
           gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" -f "state=${STATE}" -f context=version-current \
             -f "description=${DESCRIPTION:0:140}" -f "target_url=${RUN_URL}" >/dev/null
