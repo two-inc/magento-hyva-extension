@@ -1,1 +1,1 @@
-3 requires the 3.x base; the admin form is now allowlist-driven
+4  # requires the 4.2 base (~4.2.0): the matching set shares one major.minor

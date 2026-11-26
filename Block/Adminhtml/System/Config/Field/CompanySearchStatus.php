@@ -12,14 +12,16 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\GatewayHyva\Service\ApiKeyVerificationStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * Why the Hyva company-search control is absent from checkout (ABN-518).
  *
- * This extension withholds the control on its OWN API-key verdict, which is a
- * separate read from the base module's, so the base module's health panel
- * cannot answer for it.
+ * Reads the same API-key verdict as the base module (its ApiKeyStatus
+ * service). The base module's admin health checklist reports company search
+ * too, but no tagged base release carries that row yet. Retire this row, with
+ * its template, test and translations, once a tagged base release carries the
+ * base company-search row (see docs/release-and-versioning.md).
  */
 class CompanySearchStatus extends Field
 {
@@ -29,7 +31,7 @@ class CompanySearchStatus extends Field
     protected $_template = 'Two_GatewayHyva::system/config/field/company-search-status.phtml';
 
     /**
-     * @var ApiKeyVerificationStatus
+     * @var ApiKeyStatus
      */
     protected $apiKeyStatus;
 
@@ -39,7 +41,7 @@ class CompanySearchStatus extends Field
     protected $configRepository;
 
     public function __construct(
-        ApiKeyVerificationStatus $apiKeyStatus,
+        ApiKeyStatus $apiKeyStatus,
         ConfigRepository $configRepository,
         Context $context,
         array $data = []
@@ -56,23 +58,27 @@ class CompanySearchStatus extends Field
     {
         $storeId = $this->resolveScopeStoreId();
         $notShown = (string) __('Not shown at checkout');
-        // The address-step control is gated on this setting as well as on the
-        // verdict; with it off the control moves into the payment tile.
-        if (!$this->configRepository->isCompanySearchEnabled($storeId)) {
+        // A disabled method stands the control down wherever it sits, so it is
+        // named before the verdict (TWO-27227), as the base module's row does.
+        // The separator is the one the reasons below use.
+        if (!$this->configRepository->isActive($storeId)) {
             return [
-                'state' => 'ok',
-                'value' => (string) __('Shown in the payment method — Enable company search in address entry is No.'),
+                'state' => 'withheld',
+                'value' => $notShown . " \u{2014} "
+                    . (string) __('the payment method is disabled. Check Enable payment method.'),
             ];
         }
-        switch ($this->apiKeyStatus->getStatus($storeId)) {
-            case ApiKeyVerificationStatus::OK:
-                return ['state' => 'ok', 'value' => (string) __('Shown at checkout')];
-            case ApiKeyVerificationStatus::NOT_CONFIGURED:
+        // The verdict first (TWO-27224): a missing or rejected key withholds the
+        // control wherever it sits, because with the setting below off it moves
+        // into the payment tile, which the base module withholds on this same
+        // verdict.
+        switch ($this->apiKeyStatus->getStatus($storeId)['status']) {
+            case ApiKeyStatus::NOT_CONFIGURED:
                 return [
                     'state' => 'withheld',
                     'value' => $notShown . ' — ' . (string) __('no API key is saved. Check API key.'),
                 ];
-            case ApiKeyVerificationStatus::INVALID_KEY:
+            case ApiKeyStatus::INVALID_KEY:
                 return [
                     'state' => 'withheld',
                     'value' => $notShown . ' — '
@@ -80,7 +86,19 @@ class CompanySearchStatus extends Field
                 ];
         }
 
-        // ABN-533: every other verdict falls through to the cached record.
+        // ABN-533: every other verdict falls through to the cached record, so
+        // the control is offered and the setting only decides where. In the
+        // payment tile it shows only when the base module offers the method,
+        // which this module does not re-derive; the value says so.
+        if (!$this->configRepository->isCompanySearchEnabled($storeId)) {
+            return [
+                'state' => 'ok',
+                'value' => (string) __(
+                    'Shown in the payment method when it is offered (Enable company search in address entry is No)'
+                ),
+            ];
+        }
+
         return ['state' => 'ok', 'value' => (string) __('Shown at checkout')];
     }
 

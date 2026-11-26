@@ -1,167 +1,408 @@
 name: Version bump
 
-# Computes the version a pull request should land on `staging` with, and commits
-# it onto the PR's own head branch.
+# Decides the version a pull request should land on `staging` with, commits it
+# onto the PR's own head branch, and posts the REQUIRED `version-current`
+# commit status. The version scheme is TWO-25256's: it describes the CHANGE,
+# from the conventional-commit types of the commits the PR adds, and
+# .github/scripts/decide-bump-level.sh owns the whole decision.
 #
-# The version now describes the CHANGE, derived from the conventional-commit
-# types of the commits the PR adds, which is what semver actually asks for. The
-# previous scheme bumped by branch rule (patch on `staging`, minor on `main`),
-# so the same change got a different version depending on where it merged. That
-# is not semver, and the number carried no information.
+# TRUST (ISEC-853). A `workflow_run` workflow is always read from the default
+# branch (`staging`), so a PR cannot change what runs here. It is split in two:
 #
-# Trigger is `pull_request` to `staging` ONLY. In particular:
+#   decide   no id-token, no secrets. Runs staging's scripts over the PR head
+#            as git data, and decides the version and the status to post.
+#   publish  id-token: write, for the org App key. Checks out nothing from the
+#            PR. It rewrites the version strings with staging's
+#            set-version.py over file contents fetched as data, then commits
+#            through the GraphQL API. bumpver is never run, so no
+#            PR-supplied config (pycalver.toml, .bumpver.toml, pyproject.toml,
+#            setup.cfg) or hook is ever loaded.
 #
-#   - NEVER on a `staging -> main` PR. Promotion to `main` does not invent a new
-#     version; it releases the version already in the tree. The `main` side only
-#     tags what is there and cuts the Release.
-#   - No longer on `push:` to `staging`. Bumping after the merge meant the
-#     version that reviewers saw was never the version that shipped, and it also
-#     needed a push to a protected branch (see the token note below).
+# The org App key is released only to this file running on `staging`
+# (ISEC-853).
 #
-# The whole decision lives in .github/scripts/decide-bump-level.sh, which emits
-# an ABSOLUTE `set_version`. It is idempotent by construction (`max()` against
-# the version already on the head), so a re-run, a synchronize triggered by this
-# workflow's own bump commit, or a second fix commit on the same PR all compute
-# the same answer and commit nothing.
+# THE GATE. `version-current` is a commit status posted by the App on the PR
+# head, and the branch ruleset requires it FROM THAT APP, with the branch up to
+# date. Every PR gets one: success when the head carries the computed version
+# (or the PR is a promotion or merge-back), failure when the bump cannot be
+# automated. A head the bump was pushed on top of gets a terminal failure
+# ("Superseded by the version bump"): it is no longer the same-repo PR's head,
+# and a fork PR that mirrors it must rebase onto the bump. A PR cannot post it or
+# edit this workflow, so nothing merges before its bump lands. The bump commit
+# triggers "Version preview" again, and the run for it posts success.
 #
-# TOKEN: the org App, not the default GITHUB_TOKEN. Two reasons, both hard
-# requirements rather than preferences:
-#
-#   1. Pushes made with GITHUB_TOKEN do not trigger workflows, so CI would never
-#      re-run on the bump commit and the PR's checks would refer to a SHA that
-#      is no longer the head.
-#   2. The App (id 2603046) holds `bypass_mode: always` on the branch-protection
-#      ruleset in each of these repos.
-#
-# It is minted for the final push only, after every step that runs code from the
-# PR head, so it is not on disk while those steps run. That is hygiene rather than
-# a boundary, and two routes get past it. `pull_request` reads this workflow from
-# the PR head, so a same-repo PR can edit the job itself. And steps share a
-# filesystem and a $HOME, so PR code in an earlier step can leave a git shim on
-# PATH or a credential helper in .gitconfig for the push step to hand the token
-# to. Closing either needs the App off the ruleset bypass list, or a trigger whose
-# workflow is read from the default branch. See PLAT-2318.
-#
-# On (2): this scheme also sidesteps the GH013 failure that the old
-# push-to-staging workflow hits, because the bump is now a commit on the PR's
-# own head branch, and `terraform-managed-branch-protection` only targets
-# refs/heads/{main,release,staging}. A feature branch is outside its conditions
-# entirely.
+# TRIGGERS. "Version preview" runs on every push to a PR into a protected
+# branch and is advisory only. "Version retarget" runs on `pull_request_target`
+# (always read from the default branch, `staging`, so the PR cannot change it)
+# on every push, open, reopen, close and change of base of a PR touching
+# staging, main or release, so a SHA that already holds a status is always
+# re-decided for its current PR set, even if the PR removes "Version preview".
+# Its run name is the PR head SHA, or "no-op" when it has nothing to hand
+# over; only a successful run named with a SHA starts a decision here.
 on:
-  pull_request:
-    branches: [staging]
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: [Version preview, Version retarget]
+    types: [completed]
 
 permissions:
-  # Read is enough: the checkout and the fetch below are the only things using
-  # this token, and the push carries the App token instead.
   contents: read
 
-# Never cancel in flight: a cancelled run could be killed between the bump
-# commit and the push.
+# One queue per head SHA: every run that writes this SHA's status is
+# serialised, so the newest verdict is posted last. GitHub keeps only one
+# pending run per group, and dropping a duplicate for the same SHA loses
+# nothing. Runs for different SHAs may overlap: a stale one finds no PR on its
+# SHA, or its commit is refused because the branch moved.
 concurrency:
-  group: version-bump-${{ github.event.pull_request.number }}
+  group: version-bump-${{ github.event.workflow_run.event == 'pull_request_target' && github.event.workflow_run.display_title || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
-  self-test:
-    # The version arithmetic is unit-tested against throwaway git repos (no
-    # network, no docker, a couple of seconds). It gates the bump below rather
-    # than living in the main CI workflow, so the logic can never write a commit
-    # it cannot pass its own tests on.
-    name: Test the version computation
-    runs-on: ${{ vars.RUNNER_STANDARD }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - run: .github/scripts/test-decide-bump-level.sh
-
-  bump:
-    name: Compute version for this PR
-    needs: self-test
+  decide:
+    name: Decide the version
     runs-on: ${{ vars.RUNNER_STANDARD }}
     timeout-minutes: 10
-    # Fork PRs cannot be pushed to. Nothing here is secret-dependent for a fork
-    # to abuse; it simply has nowhere to write, so skip rather than fail red.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: |
+      github.event.workflow_run.event == 'pull_request' ||
+      (github.event.workflow_run.event == 'pull_request_target' &&
+       startsWith(github.event.workflow_run.path, '.github/workflows/version-retarget.yml') &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.display_title != 'no-op')
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      head_sha: ${{ steps.sha.outputs.head_sha }}
+      skip: ${{ steps.pr.outputs.skip }}
+      signature: ${{ steps.pr.outputs.signature }}
+      state: ${{ steps.result.outputs.state }}
+      description: ${{ steps.result.outputs.description }}
+      push: ${{ steps.result.outputs.push }}
+      old_version: ${{ steps.result.outputs.old_version }}
+      set_version: ${{ steps.result.outputs.set_version }}
+      head_branch: ${{ steps.pr.outputs.head_branch }}
+      trusted_sha: ${{ steps.trusted.outputs.trusted_sha }}
+      post: ${{ steps.result.outputs.post }}
     steps:
-      - uses: actions/checkout@v6
+      # First, before anything that can fail: publish posts on this SHA even
+      # when a later step fails, so a failed decision is an error, never a
+      # stale success left in place.
+      - name: Which head
+        id: sha
+        env:
+          EVENT: ${{ github.event.workflow_run.event }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          # A pull_request_target run's own head SHA is the base branch's;
+          # "Version retarget" names the PR head in its run name instead.
+          if [ "$EVENT" = pull_request_target ]; then sha=$TITLE; else sha=$RUN_SHA; fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected head SHA."; exit 1; }
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out staging (the code this job runs)
+        uses: actions/checkout@v6
         with:
-          # The PR's head BRANCH, not the merge ref: the bump commit has to land
-          # on the contributor's branch, so HEAD must be the branch tip and not
-          # a detached merge commit.
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-          # Nothing on disk for the steps below, which run code from the PR head.
-          # The fetch and the push each carry their own credential.
+          ref: staging
+          path: trusted
           persist-credentials: false
 
-      - name: Fetch main and staging
-        # The decision reads the released version off `origin/main` and the PR's
-        # commit range off `origin/staging`. Explicit refspecs because
-        # actions/checkout only guarantees the ref it was asked for.
+      - name: Pin the staging commit
+        id: trusted
+        run: echo "trusted_sha=$(git -C trusted rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Find the pull request
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.sha.outputs.head_sha }}
         run: |
-          git fetch --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
-            "+refs/heads/main:refs/remotes/origin/main" \
-            "+refs/heads/staging:refs/remotes/origin/staging"
-
-      - name: Compute the version
-        id: decide
-        run: .github/scripts/decide-bump-level.sh origin/staging HEAD
+          set -euo pipefail
+          # workflow_run lists no PRs for a fork, and several for a shared
+          # head, so its own association cannot pick the PR.
+          found=$(bash trusted/.github/scripts/find-version-pr.sh)
+          { echo "skip=false"; printf '%s\n' "$found"; } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v6
-        if: steps.decide.outputs.changed == 'true'
+        if: steps.pr.outputs.verdict_state == ''
         with:
           python-version: "3.12"
 
-      - name: Install bumpver
-        if: steps.decide.outputs.changed == 'true'
-        run: pip install bumpver
-
-      - name: Configure git identity
-        if: steps.decide.outputs.changed == 'true'
-        run: |
-          git config user.name "two-inc-app[bot]"
-          git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
-
-      - name: Write the version (files + commit only)
-        if: steps.decide.outputs.changed == 'true'
+      - name: Fetch the PR head (git objects only, no checkout)
+        id: fetch
+        if: steps.pr.outputs.verdict_state == ''
         env:
-          SET_VERSION: ${{ steps.decide.outputs.set_version }}
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
-          # bumpver.toml is the single source of truth for which files carry the
-          # version. --set-version because the script hands over an absolute
-          # version, not a level: no level can express "clamp to the version the
-          # tree already has". --no-tag-commit --no-push because tags belong to
-          # `main` and the push is done explicitly below.
-          bumpver update --set-version "$SET_VERSION" --no-tag-commit --no-push
+          # The PR head is never checked out here. A working tree would let a
+          # PR (a fork's included) commit a symlink, say `.next-major` ->
+          # /proc/self/environ, that a later read follows and prints. Only git
+          # objects are fetched; staging's scripts read them through git, and
+          # the few files they read as files are written out from blobs, and
+          # only if the tree records them as regular files.
+          [[ "$NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Unexpected PR number."; exit 1; }
+          git init -q pr
+          git -C pr fetch -q --no-tags "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}" \
+            "+refs/pull/${NUMBER}/head:refs/heads/pr-head" \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/heads/staging:refs/remotes/origin/staging"
+          git -C pr symbolic-ref HEAD refs/heads/pr-head
+          bash trusted/.github/scripts/materialise-pr-files.sh pr trusted/bumpver.toml >> "$GITHUB_OUTPUT"
+
+      - name: Decide
+        id: result
+        env:
+          SAME_REPO: ${{ steps.pr.outputs.same_repo }}
+          HEAD_BRANCH: ${{ steps.pr.outputs.head_branch }}
+          HEAD_SHA: ${{ steps.sha.outputs.head_sha }}
+          VERDICT_STATE: ${{ steps.pr.outputs.verdict_state }}
+          VERDICT_DESCRIPTION: ${{ steps.pr.outputs.verdict_description }}
+          UNSAFE: ${{ steps.fetch.outputs.unsafe }}
+          EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          out() { # state description push
+            { echo "state=$1"; echo "description=$2"; echo "push=$3"; } >> "$GITHUB_OUTPUT"
+          }
+          # The lookup already decided (several or no PRs into staging, or a promotion).
+          if [ -n "$VERDICT_STATE" ]; then
+            # A "Version retarget" run for a PR that closed leaves a SHA with no
+            # open PR: nothing needs its status, so leave it as it is rather
+            # than mark a merged commit failed.
+            if [ "$EVENT" = pull_request_target ] && [ "$VERDICT_DESCRIPTION" = "No open PR has this head" ]; then
+              echo "post=false" >> "$GITHUB_OUTPUT"
+            fi
+            out "$VERDICT_STATE" "$VERDICT_DESCRIPTION" false; exit 0
+          fi
+          [ "$(git -C pr rev-parse HEAD)" = "$HEAD_SHA" ] || { out failure "Fetched head is not the run's head" false; exit 0; }
+          [ -z "$UNSAFE" ] || { out failure "${UNSAFE} must be a regular file, not a symlink or submodule" false; exit 0; }
+
+          # A merge-back (main -> staging) PR carries a version already decided.
+          if [ "$SAME_REPO" = true ] && [ "$HEAD_BRANCH" = main ]; then
+            out success "Merge-back PR: version already decided" false; exit 0
+          fi
+
+          (cd trusted && .github/scripts/test-decide-bump-level.sh && python3 .github/scripts/test-set-version.py && bash .github/scripts/test-materialise-pr-files.sh)
+
+          # The same current_version grammar set-version.py rewrites: optional
+          # indentation, a double-quoted value, an optional trailing comment.
+          CV_RE='^[[:space:]]*current_version[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*(#.*)?$'
+          strip() { grep -vE "$CV_RE" "$1" || true; }
+          # A PR that changes bumpver.toml beyond current_version is never bumped
+          # automatically: it passes only if its head already carries the version
+          # staging's script computes, set by hand.
+          CONFIG_CHANGED=false
+          diff <(strip trusted/bumpver.toml) <(strip pr/bumpver.toml) >/dev/null || CONFIG_CHANGED=true
+          n_cv=$(grep -cE '^[[:space:]]*current_version[[:space:]]*=' pr/bumpver.toml || true)
+          n_ok=$(grep -cE "$CV_RE" pr/bumpver.toml || true)
+          [ "$n_cv" = 1 ] && [ "$n_ok" = 1 ] || { out failure 'bumpver.toml must have exactly one current_version = "X.Y.Z" line' false; exit 0; }
+
+          decision=$(cd pr && GITHUB_OUTPUT=/dev/null ../trusted/.github/scripts/decide-bump-level.sh origin/staging HEAD)
+          SET_VERSION=$(sed -n 's/^set_version=//p' <<<"$decision")
+          CHANGED=$(sed -n 's/^changed=//p' <<<"$decision")
+          OLD_VERSION=$(grep -E "$CV_RE" pr/bumpver.toml | sed -E 's/^[^"]*"([^"]*)".*/\1/')
+          for v in "$SET_VERSION" "$OLD_VERSION"; do
+            # MAJOR.MINOR.PATCH with an optional bumpver tag and number. A fixed
+            # character set, so a value cannot carry a second output line.
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|dev|rc|post|final)[0-9]*)?$ ]] || { out failure "Version does not match MAJOR.MINOR.PATCH[-TAGNUM]" false; exit 0; }
+          done
+          { echo "set_version=$SET_VERSION"; echo "old_version=$OLD_VERSION"; } >> "$GITHUB_OUTPUT"
+
+          if [ "$CHANGED" != true ]; then
+            # current_version alone is not enough: every file staging's
+            # bumpver.toml names must declare the same version, exactly once.
+            if ! python3 trusted/.github/scripts/set-version.py --check trusted/bumpver.toml pr "$SET_VERSION"; then
+              out failure "A file bumpver.toml lists does not declare ${SET_VERSION}: set it by hand" false
+            else
+              out success "Version ${SET_VERSION} is current" false
+            fi
+          elif [ "$CONFIG_CHANGED" = true ]; then
+            out failure "bumpver.toml changed: set the version to ${SET_VERSION} by hand" false
+          elif [ "$SAME_REPO" = true ]; then
+            out pending "Bumping to ${SET_VERSION}" true
+          else
+            out failure "Fork PR: set the version to ${SET_VERSION} by hand" false
+          fi
+
+  publish:
+    name: Push the bump and post version-current
+    needs: decide
+    # Runs whenever decide ran, failed or not, so a failed decision still posts
+    # an error on the head (from the run itself if decide never resolved it).
+    if: always() && needs.decide.result != 'skipped' && needs.decide.outputs.post != 'false'
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: read
+    steps:
+      - name: Check out staging (the code this job runs)
+        uses: actions/checkout@v6
+        with:
+          # The staging commit decide ran, so a staging move between the
+          # two jobs cannot pair one revision's decision with another's files.
+          ref: ${{ needs.decide.outputs.trusted_sha || 'staging' }}
+          path: trusted
+          persist-credentials: false
 
       - name: Mint GitHub App token
         id: app-token
-        if: steps.decide.outputs.changed == 'true'
-        uses: actions/create-github-app-token@v3
+        uses: two-inc/actions-public/app-token@main
         with:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-statuses: write
 
-      - name: Push onto the PR branch
-        if: steps.decide.outputs.changed == 'true'
-        env:
-          TOKEN: ${{ steps.app-token.outputs.token }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "HEAD:refs/heads/${HEAD_REF}"
+      - uses: actions/setup-python@v6
+        if: needs.decide.outputs.push == 'true'
+        with:
+          python-version: "3.12"
 
-      - name: Summary
+      - name: Commit the bump onto the PR branch
+        id: bump
+        if: needs.decide.outputs.push == 'true'
         env:
-          SET_VERSION: ${{ steps.decide.outputs.set_version }}
-          CHANGED: ${{ steps.decide.outputs.changed }}
-          REASON: ${{ steps.decide.outputs.reason }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD_SHA: ${{ needs.decide.outputs.head_sha }}
+          HEAD_BRANCH: ${{ needs.decide.outputs.head_branch }}
+          OLD_VERSION: ${{ needs.decide.outputs.old_version }}
+          SET_VERSION: ${{ needs.decide.outputs.set_version }}
+          SIGNATURE: ${{ needs.decide.outputs.signature }}
+          LOOKUP_TOKEN: ${{ github.token }}
         run: |
-          if [ "$CHANGED" = "true" ]; then
-            echo "Version set to ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Version already correct at ${SET_VERSION} — ${REASON}" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          [ -n "$GH_TOKEN" ] || { echo "::error::No App token: the key could not be read from Secret Manager."; exit 1; }
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected head SHA."; exit 1; }
+          [[ "$HEAD_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::Unsupported head branch name."; exit 1; }
+          # Fetch only the files staging's bumpver.toml names, as data.
+          files=$(python3 -c 'import tomllib,sys; c=tomllib.load(open(sys.argv[1],"rb"))["tool"]["bumpver"]; print("\n".join(["bumpver.toml", *c.get("file_patterns", {})]))' trusted/bumpver.toml)
+          mkdir -p data
+          while IFS= read -r f; do
+            mkdir -p "data/$(dirname "$f")"
+            gh api -H "Accept: application/vnd.github.raw" "repos/${GITHUB_REPOSITORY}/contents/${f}?ref=${HEAD_SHA}" > "data/$f"
+          done <<<"$files"
+          message=$(python3 trusted/.github/scripts/set-version.py trusted/bumpver.toml data "$OLD_VERSION" "$SET_VERSION")
+          # createCommitOnBranch commits onto the branch only if its head is
+          # still HEAD_SHA (expectedHeadOid), atomically. If the branch moved,
+          # forwards or backwards, it is refused and the run for the new head
+          # decides, so the App can never restore commits someone removed.
+          additions=$(while IFS= read -r f; do
+            jq -n --arg p "$f" --arg c "$(base64 < "data/$f" | tr -d '\n')" '{path: $p, contents: $c}'
+          done <<<"$files" | jq -s .)
+          jq -n --arg repo "$GITHUB_REPOSITORY" --arg branch "$HEAD_BRANCH" --arg head "$HEAD_SHA" \
+            --arg m "$message" --argjson add "$additions" '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $head,
+                message: {headline: $m},
+                fileChanges: {additions: $add}}}}' > mutation.json
+          # Last moment before writing: the PR this bump is for must still be
+          # the one decided for (not closed, nor retargeted away). If not, push
+          # nothing and let the status step decide what to post.
+          # The PR lookup, retried with a short backoff: a transient API failure
+          # must not read as "the PRs changed". Prints the signature, or fails.
+          lookup() {
+            local i out
+            for i in 1 2 3; do
+              if out=$(GH_TOKEN=$LOOKUP_TOKEN bash trusted/.github/scripts/find-version-pr.sh); then
+                sed -n 's/^signature=//p' <<<"$out"; return 0
+              fi
+              [ "$i" = 3 ] || sleep $((i * 5))
+            done
+            return 1
+          }
+          if ! now=$(lookup); then
+            echo "::error::Could not re-check the open PRs on this commit; not pushing the bump."
+            echo "recheck_failed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          if [ "$now" != "$SIGNATURE" ]; then
+            echo "::warning::The open PRs on this commit changed while deciding; not pushing the bump."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          commit=$(gh api graphql --input mutation.json --jq '.data.createCommitOnBranch.commit.oid')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::The bump commit was not created."; exit 1; }
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      - name: Post version-current
+        if: always() && steps.app-token.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD_SHA: ${{ needs.decide.outputs.head_sha || (github.event.workflow_run.event == 'pull_request_target' && github.event.workflow_run.display_title || github.event.workflow_run.head_sha) }}
+          DECIDED: ${{ needs.decide.result }}
+          SIGNATURE: ${{ needs.decide.outputs.signature }}
+          STATE: ${{ needs.decide.outputs.state }}
+          DESCRIPTION: ${{ needs.decide.outputs.description }}
+          BUMP: ${{ steps.bump.outcome }}
+          PUSH: ${{ needs.decide.outputs.push }}
+          COMMIT: ${{ steps.bump.outputs.commit }}
+          SKIPPED: ${{ steps.bump.outputs.skipped }}
+          RECHECK_FAILED: ${{ steps.bump.outputs.recheck_failed }}
+          LOOKUP_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Unexpected head SHA."; exit 1; }
+          # The PR lookup, retried with a short backoff: a transient API failure
+          # must not read as "the PRs changed". Prints the signature, or fails.
+          lookup() {
+            local i out
+            for i in 1 2 3; do
+              if out=$(GH_TOKEN=$LOOKUP_TOKEN bash trusted/.github/scripts/find-version-pr.sh); then
+                sed -n 's/^signature=//p' <<<"$out"; return 0
+              fi
+              [ "$i" = 3 ] || sleep $((i * 5))
+            done
+            return 1
+          }
+          if [ "$DECIDED" != success ] || [ -z "$STATE" ]; then
+            STATE=error; DESCRIPTION="Version bump could not decide; see the run"
+          elif [ "$PUSH" = true ] && [ "$BUMP" != success ]; then
+            STATE=failure; DESCRIPTION="Could not push the bump; see the run"
+          elif [ "$RECHECK_FAILED" = true ]; then
+            STATE=error; DESCRIPTION="Could not re-check the PRs on this commit; re-run Version bump"
+          elif [ "$SKIPPED" = true ]; then
+            # The bump was not pushed because the PR set changed; the run for
+            # the new state decides.
+            echo "The open PRs on this commit changed before the bump: posting nothing."
+            exit 0
+          elif [ -n "$COMMIT" ]; then
+            # The bump moved only the same-repo branch. The old SHA stays the
+            # head of any fork PR that mirrors it, and nothing will decide it
+            # again, so give it a terminal verdict rather than leave it pending.
+            # The same-repo PR's new head is decided by the run its push starts.
+            STATE=failure; DESCRIPTION="Superseded by the version bump in ${COMMIT:0:7}; rebase onto it"
+          fi
+          if [ -n "$SIGNATURE" ] && [ -z "$COMMIT" ] && [ "$RECHECK_FAILED" != true ]; then
+            # The open PRs on this SHA may have changed since decide looked (a
+            # PR opened, closed, pushed to or retargeted), and GitHub does not
+            # promise to run queued runs in order. So a verdict is posted only
+            # if the same lookup still gives the same answer now. If it gives
+            # another (a successful lookup, different PRs), post nothing: every
+            # such change starts a run of its own
+            # (through "Version retarget"), which posts the verdict for the new
+            # state, and this older one must not land after it. This covers an
+            # error from a failed decision too, whenever the lookup ran: if no
+            # PR is left on the SHA, nothing is posted, so a closed or merged
+            # commit never keeps an error. A superseded head (COMMIT set)
+            # keeps its terminal failure regardless.
+            if ! now=$(lookup); then
+              # Can't tell, so post neither verdict: an error, which blocks the
+              # merge until Version bump is re-run.
+              STATE=error; DESCRIPTION="Could not re-check the PRs on this commit; re-run Version bump"
+            elif [ "$now" = "failure:No open PR has this head" ]; then
+              echo "No open PR has this head: posting nothing."
+              exit 0
+            elif [ "$now" != "$SIGNATURE" ]; then
+              echo "The open PRs on this commit changed since the decision (${SIGNATURE} -> ${now}): posting nothing; the run for the new state posts its own verdict."
+              exit 0
+            fi
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" -f "state=${STATE}" -f context=version-current \
+            -f "description=${DESCRIPTION:0:140}" -f "target_url=${RUN_URL}" >/dev/null

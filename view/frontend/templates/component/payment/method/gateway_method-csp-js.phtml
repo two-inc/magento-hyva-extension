@@ -31,8 +31,7 @@ $quoteModel = $viewModels->require(GetQuoteDetails::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 $customHeaders = $configModel->getCustomHeaders();
-$isProxyAvailable = $configModel->getIsProxyAvailable();
-$companySearchLimit = $configModel->getCompanySearchLimit();
+$isServerIntentAvailable = $configModel->getIsServerIntentAvailable();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
 $isOrderIntentEnabled = $configModel->getIsOrderIntentEnabled();
 // null ⇒ the active brand switched the notice off; the component's setter
@@ -44,7 +43,6 @@ $orderIntentApprovedNotice = $configModel->getOrderIntentApprovedNotice();
 $orderIntentNotAvailableNotice = $configModel->getOrderIntentNotAvailableNotice();
 $orderIntentDeclinedMessage = $configModel->getOrderIntentDeclinedMessage();
 $generalErrorMessage = $configModel->getGeneralErrorMessage();
-$orderIntentConfig = $configModel->getOrderIntentConfig();
 $checkoutPageUrl = $configModel->getCheckoutPageUrl();
 $soleTraderErrorMessage = (string) $configModel->getSoleTraderErrorMessage();
 $companyRequiredMessage = (string) $configModel->getCompanyRequiredMessage();
@@ -58,11 +56,6 @@ $isAddressAutopopulationEnabled = $configModel->getIsAddressAutopopulationEnable
 // host, so a store served under a subdirectory or a store-coded URL reaches
 // its own REST entry point.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
-$merchantDetails = $orderIntentConfig["merchant"] ?? [];
-$merchantId = $merchantDetails["id"] ?? "";
-$merchantName = $merchantDetails["short_name"] ?? "";
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
 
 $quoteDetails = $quoteModel->getQuoteDetails();
 $currentStoreId = $quoteModel->getCurrentStoreId();
@@ -290,6 +283,178 @@ $quoteDetails = json_encode(
         } catch (error) {
             // Nothing to do; the caller has already cleared its own state.
         }
+    };
+
+    /*
+     * THE COUNTRY A STORED COMPANY WAS CAPTURED IN (TWO-26295).
+     *
+     * A company record outlives the page for as long as the quote, and an organisation
+     * number means nothing outside the registry that issued it. A buyer who
+     * captured a company in one country and comes back to a checkout sitting on
+     * another (a returning customer whose default address is elsewhere, say)
+     * would otherwise have the old number restored and sent to the API under
+     * the new country, which refuses it with an error the buyer cannot act on.
+     * So the record carries `company_country`, and every restore and the
+     * order-intent resolver check it. Same rule as the Luma checkout's.
+     *
+     * The stamp follows the NUMBER, not the write: a rewrite of the same
+     * number keeps the stamp it already has, so restoring a record cannot
+     * re-stamp it with whatever country the page happens to show. A record
+     * written before the stamp existed therefore stays unstamped until the
+     * buyer captures a different number.
+     *
+     * @param {Object} previous the record as stored before this write
+     * @param {string} companyId the number being written
+     * @param {string} country the writing surface's live country
+     * @returns {string} the stamp to write
+     */
+    window.twoGatewayCompanyCountryStamp = window.twoGatewayCompanyCountryStamp || function(previous, companyId, country) {
+        if (!companyId) return '';
+        if (previous && previous.company_id === companyId) return String(previous.company_country || '');
+        return String(country || '').toUpperCase();
+    };
+
+    /**
+     * Does a stored company record belong to `country`?
+     *
+     * Fails OPEN on a record with no number, no stamp (written before the stamp
+     * existed; refusing those would drop a legitimate company on the first load
+     * after an upgrade) or no country to compare against.
+     *
+     * @param {Object} record a stored company selection
+     * @param {string} country the country it is about to be used under
+     * @returns {boolean}
+     */
+    window.twoGatewayCompanyRecordFits = window.twoGatewayCompanyRecordFits || function(record, country) {
+        const stamp = String((record && record.company_id && record.company_country) || '');
+        if (!stamp || !country) return true;
+        return stamp.toLowerCase() === String(country).toLowerCase();
+    };
+
+    /**
+     * A role's stored record, or {} when it was captured in another country.
+     *
+     * @param {string} role 'shipping' or 'billing'
+     * @param {string} country the country the record is about to be used under
+     * @returns {Object}
+     */
+    window.twoGatewayReadCompanyRecordFor = window.twoGatewayReadCompanyRecordFor || function(role, country) {
+        const record = role === 'billing'
+            ? window.twoGatewayReadBillingCompany()
+            : window.twoGatewayReadCompanySelection();
+        return window.twoGatewayCompanyRecordFits(record, country) ? record : {};
+    };
+
+    /*
+     * Every field this module writes, the phone included, carries what it
+     * wrote in this attribute, so a country switch or a new pick clears only
+     * what still holds this module's value (TWO-27212).
+     */
+    window.TWO_GATEWAY_AUTOFILL_MARK = 'data-two-autofilled-value';
+
+    /*
+     * What setAddressData() last wrote into each address field, kept beside
+     * the mark because a Magewire morph patches a kept node's attributes back
+     * to the server markup and so strips the mark while the node and its
+     * value stay. A node the morph replaces drops both, leaving the value the
+     * buyer's. Read through twoGatewayAutofillMarkOf(), never directly.
+     */
+    window.twoGatewayAutofillWrites = window.twoGatewayAutofillWrites || new WeakMap();
+
+    /**
+     * Record a write into a field: the mark on the node, and the record a morph
+     * cannot strip.
+     *
+     * @param {HTMLElement} field
+     * @param {string} value what was written
+     */
+    window.twoGatewayMarkAutofill = window.twoGatewayMarkAutofill || function(field, value) {
+        field.setAttribute(window.TWO_GATEWAY_AUTOFILL_MARK, value);
+        window.twoGatewayAutofillWrites.set(field, value);
+    };
+
+    /**
+     * What this module last wrote into a field: the mark, else the record that
+     * outlives a morph, else undefined for a field it never wrote.
+     *
+     * @param {HTMLElement} field
+     * @returns {string|undefined}
+     */
+    window.twoGatewayAutofillMarkOf = window.twoGatewayAutofillMarkOf || function(field) {
+        return field.hasAttribute(window.TWO_GATEWAY_AUTOFILL_MARK)
+            ? field.getAttribute(window.TWO_GATEWAY_AUTOFILL_MARK)
+            : window.twoGatewayAutofillWrites.get(field);
+    };
+
+    /** @param {HTMLElement} field a field this module no longer claims */
+    window.twoGatewayForgetAutofill = window.twoGatewayForgetAutofill || function(field) {
+        field.removeAttribute(window.TWO_GATEWAY_AUTOFILL_MARK);
+        window.twoGatewayAutofillWrites.delete(field);
+    };
+
+    /*
+     * The registry phone a company pick last wrote into each telephone field
+     * (TWO-27160), kept apart from the address record: a sole trader's verified
+     * phone carries the mark too, and only the registry's is ever retracted.
+     * Keyed on the node, so each address form has its own.
+     */
+    window.twoGatewayRegistryPhoneWrites = window.twoGatewayRegistryPhoneWrites || new WeakMap();
+
+    /*
+     * The latest company detail lookup for each address ROLE, so a reply that
+     * arrives after the buyer has picked again writes nothing: neither the old
+     * company's address nor a retraction of the new one's phone. Keyed on the
+     * role, not the form node, because the notice a reply raises is the role's
+     * (its identity's), and a morph that rebuilt the form between two picks
+     * would otherwise leave the first pick's token alive on the old node
+     * (TWO-27212).
+     */
+    window.twoGatewayAddressLookups = window.twoGatewayAddressLookups || new Map();
+
+    /**
+     * @param {?HTMLElement} container an address form
+     * @returns {string} the key its lookups are tracked under
+     */
+    window.twoGatewayAddressLookupKey = window.twoGatewayAddressLookupKey || function(container) {
+        return window.twoGatewayCaptureRoleForForm(container);
+    };
+
+    /**
+     * The company a stored record restores, as an identity write.
+     *
+     * Manual entry is name-only capture (TWO-26775). Records merge field by
+     * field, so one saying manual entry can still hold the number of an earlier
+     * pick or sole trader; restoring it would carry that company's number into
+     * manual entry and onto the order. Such a record restores its name alone.
+     *
+     * @param {Object} record a role's stored record
+     * @returns {{companyName: string, companyId: string, companyIdSource: string}}
+     */
+    window.twoGatewayRecordedCompany = window.twoGatewayRecordedCompany || function(record) {
+        const data = record || {};
+        const manual = Boolean(data.manual_mode);
+        return {
+            companyName: data.company_name || '',
+            companyId: manual ? '' : (data.company_id || ''),
+            companyIdSource: manual ? '' : (data.company_id_source || '')
+        };
+    };
+
+    /**
+     * Is the invoice-role country one this role's captured company does not belong to?
+     *
+     * Only a record describing the SAME number can say: an identity holding a
+     * number its record does not (a sole-trader signup) has nothing to compare.
+     *
+     * @param {string} role
+     * @param {string} companyId the number the identity holds
+     * @param {string} country the country the order intent is sent under
+     * @returns {boolean}
+     */
+    window.twoGatewayCompanyCapturedElsewhere = window.twoGatewayCompanyCapturedElsewhere || function(role, companyId, country) {
+        // No country: the raw record, whatever its stamp.
+        const record = window.twoGatewayReadCompanyRecordFor(role, '');
+        return record.company_id === companyId && !window.twoGatewayCompanyRecordFits(record, country);
     };
 
     /**
@@ -535,7 +700,7 @@ $quoteDetails = json_encode(
      * Reads the same list, so it inherits the same filtering: NAME matches only.
      * A name-matched select the buyer cannot reach does not
      * count — suppressing the store default on the strength of one leaves
-     * company search saying "Please select a country first" with nothing on
+     * company search asking the buyer to select their country with nothing on
      * screen to satisfy it, a dead end where the store default would merely have
      * been a guess. A hidden select under one of the two KNOWN ids does still
      * count, and should: that is the checkout's own address form with its step
@@ -601,8 +766,8 @@ $quoteDetails = json_encode(
      * Searching the wrong country is worse than not searching: the buyer is
      * shown a list of real companies that are not theirs, with no indication
      * the country is wrong. So where the buyer HAS a country selector and has
-     * not yet chosen, this answers '' and the callers show "Please select a
-     * country first" — the existing, already-wired behaviour for no country.
+     * not yet chosen, this answers '' and the callers show the no-country
+     * message, the existing, already-wired behaviour for no country.
      * The fallback is preserved exactly where its own comment always said it
      * was for: a checkout with no country selector, where the store default is
      * the only answer there is.
@@ -648,13 +813,41 @@ $quoteDetails = json_encode(
     window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS = 30000;
 
     /**
-     * Fallback config for a helper reached without one; else it builds a host-less relative URL that 404s as "no addresses".
+     * How long a surface stops searching after a 429 that names no retry
+     * window (TWO-27211). The base module's rate limit counts per minute and
+     * answers with no Retry-After, so this is that window, as Luma uses.
      */
-    window.TWO_GATEWAY_DIRECT_CALL_CONFIG = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {
-        checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-        client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-        clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-        merchant: '<?= $escaper->escapeJs($merchantName) ?>',
+    window.TWO_GATEWAY_RATE_LIMIT_PARK_MS = 60000;
+
+    /**
+     * Milliseconds to stay parked after a 429: the Retry-After it carried
+     * (seconds or an HTTP date), else the default above.
+     *
+     * @param {?string} retryAfter the header's value, if any
+     * @returns {number}
+     */
+    window.twoGatewayRetryAfterMs = window.twoGatewayRetryAfterMs || function(retryAfter) {
+        const value = String(retryAfter == null ? '' : retryAfter).trim();
+        if (/^\d+$/.test(value)) return parseInt(value, 10) * 1000;
+        const at = value ? Date.parse(value) : NaN;
+        if (!isNaN(at)) return Math.max(0, at - Date.now());
+        return window.TWO_GATEWAY_RATE_LIMIT_PARK_MS;
+    };
+
+    /**
+     * An Error for a non-ok answer that carries its status and Retry-After, so
+     * a caller can tell a 429 from any other failure.
+     *
+     * @param {string} message
+     * @param {number} status
+     * @param {?string} retryAfter
+     * @returns {Error}
+     */
+    window.twoGatewayHttpError = window.twoGatewayHttpError || function(message, status, retryAfter) {
+        const error = new Error(message);
+        error.status = status;
+        error.retryAfter = retryAfter == null ? null : retryAfter;
+        return error;
     };
 
     /**
@@ -764,11 +957,19 @@ $quoteDetails = json_encode(
             // Stale webapi route cache, not "base too old"; no fallback, which would hide the missed flush.
             if (response.status === 404) {
                 console.warn(
-                    'Two: proxy route ' + path + ' is unregistered despite the base module '
+                    'Two_GatewayHyva: proxy route ' + path + ' is unregistered despite the base module '
                     + 'exposing it — run setup:upgrade and cache:flush on the store.'
                 );
             }
-            throw new Error('Error response from ' + path + ': ' + response.status);
+            // The base's rate limit refuses here, as a raw webapi fault, before
+            // the route runs; the status and Retry-After ride on the error.
+            throw window.twoGatewayHttpError(
+                'Error response from ' + path + ': ' + response.status,
+                response.status,
+                response.headers && typeof response.headers.get === 'function'
+                    ? response.headers.get('Retry-After')
+                    : null
+            );
         }
         return window.twoGatewayUnwrapProxyResponse(await response.json());
     };
@@ -787,37 +988,22 @@ $quoteDetails = json_encode(
      *   { status: 'empty',     items }  render "no matches"
      *   { status: 'degraded',  items }  render results AND the unavailable notice
      *   { status: 'failed',    items }  render the unavailable notice
+     *   { status: 'rate_limited', items, retryAfterMs }  a 429: render the
+     *                                    unavailable notice and stop searching
+     *                                    for retryAfterMs
      *   { status: 'aborted',   items }  render NOTHING — superseded or torn down
      *
      * @param {Object} options
-     * @param {boolean} options.useProxy read by identity here and at the other three
-     *   proxy-selection sites, so anything but `true` takes the deprecated direct
-     *   fallback — see CheckoutConfig::getIsProxyAvailable().
      * @param {string} options.restBaseUrl Magento link base URL, no trailing slash
-     * @param {string} options.checkoutApiUrl fallback path only
      * @param {string} options.countryCode
      * @param {string} options.query
-     * @param {number|string} [options.limit] fallback path only
-     * @param {string} [options.client] fallback path only
-     * @param {string} [options.clientV] fallback path only
-     * @param {string} [options.merchant] fallback path only
      * @param {AbortSignal} [options.signal] caller's abort signal
      * @returns {Promise<{status: string, items: Array}>}
      */
     window.twoGatewayCompanySearch = window.twoGatewayCompanySearch || async function(options) {
         const country = (options.countryCode || '').toUpperCase();
         const term = unescape(options.query);
-        const useProxy = options.useProxy === true;
-        const directUrl = useProxy ? '' : options.checkoutApiUrl + '/companies/v2/company?' + new URLSearchParams({
-            country: country,
-            limit: options.limit,
-            offset: 0,
-            q: term,
-            client: options.client || '',
-            client_v: options.clientV || '',
-            merchant: options.merchant || '',
-        });
-        const cacheKey = useProxy ? 'search|' + country + '|' + term : directUrl;
+        const cacheKey = 'search|' + country + '|' + term;
 
         /*
          * `national_identifier` is OPTIONAL in the search response — the
@@ -882,7 +1068,7 @@ $quoteDetails = json_encode(
             return { status: items.length ? 'ok' : 'empty', items: items };
         }
 
-        // Two signals: the caller's (next keystroke / teardown) and our own
+        // Both signals, the caller's (next keystroke / teardown) and our own
         // timeout. Whichever fires first aborts the fetch. The catch below
         // tells them apart by asking the CALLER's signal whether it aborted,
         // not by inspecting the error — the error is an AbortError either
@@ -904,21 +1090,16 @@ $quoteDetails = json_encode(
         }
 
         try {
-            let data;
-            if (useProxy) {
-                const envelope = await window.twoGatewayProxyPost(
-                    options.restBaseUrl,
-                    '/rest/V1/two/company-search',
-                    { country: country, query: term },
-                    controller.signal
-                );
-                if (!envelope.ok) throw new Error('Company search responded ' + envelope.status);
-                data = envelope.body;
-            } else {
-                const response = await fetch(directUrl, { signal: controller.signal });
-                if (!response.ok) throw new Error('Company search responded ' + response.status);
-                data = await response.json();
+            const envelope = await window.twoGatewayProxyPost(
+                options.restBaseUrl,
+                '/rest/V1/two/company-search',
+                { country: country, query: term },
+                controller.signal
+            );
+            if (!envelope.ok) {
+                throw window.twoGatewayHttpError('Company search responded ' + envelope.status, envelope.status, null);
             }
+            const data = envelope.body;
             const items = mapItems(data);
 
             if (window.twoGatewayIsDegradedResponse(data)) {
@@ -944,6 +1125,15 @@ $quoteDetails = json_encode(
             if (isCallerAbort) return { status: 'aborted', items: [] };
 
             console.error('Error fetching companies:', error);
+            // Told apart so the caller can stop asking until the window ends
+            // (TWO-27211); to the buyer it reads as any other failure.
+            if (error && error.status === 429) {
+                return {
+                    status: 'rate_limited',
+                    items: [],
+                    retryAfterMs: window.twoGatewayRetryAfterMs(error.retryAfter),
+                };
+            }
             return { status: 'failed', items: [] };
         } finally {
             clearTimeout(timer);
@@ -956,22 +1146,9 @@ $quoteDetails = json_encode(
      *
      * @param {string} restBaseUrl Magento link base URL, no trailing slash
      * @param {string} lookupId
-     * @param {Object|null} [direct] fallback config, or exactly `null` for the
-     *   proxy route — fail closed per twoGatewayCompanySearch's useProxy.
      * @returns {Promise<Object|null>} the record, or null on any failure
      */
-    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId, direct) {
-        // A non-object third argument carries no host; the store's config avoids a relative URL that 404s as "no addresses".
-        const useProxy = direct === null;
-        let cfg = direct;
-        if (!useProxy && typeof direct !== 'object') {
-            console.warn(
-                'Two: twoGatewayCompanyDetail is (restBaseUrl, lookupId, direct); '
-                + 'it was called with no direct config, so the direct call falls '
-                + "back to the store's own direct-call config."
-            );
-            cfg = window.TWO_GATEWAY_DIRECT_CALL_CONFIG || {};
-        }
+    window.twoGatewayCompanyDetail = window.twoGatewayCompanyDetail || async function(restBaseUrl, lookupId) {
         const controller = new AbortController();
         // No reason argument: nothing reads it, and the sibling search helper
         // does not pass one either.
@@ -980,20 +1157,8 @@ $quoteDetails = json_encode(
             window.TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS
         );
         try {
-            // Without these checks an error body parses as an address payload
+            // Without this check an error body parses as an address payload
             // and silently produces "no addresses".
-            if (!useProxy) {
-                const queryParams = new URLSearchParams({
-                    client: cfg.client || '',
-                    client_v: cfg.clientV || '',
-                    merchant: cfg.merchant || '',
-                });
-                const response = await fetch(`${cfg.checkoutApiUrl || ''}/companies/v2/company/${lookupId}?${queryParams}`, {
-                    signal: controller.signal,
-                });
-                if (!response.ok) throw new Error('Company detail responded ' + response.status);
-                return await response.json();
-            }
             const envelope = await window.twoGatewayProxyPost(
                 restBaseUrl,
                 '/rest/V1/two/company',
@@ -1116,12 +1281,6 @@ $quoteDetails = json_encode(
         const cfg = Object.assign({
             checkoutApiUrl: '',
             restBaseUrl: '',
-            // Fail closed — see twoGatewayCompanySearch's useProxy.
-            isProxyAvailable: false,
-            client: '',
-            clientV: '',
-            merchant: '',
-            companySearchLimit: 10,
             minSearchChars: 3,
             isCompanySearchEnabled: true,
             isAddressSearchEnabled: false,
@@ -1144,6 +1303,10 @@ $quoteDetails = json_encode(
             // no-ops on a surface (the tile) that offers no address lookup.
             resolveAddressContainer: function () { return null; },
             addressContainerWarning: '',
+            // Says, or with '' withdraws, why a pick's address was not filled
+            // in (TWO-27211). Each surface puts it where its buyer will see it.
+            announceAddressNotice: function () {},
+            addressUnavailableMessage: '<?= $escaper->escapeJs(__('We could not fetch this company\'s address. Please enter it below.')) ?>',
             // Which form's country this surface reads, named by the surface
             // itself: its own root, a field it resolved by role, whatever
             // anchors it to one address form (see
@@ -1182,11 +1345,6 @@ $quoteDetails = json_encode(
             // methods read `this.X` for these, never `cfg.X`.
             checkoutApiUrl: cfg.checkoutApiUrl,
             restBaseUrl: cfg.restBaseUrl,
-            isProxyAvailable: cfg.isProxyAvailable,
-            client: cfg.client,
-            clientV: cfg.clientV,
-            merchant: cfg.merchant,
-            companySearchLimit: cfg.companySearchLimit,
             minSearchChars: cfg.minSearchChars,
             isCompanySearchEnabled: cfg.isCompanySearchEnabled,
             isAddressSearchEnabled: cfg.isAddressSearchEnabled,
@@ -1198,6 +1356,10 @@ $quoteDetails = json_encode(
             isSearching: false,
             isSearchUnavailable: false,
             searchAbortController: null,
+            // Epoch ms before which this surface asks the registry nothing,
+            // set by a 429 (TWO-27211). Per surface: a 429 one surface earned
+            // does not silence another's search.
+            registryParkedUntil: 0,
             countryCode: '',
             countrySelectionShown: false,
             // Latches a search-unavailable TOAST (`dispatchSearchUnavailableToast`)
@@ -1312,6 +1474,14 @@ $quoteDetails = json_encode(
                 }
 
                 this.abortCompanySearch();
+
+                // Parked by a 429: answer as unavailable without asking again,
+                // so each keystroke does not walk back into the limit.
+                if (Date.now() < this.registryParkedUntil) {
+                    this.applySearchResult(term, { status: 'failed', items: [] });
+                    return;
+                }
+
                 const controller = new AbortController();
                 this.searchAbortController = controller;
                 this.isSearching = true;
@@ -1320,15 +1490,9 @@ $quoteDetails = json_encode(
                 let result;
                 try {
                     result = await window.twoGatewayCompanySearch({
-                        useProxy: this.isProxyAvailable,
                         restBaseUrl: this.restBaseUrl,
-                        checkoutApiUrl: this.checkoutApiUrl,
                         countryCode: this.countryCode,
                         query: term,
-                        limit: this.companySearchLimit,
-                        client: this.client,
-                        clientV: this.clientV,
-                        merchant: this.merchant,
                         signal: controller.signal,
                     });
                 } catch (error) {
@@ -1364,8 +1528,23 @@ $quoteDetails = json_encode(
 
                 this.searchAbortController = null;
                 this.isSearching = false;
+                if (result.status === 'rate_limited') {
+                    this.registryParkedUntil = Date.now() + result.retryAfterMs;
+                }
+                this.applySearchResult(term, result);
+            },
+
+            /**
+             * Paint one search's outcome onto this surface's state.
+             *
+             * @param {string} term
+             * @param {{status: string, items: Array}} result
+             */
+            applySearchResult(term, result) {
                 this.items = result.items;
-                this.isSearchUnavailable = result.status === 'failed' || result.status === 'degraded';
+                this.isSearchUnavailable = result.status === 'failed'
+                    || result.status === 'degraded'
+                    || result.status === 'rate_limited';
                 if (!this.isSearchUnavailable) {
                     this.searchCompletedFor = term;
                     // A good result ends the "unavailable" run, so the next
@@ -1509,13 +1688,25 @@ $quoteDetails = json_encode(
                     company_name: item.companyName,
                     company_id: item.companyId || '',
                     company_id_source: this.companyIdSource,
+                    company_country: window.twoGatewayCompanyCountryStamp(
+                        cfg.readSelection.call(this),
+                        item.companyId || '',
+                        this.resolveCountryCode(cfg.getQuote.call(this))
+                    ),
                     manual_mode: false,
                 });
 
                 cfg.onCompanyCommitted.call(this, this.companyName, this.companyId, this.companyIdSource);
 
-                if (this.isAddressSearchEnabled && item.lookupId) {
-                    this.addressLookup(item.lookupId, cfg.resolveAddressContainer.call(this));
+                const container = cfg.resolveAddressContainer.call(this);
+                this.supersedeAddressLookup(container);
+                if (!this.isAddressSearchEnabled) return;
+                if (item.lookupId) {
+                    this.addressLookup(item.lookupId, container);
+                } else {
+                    // A pick with no lookup id still replaces the company, so
+                    // the previous pick's registry phone goes (TWO-27212).
+                    this.applyRegistryTelephone('', container);
                 }
             },
 
@@ -1570,20 +1761,75 @@ $quoteDetails = json_encode(
             },
 
             // --- address lookup (identical across every surface that offers it) ---
+            /**
+             * Retire the previous pick's lookup for this form: take its notice
+             * down and forget its token, so a reply still on the wire writes
+             * and announces nothing. Every pick calls this before deciding
+             * whether to look anything up, so a pick that makes no lookup (no
+             * lookup id, autofill off) does not leave the last company's
+             * notice standing, or its late reply landing, under the new one.
+             *
+             * @param {?HTMLElement} container the address form the pick is for
+             */
+            supersedeAddressLookup(container) {
+                if (container) window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
+                cfg.announceAddressNotice.call(this, '');
+            },
             async addressLookup(lookupId, container) {
-                const data = await window.twoGatewayCompanyDetail(
-                    this.restBaseUrl,
-                    lookupId,
-                    this.isProxyAvailable === true ? null : {
-                        checkoutApiUrl: this.checkoutApiUrl,
-                        client: this.client,
-                        clientV: this.clientV,
-                        merchant: this.merchant,
-                    }
-                );
-                if (data && data.addresses && data.addresses.length > 0) {
-                    this.setAddressData(data.addresses[0], container);
+                const lookup = {};
+                if (container) window.twoGatewayAddressLookups.set(window.twoGatewayAddressLookupKey(container), lookup);
+                // Withdrawn as the pick starts, so no notice outlives the
+                // company it was about.
+                cfg.announceAddressNotice.call(this, '');
+                const data = await window.twoGatewayCompanyDetail(this.restBaseUrl, lookupId);
+                if (container && window.twoGatewayAddressLookups.get(window.twoGatewayAddressLookupKey(container)) !== lookup) return;
+                // The relay has already fitted `postal_code` to its country's
+                // written format (TWO-27160), so it is written as it arrives.
+                const address = data && data.addresses && data.addresses.length > 0
+                    ? data.addresses[0]
+                    : null;
+                if (address) {
+                    this.setAddressData(address, container);
+                } else {
+                    // A failed lookup, or one with no address, says so under the
+                    // field rather than leaving empty fields unexplained.
+                    cfg.announceAddressNotice.call(this, cfg.addressUnavailableMessage);
                 }
+                // A pick that fills nothing still replaces the company, so it
+                // takes the previous pick's registry phone with it.
+                this.applyRegistryTelephone(address ? address.phone_number : '', container);
+            },
+            /**
+             * Write a company pick's registered phone into the telephone field
+             * of the form its address went to (TWO-27160).
+             *
+             * A registry phone replaces whatever the field holds, as the
+             * address fields do. A blank one, from a register with no phone or
+             * a lookup that returned nothing, writes nothing and clears only
+             * a registry phone an earlier pick wrote into this field that the
+             * field still holds, so company B never leaves company A's number
+             * standing and a number the buyer typed or edited always stays.
+             *
+             * @param {*} phone the address's `phone_number`, or '' for none
+             * @param {?HTMLElement} container the address form
+             */
+            applyRegistryTelephone(phone, container) {
+                const field = container && container.querySelector('input[name="telephone"]');
+                if (!field) return;
+                const writes = window.twoGatewayRegistryPhoneWrites;
+                const value = typeof phone === 'string' ? phone.trim() : '';
+                if (value) {
+                    field.value = value;
+                    window.twoGatewayMarkAutofill(field, value);
+                    writes.set(field, value);
+                } else {
+                    const written = writes.get(field);
+                    writes.delete(field);
+                    if (written === undefined || field.value.trim() !== written) return;
+                    field.value = '';
+                    window.twoGatewayForgetAutofill(field);
+                }
+                field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**
              * Write an address from an external payload into an address form.
@@ -1608,22 +1854,63 @@ $quoteDetails = json_encode(
              * see or correct.
              *
              * `region` goes to a state/county field where the address format has
-             * one — a `region_id` select is matched by option TEXT, which is
-             * lossy and known to be, hence best-effort — and otherwise is
+             * one (a region select, named `region` on Hyvä Checkout and
+             * `region_id` elsewhere, takes the relay's `region_id` where it
+             * offers it, else is matched by option TEXT, which is lossy and
+             * known to be, hence best-effort), and otherwise is
              * appended to `city` after a comma, because dropping it loses part
-             * of the address entirely.
+             * of the address entirely. An ISO 3166-2 code for the form's own
+             * country is the exception: it is not appended.
+             *
+             * A sole trader's autofill record (`{ buyerRules: true }`) is
+             * written on the base plugin's terms for it (TWO-26775): a blank
+             * value writes nothing, so it cannot wipe what the buyer typed,
+             * and the region goes only into a region control that is empty or
+             * still holds this module's own write. A field the record leaves
+             * out is cleared where it still holds this module's own earlier
+             * write, so an earlier company's postcode or second line does not
+             * stand beside it. Only the address lines, city, postcode and region
+             * are ever written; never the country, the email or the buyer's
+             * names.
+             *
+             * @param {Object} address the payload
+             * @param {?HTMLElement} container the address form to write into
+             * @param {Object} [rules] `{ buyerRules: true }` for a sole trader
              */
-            setAddressData(address, container) {
+            setAddressData(address, container, rules) {
                 if (!container) {
                     if (cfg.addressContainerWarning) console.warn(cfg.addressContainerWarning);
                     return;
                 }
+                const buyerRules = Boolean(rules && rules.buyerRules);
                 const text = (value) => String(value === undefined || value === null ? '' : value).trim();
+                // What this module last wrote into each field, and the fields this call wrote.
+                const markOf = window.twoGatewayAutofillMarkOf;
+                const written = new Set();
+                const write = (input, value) => {
+                    if (!input || (buyerRules && value === '')) return;
+                    input.value = value;
+                    window.twoGatewayMarkAutofill(input, value);
+                    written.add(input);
+                };
+                const heldByBuyer = (control) => buyerRules
+                    && Boolean(control.value)
+                    && markOf(control) !== control.value;
 
                 const cityInput = container.querySelector('input[name="city"]');
                 const postcodeInput = container.querySelector('input[name="postcode"]');
                 const line1Input = container.querySelector('input[name="street[0]"]');
                 const line2Input = container.querySelector('input[name="street[1]"]');
+                /*
+                 * Hyvä Checkout renders the region as ONE control named
+                 * `region`, a select of region ids where the country has a
+                 * list and a text input where it has none, both bound with
+                 * `wire:model` to `address.region` (TWO-26265). Other forms
+                 * name the select `region_id`. Either name is a select of
+                 * ids; only a text input takes the region as written.
+                 */
+                const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
+                const regionInput = container.querySelector('input[name="region"]');
 
                 const street = text(address.street_address);
                 // Either name, joined when the payload carries both: they are two
@@ -1638,14 +1925,14 @@ $quoteDetails = json_encode(
                 // branch is not a write of empty — see the guard below.
                 const line2 = premises ? street : '';
 
-                if (line1Input) line1Input.value = line1;
+                write(line1Input, line1);
                 /*
                  * Line 2 is left ALONE, not blanked, when there is nothing to put
                  * in it. Blanking would make an autofill that happens to carry no
                  * building silently delete an apartment number the buyer typed
                  * themselves, which is a worse failure than not filling a field.
                  */
-                if (line2Input && line2) line2Input.value = line2;
+                if (line2) write(line2Input, line2);
 
                 const region = text(address.region);
                 let city = text(address.city);
@@ -1653,38 +1940,141 @@ $quoteDetails = json_encode(
                 // things to separate. An address whose payload names a region and
                 // no city would otherwise arrive with a leading comma.
                 const cityWithRegion = () => (city ? city + ', ' + region : region);
+                /*
+                 * An ISO 3166-2 code for the form's own country ("ES-M" on a
+                 * Spanish address) is no use to anyone reading the city, so it
+                 * is never appended (TWO-26258). The region select is left for
+                 * the buyer, and the checkout's own required-field validation
+                 * prompts them. A code for another country stays free text.
+                 */
+                const ownSubdivisionCode = () => {
+                    const match = /^([A-Z]{2})-[A-Z0-9]{1,3}$/i.exec(region);
+                    if (!match) return false;
+                    const field = window.twoGatewayCountryFields(container)
+                        .find((candidate) => candidate.value);
+                    return !!field && field.value.toUpperCase() === match[1].toUpperCase();
+                };
+                const appendRegion = () => (ownSubdivisionCode() ? city : cityWithRegion());
+                // The region select that took an option, announced last.
+                let selectedRegion = null;
                 if (region) {
-                    const regionSelect = container.querySelector('select[name="region_id"]');
-                    const regionInput = container.querySelector('input[name="region"]');
-                    if (regionSelect) {
-                        const match = Array.prototype.find.call(
-                            regionSelect.options || [],
-                            (option) => text(option.textContent).toLowerCase() === region.toLowerCase()
-                        );
+                    if (regionSelect && heldByBuyer(regionSelect)) {
+                        // The buyer's own region stands, and is not appended to the city either.
+                    } else if (regionSelect) {
+                        /*
+                         * The store's own region id, when the module's relay
+                         * resolved the registry's ISO 3166-2 code to one
+                         * (TWO-26263), is preferred over matching the text. It
+                         * is taken only where this select offers it: the form
+                         * may be showing another country's regions.
+                         */
+                        const regionId = address.region_id == null ? '' : String(address.region_id);
+                        const options = Array.prototype.slice.call(regionSelect.options || []);
+                        const match = (regionId && options.find((option) => option.value === regionId))
+                            || options.find(
+                                (option) => text(option.textContent).toLowerCase() === region.toLowerCase()
+                            );
                         // A select with no matching option gets nothing: writing
                         // an unmatched value onto a `region_id` select stores an
                         // id the store does not have. The comma fallback carries
                         // the region instead, so it is not lost either way.
                         if (match) {
-                            regionSelect.value = match.value;
-                            regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                            write(regionSelect, match.value);
+                            selectedRegion = regionSelect;
                         } else {
-                            city = cityWithRegion();
+                            city = appendRegion();
                         }
                     } else if (regionInput) {
-                        regionInput.value = region;
-                        regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                        if (!heldByBuyer(regionInput)) {
+                            write(regionInput, region);
+                            regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                        }
                     } else {
-                        city = cityWithRegion();
+                        city = appendRegion();
                     }
                 }
 
-                if (cityInput) cityInput.value = city;
-                if (postcodeInput) postcodeInput.value = text(address.postal_code);
+                write(cityInput, city);
+                write(postcodeInput, text(address.postal_code));
+
+                // A sole trader's record replaces this module's earlier write
+                // whole; a field the buyer has changed since is theirs and stays.
+                const retracted = buyerRules
+                    ? this.retractAutofilledFields(
+                        [cityInput, postcodeInput, line1Input, line2Input, regionSelect, regionInput]
+                            .filter((field) => !written.has(field))
+                    )
+                    : [];
+                if (!selectedRegion && retracted.indexOf(regionSelect) !== -1) selectedRegion = regionSelect;
 
                 [cityInput, postcodeInput, line1Input, line2Input].forEach((input) => {
                     if (input) input.dispatchEvent(new Event('input', { bubbles: false }));
                 });
+                if (regionInput && retracted.indexOf(regionInput) !== -1) {
+                    regionInput.dispatchEvent(new Event('input', { bubbles: false }));
+                }
+                /*
+                 * The region select is announced only once every value is in
+                 * the DOM, so nothing listening for its `change` reads a half
+                 * written address: `input` as every other field gets, and
+                 * `change` because `wire:model` on a select listens for that.
+                 */
+                if (selectedRegion) {
+                    selectedRegion.dispatchEvent(new Event('input', { bubbles: false }));
+                    selectedRegion.dispatchEvent(new Event('change', { bubbles: false }));
+                }
+            },
+            /**
+             * Empty each field that still holds exactly what this module wrote
+             * into it, and drop its mark. A field the buyer has changed since,
+             * or one this module never wrote, is left as it is.
+             *
+             * @param {Array<HTMLElement|null>} fields
+             * @returns {Array<HTMLElement>} the fields emptied, not yet announced
+             */
+            retractAutofilledFields(fields) {
+                return fields.filter((field) => {
+                    if (!field || !field.value) return false;
+                    if (window.twoGatewayAutofillMarkOf(field) !== field.value) return false;
+                    field.value = '';
+                    window.twoGatewayForgetAutofill(field);
+                    return true;
+                });
+            },
+            /**
+             * Take an autofilled address back out of ONE address form, the
+             * registry phone with it (TWO-27212). The capture controller calls
+             * this when the buyer switches that form's country, because an
+             * address from the previous country's registry is a wrong address
+             * they may not re-read, and when they leave sole-trader mode, so the
+             * sole trader's address does not go out under the next company.
+             *
+             * Only fields still holding this module's write are emptied; what
+             * the buyer typed or edited stays, and so does a sole trader's
+             * verified phone. A lookup still on the wire is retired first, so
+             * its reply cannot refill the form for the country just left. Every
+             * field's mark goes, so a value the buyer later types to match an
+             * old write is not mistaken for this module's.
+             *
+             * @param {?HTMLElement} container the address form
+             */
+            revertAutofilledAddress(container) {
+                if (!container) return;
+                this.supersedeAddressLookup(container);
+                const regionSelect = container.querySelector('select[name="region"], select[name="region_id"]');
+                const fields = ['street[0]', 'street[1]', 'city', 'postcode', 'region']
+                    .map((name) => container.querySelector('input[name="' + name + '"]'))
+                    .concat([regionSelect]);
+                const retracted = this.retractAutofilledFields(fields);
+                fields.forEach((field) => {
+                    if (field) window.twoGatewayForgetAutofill(field);
+                });
+                retracted.forEach((field) => field.dispatchEvent(new Event('input', { bubbles: false })));
+                // `wire:model` on a select listens for `change`.
+                if (retracted.indexOf(regionSelect) !== -1) {
+                    regionSelect.dispatchEvent(new Event('change', { bubbles: false }));
+                }
+                this.applyRegistryTelephone('', container);
             },
 
             closeDropdown() {
@@ -1738,17 +2128,31 @@ $quoteDetails = json_encode(
      * mount point, so the two surfaces cannot say different things.
      *
      * The keys are the panel's own literals and must match them EXACTLY; a
-     * mismatch is silent, degrading to the untranslated English.
+     * mismatch is silent, degrading to the untranslated English. Every
+     * literal the shared modules pass to `translate()` needs a key here, which
+     * panel-strings-coverage.test.js checks against the base's own source.
+     *
+     * The unavailable line is the one key whose value is not its own literal:
+     * the shared module carries one platform's wording, and every host maps it
+     * to the standard sentence (TWO-27211).
      */
     window.twoGatewayPanelStrings = window.twoGatewayPanelStrings || {
         'Search for company': '<?= $escaper->escapeJs(__('Search for company')) ?>',
         'Enter %1 or more characters': '<?= $escaper->escapeJs(__('Enter %1 or more characters')) ?>',
         'No matches found': '<?= $escaper->escapeJs(__('No matches found')) ?>',
         'Company search is unavailable right now. Please try again shortly.':
-            '<?= $escaper->escapeJs(__('Company search is unavailable right now. Please try again shortly.')) ?>',
+            '<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again.')) ?>',
         'Registered company': '<?= $escaper->escapeJs(__('Registered company')) ?>',
         'Sole trader': '<?= $escaper->escapeJs(__('Sole trader')) ?>',
         'Enter manually': '<?= $escaper->escapeJs(__('Enter manually')) ?>',
+        'Sign up or log in as a sole trader': '<?= $escaper->escapeJs(__('Sign up or log in as a sole trader')) ?>',
+        'Select a different sole trader': '<?= $escaper->escapeJs(__('Select a different sole trader')) ?>',
+        'Company Number': '<?= $escaper->escapeJs(__('Company Number')) ?>',
+        '1 result is available, use up and down arrow keys to navigate.':
+            '<?= $escaper->escapeJs(__('1 result is available, use up and down arrow keys to navigate.')) ?>',
+        // Keeps `%1`: the panel puts the count in after translating.
+        '%1 results are available, use up and down arrow keys to navigate.':
+            '<?= $escaper->escapeJs(__('%1 results are available, use up and down arrow keys to navigate.')) ?>',
     };
 
     /*
@@ -1910,7 +2314,7 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanyIdentityInstances = window.twoGatewayCompanyIdentityInstances || {};
     window.twoGatewayCompanyIdentity = window.twoGatewayCompanyIdentity || function (role) {
         if (!twoGatewayIsCaptureRole(role)) {
-            console.error('Two: twoGatewayCompanyIdentity() needs an address role');
+            console.error('Two_GatewayHyva: twoGatewayCompanyIdentity() needs an address role');
             return null;
         }
         const instances = window.twoGatewayCompanyIdentityInstances;
@@ -1921,7 +2325,63 @@ $quoteDetails = json_encode(
     };
 
     /**
+     * The quote's current billing and shipping countries, from the element the
+     * tile renders outside its re-render-ignored form (TWO-26295), or null on a
+     * page without it.
+     *
+     * @returns {?{billing: string, shipping: string}}
+     */
+    window.twoGatewayLiveAddressCountries = window.twoGatewayLiveAddressCountries || function () {
+        const node = document.querySelector('[data-two-live-countries]');
+        if (!node) return null;
+        return {
+            billing: String(node.getAttribute('data-billing-country') || ''),
+            shipping: String(node.getAttribute('data-shipping-country') || '')
+        };
+    };
+
+    /**
+     * `quote` with its countries replaced by the live ones, when the page has
+     * them (TWO-26295). The tile's company is the invoice company, so a known
+     * billing country is what the quote fallback answers, ahead of shipping.
+     *
+     * @param {Object} quote a page-load quote snapshot
+     * @returns {Object} the same object when there is nothing live to apply
+     */
+    window.twoGatewayWithLiveCountries = window.twoGatewayWithLiveCountries || function (quote) {
+        const live = window.twoGatewayLiveAddressCountries();
+        if (!live || (!live.billing && !live.shipping)) return quote;
+        return Object.assign({}, quote, live.billing
+            ? { billing_country_id: live.billing, country_id: live.billing, shipping_country_id: '' }
+            : { shipping_country_id: live.shipping });
+    };
+
+    /**
+     * The country the order intent is sent under: the tile's own resolution,
+     * which is what buildOrderIntentRequestBody() sends.
+     *
+     * @param {Object} [surface] the tile asking; the live instance otherwise
+     * @returns {string}
+     */
+    window.twoGatewayInvoiceCountry = window.twoGatewayInvoiceCountry || function (surface) {
+        const tile = surface || twoPaymentComponentInstance;
+        return tile && typeof tile.captureCountryCode === 'function'
+            ? tile.captureCountryCode()
+            : window.twoGatewayGetCountryCode(
+                window.twoGatewayWithLiveCountries({}),
+                window.twoGatewayInvoiceRoleCountryField()
+            );
+    };
+
+    /**
      * TWO-25554: billing when it presents a company number, else shipping.
+     * TWO-26775: billing in manual entry answers with its name alone, never
+     * with the delivery company's number.
+     *
+     * TWO-26295: never a company captured in another country than the one the
+     * order intent goes out under. That covers a stale record restored on a
+     * later visit and a delivery-panel company falling back across to an
+     * invoice address in another country; either way the API refuses the pair.
      *
      * @returns {{companyName: string, companyId: string, companyIdSource: string, role: string}}
      */
@@ -1931,6 +2391,9 @@ $quoteDetails = json_encode(
             if (!identity) return null;
             const companyId = String(identity.companyId() || '').trim();
             if (!companyId) return null;
+            if (window.twoGatewayCompanyCapturedElsewhere(role, companyId, window.twoGatewayInvoiceCountry())) {
+                return null;
+            }
             return {
                 companyName: String(identity.companyName() || ''),
                 companyId: companyId,
@@ -1938,8 +2401,24 @@ $quoteDetails = json_encode(
                 role: role
             };
         };
-        return captured('billing')
-            || captured('shipping')
+        const billing = captured('billing');
+        if (billing) return billing;
+        // Manual entry on the invoice panel is name-only capture, a Sole trader
+        // click pending over it included (TWO-26775): the delivery company's
+        // number must not stand in for the name the buyer typed. Only while
+        // billing is an address of its own: once billing is the delivery
+        // address, that panel's capture is the invoice company.
+        const billingCapture = (window.twoGatewayCompanyCaptureInstances || {}).billing;
+        if (billingCapture && billingCapture.isManualEntry() && !window.twoGatewayIsBillingAsShipping()) {
+            const identity = window.twoGatewayCompanyIdentity('billing');
+            return {
+                companyName: String((identity && identity.companyName()) || ''),
+                companyId: '',
+                companyIdSource: '',
+                role: 'billing'
+            };
+        }
+        return captured('shipping')
             || { companyName: '', companyId: '', companyIdSource: '', role: '' };
     };
 
@@ -1980,6 +2459,11 @@ $quoteDetails = json_encode(
         const tileName = tile ? tile.companyName : '';
         const resolved = window.twoGatewayResolveInvoiceCompany();
         if (resolved.companyId) return resolved;
+        // The tile's capture IS the billing record's, so the same country rule.
+        if (tile && tile.companyId
+            && window.twoGatewayCompanyCapturedElsewhere('billing', tile.companyId, window.twoGatewayInvoiceCountry(tile))) {
+            return { companyName: '', companyId: '', companyIdSource: '', role: '' };
+        }
         return {
             companyName: tileName,
             companyId: tile ? tile.companyId : '',
@@ -1999,7 +2483,7 @@ $quoteDetails = json_encode(
     window.twoGatewayCompanyCapture = window.twoGatewayCompanyCapture || function(settings) {
         const role = settings && settings.role;
         if (!twoGatewayIsCaptureRole(role)) {
-            console.error('Two: twoGatewayCompanyCapture() needs an address role');
+            console.error('Two_GatewayHyva: twoGatewayCompanyCapture() needs an address role');
             return null;
         }
         if (window.twoGatewayCompanyCaptureInstances[role]) {
@@ -2008,6 +2492,8 @@ $quoteDetails = json_encode(
         /* The live surface of THIS role. Read fresh by every host function: the
          * component is replaced on every re-render while the controller is not. */
         let currentSurface = null;
+        /* The country field whose `change` the controller is handling, if any. */
+        let countryChangedIn = null;
         const twoGatewayOnSurface = function (member, args, fallback) {
             if (!currentSurface || typeof currentSurface[member] !== 'function') return fallback;
             return currentSurface[member].apply(currentSurface, args || []);
@@ -2022,12 +2508,11 @@ $quoteDetails = json_encode(
             || typeof Panel !== 'function'
             || typeof SoleTraderFlow !== 'function'
             || !identity) {
-            console.error('Two: company-capture modules are not loaded');
+            console.error('Two_GatewayHyva: company-capture modules are not loaded');
             return null;
         }
 
         const restBaseUrl = settings.restBaseUrl || '';
-        let retrySignup = function () {};
 
         const controller = new Controller({
             config: {
@@ -2127,7 +2612,15 @@ $quoteDetails = json_encode(
                         ) !== role) {
                         return;
                     }
-                    onChange(String(target.value || '').toLowerCase());
+                    // Held for the length of the controller's synchronous
+                    // handling, so a revert it makes reaches the form whose
+                    // country this is (TWO-27212).
+                    countryChangedIn = target;
+                    try {
+                        onChange(String(target.value || '').toLowerCase());
+                    } finally {
+                        countryChangedIn = null;
+                    }
                 }, true);
             },
 
@@ -2141,17 +2634,11 @@ $quoteDetails = json_encode(
             applyCompanyAddress(selectedItem) {
                 twoGatewayOnSurface('captureAddressLookup', [selectedItem]);
             },
-            // This checkout keeps no record of what an autofill wrote, so there
-            // is nothing to take back out; a buyer who changes country after an
-            // autofill corrects the address themselves.
-            revertAutofilledAddress() {},
-            clearField(selector) {
-                const field = document.querySelector(selector);
-                if (!field) return;
-                field.value = '';
-                field.dispatchEvent(new Event('input', { bubbles: false }));
-                field.focus();
-                twoGatewayOnSurface('captureFieldCleared');
+            // On a country switch, the form whose country changed and no
+            // other; on leaving sole-trader mode, the surface's own form
+            // (TWO-27212).
+            revertAutofilledAddress() {
+                twoGatewayOnSurface('captureRevertAutofilledAddress', [countryChangedIn]);
             },
 
             tokensUrl() {
@@ -2181,20 +2668,9 @@ $quoteDetails = json_encode(
                 // The merchant's own wording wins where a brand supplies one.
                 const text = settings.soleTraderErrorMessage || message;
                 window.dispatchMessages([{ type: 'error', text: text }], 5000);
-            },
-            /**
-             * The blocked-popup fallback is a bound element on the tile rather
-             * than DOM this builds, so the flag is all that moves here.
-             */
-            renderSignupPrompt(show, onRetry) {
-                retrySignup = onRetry;
-                twoGatewayOnSurface('captureSignupPromptVisible', [show]);
             }
         });
 
-        controller.retrySignup = function () {
-            retrySignup();
-        };
         controller.pointAtSurface = function (surface) {
             currentSurface = surface;
         };
@@ -2242,6 +2718,12 @@ $quoteDetails = json_encode(
             // toast on top of it would say the same thing twice.
             dispatchSearchUnavailableToast: false,
             resolveNameField: function () { return this.companyNameField(); },
+            // The role's identity carries the notice and its capture
+            // controller renders it under the company field, as on Luma.
+            announceAddressNotice: function (text) {
+                const identity = window.twoGatewayCompanyIdentity(this.captureRole());
+                if (identity && typeof identity.addressNotice === 'function') identity.addressNotice(text);
+            },
             // Magewire may destroy and rebuild the subtree this is mounted in
             // while a search is on the wire. Fails CLOSED: once Alpine has torn
             // the subtree down there is no root to resolve.
@@ -2259,7 +2741,6 @@ $quoteDetails = json_encode(
             // Alpine state rather than reaching into the controller.
             manualMode: false,
             showSoleTrader: false,
-            showPopupMessage: false,
             soleTraderBusy: false,
 
             /**
@@ -2367,11 +2848,36 @@ $quoteDetails = json_encode(
                 return String(this.getCaptureQuote().quote_id || '');
             },
             captureAddressLookup(selectedItem) {
-                if (!this.isAddressSearchEnabled || !selectedItem.lookupId) return;
-                this.addressLookup(selectedItem.lookupId, this.resolveCaptureAddressContainer());
+                const container = this.resolveCaptureAddressContainer();
+                this.supersedeAddressLookup(container);
+                if (!this.isAddressSearchEnabled) return;
+                if (selectedItem.lookupId) {
+                    this.addressLookup(selectedItem.lookupId, container);
+                } else {
+                    // As the engine's own pick: the previous pick's registry
+                    // phone goes with the company it belonged to (TWO-27212).
+                    this.applyRegistryTelephone('', container);
+                }
+            },
+            /**
+             * @param {?HTMLElement} countryField the country field that changed,
+             *   or null when the revert is not about a country switch. A field
+             *   outside this surface's form (the address-book modal's) reverts
+             *   its own form, never this one.
+             */
+            captureRevertAutofilledAddress(countryField) {
+                const own = this.resolveCaptureAddressContainer();
+                const container = !countryField || (own && own.contains(countryField))
+                    ? own
+                    : countryField.closest('form');
+                this.revertAutofilledAddress(container);
             },
             captureApplyBuyerAddress(source) {
-                this.setAddressData(source, this.resolveCaptureAddressContainer());
+                const container = this.resolveCaptureAddressContainer();
+                // A company lookup still in flight is superseded, so its reply
+                // cannot overwrite the sole trader's address (TWO-27160).
+                if (container) window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
+                this.setAddressData(source, container, { buyerRules: true });
             },
             /**
              * A phone number is not part of the address the buyer is being shown
@@ -2385,6 +2891,12 @@ $quoteDetails = json_encode(
                 const field = container && container.querySelector('input[name="telephone"]');
                 if (!field) return;
                 field.value = phone;
+                window.twoGatewayMarkAutofill(field, phone);
+                // The buyer's own verified number from here on, even where it
+                // equals the registry's, so no later pick clears it and no
+                // lookup still in flight overwrites it (TWO-27160).
+                window.twoGatewayRegistryPhoneWrites.delete(field);
+                window.twoGatewayAddressLookups.delete(window.twoGatewayAddressLookupKey(container));
                 field.dispatchEvent(new Event('input', { bubbles: false }));
             },
             /**
@@ -2413,18 +2925,21 @@ $quoteDetails = json_encode(
                     .trim()
                     .toUpperCase();
             },
-            captureSignupPromptVisible(show) {
-                this.showPopupMessage = !!show;
-            },
-            captureFieldCleared() {
-                this.search = '';
-                this.captureFieldReleased();
-            },
 
-            /** @returns {Object} the quote this surface reads, plain and detached */
+            /**
+             * The quote this surface reads.
+             *
+             * On the tile, the countries come from the live element rather
+             * than the page-load snapshot (TWO-26295): a logged-in buyer who
+             * picks a saved address has no country field to read, and the
+             * snapshot keeps the address they started on. See
+             * twoGatewayWithLiveCountries().
+             *
+             * @returns {Object}
+             */
             getCaptureQuote() {
                 const quote = this.quote || this.quoteData || {};
-                return quote;
+                return this.isTileSurface() ? window.twoGatewayWithLiveCountries(quote) : quote;
             },
             resolveCaptureAddressContainer() {
                 return typeof opts.resolveAddressContainer === 'function'
@@ -2562,20 +3077,31 @@ $quoteDetails = json_encode(
                 if (registry.has(slot)) registry.get(slot).dispose();
                 const self = this;
                 let restoring = false;
+                /*
+                 * Name-only capture, asked of the controller (TWO-26775): a Sole
+                 * trader click from manual entry that nobody has been adopted
+                 * over leaves manual entry in place, so it is still recorded as
+                 * manual and a reload comes back to manual entry. Read off the
+                 * mode only before this role has a controller.
+                 */
+                const isManualEntry = function () {
+                    const capture = self.captureController();
+                    return capture ? capture.isManualEntry() : identity.captureMode() === 'manual';
+                };
                 const apply = function () {
                     // The MODE counts as a change: it is persisted alongside the
                     // pair, and a return to search that wrote nothing left
                     // `manual_mode: true` in storage for the next re-render to
                     // restore the buyer back into manual entry.
+                    const manual = isManualEntry();
                     const pairChanged = self.companyName !== identity.companyName()
                         || self.companyId !== identity.companyId()
                         || self.companyIdSource !== identity.companyIdSource();
-                    const changed = pairChanged
-                        || self.manualMode !== (identity.captureMode() === 'manual');
+                    const changed = pairChanged || self.manualMode !== manual;
                     self.companyName = identity.companyName();
                     self.companyId = identity.companyId();
                     self.companyIdSource = identity.companyIdSource();
-                    self.manualMode = identity.captureMode() === 'manual';
+                    self.manualMode = manual;
                     self.showSoleTrader = identity.isSoleTrader();
                     // Mirrored onto reactive state: `x-show` tracks component
                     // properties, and the identity is a plain object no Alpine
@@ -2700,14 +3226,22 @@ $quoteDetails = json_encode(
             },
 
             writeCapturedSelection() {
-                return typeof opts.writeSelection === 'function'
-                    ? opts.writeSelection.call(this, {
-                        company_name: this.companyName,
-                        company_id: this.companyId,
-                        company_id_source: this.companyIdSource,
-                        manual_mode: this.manualMode
-                    })
+                if (typeof opts.writeSelection !== 'function') return {};
+                const previous = typeof opts.readSelection === 'function'
+                    ? opts.readSelection.call(this)
                     : {};
+                return opts.writeSelection.call(this, {
+                    company_name: this.companyName,
+                    company_id: this.companyId,
+                    company_id_source: this.companyIdSource,
+                    // TWO-26295: see twoGatewayCompanyCountryStamp().
+                    company_country: window.twoGatewayCompanyCountryStamp(
+                        previous,
+                        this.companyId,
+                        this.captureCountryCode()
+                    ),
+                    manual_mode: this.manualMode
+                });
             },
 
             /** @returns {?Object} the popover, for tests that drive it */
@@ -2743,26 +3277,10 @@ $quoteDetails = json_encode(
                 if (capture) capture.commitManualCompany(this.search);
             },
 
-            /**
-             * The engine's own manual toggle is inert here, so this is what ends
-             * the search interaction: otherwise a stale "unavailable" verdict and
-             * a populated result list sit behind the released field.
-             */
-            captureFieldReleased() {
-                this.closeDropdown();
-            },
-
-            get soleTraderPopupMessageVisible() {
-                return this.showPopupMessage;
-            },
             // The token mint runs before the hosted signup can open, so the wait
             // is real and needs saying.
             get soleTraderSpinnerVisible() {
                 return this.soleTraderBusy;
-            },
-            openSoleTraderSignupFromLink() {
-                const capture = this.captureController();
-                if (capture) capture.retrySignup();
             },
 
             /*
@@ -2980,14 +3498,13 @@ $quoteDetails = json_encode(
                                     // Refusing with nothing on screen is worse
                                     // than the error this replaces, so leave a
                                     // trace rather than failing silently.
-                                    console.error('Two: no message channel for the company-required refusal.');
+                                    console.error('Two_GatewayHyva: no message channel for the company-required refusal.');
                                 }
                                 return false;
                             }
 
                             // TWO-25657: per company, so a stale decline cannot block an approved one.
-                            const intentRecord = this.orderIntentRecordForCurrentCompany();
-                            if (intentRecord && intentRecord.kind === 'decision' && !intentRecord.approved) {
+                            if (this.isOrderIntentPlacementRefused()) {
                                 // Toasted beside the standing box: a refusal at click time needs a signal then.
                                 if (typeof window.dispatchMessages === 'function') {
                                     window.dispatchMessages([{
@@ -3049,17 +3566,11 @@ $quoteDetails = json_encode(
             // the address-step search, that lookup, is off.
             manualEntryOffered: false,
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            // Bare boolean, not quoted: the string "false" is truthy.
-            isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
-            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-            merchant: '<?= $escaper->escapeJs($merchantName) ?>',
-            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isCompanySearchEnabled: true,
             isAddressSearchEnabled: false,
-            countrySelectionMessage: '<?= $escaper->escapeJs(__('Please select a country first')) ?>',
+            countrySelectionMessage: '<?= $escaper->escapeJs(__('Select your country above to search for your company.')) ?>',
             getQuote: function () { return JSON.parse(JSON.stringify(this.quote)); },
             /*
              * THIS TILE IS NOT IN AN ADDRESS FORM, so it names the address whose
@@ -3141,12 +3652,15 @@ $quoteDetails = json_encode(
             // would misreport one company's standing decision after another
             // company's reply.
             placeOrderIntentFlag: true,
+            // Bare boolean: the base composes order intent from the quote (TWO-26092).
+            isServerIntentAvailable: <?= $isServerIntentAvailable ? "true" : "false" ?>,
 
             /*
              * WHAT WE KNOW ABOUT EACH COMPANY, keyed BY company id.
              *
-             * `orderIntentDecisions[id] = { name, approved }` for a company whose
-             * check reached a decision; `orderIntentFailures[id] = { name }` for
+             * `orderIntentDecisions[id] = { name, approved, basket }` for a company
+             * whose check reached a decision, `basket` being the fingerprint the
+             * request was sent under (TWO-26296); `orderIntentFailures[id] = { name, rateLimited }` for
              * one whose check could not be completed. A decision for a company
              * removes its failure — the question has been answered.
              *
@@ -3248,19 +3762,6 @@ $quoteDetails = json_encode(
             generalErrorMessage: '<?= $escaper->escapeJs(
                 __($generalErrorMessage),
             ) ?>',
-            orderIntentConfig_weightUnit: '<?= $escaper->escapeJs(
-                $orderIntentConfig["weightUnit"],
-            ) ?>',
-            orderIntentConfig_merchant_id: '<?= $escaper->escapeJs($merchantId) ?>',
-            orderIntentConfig_merchant_shortName: '<?= $escaper->escapeJs(
-                $merchantName,
-            ) ?>',
-            orderIntentConfig_extensionPlatformName: '<?= $escaper->escapeJs(
-                $orderIntentConfig["extensionPlatformName"],
-            ) ?>',
-            orderIntentConfig_extensionDBVersion: '<?= $escaper->escapeJs(
-                $orderIntentConfig["extensionDBVersion"],
-            ) ?>',
             quote: '<?= $quoteDetails ?>',
             checkoutPageUrl: '<?= $escaper->escapeJs(__($checkoutPageUrl)) ?>',
 
@@ -3323,7 +3824,7 @@ $quoteDetails = json_encode(
 
             // TWO-25503: this tile hosts the control only when the address-step
             // company search is off, and manual entry captures no company
-            // number — which Two's payment method requires — so the registry
+            // number — which the payment method requires — so the registry
             // lookup is the only route left here.
             get manualEntryVisible() {
                 return false;
@@ -3333,20 +3834,21 @@ $quoteDetails = json_encode(
             initialize(quote) {
                 this.quote = quote;
                 twoPaymentComponentInstance = this;
+                twoGatewayWatchOrderIntentBasket();
 
                 // The tile is the invoice-role submit surface: its own record,
-                // its own role's identity, nothing else.
-                const billingCompanySelectionData = window.twoGatewayReadBillingCompany();
+                // its own role's identity, nothing else. A record captured in
+                // another country is not restored (TWO-26295).
+                const billingCompanySelectionData = window.twoGatewayReadCompanyRecordFor(
+                    'billing',
+                    this.captureCountryCode()
+                );
                 const identity = window.twoGatewayCompanyIdentity(this.captureRole());
                 // A tile hosting no control made no capture, and a live signup
                 // never writes the record — so neither may seed from it.
                 if (identity && !identity.isSoleTrader() && this.companyNameField()) {
                     identity.write(
-                        {
-                            companyName: billingCompanySelectionData.company_name || '',
-                            companyId: billingCompanySelectionData.company_id || '',
-                            companyIdSource: billingCompanySelectionData.company_id_source || ''
-                        },
+                        window.twoGatewayRecordedCompany(billingCompanySelectionData),
                         { authoritative: true }
                     );
                 }
@@ -3357,14 +3859,16 @@ $quoteDetails = json_encode(
                     && !shipping.isSoleTrader()
                     && !shipping.companyName()
                     && !shipping.companyId()) {
-                    const shippingSelection = window.twoGatewayReadCompanySelection();
+                    const shippingSelection = window.twoGatewayReadCompanyRecordFor(
+                        'shipping',
+                        window.twoGatewayGetCountryCode(
+                            this.getCaptureQuote(),
+                            document.getElementById('shipping-country_id')
+                        )
+                    );
                     if (shippingSelection.company_name || shippingSelection.company_id) {
                         shipping.write(
-                            {
-                                companyName: shippingSelection.company_name || '',
-                                companyId: shippingSelection.company_id || '',
-                                companyIdSource: shippingSelection.company_id_source || ''
-                            },
+                            window.twoGatewayRecordedCompany(shippingSelection),
                             { authoritative: true }
                         );
                     }
@@ -3436,8 +3940,10 @@ $quoteDetails = json_encode(
                     // `false`: a restore is not a company the buyer just chose,
                     // and the per-company dedup record is emptied by the same
                     // rebuild that caused it.
+                    // Through the one restore rule: a record saying manual
+                    // entry brings back no number (TWO-26775).
                     this.fillCompanyData(
-                        billingCompanySelectionData.company_id || '',
+                        window.twoGatewayRecordedCompany(billingCompanySelectionData).companyId,
                         restored,
                         false
                     );
@@ -3476,7 +3982,7 @@ $quoteDetails = json_encode(
             // company captured" check: that diverges while an intent is
             // pending, declined, or suppressed by the brand.
             //
-            // Two configurations stop the notice firing, so the label never
+            // Either of two configurations stops the notice firing, so the label never
             // renders either: order intent disabled for the merchant, and a
             // Dutch buyer whose company is not a BV. A product decision, not
             // one to widen this getter around.
@@ -3564,7 +4070,51 @@ $quoteDetails = json_encode(
             hasOrderIntentDecisionFor(companyId, companyName) {
                 if (!companyId) return false;
                 const decision = this.orderIntentDecisions[companyId];
-                return Boolean(decision) && decision.name === companyName;
+                return Boolean(decision) && decision.name === companyName
+                    && this.isOrderIntentDecisionForThisBasket(decision);
+            },
+
+            /**
+             * TWO-26296: whether a recorded decision was priced on the basket on
+             * the page now. A decision for another basket is no decision at all:
+             * it neither suppresses a check, nor paints, nor blocks placement.
+             *
+             * @param {Object} decision an `orderIntentDecisions` entry
+             * @returns {boolean}
+             */
+            isOrderIntentDecisionForThisBasket(decision) {
+                return String(decision.basket || '') === this.orderIntentBasket();
+            },
+
+            /**
+             * TWO-26296: the fingerprint of the basket an intent would be priced
+             * on NOW. Read live from the element gateway_method.phtml renders
+             * outside its re-render-ignored form, so it moves with every
+             * shipping, address, coupon or term re-render. '' where the element
+             * is absent, which then never differs and changes nothing.
+             *
+             * @returns {string}
+             */
+            orderIntentBasket() {
+                const el = document.getElementById('<?= $brandedViewModel->getMethodCode() ?>_intent_basket');
+                return el ? String(el.dataset.basket || '') : '';
+            },
+
+            /**
+             * TWO-26296: check again when the basket has moved since the last
+             * check for the company being placed for was SENT. The base prices
+             * the intent from the quote at request time, so a check made before
+             * shipping and tax were chosen was priced on a basket the order will
+             * not have. Keyed on what was sent, not on what was decided, so a
+             * check still in flight when the basket moves is replaced too; its
+             * late reply is dropped by the sequence guard. An unchanged basket
+             * re-asks nothing, so repeated re-renders cost no requests.
+             */
+            recheckOrderIntentIfBasketMoved() {
+                const companyId = this.invoiceCompany().companyId;
+                if (!companyId || !Object.prototype.hasOwnProperty.call(orderIntentSentBaskets, companyId)) return;
+                if (orderIntentSentBaskets[companyId] === this.orderIntentBasket()) return;
+                this.fillCompanyData('', '', true);
             },
 
             /**
@@ -3582,7 +4132,7 @@ $quoteDetails = json_encode(
 
             /**
              * @returns {Object|null} what is on record for the company on screen —
-             *   `{ kind: 'decision', approved }` or `{ kind: 'failure' }` — or null
+             *   `{ kind: 'decision', approved }` or `{ kind: 'failure', rateLimited }`, or null
              *   when nothing is, INCLUDING when the record's name no longer
              *   matches the name on screen.
              */
@@ -3593,11 +4143,13 @@ $quoteDetails = json_encode(
 
                 const failure = this.orderIntentFailures[companyId];
                 if (failure && failure.name === invoiceCompany.companyName) {
-                    return { kind: 'failure' };
+                    return { kind: 'failure', rateLimited: failure.rateLimited === true };
                 }
 
+                // A decision priced on another basket is no decision for this one (TWO-26296).
                 const decision = this.orderIntentDecisions[companyId];
-                if (decision && decision.name === invoiceCompany.companyName) {
+                if (decision && decision.name === invoiceCompany.companyName
+                    && this.isOrderIntentDecisionForThisBasket(decision)) {
                     return { kind: 'decision', approved: decision.approved };
                 }
 
@@ -3667,9 +4219,17 @@ $quoteDetails = json_encode(
                 const record = this.orderIntentRecordForCurrentCompany();
                 if (!record) return;
 
+                // A failed check states the decline's not-available sentence,
+                // company name included (ABN-643); a rate limit, a wait rather
+                // than an answer, keeps the general wording.
                 if (record.kind === 'failure') {
-                    if (!this.generalErrorMessage) return;
-                    this.orderIntentErrorNotice = this.generalErrorMessage;
+                    const failureText = record.rateLimited
+                        ? this.generalErrorMessage
+                        : (this.resolveOrderIntentNotAvailableNotice()
+                            || this.orderIntentDeclinedMessage
+                            || this.generalErrorMessage);
+                    if (!failureText) return;
+                    this.orderIntentErrorNotice = failureText;
                     return;
                 }
 
@@ -3680,9 +4240,12 @@ $quoteDetails = json_encode(
                  * (This used to also decide whether to lower the progress row;
                  * the row is the setter's business now, and only its business.)
                  */
+                // A brand withholding its declined copy gets the sentence order
+                // create gives for the same decline (ABN-643): a decline is never
+                // silent, because it is what disabled the button.
                 const text = record.approved
                     ? this.resolveOrderIntentApprovedNotice()
-                    : this.resolveOrderIntentNotAvailableNotice();
+                    : (this.resolveOrderIntentNotAvailableNotice() || this.orderIntentDeclinedMessage);
                 if (!text) return;
 
                 if (record.approved) {
@@ -3692,10 +4255,30 @@ $quoteDetails = json_encode(
                 }
             },
 
+            /**
+             * Whether placement is refused for the company being placed for:
+             * a decline for this basket (TWO-25657), or a decline for an
+             * older basket while nothing has been heard yet for this one
+             * (TWO-26296). The basket moving takes a decline off the box, but
+             * not off the button: until the re-check answers, a declined
+             * buyer must not be able to place by changing the shipping
+             * method. A failure or a decision for this basket replaces it.
+             *
+             * @returns {boolean}
+             */
+            isOrderIntentPlacementRefused() {
+                const record = this.orderIntentRecordForCurrentCompany();
+                if (record) return record.kind === 'decision' && !record.approved;
+                const invoiceCompany = this.invoiceCompany();
+                const decision = invoiceCompany.companyId
+                    ? this.orderIntentDecisions[invoiceCompany.companyId]
+                    : null;
+                return Boolean(decision) && decision.name === invoiceCompany.companyName && !decision.approved;
+            },
+
             // TWO-25657: Place Order follows the current company's recorded decision.
             applyOrderIntentPlacementGate() {
-                const record = this.orderIntentRecordForCurrentCompany();
-                const declined = Boolean(record) && record.kind === 'decision' && !record.approved;
+                const declined = this.isOrderIntentPlacementRefused();
                 const navigation = (window.hyvaCheckout || {}).navigation || {};
                 const button = document.querySelector('[x-bind="buttonPlaceOrder"], .btn-place-order');
 
@@ -3797,6 +4380,9 @@ $quoteDetails = json_encode(
                      */
                     this.clearOrderIntentNotices();
                     this.setOrderIntentChecking(true);
+                    // A basket re-check changes no company, so no watcher re-derives the
+                    // button: lift a decline reached for the old basket here (TWO-26296).
+                    this.applyOrderIntentPlacementGate();
                     window.dispatchEvent(new Event("dispatch-order-intent"));
                 } else {
                     /*
@@ -3819,29 +4405,16 @@ $quoteDetails = json_encode(
             // Order Intent methods
             async placeOrderIntent() {
                 try {
-                    const quoteData = JSON.parse(JSON.stringify(this.quote));
+                    // The live countries, so the intent goes out under the country the
+                    // company guard checked (TWO-26295).
+                    const quoteData = JSON.parse(JSON.stringify(this.getCaptureQuote()));
 
                     if (this.shouldSkipOrderIntent(quoteData)) return null;
 
+                    // Only the base composes amounts and lines, from the quote; an older base gets no intent (TWO-26092).
+                    if (this.isServerIntentAvailable !== true) return null;
+
                     const orderIntentRequestBody = this.buildOrderIntentRequestBody(quoteData);
-
-                    // DEPRECATED — see twoGatewayCompanySearch.
-                    if (this.isProxyAvailable !== true) {
-                        const queryParams = new URLSearchParams({
-                            client: this.orderIntentConfig_extensionPlatformName,
-                            client_v: this.orderIntentConfig_extensionDBVersion,
-                            merchant: this.orderIntentConfig_merchant_shortName
-                        });
-
-                        const response = await fetch(`${this.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(orderIntentRequestBody)
-                        });
-
-                        if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-                        return await response.json();
-                    }
 
                     const envelope = await window.twoGatewayProxyPost(
                         this.restBaseUrl,
@@ -3849,7 +4422,14 @@ $quoteDetails = json_encode(
                         { payload: JSON.stringify(orderIntentRequestBody) }
                     );
 
-                    if (!envelope.ok) throw new Error(`HTTP error! Status: ${envelope.status}`);
+                    if (!envelope.ok) {
+                        // The status rides on the error, so the handler can tell
+                        // a rate limit from every other failure; the buyer sees
+                        // one sentence whatever else failed (ABN-643).
+                        const error = new Error(`HTTP error! Status: ${envelope.status}`);
+                        error.status = envelope.status;
+                        throw error;
+                    }
                     return envelope.body;
                 } catch (error) {
                     console.error('Error in placeOrderIntent:', error);
@@ -3863,61 +4443,18 @@ $quoteDetails = json_encode(
 
             buildOrderIntentRequestBody(quoteData) {
                 const invoiceCompany = this.invoiceCompany();
-                const companyName = invoiceCompany.companyName;
-                const companyId = invoiceCompany.companyId;
-
-                let lineItems = quoteData.items?.map(item => ({
-                    name: item.name,
-                    description: item.description || '',
-                    discount_amount: parseFloat(item.discount_amount || 0).toFixed(2),
-                    gross_amount: parseFloat(item.row_total_incl_tax || 0).toFixed(2),
-                    net_amount: parseFloat(item.row_total || 0).toFixed(2),
-                    quantity: item.qty,
-                    unit_price: parseFloat(item.price || 0).toFixed(2),
-                    tax_amount: parseFloat(item.tax_amount || 0).toFixed(2),
-                    tax_rate: (parseFloat(item.tax_percent || 0) / 100).toFixed(6),
-                    tax_class_name: '',
-                    quantity_unit: this.orderIntentConfig_weightUnit || '',
-                    image_url: item.thumbnail,
-                    type: item.is_virtual === '0' ? 'PHYSICAL' : 'DIGITAL'
-                })) || [];
-
-                lineItems.push({
-                    name: 'Shipping',
-                    description: 'Shipping fee',
-                    gross_amount: parseFloat(quoteData.shipping_incl_tax || 0).toFixed(2),
-                    net_amount: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
-                    quantity: 1,
-                    unit_price: parseFloat(quoteData.shipping_amount || 0).toFixed(2),
-                    tax_amount: parseFloat(quoteData.shipping_tax_amount || 0).toFixed(2),
-                    tax_rate: isNaN(parseFloat(quoteData.shipping_tax_amount)) || isNaN(parseFloat(quoteData.shipping_amount)) || parseFloat(quoteData.shipping_amount) === 0
-                        ? "0.000000"
-                        : (parseFloat(quoteData.shipping_tax_amount) / parseFloat(quoteData.shipping_amount)).toFixed(6),
-                    tax_class_name: '',
-                    quantity_unit: 'unit',
-                    type: 'SHIPPING_FEE'
-                });
 
                 // The same one resolution the search uses, so an order intent can
                 // never be checked against a different country from the one the
                 // company was found in.
                 this.countryCode = this.resolveCountryCode(quoteData);
 
-                const gross_amount = parseFloat(quoteData.grand_total || 0);
-                const tax_amount = parseFloat(quoteData.tax_amount) + parseFloat(quoteData.shipping_tax_amount);
-                const net_amount = gross_amount - tax_amount;
-
                 return {
-                    gross_amount: gross_amount.toFixed(2),
-                    net_amount: net_amount.toFixed(2),
-                    tax_amount: tax_amount.toFixed(2),
-                    currency: quoteData.quote_currency_code,
-                    line_items: lineItems,
                     buyer: {
                         company: {
-                            organization_number: companyId,
+                            organization_number: invoiceCompany.companyId,
                             country_prefix: this.countryCode,
-                            company_name: companyName
+                            company_name: invoiceCompany.companyName
                         },
                         representative: {
                             email: quoteData.email,
@@ -3925,12 +4462,7 @@ $quoteDetails = json_encode(
                             last_name: quoteData.last_name,
                             phone_number: quoteData.telephone
                         }
-                    },
-                    // The proxy resolves the merchant from the store's API key.
-                    ...(this.isProxyAvailable === true ? {} : {
-                        merchant_id: this.orderIntentConfig_merchant_id,
-                        merchant_short_name: this.orderIntentConfig_merchant_shortName
-                    })
+                    }
                 };
             },
 
@@ -4045,7 +4577,7 @@ $quoteDetails = json_encode(
              *   about the company on screen); otherwise it is recorded as
              *   unknown, never guessed from live state.
              */
-            processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName) {
+            processOrderIntentSuccessResponse(response, requestedCompanyId, requestedCompanyName, requestedBasket) {
                 if (!response) return;
 
                 const invoiceCompany = this.invoiceCompany();
@@ -4102,6 +4634,9 @@ $quoteDetails = json_encode(
                 this.orderIntentDecisions[decidedCompanyId] = {
                     name: recordedName,
                     approved: Boolean(response.approved),
+                    // The basket the request was SENT for (TWO-26296), so a reply
+                    // overtaken by a totals change cannot stand for the new basket.
+                    basket: typeof requestedBasket === 'string' ? requestedBasket : this.orderIntentBasket(),
                 };
                 // A decision supersedes any earlier FAILED check for the same
                 // company: the question has been answered now.
@@ -4137,62 +4672,11 @@ $quoteDetails = json_encode(
                 this.placeOrderIntentFlag = Boolean(response.approved);
 
                 /*
-                 * ONE VERDICT, ONE NOTICE — and never the toast while the box
-                 * exists (TWO-25326).
-                 *
-                 * A decline used to raise a 5-second `dispatchMessages()` toast
-                 * AS WELL AS the in-tile "not available" box. Two notices for one
-                 * verdict, and the toast is the weaker of the two: it
-                 * self-dismisses, it lands at the top of the page rather than in
-                 * the tile the buyer is reading, and it says the same thing the
-                 * box beside their company already says and keeps saying.
-                 *
-                 * The box is not unconditional, though, which is why this is a
-                 * FALLBACK rather than a deletion. Its ELEMENT is
-                 * only rendered when the brand has not switched the notice copy
-                 * off (`getOrderIntentNotAvailableNotice()` — and a brand shipping
-                 * today does switch it off), so on such a brand deleting the toast
-                 * outright left a declined buyer with no signal whatsoever.
-                 *
-                 * Gated on the RESOLVED SENTENCE being empty, not on the copy
-                 * being null. The two agree for the brand switch,
-                 * which is the case that matters — `resolveOrderIntentNotAvailable
-                 * Notice()` returns '' for absent copy — but the resolver also
-                 * returns '' for copy that is present and unusable (a malformed
-                 * object missing its sentence, which it deliberately degrades to a
-                 * silent box for rather than throwing). Asking "is there a
-                 * sentence to show" covers both; asking "is the copy null" leaves
-                 * the malformed case with a rendered-but-empty box and no toast,
-                 * i.e. silence again, from the exact defensive branch that exists
-                 * to avoid a dead tile.
-                 *
-                 * Reached only past the `decidedCompanyId !== this.companyId`
-                 * guard above, so the resolver's reads of live `companyName` /
-                 * `companyId` are provably about the company this reply decided.
-                 *
-                 * Above the panel-open guard below, deliberately: that guard
-                 * defers only the BOX, and a brand with no box has nothing to
-                 * defer.
-                 *
-                 * The FAILED-check path (processOrderIntentErrorResponse below)
-                 * toasts unconditionally, for a different reason: it carries the
-                 * API's own diagnostic detail, which the box deliberately does not
-                 * show.
+                 * ONE VERDICT, ONE NOTICE (TWO-25326): a decline raises no toast.
+                 * The box always has a sentence for it, the brand's own or, where
+                 * the brand withholds it, the platform's (ABN-643), so a toast
+                 * would only repeat it somewhere the buyer is not reading.
                  */
-                if (!response.approved && this.resolveOrderIntentNotAvailableNotice() === '') {
-                    // Guarded HERE, not "like every other call site" — three of
-                    // the six in this file are unguarded, the failed-check toast
-                    // below among them. The reason to guard this one is that it
-                    // is the ONLY signal a declined buyer gets on a brand with
-                    // no inline notice, so a missing global must not turn "you
-                    // were declined" into a thrown error and nothing on screen.
-                    if (typeof window.dispatchMessages === 'function') {
-                        window.dispatchMessages(
-                            [{ type: 'error', text: this.orderIntentDeclinedMessage }],
-                            5000
-                        );
-                    }
-                }
 
                 /*
                  * RECORDED above, PAINTED by one place. This handler no longer
@@ -4235,67 +4719,31 @@ $quoteDetails = json_encode(
                 // dropped by refreshOrderIntentVerdict() at the end of this
                 // method — it clears unconditionally before deciding what may be
                 // shown. An explicit clear here was a second copy of that.
-                let message = this.generalErrorMessage;
 
-                if (response?.responseJSON) {
-                    const { error_code, error_message, error_details, error_json } = response.responseJSON;
+                // A rate limit (the shop's own, refused as a webapi fault before
+                // the route runs) is a wait, not an answer: it keeps the general
+                // wording and its toast. Every other failure, whether the API refused,
+                // erred or timed out, the shop's own route faulted (a 404 after a
+                // missed cache flush) or the base module refused before calling the
+                // API, states the "not available for this order" sentence a
+                // decline gives, company name included, in the box and with no
+                // toast (ABN-643). The detail stays in the console line
+                // placeOrderIntent() writes and the base module's error log.
+                const isRateLimited = response?.status === 429;
 
-                    switch (error_code) {
-                        case 'SCHEMA_ERROR':
-                            if (error_json) {
-                                message = '';
-                                error_json.forEach(error => {
-                                    window.dispatchMessages([{ type: 'error', text: error.msg }], 3000);
-                                });
-                            }
-                            break;
-                        case 'JSON_MISSING_FIELD':
-                            if (error_details) message = error_details;
-                            break;
-                        case 'MERCHANT_NOT_FOUND_ERROR':
-                        case 'ORDER_INVALID':
-                            message = error_message + (error_details ? ' - ' + error_details : '');
-                            break;
-                    }
-                }
-
-                // The persistent box, alongside the toast this path still
-                // raises rather than instead of it. A FAILED check is the one
-                // verdict that keeps both: the toast carries the API's own
-                // diagnostic detail, which the box deliberately does not show
-                // (see below). A DECLINE has no toast any more — one verdict,
-                // one notice (2026-08-06, see the success handler above).
-                //
-                // The box gets the GENERAL wording, never the API's own
-                // `error_message`/`error_details`. Those are diagnostic strings
-                // written for a developer, and the box does not self-dismiss —
-                // parking raw upstream text permanently in a buyer's checkout is
-                // not the same decision as flashing it for three seconds. The
-                // toast below still carries the detail for whoever is watching.
-                //
-                // Empty (and so hidden) exactly when there is no sentence to
-                // show: SCHEMA_ERROR sets `message` to '' and toasts one message
-                // per offending field instead.
                 /*
                  * RECORDING the failure and DISPLAYING it are two decisions.
                  *
                  * The record is what lets the panel closing report a failure that
                  * happened while the buyer was mid-search, so it is written
-                 * whenever there is a sentence to show — independent of whether
+                 * whenever there is a sentence to show, independent of whether
                  * this moment is one where a box may appear. Gating them together
                  * is how an earlier attempt at this ended up writing neither.
-                 *
-                 * `boxText`, not `message`: the box carries the GENERAL wording
-                 * (the API's own diagnostic strings are for the toast, which
-                 * self-dismisses), and an empty `generalErrorMessage` must leave
-                 * no record, or the record would be one nothing could ever paint.
+                 * The painter resolves the wording from the record's kind, so a
+                 * rate limit with an empty `generalErrorMessage` leaves no record
+                 * nothing could ever paint.
                  */
-                // Whether this failure is REPORTABLE at all: there must be
-                // something to say (`message` — SCHEMA_ERROR clears it and toasts
-                // per field instead) and wording to say it in. Deliberately not
-                // "the text to paint": the painting is refresh's, and it reads
-                // `generalErrorMessage` itself.
-                const isReportable = Boolean(message && this.generalErrorMessage);
+                const isReportable = !isRateLimited || Boolean(this.generalErrorMessage);
 
                 if (isReportable && invoiceCompany.companyId) {
                     // In the FAILURES map, never in the dedup memory, so the check
@@ -4308,6 +4756,7 @@ $quoteDetails = json_encode(
                         name: typeof requestedCompanyName === 'string'
                             ? requestedCompanyName
                             : invoiceCompany.companyName,
+                        rateLimited: isRateLimited,
                     };
                 }
 
@@ -4315,8 +4764,8 @@ $quoteDetails = json_encode(
                 // re-derive here, and refresh() decides whether a box may appear.
                 this.refreshOrderIntentVerdict();
 
-                if (message) {
-                    window.dispatchMessages([{ type: 'error', text: message }], 3000);
+                if (isRateLimited && this.generalErrorMessage) {
+                    window.dispatchMessages([{ type: 'error', text: this.generalErrorMessage }], 3000);
                 }
             },
         });
@@ -4516,21 +4965,11 @@ $quoteDetails = json_encode(
                     return parseFloat(surcharges[days] || 0) < 0.005;
                 });
                 if (allZero) return '';
-                const amount = parseFloat(surcharges[this.days] || 0);
-                const currency = this.$wire.currencyCode || 'EUR';
-                // Use the Magento store-view locale piped from PHP
-                // (`nl-NL`, `en-GB`, ...) so the chip's currency format
-                // matches the order summary. Browser default would
-                // produce `€16.03` while Magento formats `€ 16,03`.
-                const locale = this.$wire.currencyLocale || undefined;
-                try {
-                    return new Intl.NumberFormat(locale, {
-                        style: 'currency',
-                        currency: currency
-                    }).format(amount);
-                } catch (e) {
-                    return amount.toFixed(2);
-                }
+                // Written by the store's own price formatter on the server
+                // (TWO-27211), so the chip reads exactly as the order summary
+                // does. The server writes one for every offered term.
+                const texts = this.$wire.termSurchargeTexts || {};
+                return texts[this.days] || '';
             },
 
             get surchargeText() {
@@ -4659,6 +5098,27 @@ $quoteDetails = json_encode(
      */
     let orderIntentSeq = 0;
 
+    /*
+     * TWO-26296: the basket fingerprint each company's latest check was SENT
+     * under, keyed by company id. Module scope like `orderIntentSeq`, so it
+     * outlives any one component instance. `recheckOrderIntentIfBasketMoved()`
+     * compares it with the live basket after every Magewire re-render.
+     */
+    const orderIntentSentBaskets = {};
+    let orderIntentBasketHooked = false;
+
+    /** Hook the basket re-check onto Magewire's re-renders, once per page. */
+    function twoGatewayWatchOrderIntentBasket() {
+        if (orderIntentBasketHooked) return;
+        if (!window.Magewire || typeof window.Magewire.hook !== 'function') return;
+        orderIntentBasketHooked = true;
+        window.Magewire.hook('element.updated', () => {
+            if (twoPaymentComponentInstance) {
+                twoPaymentComponentInstance.recheckOrderIntentIfBasketMoved();
+            }
+        });
+    }
+
     // Global order intent event listener - only added once.
     window.addEventListener("dispatch-order-intent", (event) => {
         if (orderIntentDebounceTimeout) {
@@ -4717,7 +5177,7 @@ $quoteDetails = json_encode(
                 }
 
                 /*
-                 * The request is now definitely going out — past every gate. Two
+                 * The request is now definitely going out — past every gate. A pair of
                  * things belong exactly here rather than at the call sites:
                  *
                  *   - no verdict may be on screen while a check runs. The tile's
@@ -4737,6 +5197,8 @@ $quoteDetails = json_encode(
                 orderIntentSeq += 1;
                 const seq = orderIntentSeq;
                 const requestedCompanyId = currentCompanyId;
+                const requestedBasket = component.orderIntentBasket();
+                orderIntentSentBaskets[currentCompanyId] = requestedBasket;
                 // Captured with the id, for the same reason: a reply that lands
                 // after the buyer has moved on must be filed under the company
                 // it was ASKED about, name included. Read off the component
@@ -4795,7 +5257,8 @@ $quoteDetails = json_encode(
                         component.processOrderIntentSuccessResponse(
                             response,
                             requestedCompanyId,
-                            requestedCompanyName
+                            requestedCompanyName,
+                            requestedBasket
                         );
                     })
                     .catch(error => {

@@ -9,8 +9,10 @@
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceBlock name="head.additional">
+            <!-- Mounts only where CheckoutConfig::getIsShippingCompanyBlockMounted()
+                 says so: the search setting and the method's own enabled flag,
+                 read through the brand's config repository (TWO-27227). -->
             <block name="checkout-shipping-address-company-search"
-                ifconfig="payment/two_payment/enable_company_search"
                 template="Two_GatewayHyva::component/payment/method/shipping_company.phtml" after="-"/>
         </referenceBlock>
         <referenceBlock name="checkout.payment.methods">

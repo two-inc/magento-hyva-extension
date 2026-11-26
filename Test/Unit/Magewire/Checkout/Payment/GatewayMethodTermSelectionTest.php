@@ -149,6 +149,11 @@ class GatewayMethodTermSelectionTest extends TestCase
                 return false;
             }
 
+            public function isActive(?int $storeId = null): bool
+            {
+                return true;
+            }
+
             public function getPaymentTermsType(?int $storeId = null): string
             {
                 return PaymentTermsType::STANDARD;

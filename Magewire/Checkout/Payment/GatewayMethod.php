@@ -52,18 +52,15 @@ class GatewayMethod extends Component
 
     public string $surchargeDescription = '';
 
-    public string $currencyCode = '';
-
     /**
-     * Magento store-view locale (e.g. `nl_NL`, `en_GB`), normalised
-     * to BCP-47 (`nl-NL`, `en-GB`) and passed to the chip's
-     * Intl.NumberFormat so the surcharge currency renders in the
-     * same format Magento uses for the order-summary line items
-     * — avoiding the buyer-visible inconsistency where the chip
-     * shows `€16.03` (browser default) while the summary shows
-     * `€ 16,03` (Magento Dutch format).
+     * days => that term's fee as the store writes prices, for the chip to show
+     * as it stands (TWO-27211). Formatted here rather than in the browser so
+     * the chip and the order summary cannot format one amount two ways. Empty
+     * whenever `termSurcharges` is.
+     *
+     * @var array<int, string>
      */
-    public string $currencyLocale = '';
+    public array $termSurchargeTexts = [];
 
     public bool $showChip = false;
 
@@ -100,6 +97,9 @@ class GatewayMethod extends Component
         private ConfigRepository $configRepository,
         private TermSurchargePreview $termSurchargePreview,
         private LogRepository $logRepository,
+        // No longer read (the chip fee is formatted by the store's currency
+        // since TWO-27211), but kept: subclasses forward this constructor
+        // positionally, so removing it would move the method code.
         private LocaleResolver $localeResolver,
         private string $methodCode = 'two_payment',
     ) {}
@@ -245,10 +245,6 @@ class GatewayMethod extends Component
             $this->isEndOfMonth = $this->configRepository->getPaymentTermsType($storeId)
                 === PaymentTermsType::END_OF_MONTH;
             $this->surchargeDescription = (string) $this->configRepository->getSurchargeLineDescription($storeId);
-            $this->currencyCode = (string) ($quote->getQuoteCurrencyCode() ?: $quote->getStore()->getBaseCurrencyCode());
-            // Magento stores locale as `nl_NL`; Intl.NumberFormat expects
-            // BCP-47 with hyphens. Translate.
-            $this->currencyLocale = (string) str_replace('_', '-', (string) $this->localeResolver->getLocale());
 
             $sessionTerm = (int) $this->checkoutSession->getTwoSelectedTerm();
             $defaultTerm = (int) $this->configRepository->getDefaultPaymentTerm($storeId);
@@ -264,6 +260,7 @@ class GatewayMethod extends Component
             $this->termSurcharges = (($this->showChip || $this->showSingleTerm) && $type !== SurchargeType::NONE)
                 ? $this->computeAllTermSurcharges($quote, $terms)
                 : [];
+            $this->termSurchargeTexts = $this->formatTermSurcharges($quote, $terms, $this->termSurcharges);
         } catch (\Exception $e) {
             $this->logRepository->addErrorLog('Hyva chip: hydrate failed', $e->getMessage());
             $this->showChip = false;
@@ -271,8 +268,7 @@ class GatewayMethod extends Component
             $this->isEndOfMonth = false;
             $this->availableTerms = [];
             $this->termSurcharges = [];
-            $this->currencyCode = '';
-            $this->currencyLocale = '';
+            $this->termSurchargeTexts = [];
         }
     }
 
@@ -374,6 +370,32 @@ class GatewayMethod extends Component
         }
 
         return $surcharges;
+    }
+
+    /**
+     * Each offered term's fee written as the store writes prices: Magento's
+     * own currency formatter for the store's current currency, which is what
+     * prices the order summary beside the chips. A term the fee map does not
+     * answer for reads as a formatted zero, so a priced set shows an amount on
+     * every chip.
+     *
+     * @param array<int, int> $terms
+     * @param array<int, float> $surcharges
+     * @return array<int, string>
+     */
+    private function formatTermSurcharges(\Magento\Quote\Model\Quote $quote, array $terms, array $surcharges): array
+    {
+        if (!$surcharges) {
+            return [];
+        }
+
+        $currency = $quote->getStore()->getCurrentCurrency();
+        $texts = [];
+        foreach ($terms as $days) {
+            $texts[$days] = (string) $currency->formatPrecision((float) ($surcharges[$days] ?? 0.0), 2, [], false);
+        }
+
+        return $texts;
     }
 
     /**

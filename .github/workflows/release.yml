@@ -28,6 +28,8 @@ on:
 
 permissions:
   contents: write
+  # ISEC-853: lets app-token read the App key from Secret Manager
+  id-token: write
 
 # Per-branch concurrency group: a `main` release and a `staging` bump are
 # independent pieces of work and must not serialise behind each other.
@@ -44,21 +46,30 @@ jobs:
     # longer a bump-commit guard: nothing pushes a commit to `main` any
     # more, and a subject guard would suppress a legitimate release whose
     # tip is the version commit that came in from `staging`.
-    if: >
+    #
+    # CI must also have run for a push. The branch filters match
+    # head_branch by name, so a pull request from a fork whose branch is
+    # called `main` passes them; such a run must not mint the App token.
+    # It must also be a push to this repo's own `main`, which requires a pull
+    # request. The event check alone passes a push to any branch, and a push
+    # in a fork carries the fork as head_repository. This job mints the org
+    # App token, so nothing else may start it (ISEC-853).
+    if: |
       github.event.workflow_run.conclusion == 'success' &&
-      (github.event.workflow_run.head_branch == 'main' ||
-       github.event.workflow_run.head_branch == 'staging')
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'
     env:
-      # The branch CI ran for — `main` or `staging`. Every step that needs
-      # to know which of the two behaviours applies reads this.
+      # The branch CI ran for. Always `main` now (the trigger's `branches:`
+      # filter never let `staging` through); kept because the steps read it.
       BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
       - name: Mint GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: two-inc/actions-public/app-token@main
         with:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
 
       - uses: actions/checkout@v5
         with:
@@ -72,6 +83,10 @@ jobs:
 
       - name: Skip if HEAD already tagged
         id: gate
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ATTEMPT: ${{ github.run_attempt }}
+          PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           # Match bare numeric tags (1.14.2 etc.) — the Two-branded
@@ -87,6 +102,16 @@ jobs:
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
             echo "skip=1" >> "$GITHUB_OUTPUT"
+            # A re-run of this job after the tag and Release were created (say
+            # the dispatch failed) still sends the dispatch, so platform-tools
+            # need not wait for its daily reconcile. A first attempt never
+            # re-sends: the tag exists because an earlier run released it.
+            # Only for the commit this run was started for: after main has
+            # moved on, HEAD's tag is a newer release, not this run's.
+            if [ "$ATTEMPT" -gt 1 ] && [ "$(git rev-parse HEAD)" = "$PASSED_SHA" ] && gh release view "$existing" >/dev/null 2>&1; then
+              echo "Release $existing exists: re-sending the dispatch on this re-run."
+              echo "redispatch=1" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "skip=0" >> "$GITHUB_OUTPUT"
           fi
@@ -202,3 +227,32 @@ jobs:
             --target main \
             --title "${NEW}" \
             --notes-file release-notes.md
+
+      # The App token above is scoped to this repo only, so the dispatch
+      # needs its own token that can reach platform-tools.
+      - name: Mint platform-tools dispatch token
+        id: dispatch-token
+        if: (steps.gate.outputs.skip == '0' || steps.gate.outputs.redispatch == '1') && env.BRANCH == 'main'
+        uses: two-inc/actions-public/app-token@main
+        with:
+          client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
+          owner: two-inc
+          repositories: platform-tools
+
+      # Tells platform-tools a Release was published, so it rolls the
+      # release-tracking Magento staging shops (TWO-25769). This used to be
+      # release-dispatch.yml on the release event, which runs the workflow
+      # file at the tag's commit and so could not be bound to the App-key
+      # reader (ISEC-853). platform-tools' daily reconcile is the backstop for
+      # a Release published any other way.
+      - name: Dispatch plugin-release-published
+        if: (steps.gate.outputs.skip == '0' || steps.gate.outputs.redispatch == '1') && env.BRANCH == 'main'
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          # The receiver maps this to a shop and fails on a repository it has
+          # no mapping for.
+          SOURCE_REPO: ${{ github.repository }}
+        run: |
+          gh api repos/two-inc/platform-tools/dispatches \
+            -f event_type=plugin-release-published \
+            -f "client_payload[repository]=$SOURCE_REPO"

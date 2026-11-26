@@ -17,18 +17,17 @@ use Magento\Framework\Escaper;
 /** @var Escaper $escaper */
 
 $configModel = $viewModels->require(CheckoutConfig::class);
+// The layout places this block unconditionally; the view model decides
+// whether it mounts (TWO-27227): nothing at all while the method is disabled.
+if (!$configModel->getIsShippingCompanyBlockMounted()) {
+    return;
+}
 $quoteModel = $viewModels->require(GetQuoteDetails::class);
 $hyvaCsp = $viewModels->require(HyvaCsp::class);
 
 $checkoutApiUrl = $configModel->getCheckoutApiUrl();
 // Where `rest/V1/two/...` lives — see gateway_method-csp-js.phtml.
 $restBaseUrl = rtrim((string) $block->getBaseUrl(), "/");
-$isProxyAvailable = $configModel->getIsProxyAvailable();
-// The four below are read on the direct-call fallback only.
-$clientName = $configModel->getClientName();
-$clientVersion = $configModel->getClientVersion();
-$merchantShortName = $configModel->getMerchantShortName();
-$companySearchLimit = $configModel->getCompanySearchLimit();
 $isAddressSearchEnabled = $configModel->getIsAddressSearchEnabled();
 $isCompanySearchEnabled = $configModel->getIsCompanySearchEnabled();
 $companySearchMinChars = $configModel->getCompanySearchMinChars();
@@ -183,26 +182,28 @@ document.addEventListener('alpine:init', () => {
         twoGatewayCompanySearchEngineFn({
             checkoutApiUrl: '<?= $escaper->escapeJs($checkoutApiUrl) ?>',
             restBaseUrl: '<?= $escaper->escapeJs($restBaseUrl) ?>',
-            // Bare boolean, not quoted — see gateway_method-csp-js.phtml.
-            isProxyAvailable: <?= $isProxyAvailable ? "true" : "false" ?>,
-            client: '<?= $escaper->escapeJs((string) $clientName) ?>',
-            clientV: '<?= $escaper->escapeJs((string) $clientVersion) ?>',
-            merchant: '<?= $escaper->escapeJs($merchantShortName) ?>',
-            companySearchLimit: '<?= $escaper->escapeJs((string) $companySearchLimit) ?>',
             minSearchChars: <?= (int) $companySearchMinChars ?>,
             isAddressSearchEnabled: '<?= $escaper->escapeJs((string) $isAddressSearchEnabled) ?>',
             isCompanySearchEnabled: '<?= $escaper->escapeJs((string) $isCompanySearchEnabled) ?>',
             manualModeSupported: false,
             dropdownSelector: '.max-h-select',
             itemSelector: 'div.cursor-pointer',
-            countrySelectionMessage: "<?= $escaper->escapeJs(__('Please select a country first')) ?>",
-            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again, or enter details manually.')) ?>",
+            countrySelectionMessage: "<?= $escaper->escapeJs(__('Select your country above to search for your company.')) ?>",
+            searchUnavailableMessage: "<?= $escaper->escapeJs(__('Company search is temporarily unavailable. Please try again.')) ?>",
             // This picker renders no inline "unavailable" notice or
             // min-characters hint of its own (its markup lives in Hyvä
             // Checkout's own address-book modal, outside this module) — a
             // toast is the ONLY signal a buyer gets, so unlike the address
             // step and the payment tile it dispatches one.
             dispatchSearchUnavailableToast: true,
+            // For the same reason, a pick whose address could not be fetched
+            // is told by toast (TWO-27211): there is no markup of ours under
+            // the modal's field to put the notice in.
+            announceAddressNotice: function (text) {
+                if (text && typeof window.dispatchMessages === 'function') {
+                    window.dispatchMessages([{ type: 'warning', text: text }], 5000);
+                }
+            },
             getQuote: function () { return this.quote; },
             readSelection: function () { return twoShippingReadSelection(); },
             writeSelection: function (patch) { return twoShippingWriteSelection(patch); },

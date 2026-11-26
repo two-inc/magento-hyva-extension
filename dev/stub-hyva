@@ -4,7 +4,9 @@
  * Stub the Hyvä/Magewire dependencies so the extension can be installed
  * and DI-compiled without Hyvä credentials.
  *
- * Called by: make install (when auth.json is absent)
+ * Called by: make install (when auth.json is absent), and by CI's DI-compile
+ * and PHPStan legs. PHPStan needs every class and method this module's code
+ * and templates name, so the set covers those too (TWO-27218).
  *
  * DRIFT CAVEAT: these class stubs are authored by the same hand as the
  * consumer, so di:compile against them can't catch SIGNATURE drift in the real
@@ -33,6 +35,28 @@ class Component
 {
     protected $loader;
     public function mount(): void {}
+    public function emit(string $event, ...$params) { return $this; }
+    public function dispatchErrorMessage($message) { return $this; }
+}
+PHP,
+
+    'Hyva/Theme/ViewModel/HyvaCsp.php' => <<<'PHP'
+<?php
+namespace Hyva\Theme\ViewModel;
+
+class HyvaCsp
+{
+    public function registerInlineScript(): void {}
+}
+PHP,
+
+    'Hyva/Checkout/ViewModel/Checkout/Formatter.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\ViewModel\Checkout;
+
+class Formatter
+{
+    public function currency($value): string { return (string) $value; }
 }
 PHP,
 
@@ -67,27 +91,30 @@ class AbstractEntityForm
 {
     public function getField(string $name) { return null; }
     public function modifyField(string $name, callable $callback): self { return $this; }
+    public function registerModificationListener(string $name, string $event, callable $modifier): self { return $this; }
+    public function context(): AbstractEntityFormContext { return new AbstractEntityFormContext(); }
 }
 PHP,
 
-    'Hyva/Checkout/Model/Form/EntityField/AbstractEntityField.php' => <<<'PHP'
-<?php
-namespace Hyva\Checkout\Model\Form\EntityField;
-
-class AbstractEntityField
-{
-    public function setData(string $key, $value): self { return $this; }
-    public function getSortOrder(): int { return 0; }
-}
-PHP,
-
-    'Hyva/Checkout/Model/Form/EntityFormElementInterface.php' => <<<'PHP'
+    'Hyva/Checkout/Model/Form/AbstractEntityFormContext.php' => <<<'PHP'
 <?php
 namespace Hyva\Checkout\Model\Form;
 
-interface EntityFormElementInterface
+class AbstractEntityFormContext
 {
-    const POSITION = 'position';
+    public function elements(): EntityFormElementCollection { return new EntityFormElementCollection(); }
+}
+PHP,
+
+    'Hyva/Checkout/Model/Form/EntityFormElementCollection.php' => <<<'PHP'
+<?php
+namespace Hyva\Checkout\Model\Form;
+
+class EntityFormElementCollection
+{
+    public function fill(array $elements): self { return $this; }
+    public function all(): array { return []; }
+    public function sort(): self { return $this; }
 }
 PHP,
 

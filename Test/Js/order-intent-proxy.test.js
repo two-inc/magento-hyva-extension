@@ -51,13 +51,6 @@ function mountTile() {
     first_name: "Ada",
     last_name: "Lovelace",
     telephone: "+44 1234",
-    quote_currency_code: "GBP",
-    grand_total: 120,
-    tax_amount: 20,
-    shipping_tax_amount: 0,
-    shipping_amount: 0,
-    shipping_incl_tax: 0,
-    items: [],
   };
   component.companyId = "123456789";
   component.companyName = "Acme Widgets Ltd";
@@ -97,9 +90,16 @@ describe("order intent through the plugin's own backend", () => {
     const sent = call.jsonBody();
     expect(Object.keys(sent)).toEqual(["payload"]);
     const payload = JSON.parse(sent.payload);
+    // Only the buyer: the plugin composes amounts and lines from the quote (TWO-26092).
+    expect(Object.keys(payload)).toEqual(["buyer"]);
     expect(payload.buyer.company.organization_number).toBe("123456789");
     expect(payload.buyer.company.country_prefix).toBe("GB");
-    expect(payload.currency).toBe("GBP");
+    expect(payload.buyer.representative).toEqual({
+      email: "buyer@example.test",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone_number: "+44 1234",
+    });
 
     call.respondProxy(APPROVED);
     await pending;
@@ -114,7 +114,6 @@ describe("order intent through the plugin's own backend", () => {
 
     // Key-absence, not undefined: a payload decoding to `{}` satisfies toBeUndefined().
     expect(payload.buyer.company.organization_number).toBe("123456789");
-    expect(payload.currency).toBe("GBP");
     expect(Object.keys(payload)).not.toContain("merchant_id");
     expect(Object.keys(payload)).not.toContain("merchant_short_name");
 
@@ -151,6 +150,24 @@ describe("order intent through the plugin's own backend", () => {
     settle(tile.fetchStub.last());
 
     await expect(pending).rejects.toThrow();
+  });
+
+  // ABN-643: the error handler reads only the status, to tell a rate limit
+  // from every other failure, whether the API or the shop's own route answered.
+  test.each([
+    { settle: (c) => c.respondProxy({ error_code: "ORDER_INVALID" }, false, 400), status: 400, label: "an API refusal" },
+    { settle: (c) => c.respondProxy({ error_code: "RATE_LIMITED" }, false, 429), status: 429, label: "an API rate limit" },
+    { settle: (c) => c.respondProxy({ error_code: "PROXY_REFUSED" }, false, 503), status: 503, label: "a module refusal" },
+    { settle: (c) => c.respondWithStatus(404), status: 404, label: "the shop route missing" },
+    { settle: (c) => c.respondWithStatus(429), status: 429, label: "a shop webapi 429" },
+  ])("$label rejects carrying its status", async ({ settle, status, label }) => {
+    tile = mountTile();
+
+    const pending = tile.component.placeOrderIntent();
+    settle(tile.fetchStub.last());
+    const error = await pending.catch((e) => e);
+
+    expect([label, error.status]).toEqual([label, status]);
   });
 
   test("no company means no request at all", async () => {

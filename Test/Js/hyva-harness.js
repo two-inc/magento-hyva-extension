@@ -41,7 +41,7 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
  * `<prefix>GatewayHyva`; the vanilla prefix is `two`.
  */
 const QUOTE_JSON =
-  '{"quote_id":"test-quote-1","shipping_country_id":"GB","grand_total":100}';
+  '{"quote_id":"test-quote-1","shipping_country_id":"GB"}';
 
 /**
  * Fallback for an escapeJs()/escapeHtmlAttr() whose argument has no rule of its
@@ -81,12 +81,8 @@ const PHP_VALUE_RULES = [
     /^json_encode\(\s*\$customHeaders[\s\S]*?\)(?:\s*\?:\s*\S+)?$/,
     "{}",
   ],
-  // proxy-capability-fallback.test.js overrides this to `false`.
-  [/^\$isProxyAvailable \? "true" : "false"$/, "true"],
-  [/^\$clientName$/, "magento-hyva"],
-  [/^\$clientVersion$/, "2.1.0"],
-  [/^\$merchantShortName$/, "Example Shop"],
-  [/^\$companySearchLimit$/, "50"],
+  // server-intent-capability.test.js overrides this to `false`.
+  [/^\$isServerIntentAvailable \? "true" : "false"$/, "true"],
   // The min-characters threshold, emitted bare as an int rather than quoted.
   // Its default here matches production so the existing suites' queries keep
   // the same meaning; the min-chars suite overrides it via `extraRules` with a
@@ -100,8 +96,6 @@ const PHP_VALUE_RULES = [
   [/^\$currentStoreId$/, "1"],
   [/^\$configModel->getIs[A-Za-z]+Enabled\(\)$/, "1"],
   [/^\$merchantId$/, "test-merchant-id"],
-  [/^\$merchantName$/, "Example Shop"],
-  [/^\$orderIntentConfig\[.*\]$/, "test"],
   [/^\$quoteDetails(Json)?$/, QUOTE_JSON],
   // Bare, not quoted: json_encode() of a string yields a JSON string literal.
   // The optional `?: …` tail is the fallback for json_encode() returning false;
@@ -658,6 +652,11 @@ const SHARED_HELPER_GLOBALS = [
   "twoGatewayProxyPost",
   "twoGatewayCompanySearchCache",
   "TWO_GATEWAY_COMPANY_SEARCH_TIMEOUT_MS",
+  // The 429 park (TWO-27211): its default window, the Retry-After reader and
+  // the error that carries a status to it.
+  "TWO_GATEWAY_RATE_LIMIT_PARK_MS",
+  "twoGatewayRetryAfterMs",
+  "twoGatewayHttpError",
   // The popover's translated copy, and the register of live mounts a re-render
   // rebuilds from. Same `window.X = window.X || …` shape as the cache below, so
   // without these the FIRST test in a file wins the panel's strings for every
@@ -696,6 +695,20 @@ const SHARED_HELPER_GLOBALS = [
   // Which address role a panel belongs to — the whole basis of the per-role
   // split, so a template that stopped publishing it must fail loudly.
   "twoGatewayCaptureRoleForForm",
+  // What a stored record restores, the number dropped under manual entry
+  // (TWO-26775). Same idiom, same reset reason.
+  "twoGatewayRecordedCompany",
+  // What setAddressData() last wrote per field; a survivor would let one test's
+  // writes count as this module's in the next.
+  "twoGatewayAutofillWrites",
+  // The autofill mark and its helpers (TWO-27212), and the per-role lookup
+  // tokens: a token surviving into the next test would let its reply land.
+  "TWO_GATEWAY_AUTOFILL_MARK",
+  "twoGatewayMarkAutofill",
+  "twoGatewayAutofillMarkOf",
+  "twoGatewayForgetAutofill",
+  "twoGatewayAddressLookups",
+  "twoGatewayAddressLookupKey",
   // The billing-scoped accessors, listed for exactly the same reason: they use
   // the same `window.X = window.X || …` idiom, so without resetting them the
   // first test file's key — and its store id — would leak into every later one.
@@ -943,6 +956,7 @@ function installCompanyIdentityStub() {
     soleTraderAvailable: false,
     soleTraderAdopted: false,
     soleTraderBusy: false,
+    addressNotice: "",
   };
   const subscribers = [];
   let flightDepth = 0;
@@ -979,6 +993,7 @@ function installCompanyIdentityStub() {
     soleTraderAvailable: accessor("soleTraderAvailable", asBoolean),
     soleTraderAdopted: accessor("soleTraderAdopted", asBoolean),
     soleTraderBusy: accessor("soleTraderBusy", asBoolean),
+    addressNotice: accessor("addressNotice", asString),
     subscribe: function (subscriber) {
       subscribers.push(subscriber);
       return {
@@ -1032,12 +1047,18 @@ function installCompanyIdentityStub() {
       notify();
     },
     clear: function () {
-      if (!state.companyName && !state.companyId && !state.companyIdSource) {
+      if (
+        !state.companyName &&
+        !state.companyId &&
+        !state.companyIdSource &&
+        !state.addressNotice
+      ) {
         return;
       }
       state.companyName = "";
       state.companyId = "";
       state.companyIdSource = "";
+      state.addressNotice = "";
       notify();
     },
     beginFlight: function () {
@@ -1080,7 +1101,7 @@ function installCompanyIdentityStub() {
  * and the postMessage handshake are the shared file's own behaviour and are
  * covered where that file lives. What is this repo's is the host adapter the flow
  * calls back into — `tokensUrl`, `signupPrefill`, `signupCountry`,
- * `applyBuyerAddress`, `applyTelephone`, `showError`, `renderSignupPrompt` — so
+ * `applyBuyerAddress`, `applyTelephone`, `showError`. So
  * a stub reimplementing the flow would let a test assert the stub instead.
  *
  * @returns {{instances: Array}} newest last
@@ -1142,13 +1163,6 @@ function installSoleTraderStub() {
     this.calls.push("focusSignupPopup");
     return this.popupOpen;
   };
-  SoleTraderStub.prototype.showSignupPrompt = function (show) {
-    this.calls.push("showSignupPrompt:" + (show ? "on" : "off"));
-    const self = this;
-    this.host().renderSignupPrompt(!!show, function () {
-      self.retrySignup();
-    });
-  };
 
   window.TwoSoleTrader = SoleTraderStub;
   return { instances: instances };
@@ -1172,7 +1186,6 @@ const CAPTURE_HOST_CONTRACT = [
   "supportedCompanyTypesUrl",
   "applyCompanyAddress",
   "revertAutofilledAddress",
-  "clearField",
   "tokensUrl",
   "quoteId",
   "apiClientParams",
@@ -1181,7 +1194,6 @@ const CAPTURE_HOST_CONTRACT = [
   "applyBuyerAddress",
   "applyTelephone",
   "showError",
-  "renderSignupPrompt",
 ];
 
 /**
@@ -1270,11 +1282,12 @@ function installCompanyCaptureStub() {
 
   CaptureStub.prototype.onCountryChanged = function (observedCountry) {
     if (!this._config || !this._started) return;
-    const adjacent = this.adjacentCountry();
-    const country =
-      adjacent !== null
-        ? adjacent
-        : String(observedCountry || this.countryCode() || "").toLowerCase();
+    // The country the host observed first, as the real controller reads it:
+    // a field outside the surface's own form (the address-book modal) reports
+    // a country its adjacent read would not see (TWO-27212).
+    const country = String(
+      observedCountry || this.countryCode() || "",
+    ).toLowerCase();
     if (!country || country === this._lastCountry) return;
     const hadCountry = !!this._lastCountry;
     this._lastCountry = country;
@@ -1473,7 +1486,6 @@ function installCompanyCaptureStub() {
       this._panel.releaseField();
     }
     this._identity.clearNumber();
-    this._options.clearField(this._boundSelector);
     this.syncChips();
   };
 
@@ -1507,8 +1519,12 @@ function installCompanyCaptureStub() {
     const wasAdopted =
       this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
     if (!wasAdopted) {
+      // A click captures nothing and clears nothing; the mode it left is the
+      // resting mode until a sole trader is adopted (TWO-26775).
+      if (!this._identity.isSoleTrader()) {
+        this._modeBeforeSoleTrader = this._identity.captureMode();
+      }
       this._identity.captureMode("soletrader");
-      this._identity.clearNumber();
       this.syncChips();
     }
     return this._soleTrader.launchSignup(
@@ -1516,8 +1532,24 @@ function installCompanyCaptureStub() {
     );
   };
 
+  CaptureStub.prototype.restingMode = function () {
+    if (this._identity.soleTraderAdopted()) return "soletrader";
+    return this._modeBeforeSoleTrader === "manual" ? "manual" : "registered";
+  };
+
+  // Name-only capture: manual entry, or a Sole trader click pending over it.
+  CaptureStub.prototype.isManualEntry = function () {
+    const mode = this._identity.captureMode();
+    return (
+      mode === "manual" ||
+      (mode === "soletrader" && this.restingMode() === "manual")
+    );
+  };
+
   CaptureStub.prototype.leaveSoleTraderMode = function () {
     if (!this._identity.isSoleTrader()) return false;
+    // Before an adoption the mode captured nothing, so nothing goes.
+    if (!this._identity.soleTraderAdopted()) return true;
     this._identity.soleTraderAdopted(false);
     this._identity.clear();
     this._options.revertAutofilledAddress();
@@ -1614,6 +1646,21 @@ function installHyvaEnvironment() {
   };
   window.addEventListener("magewire:loader:start", onLoaderStart);
   window.addEventListener("magewire:loader:done", onLoaderDone);
+
+  // Every listener the code under test puts on `document`, so restore() can
+  // take it off again. jsdom keeps one document per file, and a capture
+  // controller's country watch left behind by an earlier test would otherwise
+  // hear the next test's country change and act on it (TWO-27212).
+  const documentListeners = [];
+  document.addEventListener = function (type, listener, options) {
+    documentListeners.push([type, listener, options]);
+    return EventTarget.prototype.addEventListener.call(
+      this,
+      type,
+      listener,
+      options,
+    );
+  };
 
   global.hyva = hyva;
   window.hyva = hyva;
@@ -1752,6 +1799,10 @@ function installHyvaEnvironment() {
     restore: function () {
       window.removeEventListener("magewire:loader:start", onLoaderStart);
       window.removeEventListener("magewire:loader:done", onLoaderDone);
+      delete document.addEventListener;
+      documentListeners.forEach(function (entry) {
+        document.removeEventListener(entry[0], entry[1], entry[2]);
+      });
       delete window.dispatchMessages;
       delete global.hyva;
       delete global.Alpine;
@@ -1876,14 +1927,23 @@ function stubFetch() {
       record.rejectWith = reject;
     });
 
-    /** Resolve as an HTTP response. */
-    record.respond = function (body, status) {
+    /** Resolve as an HTTP response, with optional `{name: value}` headers. */
+    record.respond = function (body, status, headers) {
       if (record.settled) return;
       record.settled = true;
       const code = status === undefined ? 200 : status;
+      const named = headers || {};
       record.resolveWith({
         ok: code >= 200 && code < 300,
         status: code,
+        headers: {
+          get: function (name) {
+            const key = Object.keys(named).find(function (candidate) {
+              return candidate.toLowerCase() === String(name).toLowerCase();
+            });
+            return key === undefined ? null : named[key];
+          },
+        },
         json: function () {
           return Promise.resolve(body);
         },
@@ -1972,6 +2032,36 @@ async function flushPromises() {
   }
 }
 
+/**
+ * The base plugin's shared capture modules, in the order this checkout's
+ * layout loads them, and the global each registers itself under.
+ */
+const REAL_CAPTURE_MODULES = [
+  ["company-search-panel.js", "TwoCompanySearchPanel"],
+  ["company-identity.js", "TwoCompanyIdentity"],
+  ["sole-trader.js", "TwoSoleTrader"],
+  ["company-capture-component.js", "TwoCompanyCaptureComponent"],
+];
+
+/**
+ * Replace the four stubs with the REAL shared modules from a magento-plugin
+ * checkout (TWO-26775). Call after installHyvaEnvironment(): each file's UMD
+ * tail assigns its global over the stub, and that environment's restore()
+ * deletes them again. Evaluated in global scope, as a `<script>` tag runs them.
+ *
+ * @param {string} pluginDir the root of a magento-plugin checkout
+ * @returns {void}
+ */
+function loadRealCaptureModules(pluginDir) {
+  REAL_CAPTURE_MODULES.forEach(function (entry) {
+    const file = path.join(pluginDir, "view/frontend/web/js/model", entry[0]);
+    (0, eval)(fs.readFileSync(file, "utf8"));
+    if (typeof window[entry[1]] !== "function") {
+      throw new Error("loadRealCaptureModules: " + file + " registered no " + entry[1]);
+    }
+  });
+}
+
 module.exports = {
   REPO_ROOT: REPO_ROOT,
   COMPANY_SELECTION_KEY: COMPANY_SELECTION_KEY,
@@ -1992,6 +2082,7 @@ module.exports = {
   loadSharedHelpers: loadSharedHelpers,
   installHyvaEnvironment: installHyvaEnvironment,
   installCompanyPanelStub: installCompanyPanelStub,
+  loadRealCaptureModules: loadRealCaptureModules,
   CAPTURE_HOST_CONTRACT: CAPTURE_HOST_CONTRACT,
   mountComponent: mountComponent,
   stubFetch: stubFetch,
