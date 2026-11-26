@@ -1,1 +1,1 @@
-4  # requires the 4.1 base, so shops on the 3.x base are not offered it
+4  # requires the 4.2 base (~4.2.0): the matching set shares one major.minor
