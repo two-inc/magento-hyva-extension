@@ -270,7 +270,7 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway Two_GatewayHyva && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
-  # The base module's floor (^4.1.0) exists on the base repo's `staging` branch
+  # The base module's constraint (~4.2.0) exists on the base repo's `staging` branch
   # only: no tagged release carries it yet (see the floor note in
   # docs/api-proxy.md). Release timing there is a separate,
   # unrelated decision, so this leg proves the real dependency: this branch
